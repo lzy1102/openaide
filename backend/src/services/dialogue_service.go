@@ -159,11 +159,34 @@ func (s *DialogueService) SendMessageStream(ctx context.Context, dialogueID, use
 	// 保存用户消息
 	s.AddMessage(dialogueID, "user", content)
 
-	// 构建对话历史
+	// 构建对话历史（最多最近20条消息，控制token消耗）
 	messages := s.GetMessages(dialogueID)
+	if len(messages) > 20 {
+		messages = messages[len(messages)-20:]
+	}
 
 	// 转换为 LLM 消息格式
-	llmMessages := make([]llm.Message, 0, len(messages))
+	llmMessages := make([]llm.Message, 0, len(messages)+1)
+
+	// 注入系统提示词（增强版）
+	llmMessages = append(llmMessages, llm.Message{
+		Role: "system",
+		Content: `你是 OpenAIDE AI 助手。
+
+## 行为准则
+1. 先理解用户意图，再决定行动
+2. 复杂问题分解为小步骤，逐步解决
+3. 使用工具获取准确信息，不要凭记忆猜测
+4. 每次工具调用后检查结果是否正确
+5. 确保回答覆盖用户所有问题，不遗漏需求
+6. 不确定的信息要说明，不要编造事实
+
+## 输出格式
+- 使用 Markdown 格式，代码块标注语言
+- 长回答先给结论，再展开说明
+- 重要信息用加粗或代码块突出`,
+	})
+
 	for _, msg := range messages {
 		role := "user"
 		if msg.Sender == "assistant" {

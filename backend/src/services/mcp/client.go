@@ -303,28 +303,43 @@ func (c *MCPClient) sendStdio(req *jsonRPCRequest) error {
 }
 
 func (c *MCPClient) readStdioResponse(expectedID int) (json.RawMessage, error) {
-	decoder := json.NewDecoder(c.stdout)
+	// 添加30秒读取超时，防止外部工具卡死
+	resultCh := make(chan json.RawMessage, 1)
+	errCh := make(chan error, 1)
 
-	// TODO: 考虑添加读取超时
-
-	for {
-		var msg jsonRPCResponse
-		if err := decoder.Decode(&msg); err != nil {
-			return nil, fmt.Errorf("failed to read response: %w", err)
-		}
-
-		// 忽略通知
-		if msg.ID == 0 {
-			continue
-		}
-
-		// 匹配请求 ID
-		if expectedID == 0 || msg.ID == expectedID {
-			if msg.Error != nil {
-				return nil, fmt.Errorf("MCP error %d: %s", msg.Error.Code, msg.Error.Message)
+	go func() {
+		decoder := json.NewDecoder(c.stdout)
+		for {
+			var msg jsonRPCResponse
+			if err := decoder.Decode(&msg); err != nil {
+				errCh <- fmt.Errorf("failed to read response: %w", err)
+				return
 			}
-			return msg.Result, nil
+
+			// 忽略通知
+			if msg.ID == 0 {
+				continue
+			}
+
+			// 匹配请求 ID
+			if expectedID == 0 || msg.ID == expectedID {
+				if msg.Error != nil {
+					errCh <- fmt.Errorf("MCP error %d: %s", msg.Error.Code, msg.Error.Message)
+					return
+				}
+				resultCh <- msg.Result
+				return
+			}
 		}
+	}()
+
+	select {
+	case result := <-resultCh:
+		return result, nil
+	case err := <-errCh:
+		return nil, err
+	case <-time.After(30 * time.Second):
+		return nil, fmt.Errorf("MCP read timeout after 30s")
 	}
 }
 
