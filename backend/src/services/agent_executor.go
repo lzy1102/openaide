@@ -215,7 +215,23 @@ func (e *AgentExecutor) buildSystemPrompt(req *TaskExecRequest) string {
 	}
 
 	prompt += fmt.Sprintf("\n当前任务：%s\n", req.TaskTitle)
-	prompt += "请完成上述任务。如果需要使用工具来完成任务，请调用相应的工具。完成后请给出清晰的结果总结。"
+	prompt += `
+## 行为准则
+1. **先理解后行动**：仔细分析用户意图，确保完全理解需求后再执行
+2. **主动思考**：遇到复杂问题先分解，逐步解决，不要急于给出答案
+3. **工具使用**：优先使用可用工具获取准确信息，而不是凭记忆或猜测
+4. **结果验证**：每次工具调用后检查结果是否正确，发现错误及时调整
+5. **完整性**：确保回答覆盖用户所有问题，不遗漏任何需求
+6. **诚实**：不确定的信息要说明，不要编造事实
+
+## 输出格式
+- 使用清晰的 Markdown 格式
+- 代码块必须标注语言类型
+- 列表项保持简洁明了
+- 重要信息用加粗或代码块突出显示
+- 长回答先给结论，再展开说明
+
+请完成上述任务。如果需要使用工具来完成任务，请调用相应的工具。完成后请给出清晰的结果总结。`
 
 	return prompt
 }
@@ -262,17 +278,30 @@ func (e *AgentExecutor) executeToolCall(ctx context.Context, tc llm.ToolCall) st
 			return e.handleConfirmationRequest(ctx, confErr)
 		}
 
-		errMsg := fmt.Sprintf("Tool execution error: %v", err)
+		errMsg := fmt.Sprintf("工具执行失败: %v", err)
 		e.logger.Error(ctx, "[AgentExecutor] tool %s failed: %v", tc.Function.Name, err)
 		return errMsg
 	}
 
+	// 验证工具返回结果
+	if result.Content == nil {
+		e.logger.Warn(ctx, "[AgentExecutor] tool %s returned nil content", tc.Function.Name)
+		return fmt.Sprintf("工具 %s 返回空结果", tc.Function.Name)
+	}
+
+	// 序列化结果为 JSON 字符串
 	resultJSON, err := json.Marshal(result.Content)
 	if err != nil {
 		return fmt.Sprintf("%v", result.Content)
 	}
 
-	return string(resultJSON)
+	// 检查结果内容长度，避免返回过大数据
+	contentStr := string(resultJSON)
+	if len(contentStr) > 8000 {
+		contentStr = contentStr[:8000] + "\n...(结果过长，已截断)"
+	}
+
+	return contentStr
 }
 
 // handleConfirmationRequest 处理危险命令确认请求
