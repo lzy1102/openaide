@@ -266,6 +266,53 @@ CGO_ENABLED=0 go build -o bin/openaide-server ./src
 ./bin/openaide-server
 ```
 
+#### Configuration
+
+Create `~/.openaide/config.json` with your API key:
+
+```json
+{
+  "models": [{
+    "name": "my-model",
+    "type": "llm",
+    "provider": "openai",
+    "api_key": "your-api-key-here",
+    "base_url": "https://api.example.com/v1",
+    "config": {
+      "model": "gpt-4o-mini"
+    },
+    "status": "enabled"
+  }],
+  "default_model": "my-model",
+  "feishu": {"enabled": false},
+  "voice": {"enabled": false},
+  "sandbox": {"enabled": false},
+  "embedding": {"enabled": false}
+}
+```
+
+> See `server_config.example.json` for a template.
+
+#### Terminal CLI
+
+```bash
+cd openaide/terminal
+go run main.go
+```
+
+Interactive mode:
+```
+  ╭─────────────────────────────╮
+  │  OpenAIDE CLI               │
+  ╰─────────────────────────────╯
+
+    API:   http://localhost:19375/api
+    Model: gpt-4o-mini
+    Mode:  Streaming
+
+  Type /help for commands, exit or /exit to quit
+```
+
 #### Prerequisites
 - Go 1.20+
 - Docker (optional, for sandbox)
@@ -337,6 +384,53 @@ go run ./src/main.go
 ```bash
 CGO_ENABLED=0 go build -o bin/openaide-server ./src
 ./bin/openaide-server
+```
+
+#### 配置文件
+
+在 `~/.openaide/config.json` 中创建配置：
+
+```json
+{
+  "models": [{
+    "name": "my-model",
+    "type": "llm",
+    "provider": "openai",
+    "api_key": "your-api-key-here",
+    "base_url": "https://api.example.com/v1",
+    "config": {
+      "model": "gpt-4o-mini"
+    },
+    "status": "enabled"
+  }],
+  "default_model": "my-model",
+  "feishu": {"enabled": false},
+  "voice": {"enabled": false},
+  "sandbox": {"enabled": false},
+  "embedding": {"enabled": false}
+}
+```
+
+> 参考 `server_config.example.json` 模板文件。
+
+#### 终端 CLI
+
+```bash
+cd openaide/terminal
+go run main.go
+```
+
+交互式模式：
+```
+  ╭─────────────────────────────╮
+  │  OpenAIDE CLI               │
+  ╰─────────────────────────────╯
+
+    API:   http://localhost:19375/api
+    Model: gpt-4o-mini
+    Mode:  Streaming
+
+  Type /help for commands, exit or /exit to quit
 ```
 
 ### API 端点总览
