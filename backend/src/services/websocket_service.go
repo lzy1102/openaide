@@ -31,6 +31,7 @@ const (
 	WSTypeTaskUpdate     WebSocketMessageType = "task_update"     // 任务状态更新
 	WSTypeWorkflowUpdate WebSocketMessageType = "workflow_update" // 工作流状态更新
 	WSTypeNotification   WebSocketMessageType = "notification"    // 通知消息
+	WSTypeTaskCompleted  WebSocketMessageType = "task_completed"  // 后台任务完成通知 (Hermes Agent)
 )
 
 // WebSocketMessage WebSocket 消息结构
@@ -759,4 +760,93 @@ func (s *WebSocketService) SendNotification(userID string, title string, content
 			"time":    time.Now().Unix(),
 		},
 	})
+}
+
+// NotifyTaskCompleted 通知后台任务完成 (Hermes Agent notify_on_complete)
+func (s *WebSocketService) NotifyTaskCompleted(userID string, taskID string, status string, result interface{}) {
+	s.SendToUser(userID, WebSocketMessage{
+		Type: WSTypeTaskCompleted,
+		Timestamp: time.Now().Unix(),
+		Payload: map[string]interface{}{
+			"task_id":      taskID,
+			"status":       status,
+			"result":       result,
+			"completed_at": time.Now().Format(time.RFC3339),
+		},
+	})
+}
+
+// ActivityTracker 基于活动的超时跟踪器 (Hermes Agent 智能超时)
+type ActivityTracker struct {
+	mu              sync.RWMutex
+	lastActivity    map[string]time.Time // sessionID -> 最后活动时间
+	activityTimeout time.Duration
+	onTimeout       func(sessionID string)
+}
+
+// NewActivityTracker 创建活动跟踪器
+func NewActivityTracker(activityTimeout time.Duration, onTimeout func(sessionID string)) *ActivityTracker {
+	tracker := &ActivityTracker{
+		lastActivity:    make(map[string]time.Time),
+		activityTimeout: activityTimeout,
+		onTimeout:       onTimeout,
+	}
+	go tracker.startCleanupLoop(5 * time.Minute)
+	return tracker
+}
+
+// RecordActivity 记录活动 (工具调用/消息发送)
+func (t *ActivityTracker) RecordActivity(sessionID string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.lastActivity[sessionID] = time.Now()
+}
+
+// ShouldTimeout 检查是否应超时
+func (t *ActivityTracker) ShouldTimeout(sessionID string) bool {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	lastActive, exists := t.lastActivity[sessionID]
+	if !exists {
+		return true
+	}
+	return time.Since(lastActive) > t.activityTimeout
+}
+
+// RemoveSession 移除会话
+func (t *ActivityTracker) RemoveSession(sessionID string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.lastActivity, sessionID)
+}
+
+// startCleanupLoop 定期清理超时会话
+func (t *ActivityTracker) startCleanupLoop(interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		t.cleanupExpired()
+	}
+}
+
+// cleanupExpired 清理过期会话
+func (t *ActivityTracker) cleanupExpired() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	var timedOut []string
+	now := time.Now()
+	for sessionID, lastActive := range t.lastActivity {
+		if now.Sub(lastActive) > t.activityTimeout {
+			timedOut = append(timedOut, sessionID)
+		}
+	}
+
+	for _, sessionID := range timedOut {
+		delete(t.lastActivity, sessionID)
+		if t.onTimeout != nil {
+			go t.onTimeout(sessionID)
+		}
+	}
 }

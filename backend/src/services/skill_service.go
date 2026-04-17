@@ -216,6 +216,73 @@ func (s *SkillService) ListEnabledSkills() ([]models.Skill, error) {
 	return skills, err
 }
 
+// GetSkillLevel0 获取技能 Level 0 概要 (仅用于初始匹配, 节省token)
+func (s *SkillService) GetSkillLevel0(id string) (*models.Skill, error) {
+	var skill models.Skill
+	err := s.db.Select("id", "name", "description", "category", "version", "author", "level0_summary", "triggers", "model_preference", "enabled").First(&skill, "id = ?", id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &skill, nil
+}
+
+// GetSkillLevel1 获取技能 Level 1 完整内容 (用于执行时加载)
+func (s *SkillService) GetSkillLevel1(id string) (*models.Skill, error) {
+	var skill models.Skill
+	err := s.db.First(&skill, "id = ?", id).Error
+	return &skill, err
+}
+
+// GetSkillLevel2 获取技能 Level 2 参考材料
+func (s *SkillService) GetSkillLevel2(id string) ([]string, error) {
+	var skill models.Skill
+	err := s.db.Select("level2_references").First(&skill, "id = ?", id).Error
+	if err != nil {
+		return nil, err
+	}
+	if skill.Level2References != nil {
+		result := make([]string, 0, len(skill.Level2References))
+		for _, v := range skill.Level2References {
+			if s, ok := v.(string); ok {
+				result = append(result, s)
+			}
+		}
+		return result, nil
+	}
+	return []string{}, nil
+}
+
+// IncrementSkillUsage 增加技能使用次数
+func (s *SkillService) IncrementSkillUsage(id string) error {
+	return s.db.Model(&models.Skill{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"usage_count": gorm.Expr("usage_count + 1"),
+	}).Error
+}
+
+// UpdateSkillSuccessRate 更新技能成功率
+func (s *SkillService) UpdateSkillSuccessRate(id string, success bool) error {
+	skill, err := s.GetSkill(id)
+	if err != nil {
+		return err
+	}
+
+	total := skill.UsageCount
+	if total == 0 {
+		total = 1
+	}
+
+	var successCount int
+	if skill.SuccessRate > 0 {
+		successCount = int(skill.SuccessRate * float64(total))
+	}
+	if success {
+		successCount++
+	}
+
+	newRate := float64(successCount) / float64(total+1)
+	return s.db.Model(&models.Skill{}).Where("id = ?", id).Update("success_rate", newRate).Error
+}
+
 // ListSkillsByCategory 按分类列出技能
 func (s *SkillService) ListSkillsByCategory(category string) ([]models.Skill, error) {
 	var skills []models.Skill

@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"gorm.io/gorm"
@@ -29,25 +30,129 @@ type MemoryStore interface {
 	DeleteByIDs(ctx context.Context, ids []string) error
 }
 
-// GormMemoryStore 基于 GORM 的记忆存储实现
-type GormMemoryStore struct {
+// MemoryProvider 记忆提供者插件接口 (扩展自 MemoryStore, 支持插件化注册)
+type MemoryProvider interface {
+	MemoryStore
+
+	Initialize(config map[string]interface{}) error
+	Name() string
+	SemanticSearch(ctx context.Context, userID, query string, limit int) ([]models.Memory, error)
+	BatchUpsert(ctx context.Context, memories []models.Memory) error
+	Close() error
+}
+
+// MemoryProviderRegistry 记忆提供者注册表
+type MemoryProviderRegistry struct {
+	providers map[string]func() MemoryProvider
+	active    MemoryProvider
+	mu        sync.RWMutex
+}
+
+// NewMemoryProviderRegistry 创建注册表
+func NewMemoryProviderRegistry() *MemoryProviderRegistry {
+	return &MemoryProviderRegistry{
+		providers: make(map[string]func() MemoryProvider),
+	}
+}
+
+// Register 注册提供者工厂
+func (r *MemoryProviderRegistry) Register(name string, factory func() MemoryProvider) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.providers[name] = factory
+}
+
+// GetProvider 获取提供者实例
+func (r *MemoryProviderRegistry) GetProvider(name string) (MemoryProvider, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	factory, exists := r.providers[name]
+	if !exists {
+		return nil, &ModelNotFoundError{Model: name}
+	}
+	return factory(), nil
+}
+
+// SetActiveProvider 设置当前活跃的提供者
+func (r *MemoryProviderRegistry) SetActiveProvider(provider MemoryProvider) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.active != nil {
+		r.active.Close()
+	}
+	r.active = provider
+}
+
+// GetActiveProvider 获取当前活跃的提供者
+func (r *MemoryProviderRegistry) GetActiveProvider() MemoryProvider {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.active
+}
+
+type ModelNotFoundError struct {
+	Model string
+}
+
+func (e *ModelNotFoundError) Error() string {
+	return "provider not found: " + e.Model
+}
+
+// GormMemoryProvider 基于 GORM 的记忆提供者实现
+type GormMemoryProvider struct {
 	db *gorm.DB
 }
 
-// NewGormMemoryStore 创建 GORM 记忆存储
-func NewGormMemoryStore(db *gorm.DB) *GormMemoryStore {
-	return &GormMemoryStore{db: db}
+// NewGormMemoryProvider 创建 GORM 提供者
+func NewGormMemoryProvider(db *gorm.DB) *GormMemoryProvider {
+	return &GormMemoryProvider{db: db}
 }
 
-func (s *GormMemoryStore) Create(_ context.Context, memory *models.Memory) error {
+func (p *GormMemoryProvider) Name() string {
+	return "gorm"
+}
+
+func (p *GormMemoryProvider) Initialize(config map[string]interface{}) error {
+	return nil
+}
+
+func (p *GormMemoryProvider) Close() error {
+	return nil
+}
+
+func (p *GormMemoryProvider) SemanticSearch(_ context.Context, userID, query string, limit int) ([]models.Memory, error) {
+	var memories []models.Memory
+	err := p.db.Where("user_id = ? AND (content LIKE ? OR tags LIKE ?)", userID, "%"+query+"%", "%"+query+"%").
+		Order("importance DESC, last_accessed DESC").
+		Limit(limit).
+		Find(&memories).Error
+	return memories, err
+}
+
+func (p *GormMemoryProvider) BatchUpsert(_ context.Context, memories []models.Memory) error {
+	for _, mem := range memories {
+		if mem.ID == "" {
+			if err := p.db.Create(&mem).Error; err != nil {
+				return err
+			}
+		} else {
+			if err := p.db.Save(&mem).Error; err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (p *GormMemoryProvider) Create(_ context.Context, memory *models.Memory) error {
 	memory.CreatedAt = time.Now()
 	memory.UpdatedAt = time.Now()
 	memory.LastAccessed = time.Now()
-	return s.db.Create(memory).Error
+	return p.db.Create(memory).Error
 }
 
-func (s *GormMemoryStore) GetByUser(_ context.Context, userID, memoryType string) ([]models.Memory, error) {
-	query := s.db.Where("user_id = ?", userID)
+func (p *GormMemoryProvider) GetByUser(_ context.Context, userID, memoryType string) ([]models.Memory, error) {
+	query := p.db.Where("user_id = ?", userID)
 	if memoryType != "" {
 		query = query.Where("memory_type = ?", memoryType)
 	}
@@ -56,16 +161,16 @@ func (s *GormMemoryStore) GetByUser(_ context.Context, userID, memoryType string
 	return memories, err
 }
 
-func (s *GormMemoryStore) Search(_ context.Context, userID, keyword string) ([]models.Memory, error) {
+func (p *GormMemoryProvider) Search(_ context.Context, userID, keyword string) ([]models.Memory, error) {
 	var memories []models.Memory
-	err := s.db.Where("user_id = ? AND content LIKE ?", userID, "%"+keyword+"%").
+	err := p.db.Where("user_id = ? AND content LIKE ?", userID, "%"+keyword+"%").
 		Order("importance DESC, last_accessed DESC").Find(&memories).Error
 	return memories, err
 }
 
-func (s *GormMemoryStore) SearchByType(_ context.Context, userID, keyword, memoryType string) ([]models.Memory, error) {
+func (p *GormMemoryProvider) SearchByType(_ context.Context, userID, keyword, memoryType string) ([]models.Memory, error) {
 	var memories []models.Memory
-	query := s.db.Where("user_id = ? AND content LIKE ?", userID, "%"+keyword+"%")
+	query := p.db.Where("user_id = ? AND content LIKE ?", userID, "%"+keyword+"%")
 	if memoryType != "" {
 		query = query.Where("memory_type = ?", memoryType)
 	}
@@ -73,70 +178,81 @@ func (s *GormMemoryStore) SearchByType(_ context.Context, userID, keyword, memor
 	return memories, err
 }
 
-func (s *GormMemoryStore) Update(_ context.Context, memory *models.Memory) error {
+func (p *GormMemoryProvider) Update(_ context.Context, memory *models.Memory) error {
 	memory.UpdatedAt = time.Now()
-	return s.db.Save(memory).Error
+	return p.db.Save(memory).Error
 }
 
-func (s *GormMemoryStore) GetByID(_ context.Context, id string) (*models.Memory, error) {
+func (p *GormMemoryProvider) GetByID(_ context.Context, id string) (*models.Memory, error) {
 	var memory models.Memory
-	err := s.db.First(&memory, id).Error
+	err := p.db.First(&memory, id).Error
 	return &memory, err
 }
 
-func (s *GormMemoryStore) Delete(_ context.Context, id string) error {
-	return s.db.Where("id = ?", id).Delete(&models.Memory{}).Error
+func (p *GormMemoryProvider) Delete(_ context.Context, id string) error {
+	return p.db.Where("id = ?", id).Delete(&models.Memory{}).Error
 }
 
-func (s *GormMemoryStore) UpdateAccess(_ context.Context, id string) error {
-	return s.db.Model(&models.Memory{}).Where("id = ?", id).Updates(map[string]interface{}{
+func (p *GormMemoryProvider) UpdateAccess(_ context.Context, id string) error {
+	return p.db.Model(&models.Memory{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"last_accessed": time.Now(),
 		"access_count":  gorm.Expr("access_count + 1"),
 	}).Error
 }
 
-func (s *GormMemoryStore) CreateShortTerm(_ context.Context, stm *models.ShortTermMemory) error {
-	return s.db.Create(stm).Error
+func (p *GormMemoryProvider) CreateShortTerm(_ context.Context, stm *models.ShortTermMemory) error {
+	return p.db.Create(stm).Error
 }
 
-func (s *GormMemoryStore) GetShortTermByUser(_ context.Context, userID string) ([]models.ShortTermMemory, error) {
+func (p *GormMemoryProvider) GetShortTermByUser(_ context.Context, userID string) ([]models.ShortTermMemory, error) {
 	var memories []models.ShortTermMemory
-	err := s.db.Where("user_id = ? AND (expires_at IS NULL OR expires_at > ?)", userID, time.Now()).
+	err := p.db.Where("user_id = ? AND (expires_at IS NULL OR expires_at > ?)", userID, time.Now()).
 		Order("created_at DESC").
 		Limit(20).
 		Find(&memories).Error
 	return memories, err
 }
 
-func (s *GormMemoryStore) GetRecentSummaries(_ context.Context, userID string, limit int) ([]models.ShortTermMemory, error) {
+func (p *GormMemoryProvider) GetRecentSummaries(_ context.Context, userID string, limit int) ([]models.ShortTermMemory, error) {
 	var memories []models.ShortTermMemory
-	err := s.db.Where("user_id = ? AND (expires_at IS NULL OR expires_at > ?)", userID, time.Now()).
+	err := p.db.Where("user_id = ? AND (expires_at IS NULL OR expires_at > ?)", userID, time.Now()).
 		Order("created_at DESC").
 		Limit(limit).
 		Find(&memories).Error
 	return memories, err
 }
 
-func (s *GormMemoryStore) CleanupExpiredShortTerm(_ context.Context) error {
-	return s.db.Where("expires_at IS NOT NULL AND expires_at < ?", time.Now()).
+func (p *GormMemoryProvider) CleanupExpiredShortTerm(_ context.Context) error {
+	return p.db.Where("expires_at IS NOT NULL AND expires_at < ?", time.Now()).
 		Delete(&models.ShortTermMemory{}).Error
 }
 
-func (s *GormMemoryStore) AdjustPriority(_ context.Context) error {
-	if err := s.db.Exec(`UPDATE memories SET importance = MIN(5, importance + 1) WHERE last_accessed > datetime('now', '-7 days')`).Error; err != nil {
+func (p *GormMemoryProvider) AdjustPriority(_ context.Context) error {
+	if err := p.db.Exec(`UPDATE memories SET importance = MIN(5, importance + 1) WHERE last_accessed > datetime('now', '-7 days')`).Error; err != nil {
 		return err
 	}
-	return s.db.Exec(`UPDATE memories SET importance = MAX(1, importance - 1) WHERE last_accessed < datetime('now', '-30 days')`).Error
+	return p.db.Exec(`UPDATE memories SET importance = MAX(1, importance - 1) WHERE last_accessed < datetime('now', '-30 days')`).Error
 }
 
-func (s *GormMemoryStore) FindDuplicates(_ context.Context, userID string) ([]models.Memory, error) {
+func (p *GormMemoryProvider) FindDuplicates(_ context.Context, userID string) ([]models.Memory, error) {
 	var memories []models.Memory
-	err := s.db.Where("user_id = ?", userID).
+	err := p.db.Where("user_id = ?", userID).
 		Where("memory_type IN ?", []string{models.MemoryTypeFact, models.MemoryTypePreference}).
 		Find(&memories).Error
 	return memories, err
 }
 
-func (s *GormMemoryStore) DeleteByIDs(_ context.Context, ids []string) error {
-	return s.db.Where("id IN ?", ids).Delete(&models.Memory{}).Error
+func (p *GormMemoryProvider) DeleteByIDs(_ context.Context, ids []string) error {
+	return p.db.Where("id IN ?", ids).Delete(&models.Memory{}).Error
+}
+
+// 保留原有 GormMemoryStore 以兼容旧代码
+var _ MemoryStore = (*GormMemoryProvider)(nil)
+
+// GormMemoryStore 为兼容旧代码,已重定向至 GormMemoryProvider
+type GormMemoryStore = GormMemoryProvider
+
+// NewGormMemoryStore 创建 GORM 记忆存储 (兼容旧接口)
+func NewGormMemoryStore(db *gorm.DB) *GormMemoryStore {
+	return NewGormMemoryProvider(db)
 }

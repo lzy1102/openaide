@@ -325,9 +325,15 @@ func (s *SkillEvolutionService) RunPeriodicEvolution(ctx context.Context) {
 
 func (s *SkillEvolutionService) performPeriodicEvolution(ctx context.Context) {
 	var skills []models.Skill
-	s.db.Where("enabled = ? AND builtin = ?", true, false).Find(&skills)
+	s.db.Where("enabled = ?", true).Find(&skills)
 
 	for _, skill := range skills {
+		if skill.UsageCount >= 5 && skill.SuccessRate >= 0.8 {
+			if skill.LastEvolvedAt == nil || time.Since(*skill.LastEvolvedAt) > 7*24*time.Hour {
+				s.evolveSkillFromSuccess(ctx, &skill)
+			}
+		}
+
 		evolution, err := s.EvolveSkillFromFeedback(ctx, skill.ID)
 		if err != nil {
 			log.Printf("[SkillEvolution] evolution failed for skill %s: %v", skill.ID, err)
@@ -338,6 +344,134 @@ func (s *SkillEvolutionService) performPeriodicEvolution(ctx context.Context) {
 				skill.Name, evolution.ChangeDesc, evolution.Confidence)
 		}
 	}
+}
+
+func (s *SkillEvolutionService) evolveSkillFromSuccess(ctx context.Context, skill *models.Skill) {
+	llmClient, err := s.getLLMClient()
+	if err != nil {
+		return
+	}
+
+	prompt := fmt.Sprintf(`基于以下技能的成功使用记录，生成技能的优化和增强建议。
+
+技能名称：%s
+技能描述：%s
+当前触发词：%v
+使用次数：%d
+成功率：%.1f%%
+
+请提供：
+1. 优化的系统提示词建议（更清晰、更高效）
+2. 补充触发词建议（基于实际使用场景）
+3. 参考材料建议（Level 2 references，可添加的文档/示例路径）
+
+以 JSON 格式返回：
+{
+  "optimized_prompt": "优化后的系统提示词",
+  "additional_triggers": ["补充的触发词"],
+  "level2_references": ["建议添加的参考材料路径"],
+  "confidence": 0.0到1.0的置信度
+}`, skill.Name, skill.Description, skill.Triggers, skill.UsageCount, skill.SuccessRate*100)
+
+	req := &llm.ChatRequest{
+		Messages: []llm.Message{
+			{Role: "system", Content: "你是一个技能优化专家。根据成功使用记录生成增强建议。只返回 JSON 格式。"},
+			{Role: "user", Content: prompt},
+		},
+		Temperature: 0.3,
+		MaxTokens:   600,
+	}
+
+	resp, err := llmClient.Chat(ctx, req)
+	if err != nil {
+		log.Printf("[SkillEvolution] LLM call failed for skill %s: %v", skill.Name, err)
+		return
+	}
+
+	if len(resp.Choices) == 0 {
+		return
+	}
+
+	content := strings.TrimSpace(resp.Choices[0].Message.Content)
+	content = strings.TrimPrefix(content, "```json")
+	content = strings.TrimPrefix(content, "```")
+	content = strings.TrimSuffix(content, "```")
+	content = strings.TrimSpace(content)
+
+	var result struct {
+		OptimizedPrompt    string   `json:"optimized_prompt"`
+		AdditionalTriggers []string `json:"additional_triggers"`
+		Level2References   []string `json:"level2_references"`
+		Confidence         float64  `json:"confidence"`
+	}
+
+	if err := json.Unmarshal([]byte(content), &result); err != nil {
+		log.Printf("[SkillEvolution] failed to parse evolution result for skill %s: %v", skill.Name, err)
+		return
+	}
+
+	if result.Confidence < 0.7 {
+		return
+	}
+
+	updates := map[string]interface{}{
+		"last_evolved_at": time.Now(),
+		"auto_evolved":    true,
+	}
+
+	if result.OptimizedPrompt != "" {
+		updates["system_prompt_override"] = result.OptimizedPrompt
+	}
+
+	if len(result.AdditionalTriggers) > 0 {
+		existingTriggers := skill.Triggers
+		for _, t := range result.AdditionalTriggers {
+			found := false
+			for _, existing := range existingTriggers {
+				if existing == t {
+					found = true
+					break
+				}
+			}
+			if !found {
+				existingTriggers = append(existingTriggers, t)
+			}
+		}
+		triggersJSON, _ := json.Marshal(existingTriggers)
+		var triggers models.JSONSlice
+		json.Unmarshal(triggersJSON, &triggers)
+		updates["triggers"] = triggers
+	}
+
+	if len(result.Level2References) > 0 {
+		existingRefs := skill.Level2References
+		for _, ref := range result.Level2References {
+			found := false
+			if existingRefs != nil {
+				for _, existing := range existingRefs {
+					if existing == ref {
+						found = true
+						break
+					}
+				}
+			}
+			if !found {
+				existingRefs = append(existingRefs, ref)
+			}
+		}
+		refsJSON, _ := json.Marshal(existingRefs)
+		var refs models.JSONSlice
+		json.Unmarshal(refsJSON, &refs)
+		updates["level2_references"] = refs
+	}
+
+	if err := s.db.Model(skill).Updates(updates).Error; err != nil {
+		log.Printf("[SkillEvolution] failed to update skill %s: %v", skill.Name, err)
+		return
+	}
+
+	log.Printf("[SkillEvolution] skill %s evolved successfully (usage: %d, success_rate: %.1f%%)",
+		skill.Name, skill.UsageCount, skill.SuccessRate*100)
 }
 
 func incrementVersion(version string) string {

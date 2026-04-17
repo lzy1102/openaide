@@ -26,6 +26,17 @@ type Skill struct {
 	SourceFormat       string    `json:"source_format"`                                 // 来源格式: "skill_md", "json"
 	SourcePath         string    `json:"source_path"`                                   // 来源文件路径
 	Tags               JSONSlice `json:"tags" gorm:"type:json"`                         // 标签列表
+	
+	// 渐进式披露字段 (Hermes Agent 标准)
+	Level0Summary      string    `json:"level0_summary" gorm:"type:text"`               // Level 0: 概要(~3000 tokens)
+	Level1Content      string    `json:"level1_content" gorm:"type:text"`               // Level 1: 完整内容
+	Level2References   JSONSlice `json:"level2_references" gorm:"type:json"`            // Level 2: 参考材料路径
+	
+	// 技能自我进化字段
+	UsageCount         int       `json:"usage_count" gorm:"default:0"`                  // 使用次数
+	SuccessRate        float64   `json:"success_rate"`                                   // 成功率
+	LastEvolvedAt      *time.Time `json:"last_evolved_at"`                              // 最后进化时间
+	AutoEvolved        bool      `json:"auto_evolved" gorm:"default:false"`             // 是否自动进化
 }
 
 // SkillParameter 技能参数模型
