@@ -1,0 +1,855 @@
+package services
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"openaide/backend/src/models"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+)
+
+// setupTestDBForScheduler 创建测试数据库
+func setupTestDBForScheduler(t *testing.T) *gorm.DB {
+	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+
+	err = db.AutoMigrate(
+		&models.ScheduledTask{},
+		&models.TaskExecution{},
+		&models.TaskReminder{},
+	)
+	require.NoError(t, err)
+
+	return db
+}
+
+// setupTestSchedulerService 创建测试调度服务
+func setupTestSchedulerService(t *testing.T) *SchedulerService {
+	db := setupTestDBForScheduler(t)
+	logger, _ := NewLoggerService(LogLevelInfo, "")
+
+	// 创建必要的依赖服务
+	wsService := NewWebSocketService()
+	workflowSvc := &WorkflowService{
+		// 最小化配置用于测试
+	}
+
+	service := NewSchedulerService(db, logger, wsService, workflowSvc)
+
+	return service
+}
+
+// TestNewSchedulerService 测试服务初始化
+func TestNewSchedulerService(t *testing.T) {
+	service := setupTestSchedulerService(t)
+
+	assert.NotNil(t, service)
+	assert.NotNil(t, service.db)
+	assert.NotNil(t, service.logger)
+	assert.NotNil(t, service.cron)
+	assert.NotNil(t, service.tasks)
+	assert.NotNil(t, service.ctx)
+	assert.NotNil(t, service.cancel)
+}
+
+// TestCreateCronTask 测试创建Cron任务
+func TestCreateCronTask(t *testing.T) {
+	service := setupTestSchedulerService(t)
+	userID := uuid.New().String()
+
+	task := &models.ScheduledTask{
+		Name:        "Test Cron Task",
+		Description: "Test cron task",
+		UserID:      userID,
+		ScheduleType: "cron",
+		CronExpr:    "*/5 * * * *", // 每5分钟
+		TaskType:    "notification",
+		TaskConfig: map[string]interface{}{
+			"title": "Test Notification",
+			"body":  "Test body",
+		},
+	}
+
+	err := service.CreateTask(task)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, task.ID)
+	assert.NotNil(t, task.NextRunAt)
+	assert.Equal(t, "active", task.Status)
+	assert.True(t, task.IsEnabled)
+}
+
+// TestCreateIntervalTask 测试创建间隔任务
+func TestCreateIntervalTask(t *testing.T) {
+	service := setupTestSchedulerService(t)
+	userID := uuid.New().String()
+
+	task := &models.ScheduledTask{
+		Name:         "Test Interval Task",
+		UserID:       userID,
+		ScheduleType: "interval",
+		Interval:     60, // 每60秒
+		TaskType:     "reminder",
+		TaskConfig: map[string]interface{}{
+			"message": "Interval reminder",
+		},
+	}
+
+	err := service.CreateTask(task)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, task.ID)
+	assert.NotNil(t, task.NextRunAt)
+}
+
+// TestCreateOnceTask 测试创建一次性任务
+func TestCreateOnceTask(t *testing.T) {
+	service := setupTestSchedulerService(t)
+	userID := uuid.New().String()
+
+	futureTime := time.Now().Add(5 * time.Minute)
+
+	task := &models.ScheduledTask{
+		Name:       "Test Once Task",
+		UserID:     userID,
+		ScheduleType: "once",
+		ExecuteAt:  &futureTime,
+		TaskType:   "notification",
+		TaskConfig: map[string]interface{}{
+			"title": "One-time notification",
+		},
+	}
+
+	err := service.CreateTask(task)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, task.ID)
+	assert.NotNil(t, task.NextRunAt)
+}
+
+// TestValidateSchedule 测试调度验证
+func TestValidateSchedule(t *testing.T) {
+	service := setupTestSchedulerService(t)
+
+	tests := []struct {
+		name        string
+		task        *models.ScheduledTask
+		expectError bool
+	}{
+		{
+			name: "Valid cron",
+			task: &models.ScheduledTask{
+				ScheduleType: "cron",
+				CronExpr:     "0 9 * * *",
+			},
+			expectError: false,
+		},
+		{
+			name: "Invalid cron",
+			task: &models.ScheduledTask{
+				ScheduleType: "cron",
+				CronExpr:     "invalid cron",
+			},
+			expectError: true,
+		},
+		{
+			name: "Valid interval",
+			task: &models.ScheduledTask{
+				ScheduleType: "interval",
+				Interval:     60,
+			},
+			expectError: false,
+		},
+		{
+			name: "Invalid interval",
+			task: &models.ScheduledTask{
+				ScheduleType: "interval",
+				Interval:     0,
+			},
+			expectError: true,
+		},
+		{
+			name: "Valid once task",
+			task: &models.ScheduledTask{
+				ScheduleType: "once",
+				ExecuteAt:    func() *time.Time { t := time.Now().Add(1 * time.Hour); return &t }(),
+			},
+			expectError: false,
+		},
+		{
+			name: "Past once task",
+			task: &models.ScheduledTask{
+				ScheduleType: "once",
+				ExecuteAt:    func() *time.Time { t := time.Now().Add(-1 * time.Hour); return &t }(),
+			},
+			expectError: true,
+		},
+		{
+			name: "Unsupported type",
+			task: &models.ScheduledTask{
+				ScheduleType: "unsupported",
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := service.validateSchedule(tt.task)
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestCalculateNextRun 测试计算下次运行时间
+func TestCalculateNextRun(t *testing.T) {
+	service := setupTestSchedulerService(t)
+
+	// Cron任务
+	cronTask := &models.ScheduledTask{
+		ScheduleType: "cron",
+		CronExpr:     "0 9 * * *", // 每天9点
+	}
+	nextRun := service.calculateNextRun(cronTask)
+	assert.NotNil(t, nextRun)
+	assert.True(t, nextRun.After(time.Now()))
+
+	// Interval任务
+	intervalTask := &models.ScheduledTask{
+		ScheduleType: "interval",
+		Interval:     300, // 5分钟
+	}
+	nextRun = service.calculateNextRun(intervalTask)
+	assert.NotNil(t, nextRun)
+	expectedMin := time.Now().Add(4 * time.Minute).Minute()
+	expectedMax := time.Now().Add(6 * time.Minute).Minute()
+	assert.GreaterOrEqual(t, nextRun.Minute(), expectedMin)
+	assert.LessOrEqual(t, nextRun.Minute(), expectedMax)
+
+	// Once任务
+	futureTime := time.Now().Add(1 * time.Hour)
+	onceTask := &models.ScheduledTask{
+		ScheduleType: "once",
+		ExecuteAt:    &futureTime,
+	}
+	nextRun = service.calculateNextRun(onceTask)
+	assert.NotNil(t, nextRun)
+	assert.Equal(t, futureTime.Unix(), nextRun.Unix())
+}
+
+// TestPauseTask 测试暂停任务
+func TestPauseTask(t *testing.T) {
+	service := setupTestSchedulerService(t)
+	userID := uuid.New().String()
+
+	task := &models.ScheduledTask{
+		Name:         "Task to pause",
+		UserID:       userID,
+		ScheduleType: "interval",
+		Interval:     60,
+		TaskType:     "reminder",
+	}
+	err := service.CreateTask(task)
+	require.NoError(t, err)
+
+	// 暂停任务
+	err = service.PauseTask(task.ID)
+	assert.NoError(t, err)
+
+	// 验证状态
+	var paused models.ScheduledTask
+	err = service.db.First(&paused, task.ID).Error
+	require.NoError(t, err)
+	assert.Equal(t, "paused", paused.Status)
+	assert.False(t, paused.IsEnabled)
+
+	// 验证不再在调度器中
+	_, exists := service.tasks[task.ID]
+	assert.False(t, exists)
+}
+
+// TestResumeTask 测试恢复任务
+func TestResumeTask(t *testing.T) {
+	service := setupTestSchedulerService(t)
+	userID := uuid.New().String()
+
+	task := &models.ScheduledTask{
+		Name:         "Task to resume",
+		UserID:       userID,
+		ScheduleType: "interval",
+		Interval:     60,
+		TaskType:     "reminder",
+	}
+	err := service.CreateTask(task)
+	require.NoError(t, err)
+
+	// 先暂停
+	service.PauseTask(task.ID)
+
+	// 恢复任务
+	err = service.ResumeTask(task.ID)
+	assert.NoError(t, err)
+
+	// 验证状态
+	var resumed models.ScheduledTask
+	err = service.db.First(&resumed, task.ID).Error
+	require.NoError(t, err)
+	assert.Equal(t, "active", resumed.Status)
+	assert.True(t, resumed.IsEnabled)
+}
+
+// TestDeleteTask 测试删除任务
+func TestDeleteTask(t *testing.T) {
+	service := setupTestSchedulerService(t)
+	userID := uuid.New().String()
+
+	task := &models.ScheduledTask{
+		Name:         "Task to delete",
+		UserID:       userID,
+		ScheduleType: "interval",
+		Interval:     60,
+		TaskType:     "reminder",
+	}
+	err := service.CreateTask(task)
+	require.NoError(t, err)
+
+	// 删除任务
+	err = service.DeleteTask(task.ID)
+	assert.NoError(t, err)
+
+	// 验证已删除
+	var deleted models.ScheduledTask
+	err = service.db.First(&deleted, task.ID).Error
+	assert.Error(t, err)
+	assert.Equal(t, gorm.ErrRecordNotFound, err)
+}
+
+// TestGetTask 测试获取任务
+func TestGetTask(t *testing.T) {
+	service := setupTestSchedulerService(t)
+	userID := uuid.New().String()
+
+	task := &models.ScheduledTask{
+		Name:         "Get test task",
+		UserID:       userID,
+		ScheduleType: "interval",
+		Interval:     60,
+		TaskType:     "reminder",
+	}
+	err := service.CreateTask(task)
+	require.NoError(t, err)
+
+	// 获取任务
+	retrieved, err := service.GetTask(task.ID)
+	assert.NoError(t, err)
+	assert.Equal(t, task.ID, retrieved.ID)
+	assert.Equal(t, "Get test task", retrieved.Name)
+
+	// 测试不存在的任务
+	_, err = service.GetTask("non-existent-id")
+	assert.Error(t, err)
+}
+
+// TestListTasks 测试列出任务
+func TestListTasks(t *testing.T) {
+	service := setupTestSchedulerService(t)
+	userID := uuid.New().String()
+
+	// 创建多个任务
+	for i := 0; i < 3; i++ {
+		task := &models.ScheduledTask{
+			Name:         "List test task",
+			UserID:       userID,
+			ScheduleType: "interval",
+			Interval:     int64(60 * (i + 1)),
+			TaskType:     "reminder",
+		}
+		service.CreateTask(task)
+	}
+
+	// 列出用户任务
+	tasks, err := service.ListTasks(userID)
+	assert.NoError(t, err)
+	assert.GreaterOrEqual(t, len(tasks), 3)
+
+	// 验证都是该用户的任务
+	for _, task := range tasks {
+		assert.Equal(t, userID, task.UserID)
+	}
+
+	// 列出所有任务
+	allTasks, err := service.ListTasks("")
+	assert.NoError(t, err)
+	assert.GreaterOrEqual(t, len(allTasks), len(tasks))
+}
+
+// TestExecuteNow 测试立即执行任务
+func TestExecuteNow(t *testing.T) {
+	service := setupTestSchedulerService(t)
+	userID := uuid.New().String()
+
+	task := &models.ScheduledTask{
+		Name:         "Execute now test",
+		UserID:       userID,
+		ScheduleType: "interval",
+		Interval:     3600,
+		TaskType:     "notification",
+		TaskConfig: map[string]interface{}{
+			"title": "Test",
+			"body":  "Test body",
+		},
+	}
+	err := service.CreateTask(task)
+	require.NoError(t, err)
+
+	// 立即执行
+	execution, err := service.ExecuteNow(task.ID, userID)
+	assert.NoError(t, err)
+	assert.NotNil(t, execution)
+	assert.Equal(t, task.ID, execution.TaskID)
+	assert.Equal(t, "manual", execution.TriggerType)
+	assert.Equal(t, userID, execution.TriggeredBy)
+
+	// 验证执行状态是成功或失败（不是running）
+	assert.NotEqual(t, "running", execution.Status)
+}
+
+// TestGetExecutions 测试获取执行历史
+func TestGetExecutions(t *testing.T) {
+	service := setupTestSchedulerService(t)
+	userID := uuid.New().String()
+
+	task := &models.ScheduledTask{
+		Name:         "Execution history test",
+		UserID:       userID,
+		ScheduleType: "interval",
+		Interval:     60,
+		TaskType:     "notification",
+		TaskConfig: map[string]interface{}{
+			"title": "Test",
+			"body":  "Test",
+		},
+	}
+	err := service.CreateTask(task)
+	require.NoError(t, err)
+
+	// 执行几次
+	for i := 0; i < 3; i++ {
+		service.ExecuteNow(task.ID, userID)
+	}
+
+	// 获取执行历史
+	executions, err := service.GetExecutions(task.ID, 10)
+	assert.NoError(t, err)
+	assert.GreaterOrEqual(t, len(executions), 3)
+
+	// 验证按时间倒序
+	if len(executions) >= 2 {
+		assert.True(t, executions[0].StartedAt.After(executions[1].StartedAt) ||
+			executions[0].StartedAt.Equal(executions[1].StartedAt))
+	}
+}
+
+// TestCreateReminder 测试创建提醒
+func TestCreateReminder(t *testing.T) {
+	service := setupTestSchedulerService(t)
+	userID := uuid.New().String()
+	dialogueID := uuid.New().String()
+
+	reminder := &models.TaskReminder{
+		UserID:     userID,
+		DialogueID: dialogueID,
+		Title:      "Test Reminder",
+		Content:    "Remember to do this",
+		RemindAt:   time.Now().Add(1 * time.Hour),
+		RepeatType: "none",
+		Status:     "pending",
+	}
+
+	err := service.CreateReminder(reminder)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, reminder.ID)
+	assert.Equal(t, "pending", reminder.Status)
+}
+
+// TestSnoozeReminder 测试延后提醒
+func TestSnoozeReminder(t *testing.T) {
+	service := setupTestSchedulerService(t)
+	userID := uuid.New().String()
+
+	reminder := &models.TaskReminder{
+		UserID:   userID,
+		Title:    "Snooze test",
+		Content:  "Test content",
+		RemindAt: time.Now().Add(1 * time.Hour),
+		Status:   "pending",
+	}
+	service.db.Create(reminder)
+
+	originalTime := reminder.RemindAt
+
+	// 延后30分钟
+	err := service.SnoozeReminder(reminder.ID, 30)
+	assert.NoError(t, err)
+
+	// 验证时间已更新
+	var updated models.TaskReminder
+	service.db.First(&updated, reminder.ID)
+	assert.True(t, updated.RemindAt.After(originalTime))
+	assert.Equal(t, "pending", updated.Status)
+	assert.Equal(t, 1, updated.SnoozeCount)
+	assert.NotNil(t, updated.SnoozedAt)
+}
+
+// TestCancelReminder 测试取消提醒
+func TestCancelReminder(t *testing.T) {
+	service := setupTestSchedulerService(t)
+	userID := uuid.New().String()
+
+	reminder := &models.TaskReminder{
+		UserID:   userID,
+		Title:    "Cancel test",
+		Content:  "Test content",
+		RemindAt: time.Now().Add(1 * time.Hour),
+		Status:   "pending",
+	}
+	service.db.Create(reminder)
+
+	// 取消提醒
+	err := service.CancelReminder(reminder.ID)
+	assert.NoError(t, err)
+
+	// 验证状态
+	var cancelled models.TaskReminder
+	service.db.First(&cancelled, reminder.ID)
+	assert.Equal(t, "cancelled", cancelled.Status)
+}
+
+// TestGetReminders 测试获取提醒列表
+func TestGetReminders(t *testing.T) {
+	service := setupTestSchedulerService(t)
+	userID := uuid.New().String()
+
+	// 创建多个提醒
+	reminders := []models.TaskReminder{
+		{
+			UserID:   userID,
+			Title:    "Pending reminder",
+			Content:  "Pending",
+			RemindAt: time.Now().Add(1 * time.Hour),
+			Status:   "pending",
+		},
+		{
+			UserID:   userID,
+			Title:    "Sent reminder",
+			Content:  "Sent",
+			RemindAt: time.Now().Add(-1 * time.Hour),
+			Status:   "sent",
+		},
+	}
+
+	for _, r := range reminders {
+		r.ID = uuid.New().String()
+		service.db.Create(&r)
+	}
+
+	// 获取所有提醒
+	all, err := service.GetReminders(userID, "")
+	assert.NoError(t, err)
+	assert.GreaterOrEqual(t, len(all), 2)
+
+	// 获取待处理提醒
+	pending, err := service.GetReminders(userID, "pending")
+	assert.NoError(t, err)
+	assert.GreaterOrEqual(t, len(pending), 1)
+
+	// 获取已发送提醒
+	sent, err := service.GetReminders(userID, "sent")
+	assert.NoError(t, err)
+	assert.GreaterOrEqual(t, len(sent), 1)
+}
+
+// TestCalculateNextReminder 测试计算下次提醒时间
+func TestCalculateNextReminder(t *testing.T) {
+	service := setupTestSchedulerService(t)
+
+	baseTime := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name       string
+		repeatType string
+		expected   time.Time
+	}{
+		{
+			name:       "Daily",
+			repeatType: "daily",
+			expected:   baseTime.Add(24 * time.Hour),
+		},
+		{
+			name:       "Weekly",
+			repeatType: "weekly",
+			expected:   baseTime.AddDate(0, 0, 7),
+		},
+		{
+			name:       "Monthly",
+			repeatType: "monthly",
+			expected:   baseTime.AddDate(0, 1, 0),
+		},
+		{
+			name:       "Yearly",
+			repeatType: "yearly",
+			expected:   baseTime.AddDate(1, 0, 0),
+		},
+		{
+			name:       "None",
+			repeatType: "none",
+			expected:   time.Time{}, // zero value
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reminder := &models.TaskReminder{
+				RemindAt:   baseTime,
+				RepeatType: tt.repeatType,
+			}
+
+			next := service.calculateNextReminder(reminder)
+
+			if tt.repeatType == "none" {
+				assert.True(t, next.IsZero())
+			} else {
+				assert.NotNil(t, next)
+				assert.Equal(t, tt.expected.Unix(), next.Unix())
+			}
+		})
+	}
+}
+
+// TestTaskExpiration 测试任务过期
+func TestTaskExpiration(t *testing.T) {
+	service := setupTestSchedulerService(t)
+	userID := uuid.New().String()
+
+	// 创建已过期的任务
+	pastTime := time.Now().Add(-1 * time.Hour)
+	task := &models.ScheduledTask{
+		Name:         "Expired task",
+		UserID:       userID,
+		ScheduleType: "interval",
+		Interval:     60,
+		TaskType:     "reminder",
+		ExpiresAt:    &pastTime,
+	}
+	err := service.CreateTask(task)
+	require.NoError(t, err)
+
+	// 尝试执行 - 应该因为过期而暂停
+	service.executeTask(task.ID)
+
+	// 验证任务已暂停
+	var updated models.ScheduledTask
+	service.db.First(&updated, task.ID)
+	assert.Equal(t, "paused", updated.Status)
+}
+
+// TestTaskMaxRuns 测试最大运行次数
+func TestTaskMaxRuns(t *testing.T) {
+	service := setupTestSchedulerService(t)
+	userID := uuid.New().String()
+
+	task := &models.ScheduledTask{
+		Name:         "Max runs test",
+		UserID:       userID,
+		ScheduleType: "interval",
+		Interval:     1,
+		TaskType:     "notification",
+		TaskConfig: map[string]interface{}{
+			"title": "Test",
+			"body":  "Test",
+		},
+		MaxRuns:  3,
+		RunCount: 2, // 已运行2次
+	}
+	service.db.Create(task)
+
+	// 设置为活跃状态
+	task.Status = "active"
+	task.IsEnabled = true
+	service.db.Save(task)
+
+	// 执行第3次
+	service.executeTask(task.ID)
+
+	// 验证运行次数增加
+	var updated models.ScheduledTask
+	service.db.First(&updated, task.ID)
+	assert.Equal(t, int64(3), updated.RunCount)
+	assert.Equal(t, "paused", updated.Status) // 达到最大次数后暂停
+}
+
+// TestNotificationTask 测试通知任务
+func TestNotificationTask(t *testing.T) {
+	service := setupTestSchedulerService(t)
+
+	task := &models.ScheduledTask{
+		Name:     "Notification test",
+		TaskType: "notification",
+		TaskConfig: map[string]interface{}{
+			"title": "Test Title",
+			"body":  "Test Body",
+		},
+	}
+
+	result, err := service.runNotificationTask(task)
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, "Test Title", result["title"])
+	assert.Equal(t, "Test Body", result["body"])
+}
+
+// TestReminderTask 测试提醒任务
+func TestReminderTask(t *testing.T) {
+	service := setupTestSchedulerService(t)
+
+	task := &models.ScheduledTask{
+		Name:   "Reminder test",
+		TaskType: "reminder",
+		UserID: uuid.New().String(),
+		TaskConfig: map[string]interface{}{
+			"message": "Test reminder message",
+		},
+	}
+
+	result, err := service.runReminderTask(task)
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, "Test reminder message", result["message"])
+	assert.True(t, result["sent"].(bool))
+}
+
+// TestWorkflowTask 测试工作流任务
+func TestWorkflowTask(t *testing.T) {
+	service := setupTestSchedulerService(t)
+
+	// 注意：这需要有效的WorkflowService和workflow_id
+	// 在实际环境中需要mock或创建测试工作流
+	task := &models.ScheduledTask{
+		Name:     "Workflow test",
+		TaskType: "workflow",
+		TaskConfig: map[string]interface{}{
+			"workflow_id": "test-workflow-id",
+		},
+	}
+
+	_, err := service.runWorkflowTask(task)
+	// 可能会失败因为workflow不存在，这是预期的
+	assert.NotNil(t, err)
+}
+
+// TestLoadActiveTasks 测试加载活跃任务
+func TestLoadActiveTasks(t *testing.T) {
+	service := setupTestSchedulerService(t)
+	userID := uuid.New().String()
+
+	// 创建一些活跃任务
+	for i := 0; i < 3; i++ {
+		task := &models.ScheduledTask{
+			Name:         "Active task",
+			UserID:       userID,
+			ScheduleType: "interval",
+			Interval:     int64(60 * (i + 1)),
+			TaskType:     "reminder",
+			Status:       "active",
+			IsEnabled:    true,
+		}
+		service.db.Create(task)
+	}
+
+	// 创建非活跃任务
+	inactiveTask := &models.ScheduledTask{
+		Name:         "Inactive task",
+		UserID:       userID,
+		ScheduleType: "interval",
+		Interval:     60,
+		TaskType:     "reminder",
+		Status:       "paused",
+		IsEnabled:    false,
+	}
+	service.db.Create(inactiveTask)
+
+	// 加载活跃任务
+	service.loadActiveTasks()
+
+	// 验证至少有一些任务被加载
+	// 注意：由于服务初始化时已经加载过，这里只是验证方法不报错
+	assert.NotNil(t, service.tasks)
+}
+
+// TestStop 测试停止服务
+func TestStop(t *testing.T) {
+	service := setupTestSchedulerService(t)
+
+	// 停止服务（不应该panic）
+	service.Stop()
+
+	// 验证cron已停止
+	assert.False(t, service.cron.IsRunning())
+}
+
+// BenchmarkTaskCreation 性能测试
+func BenchmarkTaskCreation(b *testing.B) {
+	service := setupTestSchedulerService(&testing.T{})
+	userID := uuid.New().String()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		task := &models.ScheduledTask{
+			Name:         "Benchmark task",
+			UserID:       userID,
+			ScheduleType: "interval",
+			Interval:     60,
+			TaskType:     "reminder",
+		}
+		service.CreateTask(task)
+	}
+}
+
+// TestConcurrentTaskOperations 测试并发操作
+func TestConcurrentTaskOperations(t *testing.T) {
+	service := setupTestSchedulerService(t)
+	userID := uuid.New().String()
+
+	done := make(chan bool)
+
+	// 并发创建任务
+	for i := 0; i < 10; i++ {
+		go func(index int) {
+			task := &models.ScheduledTask{
+				Name:         "Concurrent task",
+				UserID:       userID,
+				ScheduleType: "interval",
+				Interval:     int64(60 * (index + 1)),
+				TaskType:     "reminder",
+			}
+			service.CreateTask(task)
+			done <- true
+		}(i)
+	}
+
+	// 等待所有goroutine
+	for i := 0; i < 10; i++ {
+		<-done
+	}
+
+	// 验证所有任务都已创建
+	tasks, _ := service.ListTasks(userID)
+	assert.GreaterOrEqual(t, len(tasks), 10)
+}

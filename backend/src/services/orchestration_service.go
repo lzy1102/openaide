@@ -1,0 +1,807 @@
+package services
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"time"
+
+	"openaide/backend/src/models"
+	"openaide/backend/src/services/llm"
+	"openaide/backend/src/services/orchestration"
+
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+)
+
+// OrchestrationService 智能编排服务 - 统一入口
+// 整合 TaskAnalyzer -> TeamPlanner -> ConfirmationFlow -> TeamOrchestrator 的完整流程
+type OrchestrationService struct {
+	db           *gorm.DB
+	llmClient    llm.LLMClient
+	coordinator  *TeamCoordinatorService
+
+	// 编排组件
+	taskAnalyzer   *orchestration.TaskAnalyzer
+	teamPlanner    *orchestration.TeamPlanner
+	confirmFlow    *orchestration.ConfirmationFlow
+	teamOrchestrator *orchestration.TeamOrchestrator
+
+	// 运行中的任务
+	sessions      map[string]*OrchestrationSession
+	sessionMutex  sync.RWMutex
+
+	// 配置
+	config        OrchestrationConfig
+}
+
+// OrchestrationConfig 编排配置
+type OrchestrationConfig struct {
+	DefaultLLMModel      string        `json:"default_llm_model"`
+	MaxConcurrentTasks   int           `json:"max_concurrent_tasks"`
+	SessionTimeout       time.Duration `json:"session_timeout"`
+	AutoApproveThreshold float64       `json:"auto_approve_threshold"` // 置信度高于此值自动批准
+	EnableCache          bool          `json:"enable_cache"`
+}
+
+// OrchestrationSession 编排会话
+type OrchestrationSession struct {
+	ID            string                      `json:"id"`
+	UserID        string                      `json:"user_id"`
+	UserMessage   string                      `json:"user_message"`
+	Status        string                      `json:"status"` // analyzing, planning, confirming, executing, completed, failed
+	CreatedAt     time.Time                   `json:"created_at"`
+	UpdatedAt     time.Time                   `json:"updated_at"`
+
+	// 各阶段数据
+	Analysis      *orchestration.TaskAnalysis  `json:"analysis,omitempty"`
+	Plan          *orchestration.TeamPlan      `json:"plan,omitempty"`
+	Confirmation  *orchestration.ConfirmationRequest `json:"confirmation,omitempty"`
+	Execution     *orchestration.ExecutionResult `json:"execution,omitempty"`
+
+	// 错误信息
+	Error         string                      `json:"error,omitempty"`
+
+	// 上下文
+	Context       context.Context
+	Cancel        context.CancelFunc
+}
+
+// OrchestrationRequest 编排请求
+type OrchestrationRequest struct {
+	UserMessage   string                 `json:"user_message" binding:"required"`
+	UserID        string                 `json:"user_id" binding:"required"`
+	Context       map[string]interface{} `json:"context,omitempty"`
+	Options       map[string]interface{} `json:"options,omitempty"`
+}
+
+// OrchestrationResponse 编排响应
+type OrchestrationResponse struct {
+	SessionID     string                      `json:"session_id"`
+	Status        string                      `json:"status"`
+	Stage         string                      `json:"stage"`
+	Data          interface{}                 `json:"data,omitempty"`
+	RequireAction bool                        `json:"require_action,omitempty"` // 是否需要用户操作
+	ActionType    string                      `json:"action_type,omitempty"`    // approve, adjust, input
+	ActionPrompt  string                      `json:"action_prompt,omitempty"`
+	CreatedAt     time.Time                   `json:"created_at"`
+}
+
+// NewOrchestrationService 创建智能编排服务
+func NewOrchestrationService(db *gorm.DB, llmClient llm.LLMClient, coordinator *TeamCoordinatorService, executor *AgentExecutor) *OrchestrationService {
+	// 创建 LLM 适配器
+	llmAdapter := &llmServiceAdapter{client: llmClient}
+
+	// 创建编排组件
+	taskAnalyzer := orchestration.NewTaskAnalyzer(llmClient, "gpt-4")
+	teamPlanner := orchestration.NewTeamPlanner(llmAdapter)
+	confirmFlow := orchestration.NewConfirmationFlow()
+
+	// 创建执行器适配器
+	var executorAdapter orchestration.AgentExecutorInterface
+	if executor != nil {
+		executorAdapter = &agentExecutorAdapter{executor: executor}
+	}
+
+	// 创建协调器适配器
+	coordinatorAdapter := &coordinatorServiceAdapter{coordinator: coordinator}
+	teamOrchestrator := orchestration.NewTeamOrchestrator(db, coordinatorAdapter, executorAdapter)
+
+	return &OrchestrationService{
+		db:              db,
+		llmClient:       llmClient,
+		coordinator:     coordinator,
+		taskAnalyzer:    taskAnalyzer,
+		teamPlanner:     teamPlanner,
+		confirmFlow:     confirmFlow,
+		teamOrchestrator: teamOrchestrator,
+		sessions:        make(map[string]*OrchestrationSession),
+		config: OrchestrationConfig{
+			DefaultLLMModel:      "gpt-4",
+			MaxConcurrentTasks:   5,
+			SessionTimeout:       30 * time.Minute,
+			AutoApproveThreshold: 0.85,
+			EnableCache:          true,
+		},
+	}
+}
+
+// ProcessUserMessage 处理用户消息 - 主入口
+func (s *OrchestrationService) ProcessUserMessage(ctx context.Context, req *OrchestrationRequest) (*OrchestrationResponse, error) {
+	// 创建会话
+	session := &OrchestrationSession{
+		ID:          uuid.New().String(),
+		UserID:      req.UserID,
+		UserMessage: req.UserMessage,
+		Status:      "analyzing",
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+	session.Context, session.Cancel = context.WithTimeout(ctx, s.config.SessionTimeout)
+
+	s.sessionMutex.Lock()
+	s.sessions[session.ID] = session
+	s.sessionMutex.Unlock()
+
+	// 阶段 1: 任务分析
+	analysis, err := s.analyzeTask(ctx, session, req)
+	if err != nil {
+		return s.errorResponse(session, fmt.Sprintf("任务分析失败: %w", err)), nil
+	}
+
+	// 阶段 2: 团队规划
+	plan, err := s.planTeam(ctx, session, analysis)
+	if err != nil {
+		return s.errorResponse(session, fmt.Sprintf("团队规划失败: %w", err)), nil
+	}
+
+	// 阶段 3: 确认流程
+	confirmation, err := s.createConfirmation(ctx, session, plan)
+	if err != nil {
+		return s.errorResponse(session, fmt.Sprintf("创建确认流程失败: %w", err)), nil
+	}
+
+	// 检查是否可以自动批准
+	confidence := s.taskAnalyzer.EstimateConfidence(analysis)
+	if confidence >= s.config.AutoApproveThreshold {
+		// 自动批准，直接执行
+		return s.autoExecute(session, confirmation)
+	}
+
+	// 需要用户确认
+	session.Status = "confirming"
+	session.Confirmation = confirmation
+
+	proposalText := s.confirmFlow.FormatProposal(confirmation.Proposal)
+
+	return &OrchestrationResponse{
+		SessionID:     session.ID,
+		Status:        "awaiting_confirmation",
+		Stage:         "confirmation",
+		Data:          confirmation,
+		RequireAction: true,
+		ActionType:    "approve",
+		ActionPrompt:  proposalText + "\n\n回复 'yes' 确认执行，或 'no' 取消任务。",
+		CreatedAt:     time.Now(),
+	}, nil
+}
+
+// HandleUserAction 处理用户操作
+func (s *OrchestrationService) HandleUserAction(ctx context.Context, sessionID, action, comment string) (*OrchestrationResponse, error) {
+	s.sessionMutex.RLock()
+	session, exists := s.sessions[sessionID]
+	s.sessionMutex.RUnlock()
+
+	if !exists {
+		return nil, fmt.Errorf("session not found: %s", sessionID)
+	}
+
+	// 处理确认操作
+	switch action {
+	case "approve", "yes", "y":
+		return s.executePlan(ctx, session)
+
+	case "reject", "no", "n":
+		session.Status = "cancelled"
+		session.UpdatedAt = time.Now()
+		return &OrchestrationResponse{
+			SessionID: sessionID,
+			Status:    "cancelled",
+			Stage:     "confirmation",
+			Data:      "任务已取消",
+			CreatedAt: time.Now(),
+		}, nil
+
+		case "adjust":
+			return s.adjustPlan(ctx, session, comment)
+
+	default:
+		return nil, fmt.Errorf("unknown action: %s", action)
+	}
+}
+
+// GetSessionStatus 获取会话状态
+func (s *OrchestrationService) GetSessionStatus(sessionID string) (*OrchestrationSession, error) {
+	s.sessionMutex.RLock()
+	defer s.sessionMutex.RUnlock()
+
+	session, exists := s.sessions[sessionID]
+	if !exists {
+		return nil, fmt.Errorf("session not found: %s", sessionID)
+	}
+
+	return session, nil
+}
+
+// GetExecutionProgress 获取执行进度
+func (s *OrchestrationService) GetExecutionProgress(sessionID string) (*OrchestrationResponse, error) {
+	session, err := s.GetSessionStatus(sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	if session.Status != "executing" {
+		return &OrchestrationResponse{
+			SessionID: sessionID,
+			Status:    session.Status,
+			Stage:     session.Status,
+			CreatedAt: time.Now(),
+		}, nil
+	}
+
+	// 获取实际执行进度
+	progress := s.getExecutionProgress(session)
+
+	return &OrchestrationResponse{
+		SessionID: sessionID,
+		Status:    "executing",
+		Stage:     "execution",
+		Data:      progress,
+		CreatedAt: time.Now(),
+	}, nil
+}
+
+// CancelSession 取消会话
+func (s *OrchestrationService) CancelSession(sessionID string) error {
+	s.sessionMutex.Lock()
+	defer s.sessionMutex.Unlock()
+
+	session, exists := s.sessions[sessionID]
+	if !exists {
+		return fmt.Errorf("session not found: %s", sessionID)
+	}
+
+	if session.Cancel != nil {
+		session.Cancel()
+	}
+
+	session.Status = "cancelled"
+	session.UpdatedAt = time.Now()
+
+	return nil
+}
+
+// CleanupSessions 清理过期会话
+func (s *OrchestrationService) CleanupSessions() {
+	s.sessionMutex.Lock()
+	defer s.sessionMutex.Unlock()
+
+	now := time.Now()
+	for id, session := range s.sessions {
+		if now.Sub(session.UpdatedAt) > s.config.SessionTimeout {
+			if session.Cancel != nil {
+				session.Cancel()
+			}
+			delete(s.sessions, id)
+		}
+	}
+}
+
+// ==================== 公开查询方法 ====================
+
+// ListSessions 列出用户的所有会话
+func (s *OrchestrationService) ListSessions(userID string) []*OrchestrationSession {
+	s.sessionMutex.RLock()
+	defer s.sessionMutex.RUnlock()
+
+	var result []*OrchestrationSession
+	for _, session := range s.sessions {
+		if userID == "" || session.UserID == userID {
+			result = append(result, session)
+		}
+	}
+	return result
+}
+
+// AnalyzeTask 仅分析任务（不执行）
+func (s *OrchestrationService) AnalyzeTask(ctx context.Context, req *OrchestrationRequest) (*orchestration.TaskAnalysis, error) {
+	session := &OrchestrationSession{
+		ID:          uuid.New().String(),
+		UserID:      req.UserID,
+		UserMessage: req.UserMessage,
+		Status:      "analyzing",
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+	analysis, err := s.analyzeTask(ctx, session, req)
+	if err != nil {
+		return nil, err
+	}
+	// 分析完成后清理临时会话
+	return analysis, nil
+}
+
+// PlanTeam 仅生成团队方案（不执行）
+func (s *OrchestrationService) PlanTeam(ctx context.Context, req *OrchestrationRequest) (*orchestration.TeamPlan, error) {
+	session := &OrchestrationSession{
+		ID:          uuid.New().String(),
+		UserID:      req.UserID,
+		UserMessage: req.UserMessage,
+		Status:      "planning",
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+	analysis, err := s.analyzeTask(ctx, session, req)
+	if err != nil {
+		return nil, err
+	}
+	plan, err := s.planTeam(ctx, session, analysis)
+	if err != nil {
+		return nil, err
+	}
+	return plan, nil
+}
+
+// GetTeamTemplates 列出所有可用团队模板
+func (s *OrchestrationService) GetTeamTemplates() []string {
+	return s.teamPlanner.ListTemplates()
+}
+
+// GetTeamTemplate 获取指定团队模板
+func (s *OrchestrationService) GetTeamTemplate(name string) (*orchestration.TeamTemplate, error) {
+	return s.teamPlanner.GetTemplate(name)
+}
+
+// ==================== 私有方法 ====================
+
+// analyzeTask 任务分析阶段
+func (s *OrchestrationService) analyzeTask(ctx context.Context, session *OrchestrationSession, req *OrchestrationRequest) (*orchestration.TaskAnalysis, error) {
+	session.Status = "analyzing"
+	session.UpdatedAt = time.Now()
+
+	analysisReq := &orchestration.AnalysisRequest{
+		UserMessage: req.UserMessage,
+		Context:     req.Context,
+	}
+
+	analysis, err := s.taskAnalyzer.Analyze(ctx, analysisReq)
+	if err != nil {
+		return nil, err
+	}
+
+	session.Analysis = analysis
+	return analysis, nil
+}
+
+// planTeam 团队规划阶段
+func (s *OrchestrationService) planTeam(ctx context.Context, session *OrchestrationSession, analysis *orchestration.TaskAnalysis) (*orchestration.TeamPlan, error) {
+	session.Status = "planning"
+	session.UpdatedAt = time.Now()
+
+	// 转换为 TeamPlanner 分析格式
+	plannerAnalysis := &orchestration.TeamPlannerAnalysis{
+		Goal:         analysis.Description,
+		Description:  analysis.Description,
+		Type:         analysis.TaskType,
+		Complexity:   analysis.Complexity,
+		Requirements: analysis.Dependencies,
+		Deliverables: analysis.Skills,
+	}
+
+	plan, err := s.teamPlanner.PlanTeam(ctx, plannerAnalysis)
+	if err != nil {
+		return nil, err
+	}
+
+	session.Plan = plan
+	return plan, nil
+}
+
+// createConfirmation 创建确认流程
+func (s *OrchestrationService) createConfirmation(ctx context.Context, session *OrchestrationSession, plan *orchestration.TeamPlan) (*orchestration.ConfirmationRequest, error) {
+	session.Status = "confirming"
+	session.UpdatedAt = time.Now()
+
+	// 创建执行方案
+	proposal := s.buildProposal(session, plan)
+
+	confirmation, err := s.confirmFlow.CreateConfirmationRequest(ctx, session.ID, session.UserID, proposal)
+	if err != nil {
+		return nil, err
+	}
+
+	return confirmation, nil
+}
+
+// buildProposal 构建执行方案
+func (s *OrchestrationService) buildProposal(session *OrchestrationSession, plan *orchestration.TeamPlan) *orchestration.ExecutionProposal {
+	// 转换任务为执行步骤
+	steps := make([]*orchestration.ExecutionStep, len(plan.Tasks))
+	for i, task := range plan.Tasks {
+		steps[i] = &orchestration.ExecutionStep{
+			ID:          task.ID,
+			Order:       i,
+			Name:        task.Title,
+			Description: task.Description,
+			AssignedTo:  task.AssignedTo,
+			Duration:    task.Estimated,
+			Dependencies: task.Dependencies,
+		}
+	}
+
+	// 转换角色为团队成员
+	members := make([]*orchestration.TeamMember, len(plan.Roles))
+	for i, role := range plan.Roles {
+		members[i] = &orchestration.TeamMember{
+			Role:   role.Role,
+			Skills: role.Skills,
+			Model:  role.LLMModel,
+		}
+	}
+
+	return &orchestration.ExecutionProposal{
+		TaskSummary:       session.UserMessage,
+		TaskType:          session.Analysis.TaskType,
+		Priority:          session.Analysis.Priority,
+		EstimatedDuration: plan.EstimatedTime,
+		TeamConfig:        &orchestration.TeamConfiguration{Members: members},
+		ExecutionPlan:     steps,
+	}
+}
+
+// autoExecute 自动执行
+func (s *OrchestrationService) autoExecute(session *OrchestrationSession, confirmation *orchestration.ConfirmationRequest) (*OrchestrationResponse, error) {
+	// 标记为已批准
+	confirmation.State = orchestration.StateApproved
+	confirmation.Response = &orchestration.ConfirmationResponse{
+		Action:     orchestration.ActionApprove,
+		Comment:    "Auto-approved by high confidence",
+		RespondedAt: time.Now(),
+	}
+
+	return s.executePlan(session.Context, session)
+}
+
+// executePlan 执行计划
+func (s *OrchestrationService) executePlan(ctx context.Context, session *OrchestrationSession) (*OrchestrationResponse, error) {
+	session.Status = "executing"
+	session.UpdatedAt = time.Now()
+
+	// 转换为团队配置
+	teamConfig := s.teamPlanner.ConvertToTeamConfig(session.Plan)
+
+	// 创建团队
+	team, err := s.teamOrchestrator.CreateTeamFromPlan(&orchestration.OrchestratorTeamPlan{
+		ID:          uuid.New().String(),
+		Name:        teamConfig.Team.Name,
+		Description: teamConfig.Team.Description,
+		Goal:        session.Analysis.Description,
+		Strategy:    "sequential",
+		Members:     convertMembersToPlan(teamConfig.Members),
+		Tasks:       convertTasksToPlan(teamConfig.Tasks),
+		Config:      teamConfig.Team.Config,
+		CreatedAt:   time.Now(),
+	})
+	if err != nil {
+		return s.errorResponse(session, fmt.Sprintf("创建团队失败: %w", err)), nil
+	}
+
+	// 启动执行
+	if err := s.teamOrchestrator.StartExecution(team.ID); err != nil {
+		return s.errorResponse(session, fmt.Sprintf("启动执行失败: %w", err)), nil
+	}
+
+	// 异步监控执行
+	go s.monitorExecution(session, team.ID)
+
+	return &OrchestrationResponse{
+		SessionID: session.ID,
+		Status:    "executing",
+		Stage:     "execution",
+		Data: map[string]interface{}{
+			"team_id":   team.ID,
+			"team_name": team.Name,
+			"message":   "团队已创建并开始执行",
+		},
+		CreatedAt: time.Now(),
+	}, nil
+}
+
+// monitorExecution 监控执行
+func (s *OrchestrationService) monitorExecution(session *OrchestrationSession, teamID string) {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-session.Context.Done():
+			return
+		case <-ticker.C:
+			// 检查执行状态
+			report, err := s.teamOrchestrator.MonitorProgress(teamID)
+			if err != nil {
+				session.Error = err.Error()
+				session.Status = "failed"
+				session.UpdatedAt = time.Now()
+				return
+			}
+
+			// 检查是否完成
+			if report.TaskStatus.Completed == report.TaskStatus.Total {
+				result, _ := s.teamOrchestrator.AggregateResults(teamID)
+				session.Execution = result
+				session.Status = "completed"
+				session.UpdatedAt = time.Now()
+				return
+			}
+		}
+	}
+}
+
+// errorResponse 错误响应
+func (s *OrchestrationService) errorResponse(session *OrchestrationSession, errMsg string) *OrchestrationResponse {
+	session.Status = "failed"
+	session.Error = errMsg
+	session.UpdatedAt = time.Now()
+
+	return &OrchestrationResponse{
+		SessionID: session.ID,
+		Status:    "error",
+		Stage:     session.Status,
+		Data:      errMsg,
+		CreatedAt: time.Now(),
+	}
+}
+
+// ==================== 辅助类型 ====================
+
+// llmServiceAdapter LLM 服务适配器
+type llmServiceAdapter struct {
+	client llm.LLMClient
+}
+
+// Chat 实现 LLMClient 接口
+func (a *llmServiceAdapter) Chat(ctx context.Context, messages []map[string]string, options map[string]interface{}) (map[string]interface{}, error) {
+	// 转换消息格式
+	llmMessages := make([]llm.Message, len(messages))
+	for i, msg := range messages {
+		llmMessages[i] = llm.Message{
+			Role:    msg["role"],
+			Content: msg["content"],
+		}
+	}
+
+	req := &llm.ChatRequest{
+		Messages:    llmMessages,
+		Model:       "gpt-4",
+		Temperature: 0.7,
+	}
+
+	if temp, ok := options["temperature"].(float64); ok {
+		req.Temperature = temp
+	}
+
+	resp, err := a.client.Chat(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	// 转换响应格式
+	return map[string]interface{}{
+		"choices": []map[string]interface{}{
+			{
+				"message": map[string]interface{}{
+					"content": resp.Choices[0].Message.Content,
+				},
+			},
+		},
+		"usage": resp.Usage,
+	}, nil
+}
+
+// convertMembersToPlan 转换成员为计划格式
+func convertMembersToPlan(members []models.TeamMember) []orchestration.TeamMemberPlan {
+	result := make([]orchestration.TeamMemberPlan, len(members))
+	for i, m := range members {
+		skills := make([]string, len(m.Capabilities))
+		for j, c := range m.Capabilities {
+			skills[j] = c.Name
+		}
+		result[i] = orchestration.TeamMemberPlan{
+			ID:           m.ID,
+			Name:         m.Name,
+			Role:         m.Role,
+			Capabilities: skills,
+			LLMModel:     "gpt-4", // 默认模型
+		}
+	}
+	return result
+}
+
+// convertTasksToPlan 转换任务为计划格式
+func convertTasksToPlan(tasks []models.Task) []orchestration.TaskPlanItem {
+	result := make([]orchestration.TaskPlanItem, len(tasks))
+	for i, t := range tasks {
+		depIDs := make([]string, len(t.Dependencies))
+		for j, d := range t.Dependencies {
+			depIDs[j] = d.DependsOn
+		}
+		result[i] = orchestration.TaskPlanItem{
+			ID:           t.ID,
+			Title:        t.Title,
+			Description:  t.Description,
+			Type:         t.Type,
+			Priority:     t.Priority,
+			AssignedTo:   t.AssignedTo,
+			Dependencies: depIDs,
+			Estimated:    time.Duration(t.Estimated) * time.Minute,
+		}
+	}
+	return result
+}
+
+// coordinatorServiceAdapter 协调器服务适配器
+type coordinatorServiceAdapter struct {
+	coordinator *TeamCoordinatorService
+}
+
+// agentExecutorAdapter Agent 执行器适配器
+type agentExecutorAdapter struct {
+	executor *AgentExecutor
+}
+
+// Execute 实现 AgentExecutorInterface
+func (a *agentExecutorAdapter) Execute(ctx context.Context, req *orchestration.AgentExecRequest) (*orchestration.AgentExecResult, error) {
+	innerReq := &TaskExecRequest{
+		TaskID:          req.TaskID,
+		TaskTitle:       req.TaskTitle,
+		TaskDescription: req.TaskDescription,
+		AgentName:       req.AgentName,
+		AgentRole:       req.AgentRole,
+		AgentPrompt:     req.AgentPrompt,
+		ModelID:         req.ModelID,
+		Context:         req.Context,
+		TeamGoal:        req.TeamGoal,
+	}
+
+	result, err := a.executor.Execute(ctx, innerReq)
+	if err != nil {
+		return nil, err
+	}
+
+	return &orchestration.AgentExecResult{
+		Success:    result.Success,
+		Output:     result.Output,
+		Summary:    result.Summary,
+		ToolCalls:  result.ToolCalls,
+		TokensUsed: result.TokensUsed,
+	}, nil
+}
+
+// AssignTask 分配任务
+func (a *coordinatorServiceAdapter) AssignTask(teamID, taskID, agentID string) error {
+	return a.coordinator.AssignTask(taskID, agentID)
+}
+
+// CompleteTask 完成任务
+func (a *coordinatorServiceAdapter) CompleteTask(teamID, taskID string, result map[string]interface{}) error {
+	// TeamCoordinatorService 没有 CompleteTask 方法，我们使用 UpdateTaskStatus
+	return a.coordinator.UpdateTaskStatus(taskID, "completed", "")
+}
+
+// FailTask 任务失败
+func (a *coordinatorServiceAdapter) FailTask(teamID, taskID string, errMsg string) error {
+	return a.coordinator.UpdateTaskStatus(taskID, "failed", errMsg)
+}
+
+// adjustPlan 方案调整
+func (s *OrchestrationService) adjustPlan(ctx context.Context, session *OrchestrationSession, comment string) (*OrchestrationResponse, error) {
+	if comment == "" {
+		return nil, fmt.Errorf("adjustment comment is required")
+	}
+
+	session.Status = "adjusting"
+	session.UpdatedAt = time.Now()
+
+	// 用 LLM 根据用户反馈调整计划
+	adjustPrompt := fmt.Sprintf(
+		"用户对以下执行方案提出了调整意见，请根据反馈修改方案。\n\n原始任务: %s\n\n当前计划:\n",
+		session.UserMessage,
+	)
+
+	if session.Plan != nil {
+		for _, task := range session.Plan.Tasks {
+			adjustPrompt += fmt.Sprintf("- [%s] %s (分配给: %s)\n", task.ID, task.Title, task.AssignedTo)
+		}
+	}
+
+	adjustPrompt += fmt.Sprintf("\n用户调整意见: %s\n\n请分析用户意见，返回 JSON 格式的调整建议（包含 adjusted_tasks, removed_tasks, added_tasks 字段）。", comment)
+
+	req := &llm.ChatRequest{
+		Messages: []llm.Message{
+			{Role: "system", Content: "你是一个任务规划助手，根据用户反馈调整执行计划。"},
+			{Role: "user", Content: adjustPrompt},
+		},
+		Model:       s.config.DefaultLLMModel,
+		Temperature: 0.3,
+	}
+
+	resp, err := s.llmClient.Chat(ctx, req)
+	if err != nil {
+		return s.errorResponse(session, fmt.Sprintf("调整方案失败: %w", err)), nil
+	}
+
+	if len(resp.Choices) == 0 {
+		return s.errorResponse(session, "调整方案失败: LLM 无响应"), nil
+	}
+
+	adjustedContent := resp.Choices[0].Message.Content
+
+	return &OrchestrationResponse{
+		SessionID:     session.ID,
+		Status:        "adjusted",
+		Stage:         "confirmation",
+		Data:          adjustedContent,
+		RequireAction: true,
+		ActionType:    "approve",
+		ActionPrompt:  adjustedContent + "\n\n调整后的方案如上，回复 'yes' 确认执行，或继续提出修改意见。",
+		CreatedAt:     time.Now(),
+	}, nil
+}
+
+// getExecutionProgress 获取实际执行进度
+func (s *OrchestrationService) getExecutionProgress(session *OrchestrationSession) map[string]interface{} {
+	progress := map[string]interface{}{
+		"progress":    0,
+		"total_tasks":  0,
+		"completed":    0,
+		"failed":       0,
+		"running":      0,
+		"pending":      0,
+		"message":      "等待执行...",
+	}
+
+	if session.Plan == nil {
+		return progress
+	}
+
+	totalTasks := len(session.Plan.Tasks)
+	progress["total_tasks"] = totalTasks
+
+	if session.Execution != nil {
+		summary := session.Execution.TaskSummary
+		progress["completed"] = summary.Completed
+		progress["failed"] = summary.Failed
+		progress["running"] = 0
+		progress["pending"] = totalTasks - summary.Completed - summary.Failed
+
+		if totalTasks > 0 {
+			pct := float64(summary.Completed) / float64(totalTasks) * 100
+			progress["progress"] = pct
+		}
+
+		if summary.Completed+summary.Failed >= totalTasks {
+			progress["message"] = "执行完成"
+		} else {
+			progress["message"] = fmt.Sprintf("正在执行中... (%d/%d)", summary.Completed+summary.Failed, totalTasks)
+		}
+	} else if session.Status == "executing" {
+		// 执行中但还没有结果
+		progress["progress"] = 10
+		progress["pending"] = totalTasks
+		progress["running"] = 1
+		progress["message"] = "团队创建中，准备执行..."
+	}
+
+	return progress
+}

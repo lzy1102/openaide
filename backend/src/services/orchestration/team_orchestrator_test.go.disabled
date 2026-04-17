@@ -1,0 +1,626 @@
+package orchestration
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"assistant/backend/src/models"
+	"assistant/backend/src/services"
+	"assistant/backend/src/services/llm"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+)
+
+// setupTestDB 创建测试数据库
+func setupTestDB(t *testing.T) *gorm.DB {
+	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+
+	// 自动迁移所有模型
+	err = db.AutoMigrate(
+		&models.Team{},
+		&models.TeamMember{},
+		&models.TeamMessage{},
+		&models.TeamActivity{},
+		&models.TeamMetrics{},
+		&models.Task{},
+		&models.Subtask{},
+		&models.TaskDependency{},
+		&models.SubtaskDependency{},
+		&models.ProgressReport{},
+		&models.TaskResult{},
+	)
+	require.NoError(t, err)
+
+	return db
+}
+
+// setupTestOrchestrator 创建测试编排器
+func setupTestOrchestrator(t *testing.T) *TeamOrchestrator {
+	db := setupTestDB(t)
+	logger := NewLoggerService()
+	coordinator := services.NewSimpleTeamCoordinatorService(db, nil)
+	llmFactory := llm.NewLLMClientFactory()
+
+	return NewTeamOrchestrator(db, coordinator, llmFactory, logger)
+}
+
+// TestNewTeamOrchestrator 测试创建编排器
+func TestNewTeamOrchestrator(t *testing.T) {
+	orchestrator := setupTestOrchestrator(t)
+
+	assert.NotNil(t, orchestrator)
+	assert.NotNil(t, orchestrator.db)
+	assert.NotNil(t, orchestrator.coordinator)
+	assert.NotNil(t, orchestrator.llmFactory)
+	assert.NotNil(t, orchestrator.logger)
+	assert.NotNil(t, orchestrator.runningTeams)
+}
+
+// TestCreateTeamFromPlan 测试从计划创建团队
+func TestCreateTeamFromPlan(t *testing.T) {
+	orchestrator := setupTestOrchestrator(t)
+
+	plan := &OrchestratorTeamPlan{
+		ID:          uuid.New().String(),
+		Name:        "Test Team",
+		Description: "A test team for unit testing",
+		Goal:        "Test goal",
+		Members: []TeamMemberPlan{
+			{
+				ID:           uuid.New().String(),
+				Name:         "Project Manager",
+				Role:         "lead",
+				Capabilities: []string{"planning", "coordination"},
+				LLMModel:     "gpt-4",
+			},
+			{
+				ID:           uuid.New().String(),
+				Name:         "Developer",
+				Role:         "developer",
+				Capabilities: []string{"coding", "testing"},
+				LLMModel:     "gpt-4",
+			},
+		},
+		Tasks: []TaskPlanItem{
+			{
+				ID:          uuid.New().String(),
+				Title:       "Task 1",
+				Description: "First task",
+				Type:        "coding",
+				Priority:    "high",
+				AssignedTo:  "", // 将在创建后设置
+				Estimated:   60,
+			},
+			{
+				ID:          uuid.New().String(),
+				Title:       "Task 2",
+				Description: "Second task",
+				Type:        "testing",
+				Priority:    "medium",
+				AssignedTo:  "",
+				Dependencies: []string{}, // 无依赖
+				Estimated:   30,
+			},
+		},
+		Config:    map[string]interface{}{"test": true},
+		CreatedAt: time.Now(),
+	}
+
+	// 设置任务分配
+	plan.Tasks[0].AssignedTo = plan.Members[1].ID // Developer
+	plan.Tasks[1].AssignedTo = plan.Members[1].ID
+
+	team, err := orchestrator.CreateTeamFromPlan(plan)
+	assert.NoError(t, err)
+	assert.NotNil(t, team)
+	assert.NotEmpty(t, team.ID)
+	assert.Equal(t, "Test Team", team.Name)
+	assert.True(t, team.Enabled)
+
+	// 验证成员已创建
+	var members []models.TeamMember
+	err = orchestrator.db.Where("team_id = ?", team.ID).Find(&members).Error
+	assert.NoError(t, err)
+	assert.Len(t, members, 2)
+
+	// 验证任务已创建
+	var tasks []models.Task
+	err = orchestrator.db.Where("team_id = ?", team.ID).Find(&tasks).Error
+	assert.NoError(t, err)
+	assert.Len(t, tasks, 2)
+}
+
+// TestCreateTeamFromPlanValidation 测试计划验证
+func TestCreateTeamFromPlanValidation(t *testing.T) {
+	orchestrator := setupTestOrchestrator(t)
+
+	tests := []struct {
+		name        string
+		plan        *TeamPlan
+		expectError bool
+	}{
+		{
+			name: "Empty ID",
+			plan: &TeamPlan{
+				ID:    "",
+				Name:  "Test",
+				Members: []TeamMemberPlan{{ID: "1", Name: "M1", Role: "dev"}},
+				Tasks:  []TaskPlanItem{{ID: "1", Title: "T1"}},
+			},
+			expectError: true,
+		},
+		{
+			name: "Empty name",
+			plan: &TeamPlan{
+				ID:    uuid.New().String(),
+				Name:  "",
+				Members: []TeamMemberPlan{{ID: "1", Name: "M1", Role: "dev"}},
+				Tasks:  []TaskPlanItem{{ID: "1", Title: "T1"}},
+			},
+			expectError: true,
+		},
+		{
+			name: "No members",
+			plan: &TeamPlan{
+				ID:    uuid.New().String(),
+				Name:  "Test",
+				Members: []TeamMemberPlan{},
+				Tasks:  []TaskPlanItem{{ID: "1", Title: "T1"}},
+			},
+			expectError: true,
+		},
+		{
+			name: "No tasks",
+			plan: &TeamPlan{
+				ID:    uuid.New().String(),
+				Name:  "Test",
+				Members: []TeamMemberPlan{{ID: "1", Name: "M1", Role: "dev"}},
+				Tasks:  []TaskPlanItem{},
+			},
+			expectError: true,
+		},
+		{
+			name: "Invalid task assignment",
+			plan: &TeamPlan{
+				ID:    uuid.New().String(),
+				Name:  "Test",
+				Members: []TeamMemberPlan{{ID: "1", Name: "M1", Role: "dev"}},
+				Tasks: []TaskPlanItem{{
+					ID:         "1",
+					Title:      "T1",
+					AssignedTo: "non-existent-member",
+				}},
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := orchestrator.CreateTeamFromPlan(tt.plan)
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestStartExecution 测试启动执行
+func TestStartExecution(t *testing.T) {
+	orchestrator := setupTestOrchestrator(t)
+
+	// 先创建团队
+	plan := &TeamPlan{
+		ID:          uuid.New().String(),
+		Name:        "Execution Test Team",
+		Description: "Test execution",
+		Members: []TeamMemberPlan{
+			{
+				ID:   uuid.New().String(),
+				Name: "Tester",
+				Role: "tester",
+				Capabilities: []string{"testing"},
+			},
+		},
+		Tasks: []TaskPlanItem{
+			{
+				ID:          uuid.New().String(),
+				Title:       "Test Task",
+				Description: "A test task",
+				Type:        "testing",
+				Priority:    "low",
+				AssignedTo:  "", // 将设置
+				Estimated:   10,
+			},
+		},
+		CreatedAt: time.Now(),
+	}
+	plan.Tasks[0].AssignedTo = plan.Members[0].ID
+
+	team, err := orchestrator.CreateTeamFromPlan(plan)
+	require.NoError(t, err)
+
+	// 启动执行
+	err = orchestrator.StartExecution(team.ID)
+	assert.NoError(t, err)
+
+	// 验证执行上下文已创建
+	orchestrator.mu.RLock()
+	_, exists := orchestrator.runningTeams[team.ID]
+	orchestrator.mu.RUnlock()
+
+	assert.True(t, exists, "Execution should be running")
+
+	// 测试重复启动应该失败
+	err = orchestrator.StartExecution(team.ID)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "already running")
+}
+
+// TestStartExecutionNonExistentTeam 测试启动不存在的团队
+func TestStartExecutionNonExistentTeam(t *testing.T) {
+	orchestrator := setupTestOrchestrator(t)
+
+	err := orchestrator.StartExecution("non-existent-team")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
+}
+
+// TestMonitorProgress 测试监控进度
+func TestMonitorProgress(t *testing.T) {
+	orchestrator := setupTestOrchestrator(t)
+
+	// 创建并启动团队
+	plan := &TeamPlan{
+		ID:          uuid.New().String(),
+		Name:        "Monitor Test Team",
+		Description: "Test progress monitoring",
+		Members: []TeamMemberPlan{
+			{
+				ID:   uuid.New().String(),
+				Name: "Monitor",
+				Role: "monitor",
+				Capabilities: []string{"monitoring"},
+			},
+		},
+		Tasks: []TaskPlanItem{
+			{
+				ID:          uuid.New().String(),
+				Title:       "Monitor Task 1",
+				Description: "First monitoring task",
+				Type:        "monitoring",
+				Priority:    "medium",
+				AssignedTo:  "",
+				Estimated:   20,
+			},
+			{
+				ID:          uuid.New().String(),
+				Title:       "Monitor Task 2",
+				Description: "Second monitoring task",
+				Type:        "monitoring",
+				Priority:    "low",
+				AssignedTo:  "",
+				Estimated:   15,
+			},
+		},
+		CreatedAt: time.Now(),
+	}
+	plan.Tasks[0].AssignedTo = plan.Members[0].ID
+	plan.Tasks[1].AssignedTo = plan.Members[0].ID
+
+	team, err := orchestrator.CreateTeamFromPlan(plan)
+	require.NoError(t, err)
+
+	err = orchestrator.StartExecution(team.ID)
+	require.NoError(t, err)
+
+	// 监控进度
+	report, err := orchestrator.MonitorProgress(team.ID)
+	assert.NoError(t, err)
+	assert.NotNil(t, report)
+	assert.Equal(t, team.ID, report.TeamID)
+	assert.NotNil(t, report.TaskStatus)
+	assert.Equal(t, 2, report.TaskStatus.Total)
+	assert.NotNil(t, report.MemberStats)
+	assert.NotEmpty(t, report.Summary)
+}
+
+// TestMonitorProgressNonRunningTeam 测试监控未运行的团队
+func TestMonitorProgressNonRunningTeam(t *testing.T) {
+	orchestrator := setupTestOrchestrator(t)
+
+	err := orchestrator.StartExecution("non-existent-team")
+	assert.Error(t, err)
+
+	_, err = orchestrator.MonitorProgress("non-existent-team")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not running")
+}
+
+// TestAggregateResults 测试聚合结果
+func TestAggregateResults(t *testing.T) {
+	orchestrator := setupTestOrchestrator(t)
+
+	// 创建团队
+	plan := &TeamPlan{
+		ID:          uuid.New().String(),
+		Name:        "Results Test Team",
+		Description: "Test result aggregation",
+		Members: []TeamMemberPlan{
+			{
+				ID:   uuid.New().String(),
+				Name: "Aggregator",
+				Role: "aggregator",
+				Capabilities: []string{"aggregation"},
+			},
+		},
+		Tasks: []TaskPlanItem{
+			{
+				ID:          uuid.New().String(),
+				Title:       "Result Task 1",
+				Description: "First result task",
+				Type:        "aggregation",
+				Priority:    "high",
+				AssignedTo:  "",
+				Estimated:   30,
+			},
+			{
+				ID:          uuid.New().String(),
+				Title:       "Result Task 2",
+				Description: "Second result task",
+				Type:        "aggregation",
+				Priority:    "medium",
+				AssignedTo:  "",
+				Estimated:   20,
+			},
+		},
+		CreatedAt: time.Now(),
+	}
+	plan.Tasks[0].AssignedTo = plan.Members[0].ID
+	plan.Tasks[1].AssignedTo = plan.Members[0].ID
+
+	team, err := orchestrator.CreateTeamFromPlan(plan)
+	require.NoError(t, err)
+
+	// 手动更新任务状态以模拟执行
+	var tasks []models.Task
+	orchestrator.db.Where("team_id = ?", team.ID).Find(&tasks)
+	require.Len(t, tasks, 2)
+
+	// 标记第一个任务为完成
+	now := time.Now()
+	tasks[0].Status = "completed"
+	tasks[0].StartedAt = &now
+	tasks[0].CompletedAt = &now
+	tasks[0].Result = &models.TaskResult{
+		Success: true,
+		Output:  "Task 1 completed successfully",
+	}
+	orchestrator.db.Save(&tasks[0])
+
+	// 标记第二个任务为失败
+	tasks[1].Status = "failed"
+	tasks[1].StartedAt = &now
+	tasks[1].Result = &models.TaskResult{
+		Success: false,
+		Error:   "Task 2 failed",
+	}
+	orchestrator.db.Save(&tasks[1])
+
+	// 聚合结果
+	result, err := orchestrator.AggregateResults(team.ID)
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, team.ID, result.TeamID)
+	assert.Equal(t, "Results Test Team", result.TeamName)
+	assert.Equal(t, "partial", result.Status) // 部分完成
+	assert.Equal(t, 2, result.TaskSummary.Total)
+	assert.Equal(t, 1, result.TaskSummary.Completed)
+	assert.Equal(t, 1, result.TaskSummary.Failed)
+	assert.Len(t, result.MemberResults, 1)
+	assert.NotEmpty(t, result.FinalOutput)
+}
+
+// TestAggregateResultsNonExistentTeam 测试聚合不存在的团队结果
+func TestAggregateResultsNonExistentTeam(t *testing.T) {
+	orchestrator := setupTestOrchestrator(t)
+
+	_, err := orchestrator.AggregateResults("non-existent-team")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
+}
+
+// TestHandleFailure 测试处理失败
+func TestHandleFailure(t *testing.T) {
+	orchestrator := setupTestOrchestrator(t)
+
+	// 创建团队和任务
+	plan := &TeamPlan{
+		ID:          uuid.New().String(),
+		Name:        "Failure Test Team",
+		Description: "Test failure handling",
+		Members: []TeamMemberPlan{
+			{
+				ID:   uuid.New().String(),
+				Name: "Failure Handler",
+				Role: "handler",
+				Capabilities: []string{"handling"},
+			},
+		},
+		Tasks: []TaskPlanItem{
+			{
+				ID:          uuid.New().String(),
+				Title:       "Failing Task",
+				Description: "A task that will fail",
+				Type:        "testing",
+				Priority:    "high",
+				AssignedTo:  "",
+				Estimated:   10,
+			},
+		},
+		CreatedAt: time.Now(),
+	}
+	plan.Tasks[0].AssignedTo = plan.Members[0].ID
+
+	team, err := orchestrator.CreateTeamFromPlan(plan)
+	require.NoError(t, err)
+
+	// 获取任务ID
+	var task models.Task
+	orchestrator.db.Where("team_id = ? AND title = ?", team.ID, "Failing Task").First(&task)
+	require.NotEmpty(t, task.ID)
+
+	// 第一次失败 - 应该重试
+	err = orchestrator.HandleFailure(team.ID, task.ID)
+	assert.NoError(t, err)
+
+	orchestrator.db.First(&task, task.ID)
+	assert.Equal(t, "pending", task.Status)
+	assert.Equal(t, 1, task.RetryCount)
+
+	// 超过最大重试次数
+	task.RetryCount = 3
+	task.MaxRetries = 3
+	orchestrator.db.Save(&task)
+
+	err = orchestrator.HandleFailure(team.ID, task.ID)
+	assert.NoError(t, err)
+
+	orchestrator.db.First(&task, task.ID)
+	assert.Equal(t, "failed", task.Status)
+}
+
+// TestBuildTaskPrompt 测试构建任务提示
+func TestBuildTaskPrompt(t *testing.T) {
+	orchestrator := setupTestOrchestrator(t)
+
+	task := &models.Task{
+		Title:       "Test Task",
+		Description: "A test task description",
+		Type:        "coding",
+		Priority:    "high",
+		Context: models.TaskContext{
+			Metadata: map[string]interface{}{
+				"key": "value",
+			},
+		},
+	}
+
+	agent := &AgentInstance{
+		Name: "TestAgent",
+		Role: "developer",
+	}
+
+	prompt := orchestrator.buildTaskPrompt(task, agent)
+
+	assert.Contains(t, prompt, "TestAgent")
+	assert.Contains(t, prompt, "developer")
+	assert.Contains(t, prompt, "Test Task")
+	assert.Contains(t, prompt, "A test task description")
+	assert.Contains(t, prompt, "coding")
+	assert.Contains(t, prompt, "high")
+}
+
+// TestAreDependenciesComplete 测试依赖完成检查
+func TestAreDependenciesComplete(t *testing.T) {
+	orchestrator := setupTestOrchestrator(t)
+
+	execution := &TeamExecution{
+		TeamID:        "test-team",
+		CompletedTasks: make(map[string]bool),
+	}
+
+	task := &models.Task{
+		ID: "task-1",
+		Dependencies: []models.TaskDependency{
+			{DependsOn: "dep-1"},
+			{DependsOn: "dep-2"},
+		},
+	}
+
+	// 依赖未完成
+	assert.False(t, orchestrator.areDependenciesComplete(execution, task))
+
+	// 部分依赖完成
+	execution.CompletedTasks["dep-1"] = true
+	assert.False(t, orchestrator.areDependenciesComplete(execution, task))
+
+	// 所有依赖完成
+	execution.CompletedTasks["dep-2"] = true
+	assert.True(t, orchestrator.areDependenciesComplete(execution, task))
+}
+
+// TestGenerateFinalOutput 测试生成最终输出
+func TestGenerateFinalOutput(t *testing.T) {
+	summary := TaskResultSummary{
+		Total:     10,
+		Completed: 8,
+		Failed:    2,
+	}
+
+	results := []MemberResult{
+		{
+			MemberName:      "Alice",
+			Role:            "developer",
+			TasksCompleted:  5,
+			TasksAssigned:   6,
+			TasksFailed:     1,
+		},
+		{
+			MemberName:      "Bob",
+			Role:            "tester",
+			TasksCompleted:  3,
+			TasksAssigned:   4,
+			TasksFailed:     1,
+		},
+	}
+
+	output := generateFinalOutput(summary, results)
+
+	assert.Contains(t, output, "Team Execution Summary")
+	assert.Contains(t, output, "Total Tasks: 10")
+	assert.Contains(t, output, "Completed: 8")
+	assert.Contains(t, output, "Failed: 2")
+	assert.Contains(t, output, "80.0%")
+	assert.Contains(t, output, "Alice")
+	assert.Contains(t, output, "Bob")
+}
+
+// BenchmarkCreateTeamFromPlan 性能测试
+func BenchmarkCreateTeamFromPlan(b *testing.B) {
+	db, _ := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config)
+	db.AutoMigrate(&models.Team{}, &models.TeamMember{}, &models.Task{}, &models.TaskDependency{})
+
+	logger := NewLoggerService()
+	coordinator := services.NewSimpleTeamCoordinatorService(db, nil)
+	llmFactory := llm.NewLLMClientFactory()
+	orchestrator := NewTeamOrchestrator(db, coordinator, llmFactory, logger)
+
+	plan := &TeamPlan{
+		ID:    uuid.New().String(),
+		Name:  "Benchmark Team",
+		Members: []TeamMemberPlan{
+			{ID: uuid.New().String(), Name: "M1", Role: "dev"},
+			{ID: uuid.New().String(), Name: "M2", Role: "tester"},
+		},
+		Tasks: []TaskPlanItem{
+			{ID: uuid.New().String(), Title: "T1", AssignedTo: ""},
+			{ID: uuid.New().String(), Title: "T2", AssignedTo: ""},
+		},
+	}
+	plan.Tasks[0].AssignedTo = plan.Members[0].ID
+	plan.Tasks[1].AssignedTo = plan.Members[1].ID
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		orchestrator.CreateTeamFromPlan(plan)
+	}
+}

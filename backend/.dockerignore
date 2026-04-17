@@ -1,0 +1,66 @@
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Build artifacts
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test files
+*_test.go
+testdata/
+coverage.out
+coverage.html
+
+# Documentation
+*.md
+docs/
+
+# Data files
+*.db
+*.sqlite
+*.sqlite3
+data/
+
+# Config (use config.example.json as template)
+config.json
+*.local.json
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker files (prevent recursive copy)
+Dockerfile*
+docker-compose*
+.docker/
+.dockerignore
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Makefile (not needed in container)
+Makefile
+
+# Scripts (not needed in container)
+*.sh

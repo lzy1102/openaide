@@ -1,0 +1,719 @@
+package services
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"openaide/backend/src/models"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+)
+
+// setupTestDBForTemplate 创建测试数据库
+func setupTestDBForTemplate(t *testing.T) *gorm.DB {
+	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+
+	err = db.AutoMigrate(
+		&models.PromptTemplate{},
+		&models.PromptInstance{},
+	)
+	require.NoError(t, err)
+
+	return db
+}
+
+// setupTestPromptTemplateService 创建测试服务
+func setupTestPromptTemplateService(t *testing.T) *PromptTemplateService {
+	db := setupTestDBForTemplate(t)
+	cache := NewCacheService()
+	logger, _ := NewLoggerService(LogLevelInfo, "")
+
+	return NewPromptTemplateService(db, cache, logger)
+}
+
+// TestNewPromptTemplateService 测试服务初始化
+func TestNewPromptTemplateService(t *testing.T) {
+	service := setupTestPromptTemplateService(t)
+
+	assert.NotNil(t, service)
+	assert.NotNil(t, service.db)
+	assert.NotNil(t, service.cache)
+	assert.NotNil(t, service.logger)
+}
+
+// TestInitDefaultTemplates 测试默认模板初始化
+func TestInitDefaultTemplates(t *testing.T) {
+	service := setupTestPromptTemplateService(t)
+
+	// 验证默认模板已创建
+	defaultTemplateNames := []string{
+		"default_system",
+		"thinking_system",
+		"code_assistant",
+		"task_decompose",
+		"summarize",
+	}
+
+	for _, name := range defaultTemplateNames {
+		template, err := service.GetTemplateByName(name)
+		assert.NoError(t, err, "Default template %s should exist", name)
+		assert.NotNil(t, template)
+		assert.True(t, template.IsActive)
+		assert.Equal(t, name, template.Name)
+	}
+
+	// 验证版本号
+	defaultSystem, _ := service.GetTemplateByName("default_system")
+	assert.Equal(t, "1.0.0", defaultSystem.Version)
+}
+
+// TestCreateTemplate 测试创建模板
+func TestCreateTemplate(t *testing.T) {
+	service := setupTestPromptTemplateService(t)
+
+	template := &models.PromptTemplate{
+		Name:        "test_template",
+		Description: "Test template",
+		Category:    "user",
+		Template:    "Hello {{.name}}, welcome to {{.app}}!",
+		Variables: []models.PromptVariable{
+			{Name: "name", Type: "string", Description: "User name", Required: true},
+			{Name: "app", Type: "string", Description: "Application name", DefaultValue: "MyApp", Required: false},
+		},
+		Tags:     []string{"greeting", "test"},
+		Version:  "1.0.0",
+		IsActive: true,
+	}
+
+	err := service.CreateTemplate(template)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, template.ID)
+
+	// 验证模板已保存
+	retrieved, err := service.GetTemplate(template.ID)
+	assert.NoError(t, err)
+	assert.Equal(t, "test_template", retrieved.Name)
+}
+
+// TestCreateTemplateWithInvalidSyntax 测试无效模板语法
+func TestCreateTemplateWithInvalidSyntax(t *testing.T) {
+	service := setupTestPromptTemplateService(t)
+
+	template := &models.PromptTemplate{
+		Name:        "invalid_template",
+		Description: "Template with invalid syntax",
+		Category:    "user",
+		Template:    "Hello {{.name", // 缺少闭合括号
+		Variables:   []models.PromptVariable{},
+	}
+
+	err := service.CreateTemplate(template)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid template syntax")
+}
+
+// TestGetTemplate 测试获取模板
+func TestGetTemplate(t *testing.T) {
+	service := setupTestPromptTemplateService(t)
+
+	// 创建测试模板
+	template := &models.PromptTemplate{
+		Name:        "test_get",
+		Description: "Test get template",
+		Category:    "test",
+		Template:    "Test content {{.var}}",
+		Variables: []models.PromptVariable{
+			{Name: "var", Type: "string", Description: "Variable"},
+		},
+		IsActive: true,
+	}
+	err := service.CreateTemplate(template)
+	require.NoError(t, err)
+
+	// 通过ID获取
+	retrieved, err := service.GetTemplate(template.ID)
+	assert.NoError(t, err)
+	assert.Equal(t, "test_get", retrieved.Name)
+
+	// 测试缓存 - 再次获取应该从缓存读取
+	retrieved2, err := service.GetTemplate(template.ID)
+	assert.NoError(t, err)
+	assert.Equal(t, retrieved.ID, retrieved2.ID)
+
+	// 测试不存在的模板
+	_, err = service.GetTemplate("non-existent-id")
+	assert.Error(t, err)
+}
+
+// TestGetTemplateByName 测试通过名称获取模板
+func TestGetTemplateByName(t *testing.T) {
+	service := setupTestPromptTemplateService(t)
+
+	template, err := service.GetTemplateByName("default_system")
+	assert.NoError(t, err)
+	assert.NotNil(t, template)
+	assert.Equal(t, "default_system", template.Name)
+
+	// 测试不存在的模板
+	_, err = service.GetTemplateByName("non-existent-template")
+	assert.Error(t, err)
+}
+
+// TestListTemplates 测试列出模板
+func TestListTemplates(t *testing.T) {
+	service := setupTestPromptTemplateService(t)
+
+	// 创建测试模板
+	templates := []models.PromptTemplate{
+		{Name: "test1", Category: "test", Template: "Content 1", IsActive: true, Tags: []string{"tag1"}},
+		{Name: "test2", Category: "test", Template: "Content 2", IsActive: true, Tags: []string{"tag2"}},
+		{Name: "test3", Category: "production", Template: "Content 3", IsActive: true, Tags: []string{"tag1"}},
+		{Name: "test4", Category: "test", Template: "Content 4", IsActive: false}, // 非活跃
+	}
+
+	for _, tmpl := range templates {
+		tmpl.ID = uuid.New().String()
+		tmpl.CreatedAt = time.Now()
+		tmpl.UpdatedAt = time.Now()
+		service.db.Create(&tmpl)
+	}
+
+	// 测试列出所有活跃模板
+	all, err := service.ListTemplates("", nil)
+	assert.NoError(t, err)
+	// 包含默认模板 + 测试模板
+	assert.GreaterOrEqual(t, len(all), 3)
+
+	// 测试按类别过滤
+	testTemplates, err := service.ListTemplates("test", nil)
+	assert.NoError(t, err)
+	assert.GreaterOrEqual(t, len(testTemplates), 2)
+
+	// 测试按标签过滤
+	taggedTemplates, err := service.ListTemplates("", []string{"tag1"})
+	assert.NoError(t, err)
+	assert.GreaterOrEqual(t, len(taggedTemplates), 1)
+}
+
+// TestUpdateTemplate 测试更新模板
+func TestUpdateTemplate(t *testing.T) {
+	service := setupTestPromptTemplateService(t)
+
+	template := &models.PromptTemplate{
+		Name:        "test_update",
+		Description: "Original description",
+		Category:    "test",
+		Template:    "Original template {{.var}}",
+		Variables:   []models.PromptVariable{{Name: "var", Type: "string"}},
+		IsActive:    true,
+	}
+	err := service.CreateTemplate(template)
+	require.NoError(t, err)
+
+	// 更新模板
+	updates := map[string]interface{}{
+		"description": "Updated description",
+		"template":    "Updated template {{.var}}",
+	}
+
+	err = service.UpdateTemplate(template.ID, updates)
+	assert.NoError(t, err)
+
+	// 验证更新
+	retrieved, _ := service.GetTemplate(template.ID)
+	assert.Equal(t, "Updated description", retrieved.Description)
+	assert.Equal(t, "Updated template {{.var}}", retrieved.Template)
+
+	// 验证缓存已清除
+	// 重新创建服务实例以绕过内存缓存
+	cacheKey := "prompt_template:" + template.ID
+	_, found := service.cache.Get(cacheKey)
+	assert.False(t, found, "Cache should be cleared after update")
+}
+
+// TestDeleteTemplate 测试删除模板（软删除）
+func TestDeleteTemplate(t *testing.T) {
+	service := setupTestPromptTemplateService(t)
+
+	template := &models.PromptTemplate{
+		Name:        "test_delete",
+		Description: "Template to delete",
+		Category:    "test",
+		Template:    "Delete me {{.var}}",
+		Variables:   []models.PromptVariable{{Name: "var", Type: "string"}},
+		IsActive:    true,
+	}
+	err := service.CreateTemplate(template)
+	require.NoError(t, err)
+
+	// 删除模板
+	err = service.DeleteTemplate(template.ID)
+	assert.NoError(t, err)
+
+	// 验证软删除 - 模板仍然存在但不再活跃
+	var dbTemplate models.PromptTemplate
+	err = service.db.First(&dbTemplate, "id = ?", template.ID).Error
+	assert.NoError(t, err)
+	assert.False(t, dbTemplate.IsActive)
+
+	// 验证无法通过正常方法获取
+	_, err = service.GetTemplate(template.ID)
+	assert.Error(t, err)
+}
+
+// TestRenderTemplate 测试渲染模板
+func TestRenderTemplate(t *testing.T) {
+	service := setupTestPromptTemplateService(t)
+
+	// 创建测试模板
+	template := &models.PromptTemplate{
+		Name:        "test_render",
+		Description: "Test render",
+		Category:    "test",
+		Template: `Hello {{.name}}!
+Current date: {{.current_date}}
+{{if .custom_message}}Custom: {{.custom_message}}{{end}}
+`,
+		Variables: []models.PromptVariable{
+			{Name: "name", Type: "string", Required: true},
+			{Name: "custom_message", Type: "string", Required: false},
+		},
+		IsActive: true,
+	}
+	err := service.CreateTemplate(template)
+	require.NoError(t, err)
+
+	// 渲染模板
+	variables := map[string]interface{}{
+		"name":           "Alice",
+		"custom_message": "Welcome back!",
+	}
+
+	result, err := service.RenderTemplate(template.ID, variables)
+	assert.NoError(t, err)
+	assert.Contains(t, result, "Hello Alice!")
+	assert.Contains(t, result, "Custom: Welcome back!")
+	assert.Contains(t, result, "Current date:")
+
+	// 测试使用默认值
+	variables2 := map[string]interface{}{
+		"name": "Bob",
+	}
+	result2, err := service.RenderTemplate(template.ID, variables2)
+	assert.NoError(t, err)
+	assert.Contains(t, result2, "Hello Bob!")
+	assert.NotContains(t, result2, "Custom:")
+}
+
+// TestRenderTemplateWithBuiltInVariables 测试内置变量
+func TestRenderTemplateWithBuiltInVariables(t *testing.T) {
+	service := setupTestPromptTemplateService(t)
+
+	template := &models.PromptTemplate{
+		Name:     "builtin_vars",
+		Category: "test",
+		Template: "Date: {{.current_date}}, Time: {{.current_time}}, DateTime: {{.current_datetime}}",
+		Variables: []models.PromptVariable{
+			{Name: "current_date", Type: "string", DefaultValue: "", Required: false},
+			{Name: "current_time", Type: "string", DefaultValue: "", Required: false},
+			{Name: "current_datetime", Type: "string", DefaultValue: "", Required: false},
+		},
+		IsActive: true,
+	}
+	err := service.CreateTemplate(template)
+	require.NoError(t, err)
+
+	result, err := service.RenderTemplate(template.ID, map[string]interface{}{})
+	assert.NoError(t, err)
+
+	// 验证内置变量已填充
+	now := time.Now()
+	expectedDate := now.Format("2006-01-02")
+	expectedTime := now.Format("15:04:05")
+	expectedDateTime := now.Format("2006-01-02 15:04:05")
+
+	assert.Contains(t, result, expectedDate)
+	assert.Contains(t, result, expectedTime)
+	assert.Contains(t, result, expectedDateTime)
+}
+
+// TestRenderByName 测试通过名称渲染
+func TestRenderByName(t *testing.T) {
+	service := setupTestPromptTemplateService(t)
+
+	// 使用默认模板
+	variables := map[string]interface{}{
+		"user_name": "TestUser",
+	}
+
+	result, err := service.RenderByName("default_system", variables)
+	assert.NoError(t, err)
+	assert.Contains(t, result, "TestUser")
+	assert.Contains(t, result, "智能助手")
+}
+
+// TestRenderWithConditional 测试条件渲染
+func TestRenderWithConditional(t *testing.T) {
+	service := setupTestPromptTemplateService(t)
+
+	template := &models.PromptTemplate{
+		Name:     "conditional_test",
+		Category: "test",
+		Template: `{{if .show_greeting}}Hello!{{else}}Goodbye!{{end}}`,
+		Variables: []models.PromptVariable{
+			{Name: "show_greeting", Type: "boolean", DefaultValue: "false", Required: false},
+		},
+		IsActive: true,
+	}
+	err := service.CreateTemplate(template)
+	require.NoError(t, err)
+
+	// 测试条件为真
+	result1, _ := service.RenderTemplate(template.ID, map[string]interface{}{"show_greeting": true})
+	assert.Contains(t, result1, "Hello!")
+
+	// 测试条件为假
+	result2, _ := service.RenderTemplate(template.ID, map[string]interface{}{"show_greeting": false})
+	assert.Contains(t, result2, "Goodbye!")
+}
+
+// TestExtractVariables 测试从模板提取变量
+func TestExtractVariables(t *testing.T) {
+	service := setupTestPromptTemplateService(t)
+
+	templateStr := `Hello {{.name}}, your role is {{.role}}.
+{{if .custom}}Custom message: {{.custom}}{{end}}
+Date: {{.current_date}}
+`
+
+	variables := service.ExtractVariables(templateStr)
+
+	assert.Contains(t, variables, "name")
+	assert.Contains(t, variables, "role")
+	assert.Contains(t, variables, "custom")
+	assert.Contains(t, variables, "current_date")
+	assert.Len(t, variables, 4)
+}
+
+// TestCreateVersion 测试创建新版本
+func TestCreateVersion(t *testing.T) {
+	service := setupTestPromptTemplateService(t)
+
+	// 创建原始模板
+	original := &models.PromptTemplate{
+		Name:        "version_test",
+		Description: "Original version",
+		Category:    "test",
+		Template:    "Original {{.content}}",
+		Variables: []models.PromptVariable{
+			{Name: "content", Type: "string", Required: true},
+		},
+		Version:  "1.0.0",
+		IsActive: true,
+		IsDefault: true,
+	}
+	err := service.CreateTemplate(original)
+	require.NoError(t, err)
+
+	// 创建新版本
+	newVariables := []models.PromptVariable{
+		{Name: "content", Type: "string", Required: true},
+		{Name: "style", Type: "string", Required: false},
+	}
+
+	newVersion, err := service.CreateVersion(original.ID, "New {{.content}} with {{.style}}", newVariables)
+	assert.NoError(t, err)
+	assert.NotNil(t, newVersion)
+
+	// 验证新版本
+	assert.Equal(t, "version_test", newVersion.Name)
+	assert.Equal(t, "1.1.0", newVersion.Version) // minor version incremented
+	assert.Equal(t, original.ID, newVersion.ParentID)
+	assert.False(t, newVersion.IsDefault)
+
+	// 验证原版本不再是默认
+	var orig models.PromptTemplate
+	service.db.First(&orig, original.ID)
+	assert.False(t, orig.IsDefault)
+}
+
+// TestGetVersions 测试获取版本历史
+func TestGetVersions(t *testing.T) {
+	service := setupTestPromptTemplateService(t)
+
+	// 创建多个版本
+	original := &models.PromptTemplate{
+		Name:        "multi_version",
+		Description: "Multi version test",
+		Category:    "test",
+		Template:    "V1 {{.content}}",
+		Variables:   []models.PromptVariable{{Name: "content", Type: "string"}},
+		Version:     "1.0.0",
+		IsActive:    true,
+	}
+	err := service.CreateTemplate(original)
+	require.NoError(t, err)
+
+	// 创建第二个版本
+	v2, _ := service.CreateVersion(original.ID, "V2 {{.content}}", []models.PromptVariable{{Name: "content", Type: "string"}})
+	require.NoError(t, err)
+
+	// 创建第三个版本
+	_, err = service.CreateVersion(v2.ID, "V3 {{.content}}", []models.PromptVariable{{Name: "content", Type: "string"}})
+	require.NoError(t, err)
+
+	// 获取所有版本
+	versions, err := service.GetVersions("multi_version")
+	assert.NoError(t, err)
+	assert.Len(t, versions, 3)
+
+	// 验证版本按时间倒序排列
+	assert.Equal(t, "1.2.0", versions[0].Version)
+	assert.Equal(t, "1.1.0", versions[1].Version)
+	assert.Equal(t, "1.0.0", versions[2].Version)
+}
+
+// TestMergeWithDefaults 测试默认值合并
+func TestMergeWithDefaults(t *testing.T) {
+	service := setupTestPromptTemplateService(t)
+
+	variables := []models.PromptVariable{
+		{Name: "required_var", Type: "string", Required: true, DefaultValue: ""},
+		{Name: "optional_var", Type: "string", Required: false, DefaultValue: "default_value"},
+		{Name: "number_var", Type: "number", Required: false, DefaultValue: "42"},
+	}
+
+	provided := map[string]interface{}{
+		"required_var": "provided_value",
+		"custom_var":   "custom_value", // 不在定义中的变量
+	}
+
+	result := service.mergeWithDefaults(variables, provided)
+
+	assert.Equal(t, "provided_value", result["required_var"])
+	assert.Equal(t, "default_value", result["optional_var"])
+	assert.Equal(t, "42", result["number_var"])
+	assert.Equal(t, "custom_value", result["custom_var"])
+
+	// 验证内置变量存在
+	assert.Contains(t, result, "current_date")
+	assert.Contains(t, result, "current_time")
+	assert.Contains(t, result, "current_datetime")
+}
+
+// TestValidateTemplate 测试模板验证
+func TestValidateTemplate(t *testing.T) {
+	service := setupTestPromptTemplateService(t)
+
+	// 有效的模板
+	validTemplates := []string{
+		"Hello {{.name}}",
+		"{{if .show}}Show{{end}}",
+		"{{range .items}}{{.}}{{end}}",
+		"No variables",
+	}
+
+	for _, tmpl := range validTemplates {
+		err := service.validateTemplate(tmpl)
+		assert.NoError(t, err, "Template should be valid: %s", tmpl)
+	}
+
+	// 无效的模板
+	invalidTemplates := []string{
+		"Hello {{.name",  // 未闭合
+		"{{if .show}}",   // 未闭合的if
+		"{{undefined}}",  // 未定义函数
+	}
+
+	for _, tmpl := range invalidTemplates {
+		err := service.validateTemplate(tmpl)
+		assert.Error(t, err, "Template should be invalid: %s", tmpl)
+	}
+}
+
+// TestExportTemplates 测试导出模板
+func TestExportTemplates(t *testing.T) {
+	service := setupTestPromptTemplateService(t)
+
+	// 创建测试模板
+	tmpl1 := &models.PromptTemplate{
+		Name:     "export_test_1",
+		Category: "test",
+		Template: "Template 1",
+		IsActive: true,
+	}
+	tmpl2 := &models.PromptTemplate{
+		Name:     "export_test_2",
+		Category: "test",
+		Template: "Template 2",
+		IsActive: true,
+	}
+
+	err := service.CreateTemplate(tmpl1)
+	require.NoError(t, err)
+	err = service.CreateTemplate(tmpl2)
+	require.NoError(t, err)
+
+	// 导出
+	data, err := service.ExportTemplates([]string{tmpl1.ID, tmpl2.ID})
+	assert.NoError(t, err)
+	assert.NotEmpty(t, data)
+
+	// 验证JSON格式
+	var exported []models.PromptTemplate
+	err = exported.UnmarshalJSON(data)
+	assert.NoError(t, err)
+	assert.Len(t, exported, 2)
+}
+
+// TestImportTemplates 测试导入模板
+func TestImportTemplates(t *testing.T) {
+	service := setupTestPromptTemplateService(t)
+
+	// 准备导入数据
+	importData := []models.PromptTemplate{
+		{
+			Name:     "imported_template_1",
+			Category: "test",
+			Template: "Imported 1",
+		},
+		{
+			Name:     "imported_template_2",
+			Category: "test",
+			Template: "Imported 2",
+		},
+	}
+
+	jsonData, _ := importData.MarshalJSON()
+
+	// 导入（不覆盖）
+	count, err := service.ImportTemplates(jsonData, false)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, count)
+
+	// 验证模板已创建
+	_, err = service.GetTemplateByName("imported_template_1")
+	assert.NoError(t, err)
+
+	// 再次导入（覆盖模式）
+	count, err = service.ImportTemplates(jsonData, true)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, count)
+}
+
+// TestTemplateUseCount 测试使用计数
+func TestTemplateUseCount(t *testing.T) {
+	service := setupTestPromptTemplateService(t)
+
+	template := &models.PromptTemplate{
+		Name:     "count_test",
+		Category: "test",
+		Template: "{{.var}}",
+		Variables: []models.PromptVariable{{Name: "var", Type: "string"}},
+		IsActive: true,
+	}
+	err := service.CreateTemplate(template)
+	require.NoError(t, err)
+
+	// 初始计数
+	assert.Equal(t, int64(0), template.UseCount)
+
+	// 渲染多次
+	for i := 0; i < 3; i++ {
+		_, _ = service.RenderTemplate(template.ID, map[string]interface{}{"var": "test"})
+	}
+
+	// 等待异步更新完成
+	time.Sleep(100 * time.Millisecond)
+
+	// 验证计数增加
+	var updated models.PromptTemplate
+	service.db.First(&updated, template.ID)
+	assert.GreaterOrEqual(t, updated.UseCount, int64(3))
+}
+
+// BenchmarkTemplateRendering 性能测试
+func BenchmarkTemplateRendering(b *testing.B) {
+	service := setupTestPromptTemplateService(&testing.T{})
+
+	template := &models.PromptTemplate{
+		Name:     "bench",
+		Category: "test",
+		Template: "Hello {{.name}}, date: {{.current_date}}",
+		Variables: []models.PromptVariable{
+			{Name: "name", Type: "string"},
+			{Name: "current_date", Type: "string"},
+		},
+		IsActive: true,
+	}
+	service.CreateTemplate(template)
+
+	variables := map[string]interface{}{"name": "Benchmark"}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		service.RenderTemplate(template.ID, variables)
+	}
+}
+
+// TestComplexTemplate 测试复杂模板
+func TestComplexTemplate(t *testing.T) {
+	service := setupTestPromptTemplateService(t)
+
+	complexTemplate := &models.PromptTemplate{
+		Name: "complex",
+		Category: "test",
+		Template: `System Instructions:
+{{- range .instructions}}
+- {{.}}
+{{- end}}
+
+User Profile:
+{{if .user}}
+Name: {{.user.name}}
+Email: {{.user.email}}
+{{else}}
+No user information
+{{end}}
+
+{{if .tasks}}
+Tasks:
+{{range .tasks}}
+- {{.name}} - {{.status}}
+{{end}}
+{{end}}`,
+		Variables: []models.PromptVariable{
+			{Name: "instructions", Type: "array", Required: false},
+			{Name: "user", Type: "object", Required: false},
+			{Name: "tasks", Type: "array", Required: false},
+		},
+		IsActive: true,
+	}
+	err := service.CreateTemplate(complexTemplate)
+	require.NoError(t, err)
+
+	variables := map[string]interface{}{
+		"instructions": []string{"Be helpful", "Be concise", "Be accurate"},
+		"user": map[string]interface{}{
+			"name":  "Alice",
+			"email": "alice@example.com",
+		},
+		"tasks": []map[string]interface{}{
+			{"name": "Task 1", "status": "done"},
+			{"name": "Task 2", "status": "in progress"},
+		},
+	}
+
+	result, err := service.RenderTemplate(complexTemplate.ID, variables)
+	assert.NoError(t, err)
+	assert.Contains(t, result, "Be helpful")
+	assert.Contains(t, result, "Alice")
+	assert.Contains(t, result, "alice@example.com")
+	assert.Contains(t, result, "Task 1")
+}

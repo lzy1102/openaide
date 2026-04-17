@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>OpenAIDE</title>
+    <link rel="stylesheet" href="./src/styles/theme.css?v=2">
+    <link rel="stylesheet" href="./src/styles/components.css?v=2">
+</head>
+<body>
+    <!-- 应用头部 -->
+    <header class="app-header">
+        <div class="app-header-content">
+            <div class="app-logo">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+                    <path d="M12 6V12L16 14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+                <span data-i18n="appName">OpenAIDE</span>
+            </div>
+            <nav class="app-nav">
+                <a href="#" class="nav-link active" data-page="chat" data-i18n="nav.chat">对话</a>
+                <a href="#" class="nav-link" data-page="templates" data-i18n="nav.templates">模板</a>
+                <a href="#" class="nav-link" data-page="dashboard" data-i18n="nav.dashboard">仪表盘</a>
+                <a href="#" class="nav-link" data-page="tasks" data-i18n="nav.tasks">任务</a>
+                <a href="#" class="nav-link" data-page="models" data-i18n="nav.models">模型</a>
+            </nav>
+            <div class="header-actions">
+                <!-- 语言选择器 -->
+                <select id="language-selector" class="language-selector" title="选择语言">
+                    <option value="zh-CN">简体中文</option>
+                    <option value="en">English</option>
+                    <option value="ja">日本語</option>
+                    <option value="ko">한국어</option>
+                </select>
+                <button class="btn btn-secondary btn-sm" id="theme-toggle" title="切换主题">
+                    <svg class="sun-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+                        <circle cx="8" cy="8" r="4" stroke="currentColor" stroke-width="2"/>
+                        <path d="M8 1V3M8 13V15M1 8H3M13 8H15M3.222 3.222L4.636 4.636M11.364 11.364L12.778 12.778M3.222 12.778L4.636 11.364M11.364 4.636L12.778 3.222" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                    <svg class="moon-icon hidden" width="16" height="16" viewBox="0 0 16 16" fill="none">
+                        <path d="M13.5 9C13.5 11.4853 11.4853 13.5 9 13.5C6.51472 13.5 4.5 11.4853 4.5 9C4.5 6.51472 6.51472 4.5 9 4.5C9.29853 4.5 9.58947 4.52863 9.87065 4.58292C9.31572 5.29403 9 6.16416 9 7.10786C9 9.36185 10.8772 11.1896 13.1312 11.1158C13.4044 10.4729 13.5453 9.76149 13.5 9Z" stroke="currentColor" stroke-width="1.5"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- 主页面容器 -->
+    <main id="app">
+        <!-- 聊天页面 -->
+        <div class="page" id="page-chat">
+            <div class="main-layout">
+                <!-- 左侧边栏 - 对话历史 -->
+                <aside class="sidebar">
+                    <div class="sidebar-header">
+                        <span class="sidebar-title" data-i18n="chat.conversations">对话列表</span>
+                        <button class="btn-icon" id="new-chat-btn" data-i18n-title="chat.newChat" title="新建对话">
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                                <path d="M8 2V14M2 8H14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="sidebar-list" id="conversation-list">
+                        <div class="sidebar-item active">
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                                <path d="M3 5C3 3.89543 3.89543 3 5 3H11C12.1046 3 13 3.89543 13 5V11C13 12.1046 12.1046 13 11 13H5C3.89543 13 3 12.1046 3 11V5Z" stroke="currentColor" stroke-width="2"/>
+                                <path d="M3 7H13" stroke="currentColor" stroke-width="2"/>
+                            </svg>
+                            <span data-i18n="chat.newConversation">新对话</span>
+                        </div>
+                        <div class="sidebar-item">
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                                <path d="M3 5C3 3.89543 3.89543 3 5 3H11C12.1046 3 13 3.89543 13 5V11C13 12.1046 12.1046 13 11 13H5C3.89543 13 3 12.1046 3 11V5Z" stroke="currentColor" stroke-width="2"/>
+                            </svg>
+                            <span data-i18n="chat.previousChat">历史对话</span>
+                        </div>
+                    </div>
+                </aside>
+
+                <!-- 中间 - 聊天区域 -->
+                <div class="chat-area">
+                    <div class="chat-container">
+                        <div class="chat-messages" id="chat-messages">
+                            <div class="message assistant">
+                                <div class="message-avatar">
+                                    <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                                        <path d="M9 2C5.13401 2 2 5.13401 2 9C2 12.866 5.13401 16 9 16C12.866 16 16 12.866 16 9" stroke="white" stroke-width="2" stroke-linecap="round"/>
+                                        <path d="M16 5V9H12" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                        <circle cx="9" cy="9" r="2" stroke="white" stroke-width="2"/>
+                                    </svg>
+                                </div>
+                                <div class="message-content">
+                                    <p data-i18n="chat.welcomeMessage">你好！我是 OpenAIDE。有什么可以帮助你的吗？</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="chat-input-container">
+                            <textarea class="chat-input" id="message-input" data-i18n-placeholder="chat.placeholder" placeholder="输入你的消息..." rows="1"></textarea>
+                            <button class="btn btn-primary" id="send-btn">
+                                <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                                    <path d="M3 9H15M15 9L10 4M15 9L10 14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 右侧边栏 - 思考过程、工具调用和纠错 -->
+                <aside class="sidebar right-sidebar">
+                    <!-- 思考过程可视化 -->
+                    <div class="thinking-section">
+                        <div class="thinking-visualizer" id="thinking-visualizer"></div>
+                    </div>
+
+                    <!-- 工具调用显示 -->
+                    <div class="tool-call-section" style="margin-top: var(--space-lg);">
+                        <div class="tool-call-display" id="tool-call-display"></div>
+                    </div>
+
+                    <!-- 纠错面板 -->
+                    <div class="correction-section" style="margin-top: var(--space-lg);">
+                        <div class="correction-panel" id="correction-panel"></div>
+                    </div>
+
+                    <!-- 快捷操作 -->
+                    <div class="quick-actions" style="margin-top: var(--space-lg);">
+                        <h4 style="font-size: 12px; color: var(--text-tertiary); text-transform: uppercase; margin-bottom: var(--space-sm);">Quick Actions</h4>
+                        <div class="action-buttons">
+                            <button class="btn btn-secondary btn-sm" style="width: 100%; margin-bottom: var(--space-xs);" id="clear-thinking">
+                                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                                    <path d="M2 3.5H12M4 3.5V11.5C4 11.7652 4.10536 12.0196 4.29289 12.2071C4.48043 12.3946 4.73478 12.5 5 12.5H9C9.26522 12.5 9.51957 12.3946 9.70711 12.2071C9.89464 12.0196 10 11.7652 10 11.5V3.5M5 3.5V2.5C5 2.23478 5.10536 1.98043 5.29289 1.79289C5.48043 1.60536 5.73478 1.5 6 1.5H8C8.26522 1.5 8.51957 1.60536 8.70711 1.79289C8.89464 1.98043 9 2.23478 9 2.5V3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                                Clear Thinking
+                            </button>
+                            <button class="btn btn-secondary btn-sm" style="width: 100%;" id="approve-all">
+                                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                                    <path d="M3 7L5.5 9.5L11 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                                Approve All
+                            </button>
+                        </div>
+                    </div>
+                </aside>
+            </div>
+        </div>
+
+        <!-- 模板管理页面 -->
+        <div class="page hidden" id="page-templates">
+            <div class="templates-page" id="templates-page-container"></div>
+        </div>
+
+        <!-- 使用量统计仪表板 -->
+        <div class="page hidden" id="page-dashboard">
+            <div class="dashboard-page" id="dashboard-page-container"></div>
+        </div>
+
+        <!-- 定时任务管理页面 -->
+        <div class="page hidden" id="page-tasks">
+            <div class="scheduled-tasks-page" id="scheduled-tasks-page-container"></div>
+        </div>
+
+        <!-- 模型管理页面 -->
+        <div class="page hidden" id="page-models">
+            <div class="models-page" id="models-page-container"></div>
+        </div>
+
+        <!-- 思考页面 -->
+        <div class="page hidden" id="page-thinking">
+            <div class="container">
+                <div class="card">
+                    <h2 data-i18n="thinking.title">思考过程</h2>
+                    <div id="full-thinking-view"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 工作流页面 -->
+        <div class="page hidden" id="page-workflows">
+            <div class="container">
+                <div class="card">
+                    <h2 data-i18n="workflows.title">工作流</h2>
+                    <p data-i18n="workflows.comingSoon">工作流管理功能即将上线...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 技能页面 -->
+        <div class="page hidden" id="page-skills">
+            <div class="container">
+                <div class="card">
+                    <h2 data-i18n="skills.title">技能</h2>
+                    <p data-i18n="skills.comingSoon">技能管理功能即将上线...</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script type="module">
+        // 导入模块
+        import { themeManager } from './src/utils/theme.js';
+        import { i18n, t, setLanguage, getLanguage } from './src/utils/i18n.js';
+        import { ThinkingVisualizer } from './src/components/thinking-visualizer.js';
+        import { CorrectionPanel } from './src/components/correction-panel.js';
+        import { ToolCallDisplay } from './src/components/tool-call-display.js';
+        import { ModelsPage } from './src/pages/models-page.js';
+        import { TemplatesPage } from './src/pages/templates-page.js';
+        import { DashboardPage } from './src/pages/dashboard-page.js';
+        import { ScheduledTasksPage } from './src/pages/scheduled-tasks-page.js';
+        import { dialogueAPI, thinkingAPI, modelAPI } from './src/services/api.js';
+
+        // 初始化国际化
+        i18n.updatePageContent();
+
+        // 语言选择器事件
+        document.getElementById('language-selector')?.addEventListener('change', (e) => {
+            setLanguage(e.target.value);
+        });
+
+        // 设置当前语言选择器的值
+        document.getElementById('language-selector').value = getLanguage();
+
+        // 全局状态
+        const state = {
+            currentPage: 'chat',
+            currentDialogueId: null,
+            currentModelId: null,
+            thinkingVisualizer: null,
+            correctionPanel: null,
+            toolCallDisplay: null,
+            modelsPage: null,
+            templatesPage: null,
+            dashboardPage: null,
+            scheduledTasksPage: null
+        };
+
+        // 初始化应用
+        async function init() {
+            // 初始化主题
+            initTheme();
+
+            // 初始化导航
+            initNavigation();
+
+            // 初始化聊天功能
+            initChat();
+
+            // 初始化组件
+            initComponents();
+
+            // 加载默认模型
+            await loadDefaultModel();
+
+            // 创建对话
+            await createDialogue();
+        }
+
+        // 加载默认模型
+        async function loadDefaultModel() {
+            try {
+                const models = await modelAPI.listModels();
+                const enabledModels = models.filter(m => m.status === 'enabled');
+                if (enabledModels.length > 0) {
+                    state.currentModelId = enabledModels[0].id;
+                    console.log('Default model loaded:', state.currentModelId);
+                } else {
+                    console.warn('No enabled models found');
+                }
+            } catch (error) {
+                console.error('加载模型列表失败:', error);
+            }
+        }
+
+        // 初始化主题
+        function initTheme() {
+            const themeToggle = document.getElementById('theme-toggle');
+            const sunIcon = themeToggle.querySelector('.sun-icon');
+            const moonIcon = themeToggle.querySelector('.moon-icon');
+
+            // 设置初始图标状态
+            updateThemeIcon(themeManager.getTheme());
+
+            themeToggle.addEventListener('click', () => {
+                const newTheme = themeManager.toggle();
+                updateThemeIcon(newTheme);
+            });
+
+            function updateThemeIcon(theme) {
+                if (theme === 'dark') {
+                    sunIcon.classList.add('hidden');
+                    moonIcon.classList.remove('hidden');
+                } else {
+                    sunIcon.classList.remove('hidden');
+                    moonIcon.classList.add('hidden');
+                }
+            }
+        }
+
+        // 初始化导航
+        function initNavigation() {
+            const navLinks = document.querySelectorAll('.nav-link');
+            const pages = document.querySelectorAll('.page');
+
+            navLinks.forEach(link => {
+                link.addEventListener('click', async (e) => {
+                    e.preventDefault();
+                    const pageName = link.dataset.page;
+
+                    // 更新导航状态
+                    navLinks.forEach(l => l.classList.remove('active'));
+                    link.classList.add('active');
+
+                    // 切换页面
+                    pages.forEach(page => page.classList.add('hidden'));
+                    const targetPage = document.getElementById(`page-${pageName}`);
+                    if (targetPage) {
+                        targetPage.classList.remove('hidden');
+                    }
+
+                    // 特殊处理各个页面
+                    if (pageName === 'models' && !state.modelsPage) {
+                        await initModelsPage();
+                    } else if (pageName === 'templates' && !state.templatesPage) {
+                        await initTemplatesPage();
+                    } else if (pageName === 'dashboard' && !state.dashboardPage) {
+                        await initDashboardPage();
+                    } else if (pageName === 'tasks' && !state.scheduledTasksPage) {
+                        await initScheduledTasksPage();
+                    }
+
+                    state.currentPage = pageName;
+                });
+            });
+        }
+
+        // 初始化聊天功能
+        function initChat() {
+            const messageInput = document.getElementById('message-input');
+            const sendBtn = document.getElementById('send-btn');
+            const newChatBtn = document.getElementById('new-chat-btn');
+
+            // 发送消息
+            sendBtn.addEventListener('click', sendMessage);
+            messageInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
+                }
+            });
+
+            // 自动调整输入框高度
+            messageInput.addEventListener('input', () => {
+                messageInput.style.height = 'auto';
+                messageInput.style.height = Math.min(messageInput.scrollHeight, 120) + 'px';
+            });
+
+            // 新建对话
+            newChatBtn.addEventListener('click', async () => {
+                clearChat();
+                await createDialogue();
+            });
+        }
+
+        // 初始化组件
+        function initComponents() {
+            // 初始化思考可视化组件
+            const thinkingContainer = document.getElementById('thinking-visualizer');
+            state.thinkingVisualizer = new ThinkingVisualizer(thinkingContainer);
+            state.thinkingVisualizer.render();
+
+            // 初始化工具调用显示组件
+            const toolCallContainer = document.getElementById('tool-call-display');
+            state.toolCallDisplay = new ToolCallDisplay(toolCallContainer);
+            state.toolCallDisplay.render();
+
+            // 初始化纠错面板组件
+            const correctionContainer = document.getElementById('correction-panel');
+            state.correctionPanel = new CorrectionPanel(correctionContainer);
+            state.correctionPanel.render();
+
+            // 设置纠错回调
+            state.correctionPanel.on('resolve', (correction) => {
+                console.log('Correction approved:', correction);
+                showToast('Correction approved successfully', 'success');
+            });
+
+            state.correctionPanel.on('reject', (correction) => {
+                console.log('Correction rejected:', correction);
+                showToast('Correction rejected', 'info');
+            });
+
+            // 绑定快捷操作
+            document.getElementById('clear-thinking')?.addEventListener('click', () => {
+                state.thinkingVisualizer.clear();
+                showToast('Thinking process cleared', 'info');
+            });
+
+            document.getElementById('approve-all')?.addEventListener('click', () => {
+                state.correctionPanel.approveAll();
+                showToast('All corrections approved', 'success');
+            });
+        }
+
+        // 初始化模型页面
+        async function initModelsPage() {
+            const container = document.getElementById('models-page-container');
+            state.modelsPage = new ModelsPage(container);
+            await state.modelsPage.render();
+        }
+
+        // 初始化模板页面
+        async function initTemplatesPage() {
+            const container = document.getElementById('templates-page-container');
+            state.templatesPage = new TemplatesPage(container);
+            await state.templatesPage.render();
+        }
+
+        // 初始化仪表板页面
+        async function initDashboardPage() {
+            const container = document.getElementById('dashboard-page-container');
+            state.dashboardPage = new DashboardPage(container);
+            await state.dashboardPage.render();
+        }
+
+        // 初始化定时任务页面
+        async function initScheduledTasksPage() {
+            const container = document.getElementById('scheduled-tasks-page-container');
+            state.scheduledTasksPage = new ScheduledTasksPage(container);
+            await state.scheduledTasksPage.render();
+        }
+
+        // 创建对话
+        async function createDialogue() {
+            try {
+                const response = await dialogueAPI.createDialogue('user123', 'New Chat');
+                state.currentDialogueId = response.id;
+                console.log('Dialogue created:', state.currentDialogueId);
+            } catch (error) {
+                console.error('创建对话失败:', error);
+                state.currentDialogueId = 'mock-dialogue';
+            }
+        }
+
+        // 发送消息
+        async function sendMessage() {
+            const input = document.getElementById('message-input');
+            const message = input.value.trim();
+
+            if (!message) return;
+
+            // 清空输入框
+            input.value = '';
+            input.style.height = 'auto';
+
+            // 添加用户消息
+            addMessage('user', message);
+
+            // 显示加载状态
+            const loadingId = addMessage('assistant', '<div class="loading">' + t('chat.thinking') + '</div>');
+
+            // 模拟思考过程
+            simulateThinkingProcess(message);
+
+            // 发送到后端
+            try {
+                // 使用流式API获取响应
+                let responseText = '';
+                const messageElement = document.getElementById(loadingId);
+                if (messageElement) {
+                    messageElement.innerHTML = '';
+                }
+
+                // 检查是否有可用的模型
+                if (!state.currentModelId) {
+                    updateMessage(loadingId, 'Error: No model available. Please configure a model first.');
+                    return;
+                }
+
+                await dialogueAPI.sendMessageStream(
+                    state.currentDialogueId,
+                    'user-001', // 临时用户ID
+                    message,
+                    state.currentModelId, // 使用当前选中的模型ID
+                    {},
+                    (chunk) => {
+                        // 处理内容 - 即使是空字符串也要更新（可能是流的开头）
+                        if (chunk.content !== undefined) {
+                            responseText += chunk.content;
+                            updateMessage(loadingId, responseText);
+                        }
+                        if (chunk.done) {
+                            console.log('Stream completed');
+                        }
+                    }
+                );
+
+            } catch (error) {
+                console.error('发送消息失败:', error);
+                updateMessage(loadingId, t('chat.sendError') + error.message);
+            }
+        }
+
+        // 模拟思考过程
+        function simulateThinkingProcess(message) {
+            const tv = state.thinkingVisualizer;
+            const tcd = state.toolCallDisplay;
+
+            // 清空之前的思考和工具调用
+            tv.clear();
+            tcd.clear();
+
+            // 模拟思考步骤
+            setTimeout(() => {
+                const step1 = tv.addThought({
+                    type: 'analysis',
+                    content: `Analyzing user message: "${message.substring(0, 50)}${message.length > 50 ? '...' : ''}"`,
+                    status: 'processing'
+                });
+
+                setTimeout(() => {
+                    tv.updateThoughtStatus(step1, 'completed');
+
+                    const step2 = tv.addThought({
+                        type: 'decision',
+                        content: 'Determining appropriate response strategy',
+                        status: 'processing'
+                    });
+
+                    // 模拟工具调用
+                    setTimeout(() => {
+                        const toolCallId = tcd.addToolCall({
+                            toolName: 'search_knowledge_base',
+                            parameters: { query: message.substring(0, 30) },
+                            status: 'running'
+                        });
+
+                        setTimeout(() => {
+                            tcd.updateToolCallStatus(toolCallId, 'completed', {
+                                found: true,
+                                results: [
+                                    { title: 'Relevant information 1', snippet: '...' },
+                                    { title: 'Relevant information 2', snippet: '...' }
+                                ]
+                            });
+                        }, 1500);
+                    }, 500);
+
+                    setTimeout(() => {
+                        tv.updateThoughtStatus(step2, 'completed');
+
+                        // 模拟一个纠错示例
+                        if (Math.random() > 0.7) {
+                            const step3 = tv.addThought({
+                                type: 'step',
+                                content: 'Generating initial response draft',
+                                status: 'completed'
+                            });
+
+                            // 添加纠错
+                            state.correctionPanel.addCorrection({
+                                type: 'improvement',
+                                severity: 'low',
+                                title: 'Response clarity improvement',
+                                description: 'The initial response could be more concise and clearer.',
+                                originalValue: 'I am going to provide you with a very detailed explanation about...',
+                                suggestedValue: 'Here\'s a concise explanation:',
+                                context: 'Response generation'
+                            });
+                        }
+
+                    }, 800);
+                }, 600);
+            }, 300);
+        }
+
+        // 添加消息到聊天
+        function addMessage(sender, content) {
+            const chatMessages = document.getElementById('chat-messages');
+            const messageDiv = document.createElement('div');
+            const messageId = 'message-' + Date.now();
+            messageDiv.id = messageId;
+            messageDiv.className = `message ${sender}`;
+
+            const avatar = sender === 'assistant'
+                ? `<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 2C5.13401 2 2 5.13401 2 9C2 12.866 5.13401 16 9 16C12.866 16 16 12.866 16 9" stroke="white" stroke-width="2" stroke-linecap="round"/><path d="M16 5V9H12" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9" cy="9" r="2" stroke="white" stroke-width="2"/></svg>`
+                : `<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 16C11.2091 16 13 14.2091 13 12V5C13 2.79086 11.2091 1 9 1C6.79086 1 5 2.79086 5 5V12C5 14.2091 6.79086 16 9 16Z" stroke="white" stroke-width="2"/><path d="M9 16V17M5 12C5 14.7614 7.23858 17 10 17" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>`;
+
+            messageDiv.innerHTML = `
+                <div class="message-avatar">${avatar}</div>
+                <div class="message-content">${content}</div>
+            `;
+
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+
+            return messageId;
+        }
+
+        // 更新消息内容
+        function updateMessage(messageId, content) {
+            const messageDiv = document.getElementById(messageId);
+            if (messageDiv) {
+                const contentDiv = messageDiv.querySelector('.message-content');
+                if (contentDiv) {
+                    contentDiv.innerHTML = `<p>${content}</p>`;
+                }
+            }
+        }
+
+        // 显示 Toast 通知
+        function showToast(message, type = 'info') {
+            let container = document.querySelector('.toast-container');
+            if (!container) {
+                container = document.createElement('div');
+                container.className = 'toast-container';
+                document.body.appendChild(container);
+            }
+
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                    ${getToastIcon(type)}
+                </svg>
+                <span>${message}</span>
+            `;
+
+            container.appendChild(toast);
+
+            // 自动移除
+            setTimeout(() => {
+                toast.style.animation = 'fadeOut 0.3s ease forwards';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        function getToastIcon(type) {
+            const icons = {
+                success: '<path d="M10 0C4.47715 0 0 4.47715 0 10C0 15.5228 4.47715 20 10 20C15.5228 20 20 15.5228 20 10C20 4.47715 15.5228 0 10 0ZM8 15L3 10L4.41 8.59L8 12.17L15.59 4.58L17 6L8 15Z" fill="currentColor"/>',
+                error: '<path d="M10 0C4.47715 0 0 4.47715 0 10C0 15.5228 4.47715 20 10 20C15.5228 20 20 15.5228 20 10C20 4.47715 15.5228 0 10 0ZM11 15H9V13H11V15ZM11 11H9V5H11V11Z" fill="currentColor"/>',
+                warning: '<path d="M10 0C4.47715 0 0 4.47715 0 10C0 15.5228 4.47715 20 10 20C15.5228 20 20 15.5228 20 10C20 4.47715 15.5228 0 10 0ZM11 15H9V13H11V15ZM11 11H9V5H11V11Z" fill="currentColor"/>',
+                info: '<path d="M10 0C4.47715 0 0 4.47715 0 10C0 15.5228 4.47715 20 10 20C15.5228 20 20 15.5228 20 10C20 4.47715 15.5228 0 10 0ZM11 15H9V9H11V15ZM11 7H9V5H11V7Z" fill="currentColor"/>'
+            };
+            return icons[type] || icons.info;
+        }
+
+        // 清空聊天
+        function clearChat() {
+            const chatMessages = document.getElementById('chat-messages');
+            chatMessages.innerHTML = `
+                <div class="message assistant">
+                    <div class="message-avatar">
+                        <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                            <path d="M9 2C5.13401 2 2 5.13401 2 9C2 12.866 5.13401 16 9 16C12.866 16 16 12.866 16 9" stroke="white" stroke-width="2" stroke-linecap="round"/>
+                            <path d="M16 5V9H12" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <circle cx="9" cy="9" r="2" stroke="white" stroke-width="2"/>
+                        </svg>
+                    </div>
+                    <div class="message-content">
+                        <p>${t('chat.welcomeMessage')}</p>
+                    </div>
+                </div>
+            `;
+
+            // 清空思考过程、工具调用和纠错
+            if (state.thinkingVisualizer) {
+                state.thinkingVisualizer.clear();
+            }
+            if (state.toolCallDisplay) {
+                state.toolCallDisplay.clear();
+            }
+            if (state.correctionPanel) {
+                state.correctionPanel.clear();
+            }
+        }
+
+        // 导出函数供控制台调试
+        window.aiAssistant = {
+            state,
+            sendMessage,
+            showToast,
+            thinkingVisualizer: () => state.thinkingVisualizer,
+            correctionPanel: () => state.correctionPanel
+        };
+
+        // 启动应用
+        init();
+    </script>
+</body>
+</html>

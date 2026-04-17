@@ -1,0 +1,54 @@
+# 环境变量和密钥
+.env
+.env.*
+.openaide
+
+# 数据库
+*.db
+*.sqlite
+*.sqlite3
+
+# 编译产物
+openaide
+openaide-*
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+backend/openaide-*
+backend/src/openaide-*
+terminal/openaide-*
+deploy/
+
+# 临时文件
+tmp_*.txt
+*.tmp
+test_*.json
+config.json
+model.json
+
+# 敏感配置（包含 API Key、密码等）
+server_config.json
+server-openrouter-config.json
+openrouter-free-config.json
+config.json
+model.json
+.openaide
+!.openaide.example
+!**/config.example.json
+!*example*.json
+
+# Go
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,759 @@
+package services
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"openaide/backend/src/models"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+)
+
+// setupTestDBForUsage 创建测试数据库
+func setupTestDBForUsage(t *testing.T) *gorm.DB {
+	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+
+	err = db.AutoMigrate(
+		&models.UsageRecord{},
+		&models.DailyUsage{},
+		&models.MonthlyUsage{},
+		&models.ModelPricing{},
+		&models.UserBudget{},
+	)
+	require.NoError(t, err)
+
+	return db
+}
+
+// setupTestUsageService 创建测试服务
+func setupTestUsageService(t *testing.T) *UsageService {
+	db := setupTestDBForUsage(t)
+	cache := NewCacheService()
+	logger, _ := NewLoggerService(LogLevelInfo, "")
+
+	return NewUsageService(db, cache, logger)
+}
+
+// TestNewUsageService 测试服务初始化
+func TestNewUsageService(t *testing.T) {
+	service := setupTestUsageService(t)
+
+	assert.NotNil(t, service)
+	assert.NotNil(t, service.db)
+	assert.NotNil(t, service.cache)
+	assert.NotNil(t, service.logger)
+	assert.NotNil(t, service.pricing)
+
+	// 验证默认定价已加载
+	assert.Contains(t, service.pricing, "openai:gpt-4")
+	assert.Contains(t, service.pricing, "anthropic:claude-3-opus")
+	assert.Contains(t, service.pricing, "deepseek:deepseek-chat")
+}
+
+// TestInitDefaultPricing 测试默认定价初始化
+func TestInitDefaultPricing(t *testing.T) {
+	service := setupTestUsageService(t)
+
+	// 验证各种提供商的定价
+	pricingProviders := []struct {
+		key    string
+		input  float64
+		output float64
+	}{
+		{"openai:gpt-4", 0.03, 0.06},
+		{"openai:gpt-4-turbo", 0.01, 0.03},
+		{"openai:gpt-3.5-turbo", 0.0005, 0.0015},
+		{"anthropic:claude-3-opus", 0.015, 0.075},
+		{"anthropic:claude-3-sonnet", 0.003, 0.015},
+		{"deepseek:deepseek-chat", 0.0001, 0.0002},
+		{"qwen:qwen-turbo", 0.0004, 0.0012},
+		{"ollama:*", 0, 0},
+	}
+
+	for _, p := range pricingProviders {
+		pricing, exists := service.pricing[p.key]
+		assert.True(t, exists, "Pricing should exist for %s", p.key)
+		if exists {
+			assert.Equal(t, p.input, pricing.InputPricePer1K)
+			assert.Equal(t, p.output, pricing.OutputPricePer1K)
+		}
+	}
+}
+
+// TestRecordUsage 测试记录使用量
+func TestRecordUsage(t *testing.T) {
+	service := setupTestUsageService(t)
+
+	record := &models.UsageRecord{
+		UserID:    uuid.New().String(),
+		DialogueID: uuid.New().String(),
+		MessageID:  uuid.New().String(),
+		Provider:   "openai",
+		ModelID:    "gpt-4",
+		ModelName:  "gpt-4",
+		PromptTokens:     1000,
+		CompletionTokens: 500,
+		TotalTokens:      1500,
+		RequestType:      "chat",
+		IsStreaming:      false,
+		Duration:         1500,
+		Success:          true,
+	}
+
+	err := service.RecordUsage(record)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, record.ID)
+	assert.Greater(t, record.TotalCost, 0.0)
+
+	// 验证成本计算
+	// gpt-4: input $0.03/1k, output $0.06/1k
+	expectedInputCost := 1000.0 / 1000 * 0.03
+	expectedOutputCost := 500.0 / 1000 * 0.06
+	expectedTotal := expectedInputCost + expectedOutputCost
+
+	assert.InDelta(t, expectedInputCost, record.InputCost, 0.0001)
+	assert.InDelta(t, expectedOutputCost, record.OutputCost, 0.0001)
+	assert.InDelta(t, expectedTotal, record.TotalCost, 0.0001)
+
+	// 等待异步更新完成
+	time.Sleep(100 * time.Millisecond)
+
+	// 验证每日汇总已创建
+	var dailyUsage models.DailyUsage
+	today := time.Now().Format("2006-01-02")
+	todayTime, _ := time.Parse("2006-01-02", today)
+	err = service.db.Where("user_id = ? AND date = ?", record.UserID, todayTime).First(&dailyUsage).Error
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1), dailyUsage.TotalRequests)
+	assert.Equal(t, int64(1500), dailyUsage.TotalTokens)
+}
+
+// TestCalculateCost 测试成本计算
+func TestCalculateCost(t *testing.T) {
+	service := setupTestUsageService(t)
+
+	tests := []struct {
+		name           string
+		provider       string
+		modelName      string
+		promptTokens   int64
+		completionTokens int64
+		expectedInput  float64
+		expectedOutput float64
+	}{
+		{
+			name:           "GPT-4",
+			provider:       "openai",
+			modelName:      "gpt-4",
+			promptTokens:   1000,
+			completionTokens: 1000,
+			expectedInput:  0.03,
+			expectedOutput: 0.06,
+		},
+		{
+			name:           "GPT-3.5-turbo",
+			provider:       "openai",
+			modelName:      "gpt-3.5-turbo",
+			promptTokens:   1000,
+			completionTokens: 1000,
+			expectedInput:  0.0005,
+			expectedOutput: 0.0015,
+		},
+		{
+			name:           "Claude-3-opus",
+			provider:       "anthropic",
+			modelName:      "claude-3-opus",
+			promptTokens:   1000,
+			completionTokens: 1000,
+			expectedInput:  0.015,
+			expectedOutput: 0.075,
+		},
+		{
+			name:           "DeepSeek",
+			provider:       "deepseek",
+			modelName:      "deepseek-chat",
+			promptTokens:   1000,
+			completionTokens: 1000,
+			expectedInput:  0.0001,
+			expectedOutput: 0.0002,
+		},
+		{
+			name:           "Ollama (free)",
+			provider:       "ollama",
+			modelName:      "llama2",
+			promptTokens:   1000,
+			completionTokens: 1000,
+			expectedInput:  0,
+			expectedOutput: 0,
+		},
+		{
+			name:           "Unknown model (default pricing)",
+			provider:       "unknown",
+			modelName:      "unknown-model",
+			promptTokens:   1000,
+			completionTokens: 1000,
+			expectedInput:  0.001, // 默认定价
+			expectedOutput: 0.002,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			record := &models.UsageRecord{
+				Provider:         tt.provider,
+				ModelName:        tt.modelName,
+				PromptTokens:     tt.promptTokens,
+				CompletionTokens: tt.completionTokens,
+			}
+
+			service.calculateCost(record)
+
+			assert.InDelta(t, tt.expectedInput, record.InputCost, 0.0001)
+			assert.InDelta(t, tt.expectedOutput, record.OutputCost, 0.0001)
+		})
+	}
+}
+
+// TestUpdateDailyUsage 测试每日汇总更新
+func TestUpdateDailyUsage(t *testing.T) {
+	service := setupTestUsageService(t)
+
+	userID := uuid.New().String()
+	today := time.Now().Format("2006-01-02")
+	todayTime, _ := time.Parse("2006-01-02", today)
+
+	// 第一条记录
+	record1 := &models.UsageRecord{
+		UserID:           userID,
+		Provider:         "openai",
+		ModelName:        "gpt-3.5-turbo",
+		PromptTokens:     1000,
+		CompletionTokens: 500,
+		TotalTokens:      1500,
+		TotalCost:        0.0025,
+	}
+	service.updateDailyUsage(record1)
+
+	// 第二条记录
+	record2 := &models.UsageRecord{
+		UserID:           userID,
+		Provider:         "openai",
+		ModelName:        "gpt-4",
+		PromptTokens:     2000,
+		CompletionTokens: 1000,
+		TotalTokens:      3000,
+		TotalCost:        0.09,
+	}
+	service.updateDailyUsage(record2)
+
+	// 验证汇总
+	var dailyUsage models.DailyUsage
+	err := service.db.Where("user_id = ? AND date = ?", userID, todayTime).First(&dailyUsage).Error
+	require.NoError(t, err)
+
+	assert.Equal(t, int64(2), dailyUsage.TotalRequests)
+	assert.Equal(t, int64(3000), dailyUsage.TotalPromptTokens)
+	assert.Equal(t, int64(1500), dailyUsage.TotalCompletionTokens)
+	assert.Equal(t, int64(4500), dailyUsage.TotalTokens)
+	assert.InDelta(t, 0.0925, dailyUsage.TotalCost, 0.0001)
+}
+
+// TestUpdateMonthlyUsage 测试每月汇总更新
+func TestUpdateMonthlyUsage(t *testing.T) {
+	service := setupTestUsageService(t)
+
+	userID := uuid.New().String()
+	now := time.Now()
+	year, month := now.Year(), int(now.Month())
+
+	// 创建多条记录
+	for i := 0; i < 3; i++ {
+		record := &models.UsageRecord{
+			UserID:           userID,
+			Provider:         "openai",
+			ModelName:        "gpt-3.5-turbo",
+			PromptTokens:     1000,
+			CompletionTokens: 500,
+			TotalTokens:      1500,
+			TotalCost:        0.0025,
+		}
+		service.updateMonthlyUsage(record)
+	}
+
+	// 验证汇总
+	var monthlyUsage models.MonthlyUsage
+	err := service.db.Where("user_id = ? AND year = ? AND month = ?", userID, year, month).
+		First(&monthlyUsage).Error
+	require.NoError(t, err)
+
+	assert.Equal(t, int64(3), monthlyUsage.TotalRequests)
+	assert.Equal(t, int64(3000), monthlyUsage.TotalPromptTokens)
+	assert.Equal(t, int64(1500), monthlyUsage.TotalCompletionTokens)
+	assert.Equal(t, int64(4500), monthlyUsage.TotalTokens)
+}
+
+// TestGetDailyUsage 测试获取每日使用量
+func TestGetDailyUsage(t *testing.T) {
+	service := setupTestUsageService(t)
+
+	userID := uuid.New().String()
+	today := time.Now()
+
+	// 创建记录
+	record := &models.UsageRecord{
+		UserID:    userID,
+		Provider:  "openai",
+		ModelName: "gpt-3.5-turbo",
+		PromptTokens: 1000,
+		CompletionTokens: 500,
+		TotalTokens: 1500,
+		TotalCost:   0.0025,
+	}
+	service.updateDailyUsage(record)
+
+	// 获取每日使用量
+	usage, err := service.GetDailyUsage(userID, today)
+	assert.NoError(t, err)
+	assert.NotNil(t, usage)
+	assert.Equal(t, userID, usage.UserID)
+	assert.Equal(t, int64(1), usage.TotalRequests)
+}
+
+// TestGetMonthlyUsage 测试获取每月使用量
+func TestGetMonthlyUsage(t *testing.T) {
+	service := setupTestUsageService(t)
+
+	userID := uuid.New().String()
+	now := time.Now()
+	year, month := now.Year(), int(now.Month())
+
+	// 创建记录
+	record := &models.UsageRecord{
+		UserID:    userID,
+		Provider:  "openai",
+		ModelName: "gpt-3.5-turbo",
+		PromptTokens: 1000,
+		CompletionTokens: 500,
+		TotalTokens: 1500,
+		TotalCost:   0.0025,
+	}
+	service.updateMonthlyUsage(record)
+
+	// 获取每月使用量
+	usage, err := service.GetMonthlyUsage(userID, year, month)
+	assert.NoError(t, err)
+	assert.NotNil(t, usage)
+	assert.Equal(t, userID, usage.UserID)
+	assert.Equal(t, year, usage.Year)
+	assert.Equal(t, month, usage.Month)
+}
+
+// TestGetUsageHistory 测试获取使用历史
+func TestGetUsageHistory(t *testing.T) {
+	service := setupTestUsageService(t)
+
+	userID := uuid.New().String()
+
+	// 创建多条记录
+	for i := 0; i < 5; i++ {
+		record := &models.UsageRecord{
+			UserID:    userID,
+			Provider:  "openai",
+			ModelName: "gpt-3.5-turbo",
+			PromptTokens: int64(1000 * (i + 1)),
+			CompletionTokens: int64(500 * (i + 1)),
+			TotalTokens: int64(1500 * (i + 1)),
+		}
+		service.RecordUsage(record)
+	}
+
+	// 等待记录保存
+	time.Sleep(100 * time.Millisecond)
+
+	// 获取历史
+	history, err := service.GetUsageHistory(userID, time.Time{}, time.Time{}, 10)
+	assert.NoError(t, err)
+	assert.GreaterOrEqual(t, len(history), 5)
+
+	// 验证按时间倒序排列
+	if len(history) >= 2 {
+		assert.True(t, history[0].CreatedAt.After(history[1].CreatedAt) ||
+			history[0].CreatedAt.Equal(history[1].CreatedAt))
+	}
+}
+
+// TestGetUsageStats 测试获取使用统计
+func TestGetUsageStats(t *testing.T) {
+	service := setupTestUsageService(t)
+
+	userID := uuid.New().String()
+
+	// 创建测试数据
+	providers := []string{"openai", "anthropic"}
+	for _, provider := range providers {
+		for i := 0; i < 3; i++ {
+			record := &models.UsageRecord{
+				UserID:           userID,
+				Provider:         provider,
+				ModelName:        provider + "-model",
+				PromptTokens:     1000,
+				CompletionTokens: 500,
+				TotalTokens:      1500,
+				TotalCost:        0.01,
+				Success:          i != 1, // 一条失败
+				Duration:         1000,
+			}
+			service.RecordUsage(record)
+		}
+	}
+
+	time.Sleep(100 * time.Millisecond)
+
+	// 获取统计
+	stats, err := service.GetUsageStats(userID, "month")
+	assert.NoError(t, err)
+
+	// 验证统计数据
+	assert.Contains(t, stats, "total_requests")
+	assert.Contains(t, stats, "total_tokens")
+	assert.Contains(t, stats, "total_cost")
+	assert.Contains(t, stats, "by_model")
+	assert.Contains(t, stats, "by_provider")
+	assert.Contains(t, stats, "success_rate")
+	assert.Contains(t, stats, "avg_duration_ms")
+
+	totalRequests := stats["total_requests"].(int64)
+	assert.GreaterOrEqual(t, totalRequests, int64(6))
+
+	successRate := stats["success_rate"].(float64)
+	assert.Greater(t, successRate, 0.0)
+	assert.LessOrEqual(t, successRate, 100.0)
+}
+
+// TestSetUserBudget 测试设置用户预算
+func TestSetUserBudget(t *testing.T) {
+	service := setupTestUsageService(t)
+
+	userID := uuid.New().String()
+	thresholds := []int{50, 80, 100}
+
+	// 设置新预算
+	err := service.SetUserBudget(userID, 100.0, 10.0, thresholds, "test@example.com")
+	assert.NoError(t, err)
+
+	// 验证预算
+	budget, err := service.GetUserBudget(userID)
+	assert.NoError(t, err)
+	assert.Equal(t, userID, budget.UserID)
+	assert.Equal(t, 100.0, budget.MonthlyBudget)
+	assert.Equal(t, 10.0, budget.DailyBudget)
+	assert.Equal(t, thresholds, budget.AlertThresholds)
+	assert.Equal(t, "test@example.com", budget.AlertEmail)
+
+	// 更新预算
+	err = service.SetUserBudget(userID, 200.0, 20.0, []int{75}, "updated@example.com")
+	assert.NoError(t, err)
+
+	budget, _ = service.GetUserBudget(userID)
+	assert.Equal(t, 200.0, budget.MonthlyBudget)
+	assert.Equal(t, "updated@example.com", budget.AlertEmail)
+}
+
+// TestCheckBudget 测试预算检查
+func TestCheckBudget(t *testing.T) {
+	service := setupTestUsageService(t)
+
+	userID := uuid.New().String()
+
+	// 设置预算
+	thresholds := []int{50, 80, 100}
+	err := service.SetUserBudget(userID, 10.0, 5.0, thresholds, "test@example.com")
+	require.NoError(t, err)
+
+	// 创建使用记录（使预算使用达到80%）
+	now := time.Now()
+	year, month := now.Year(), int(now.Month())
+
+	monthlyUsage := &models.MonthlyUsage{
+		ID:          uuid.New().String(),
+		UserID:      userID,
+		Year:        year,
+		Month:       month,
+		TotalCost:   8.1, // 81% of $10
+	}
+	service.db.Create(monthlyUsage)
+
+	// 检查预算（应该触发警报）
+	service.checkBudget(userID)
+
+	// 验证日志记录（在实际应用中会发送邮件）
+	// 这里我们只是验证没有panic
+}
+
+// TestUpdateModelPricing 测试更新模型定价
+func TestUpdateModelPricing(t *testing.T) {
+	service := setupTestUsageService(t)
+
+	// 更新现有定价
+	pricing := &models.ModelPricing{
+		Provider:        "openai",
+		ModelName:       "gpt-4",
+		InputPricePer1K: 0.035, // 提价
+		OutputPricePer1K: 0.065,
+	}
+
+	err := service.UpdateModelPricing(pricing)
+	assert.NoError(t, err)
+
+	// 验证更新
+	retrieved, err := service.GetModelPricing("openai", "gpt-4")
+	assert.NoError(t, err)
+	assert.Equal(t, 0.035, retrieved.InputPricePer1K)
+	assert.Equal(t, 0.065, retrieved.OutputPricePer1K)
+
+	// 添加新定价
+	newPricing := &models.ModelPricing{
+		Provider:        "custom",
+		ModelName:       "custom-model",
+		InputPricePer1K: 0.001,
+		OutputPricePer1K: 0.002,
+	}
+
+	err = service.UpdateModelPricing(newPricing)
+	assert.NoError(t, err)
+
+	retrieved, _ = service.GetModelPricing("custom", "custom-model")
+	assert.Equal(t, 0.001, retrieved.InputPricePer1K)
+}
+
+// TestGetModelPricing 测试获取模型定价
+func TestGetModelPricing(t *testing.T) {
+	service := setupTestUsageService(t)
+
+	// 测试获取已知模型
+	pricing, err := service.GetModelPricing("openai", "gpt-4")
+	assert.NoError(t, err)
+	assert.NotNil(t, pricing)
+	assert.Equal(t, "openai", pricing.Provider)
+	assert.Equal(t, "gpt-4", pricing.ModelName)
+
+	// 测试通配符匹配
+	ollamaPricing, err := service.GetModelPricing("ollama", "any-model")
+	assert.NoError(t, err)
+	assert.NotNil(t, ollamaPricing)
+	assert.Equal(t, 0.0, ollamaPricing.InputPricePer1K)
+
+	// 测试不存在的模型
+	_, err = service.GetModelPricing("unknown", "unknown-model")
+	assert.Error(t, err)
+}
+
+// TestListModelPricing 测试列出所有定价
+func TestListModelPricing(t *testing.T) {
+	service := setupTestUsageService(t)
+
+	pricings, err := service.ListModelPricing()
+	assert.NoError(t, err)
+	assert.NotEmpty(t, pricings)
+
+	// 验证至少有一些默认定价
+	providerNames := make(map[string]bool)
+	for _, p := range pricings {
+		providerNames[p.Provider] = true
+	}
+
+	assert.True(t, providerNames["openai"])
+	assert.True(t, providerNames["anthropic"])
+	assert.True(t, providerNames["deepseek"])
+}
+
+// TestUsageWithDifferentRequestTypes 测试不同请求类型
+func TestUsageWithDifferentRequestTypes(t *testing.T) {
+	service := setupTestUsageService(t)
+
+	userID := uuid.New().String()
+
+	requestTypes := []string{"chat", "embedding", "rag"}
+	for _, reqType := range requestTypes {
+		record := &models.UsageRecord{
+			UserID:      userID,
+			Provider:    "openai",
+			ModelName:   "gpt-3.5-turbo",
+			RequestType: reqType,
+			PromptTokens:     500,
+			CompletionTokens: 250,
+			TotalTokens:      750,
+			Success:    true,
+		}
+		err := service.RecordUsage(record)
+		assert.NoError(t, err)
+	}
+
+	// 验证所有类型都已记录
+	time.Sleep(100 * time.Millisecond)
+
+	var count int64
+	service.db.Model(&models.UsageRecord{}).
+		Where("user_id = ?", userID).
+		Count(&count)
+	assert.Equal(t, int64(3), count)
+}
+
+// TestUsageWithError 测试错误记录
+func TestUsageWithError(t *testing.T) {
+	service := setupTestUsageService(t)
+
+	userID := uuid.New().String()
+
+	record := &models.UsageRecord{
+		UserID:       userID,
+		Provider:     "openai",
+		ModelName:    "gpt-4",
+		PromptTokens: 1000,
+		CompletionTokens: 0,
+		TotalTokens:  1000,
+		Success:      false,
+		ErrorMessage: "Rate limit exceeded",
+		Duration:     0,
+	}
+
+	err := service.RecordUsage(record)
+	assert.NoError(t, err)
+
+	// 成本仍然应该计算（基于输入tokens）
+	assert.Greater(t, record.InputCost, 0.0)
+	assert.Equal(t, 0.0, record.OutputCost)
+}
+
+// BenchmarkCostCalculation 性能测试
+func BenchmarkCostCalculation(b *testing.B) {
+	service := setupTestUsageService(&testing.T{})
+
+	record := &models.UsageRecord{
+		Provider:         "openai",
+		ModelName:        "gpt-4",
+		PromptTokens:     10000,
+		CompletionTokens: 5000,
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		service.calculateCost(record)
+	}
+}
+
+// TestConcurrentUsageRecording 测试并发记录
+func TestConcurrentUsageRecording(t *testing.T) {
+	service := setupTestUsageService(t)
+
+	userID := uuid.New().String()
+
+	// 并发记录
+	done := make(chan bool)
+	for i := 0; i < 10; i++ {
+		go func(index int) {
+			record := &models.UsageRecord{
+				UserID:    userID,
+				Provider:  "openai",
+				ModelName: "gpt-3.5-turbo",
+				PromptTokens: int64(1000 * (index + 1)),
+				CompletionTokens: int64(500 * (index + 1)),
+				TotalTokens: int64(1500 * (index + 1)),
+			}
+			service.RecordUsage(record)
+			done <- true
+		}(i)
+	}
+
+	// 等待所有goroutine完成
+	for i := 0; i < 10; i++ {
+		<-done
+	}
+
+	// 等待异步更新
+	time.Sleep(200 * time.Millisecond)
+
+	// 验证所有记录都已保存
+	var count int64
+	service.db.Model(&models.UsageRecord{}).Where("user_id = ?", userID).Count(&count)
+	assert.GreaterOrEqual(t, count, int64(10))
+}
+
+// TestBudgetAlertThresholds 测试预算警报阈值
+func TestBudgetAlertThresholds(t *testing.T) {
+	service := setupTestUsageService(t)
+
+	userID := uuid.New().String()
+
+	// 设置多个阈值
+	thresholds := []int{25, 50, 75, 90, 100}
+	err := service.SetUserBudget(userID, 100.0, 10.0, thresholds, "alert@example.com")
+	require.NoError(t, err)
+
+	budget, _ := service.GetUserBudget(userID)
+	assert.Equal(t, 5, len(budget.AlertThresholds))
+
+	// 验证阈值顺序
+	for i := 0; i < len(thresholds)-1; i++ {
+		assert.Less(t, thresholds[i], thresholds[i+1])
+	}
+}
+
+// TestGetUsageStatsWithPeriods 测试不同周期的统计
+func TestGetUsageStatsWithPeriods(t *testing.T) {
+	service := setupTestUsageService(t)
+
+	userID := uuid.New().String()
+
+	// 创建一些历史数据
+	for i := 0; i < 5; i++ {
+		record := &models.UsageRecord{
+			UserID:    userID,
+			Provider:  "openai",
+			ModelName: "gpt-3.5-turbo",
+			PromptTokens: 1000,
+			CompletionTokens: 500,
+			TotalTokens: 1500,
+			TotalCost:   0.0025,
+			Success:     true,
+		}
+		service.RecordUsage(record)
+	}
+
+	time.Sleep(100 * time.Millisecond)
+
+	periods := []string{"day", "week", "month"}
+	for _, period := range periods {
+		stats, err := service.GetUsageStats(userID, period)
+		assert.NoError(t, err)
+		assert.NotNil(t, stats)
+		assert.Contains(t, stats, "total_requests")
+	}
+}
+
+// TestWildcardPricing 测试通配符定价
+func TestWildcardPricing(t *testing.T) {
+	service := setupTestUsageService(t)
+
+	// 测试 ollama 通配符
+	ollamaModels := []string{"llama2", "mistral", "codellama"}
+	for _, model := range ollamaModels {
+		record := &models.UsageRecord{
+			Provider: "ollama",
+			ModelName: model,
+			PromptTokens: 1000,
+			CompletionTokens: 1000,
+		}
+		service.calculateCost(record)
+
+		assert.Equal(t, 0.0, record.InputCost)
+		assert.Equal(t, 0.0, record.OutputCost)
+		assert.Equal(t, 0.0, record.TotalCost)
+	}
+}

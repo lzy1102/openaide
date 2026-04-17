@@ -1,0 +1,143 @@
+{
+  "models": [
+    {
+      "name": "gpt-4",
+      "description": "OpenAI GPT-4 model",
+      "type": "llm",
+      "provider": "openai",
+      "version": "2024-01-01",
+      "api_key": "sk-your-openai-api-key-here",
+      "base_url": "https://api.openai.com/v1",
+      "config": {
+        "timeout": 60,
+        "max_retries": 3,
+        "retry_delay": 1000
+      },
+      "status": "enabled"
+    },
+    {
+      "name": "claude-3-sonnet-20240229",
+      "description": "Anthropic Claude 3 Sonnet model",
+      "type": "llm",
+      "provider": "anthropic",
+      "api_key": "sk-ant-your-anthropic-api-key-here",
+      "config": {
+        "timeout": 60,
+        "max_retries": 3
+      },
+      "status": "enabled"
+    },
+    {
+      "name": "qwen-turbo",
+      "description": "阿里云通义千问 Turbo",
+      "type": "llm",
+      "provider": "qwen",
+      "api_key": "your-dashscope-api-key-here",
+      "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "config": {
+        "model": "qwen-turbo",
+        "timeout": 60
+      },
+      "status": "enabled"
+    },
+    {
+      "name": "deepseek-chat",
+      "description": "DeepSeek Chat 模型",
+      "type": "llm",
+      "provider": "deepseek",
+      "api_key": "your-deepseek-api-key-here",
+      "base_url": "https://api.deepseek.com",
+      "config": {
+        "model": "deepseek-chat",
+        "timeout": 60
+      },
+      "status": "enabled"
+    },
+    {
+      "name": "moonshot-v1-8k",
+      "description": "Moonshot Kimi 8K 上下文模型",
+      "type": "llm",
+      "provider": "moonshot",
+      "api_key": "your-moonshot-api-key-here",
+      "base_url": "https://api.moonshot.cn/v1",
+      "config": {
+        "model": "moonshot-v1-8k",
+        "timeout": 60
+      },
+      "status": "enabled"
+    },
+    {
+      "name": "ernie-bot-4",
+      "description": "百度文心一言 ERNIE Bot 4.0",
+      "type": "llm",
+      "provider": "ernie",
+      "api_key": "your-baidu-api-key-here",
+      "config": {
+        "secret_key": "your-baidu-secret-key-here",
+        "timeout": 60
+      },
+      "status": "enabled"
+    },
+    {
+      "name": "glm-5",
+      "description": "智谱 GLM-5 旗舰模型",
+      "type": "llm",
+      "provider": "glm",
+      "api_key": "your-glm-api-key-id.secret",
+      "base_url": "https://open.bigmodel.cn/api/paas/v4",
+      "config": {
+        "model": "glm-5",
+        "timeout": 60
+      },
+      "status": "enabled"
+    },
+    {
+      "name": "glm-4.7-coding",
+      "description": "智谱 GLM-4.7 编程增强版 (Coding Plan)",
+      "type": "llm",
+      "provider": "glm",
+      "api_key": "your-glm-api-key-id.secret",
+      "base_url": "https://open.bigmodel.cn/api/coding/paas/v4",
+      "config": {
+        "model": "glm-4.7",
+        "timeout": 60
+      },
+      "status": "enabled"
+    },
+    {
+      "name": "gemini-pro",
+      "description": "Google Gemini Pro 模型",
+      "type": "llm",
+      "provider": "gemini",
+      "api_key": "your-google-api-key-here",
+      "config": {
+        "timeout": 60
+      },
+      "status": "enabled"
+    },
+    {
+      "name": "mistral-large",
+      "description": "Mistral AI Large 模型",
+      "type": "llm",
+      "provider": "mistral",
+      "api_key": "your-mistral-api-key-here",
+      "base_url": "https://api.mistral.ai/v1",
+      "config": {
+        "timeout": 60
+      },
+      "status": "enabled"
+    },
+    {
+      "name": "llama2-local",
+      "description": "Ollama 本地 Llama2 模型 (无需 API Key)",
+      "type": "llm",
+      "provider": "ollama",
+      "base_url": "http://localhost:11434/v1",
+      "config": {
+        "model": "llama2",
+        "timeout": 120
+      },
+      "status": "enabled"
+    }
+  ]
+}

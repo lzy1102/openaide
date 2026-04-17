@@ -1,0 +1,131 @@
+# OpenAIDE Development Team Configuration | OpenAIDE 开发团队配置
+# Usage | 使用方法: Read this file in Claude Code to start the team | 在 Claude Code 中引用此文件来启动团队
+
+team:
+  name: openaide-dev
+  description: OpenAIDE Development Team | OpenAIDE 项目开发团队
+
+members:
+  # 后端开发
+  - name: backend-llm
+    role: 后端开发工程师
+    task: LLM 模型接入
+    description: 实现多模型 API 调用（OpenAI/Claude/GLM）
+    model: claude-opus-4-6
+    workdir: /mnt/d/project/android/openaide/backend
+    color: blue
+
+  - name: backend-thinking
+    role: 后端开发工程师
+    task: 思考推理系统
+    description: 实现 Chain-of-Thought 和 Tree-of-Thought 推理
+    model: claude-opus-4-6
+    workdir: /mnt/d/project/android/openaide/backend
+    color: yellow
+
+  - name: backend-correction
+    role: 后端开发工程师
+    task: 自动纠错系统
+    description: 实现错误检测和自动修正
+    model: claude-opus-4-6
+    workdir: /mnt/d/project/android/openaide/backend
+    color: orange
+
+  - name: backend-learning
+    role: 后端开发工程师
+    task: 持续学习系统
+    description: 实现反馈学习和知识积累
+    model: claude-opus-4-6
+    workdir: /mnt/d/project/android/openaide/backend
+    color: pink
+
+  - name: backend-workflow
+    role: 后端开发工程师
+    task: 工作流引擎
+    description: 实现工作流编排和执行引擎
+    model: claude-opus-4-6
+    workdir: /mnt/d/project/android/openaide/backend
+    color: purple
+
+  # 前端开发
+  - name: frontend-dev
+    role: 前端开发工程师
+    task: 前端界面
+    description: 优化 UI/UX，实现深色模式和交互改进
+    model: claude-opus-4-6
+    workdir: /mnt/d/project/android/openaide/frontend
+    color: green
+
+  # 知识库模块
+  - name: knowledge-model
+    role: 后端开发工程师
+    task: 知识库数据模型
+    description: 创建 Knowledge/Category/Tag/Document 模型
+    model: claude-opus-4-6
+    workdir: /mnt/d/project/android/openaide/backend
+    color: cyan
+
+  - name: knowledge-vector
+    role: 后端开发工程师
+    task: 向量存储检索
+    description: 实现 Embedding 生成和向量相似度搜索
+    model: claude-opus-4-6
+    workdir: /mnt/d/project/android/openaide/backend
+    color: red
+
+  - name: knowledge-rag
+    role: 后端开发工程师
+    task: RAG 检索增强
+    description: 实现 RAG 检索增强生成服务
+    model: claude-opus-4-6
+    workdir: /mnt/d/project/android/openaide/backend
+    color: blue
+
+  - name: knowledge-extract
+    role: 后端开发工程师
+    task: 知识自动提取
+    description: 从对话中自动提取有价值知识
+    model: claude-opus-4-6
+    workdir: /mnt/d/project/android/openaide/backend
+    color: green
+
+  - name: knowledge-doc
+    role: 后端开发工程师
+    task: 文档导入
+    description: 实现多格式文档导入和分块索引
+    model: claude-opus-4-6
+    workdir: /mnt/d/project/android/openaide/backend
+    color: yellow
+
+# 项目结构
+project:
+  root: /mnt/d/project/android/openaide
+  backend: /mnt/d/project/android/openaide/backend
+  frontend: /mnt/d/project/android/openaide/frontend
+
+  key_files:
+    - backend/src/services/llm/llm_client.go
+    - backend/src/services/thinking_service.go
+    - backend/src/services/correction_service.go
+    - backend/src/services/learning_service.go
+    - backend/src/services/workflow_service.go
+    - backend/src/services/knowledge_service.go
+    - backend/src/services/embedding_service.go
+    - backend/src/services/rag_service.go
+    - backend/src/services/knowledge_extraction_service.go
+    - backend/src/services/document_service.go
+    - backend/src/models/knowledge.go
+    - frontend/index.html
+    - frontend/src/services/api.js
+
+# 启动命令示例
+# 在 Claude Code 中执行以下命令来启动团队:
+#
+# 1. 创建团队:
+#    TeamCreate team_name: "openaide-dev"
+#
+# 2. 添加成员 (示例):
+#    Agent subagent_type: "general-purpose"
+#           name: "backend-llm"
+#           team_name: "openaide-dev"
+#           prompt: "参考 .claude/team.yaml 中的 backend-llm 配置"

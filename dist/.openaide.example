@@ -1,0 +1,57 @@
+{
+  "models": [
+    {
+      "name": "gpt-4",
+      "description": "OpenAI GPT-4 model",
+      "type": "llm",
+      "provider": "openai",
+      "version": "2024-01-01",
+      "api_key": "sk-your-openai-api-key-here",
+      "base_url": "https://api.openai.com/v1",
+      "config": {
+        "timeout": 60,
+        "max_retries": 3,
+        "retry_delay": 1000
+      },
+      "status": "enabled"
+    },
+    {
+      "name": "deepseek-chat",
+      "description": "DeepSeek Chat 模型",
+      "type": "llm",
+      "provider": "deepseek",
+      "api_key": "your-deepseek-api-key-here",
+      "base_url": "https://api.deepseek.com",
+      "config": {
+        "model": "deepseek-chat",
+        "timeout": 60
+      },
+      "status": "enabled"
+    },
+    {
+      "name": "qwen-turbo",
+      "description": "阿里云通义千问 Turbo",
+      "type": "llm",
+      "provider": "qwen",
+      "api_key": "your-dashscope-api-key-here",
+      "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "config": {
+        "model": "qwen-turbo",
+        "timeout": 60
+      },
+      "status": "enabled"
+    },
+    {
+      "name": "ollama-llama2",
+      "description": "Ollama 本地 Llama2 模型 (无需 API Key)",
+      "type": "llm",
+      "provider": "ollama",
+      "base_url": "http://localhost:11434/v1",
+      "config": {
+        "model": "llama2",
+        "timeout": 120
+      },
+      "status": "enabled"
+    }
+  ]
+}

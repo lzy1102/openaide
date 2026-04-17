@@ -1,0 +1,22 @@
+{
+  "models": [{
+    "name": "your-model-name",
+    "description": "Model description",
+    "type": "llm",
+    "provider": "openai",
+    "api_key": "",
+    "base_url": "https://api.example.com/v1",
+    "config": {
+      "model": "gpt-4o-mini",
+      "timeout": 120,
+      "max_retries": 3,
+      "retry_delay": 2000
+    },
+    "status": "enabled"
+  }],
+  "default_model": "your-model-name",
+  "feishu": {"enabled": false},
+  "voice": {"enabled": false},
+  "sandbox": {"enabled": false},
+  "embedding": {"enabled": false}
+}
