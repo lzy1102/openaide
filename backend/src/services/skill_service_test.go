@@ -1,7 +1,6 @@
 package services
 
 import (
-	"context"
 	"testing"
 
 	"github.com/glebarez/sqlite"

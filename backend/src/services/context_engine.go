@@ -295,12 +295,7 @@ func isToolResult(msg models.Message) bool {
 	return strings.Contains(strings.ToLower(msg.Content), "tool_result") || strings.Contains(strings.ToLower(msg.Content), "function_result")
 }
 
-func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen] + "..."
-}
+
 
 func (e *DefaultContextEngine) Summarize(ctx context.Context, dialogueID string) (string, error) {
 	e.mu.Lock()

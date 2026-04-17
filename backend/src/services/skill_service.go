@@ -241,13 +241,7 @@ func (s *SkillService) GetSkillLevel2(id string) ([]string, error) {
 		return nil, err
 	}
 	if skill.Level2References != nil {
-		result := make([]string, 0, len(skill.Level2References))
-		for _, v := range skill.Level2References {
-			if s, ok := v.(string); ok {
-				result = append(result, s)
-			}
-		}
-		return result, nil
+		return skill.Level2References, nil
 	}
 	return []string{}, nil
 }
