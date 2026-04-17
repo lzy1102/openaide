@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -125,6 +126,8 @@ func main() {
 		&models.SkillEvolution{},
 		&models.CapabilityGap{},
 		&models.EvolutionMetrics{},
+		// 上下文压缩模型 (Hermes Agent)
+		&models.CompressedContext{},
 	); err != nil {
 		log.Printf("AutoMigrate warning: %v", err)
 	}
@@ -224,6 +227,7 @@ func main() {
 	ragService := services.NewRAGService(knowledgeService, modelService.GetLLMClient(), cacheService)
 
 	// 初始化上下文管理和知识提取服务
+	_ = services.NewDefaultContextEngine(db, dialogueService, cacheService, loggerService, services.DefaultCompressionConfig, true)
 	contextManager := services.NewContextManager(db, dialogueService, cacheService, loggerService, 100, 4000, 24*time.Hour, true)
 	extractionService := services.NewKnowledgeExtractionService(db, modelService.GetLLMClient(), knowledgeService, dialogueService, loggerService)
 
@@ -295,6 +299,31 @@ func main() {
 		})
 	}
 
+	// 应用上下文引擎配置 (Hermes Agent)
+	if cfg.Context.CompressionMode != "" {
+		compressionMode := services.CompressionMode(cfg.Context.CompressionMode)
+		_ = services.NewDefaultContextEngine(db, dialogueService, cacheService, loggerService, services.CompressionConfig{
+			Mode:              compressionMode,
+			MaxTokens:         cfg.Context.MaxTokens,
+			KeepLastN:         cfg.Context.KeepLastN,
+			PreserveToolCalls: cfg.Context.PreserveToolCalls,
+			FallbackToSummary: cfg.Context.FallbackToSummary,
+		}, cfg.Context.CompressionEnabled)
+		log.Printf("[Hermes Agent] Context engine initialized with mode: %s", compressionMode)
+	}
+
+	// 初始化基于活动的超时跟踪器 (Hermes Agent 智能超时)
+	activityTimeout := 30 * time.Minute
+	if cfg.ActivityTimeout != "" {
+		if d, err := time.ParseDuration(cfg.ActivityTimeout); err == nil {
+			activityTimeout = d
+		}
+	}
+	activityTracker := services.NewActivityTracker(activityTimeout, func(sessionID string) {
+		log.Printf("[ActivityTracker] Session %s timed out due to inactivity", sessionID)
+	})
+	wsService.ActivityTracker = activityTracker
+
 	// 同步配置文件中的模型到数据库
 	if len(cfg.Models) > 0 {
 		for _, modelConfig := range cfg.Models {
@@ -343,6 +372,17 @@ func main() {
 		memoryEmbeddingSvc = services.NewMemoryEmbeddingService(db, embeddingSvc, cacheService)
 	}
 	
+	// 初始化 Memory Provider 注册表 (Hermes Agent 插件化架构)
+	memoryRegistry := services.NewMemoryProviderRegistry()
+	memoryRegistry.Register("gorm", func() services.MemoryProvider {
+		return services.NewGormMemoryProvider(db)
+	})
+	memoryRegistry.SetActiveProvider(services.NewGormMemoryProvider(db))
+	
+	// 使用 Memory Provider 替代原有 memoryService
+	memoryStore := memoryRegistry.GetActiveProvider()
+	memoryService = services.NewMemoryServiceWithStore(memoryStore, cacheService)
+	
 	feishuConfig := services.FeishuConfig{
 		Enabled:        cfg.Feishu.Enabled,
 		AppID:          cfg.Feishu.AppID,
@@ -358,6 +398,9 @@ func main() {
 		}
 	}
 	defer feishuService.Stop()
+
+	// 启动技能进化定时任务 (Hermes Agent 自我进化)
+	go skillEvolutionService.RunPeriodicEvolution(context.Background())
 
 	// ==================== 初始化所有 Handler ====================
 
@@ -445,6 +488,7 @@ func main() {
 	// 健康检查接口
 	r.GET("/health", func(c *gin.Context) {
 		enabledModels, _ := modelService.ListEnabledModels()
+		activeProvider := memoryRegistry.GetActiveProvider()
 		services := map[string]interface{}{
 			"models":      len(enabledModels),
 			"voice":       voiceService.IsEnabled(),
@@ -456,6 +500,8 @@ func main() {
 			"plan_service":   true,
 			"model_router":   true,
 			"tool_calling":   true,
+			"memory_provider": activeProvider.Name(),
+			"context_engine":   "default",
 		}
 		c.JSON(http.StatusOK, gin.H{
 			"status":   "ok",

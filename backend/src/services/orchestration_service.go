@@ -146,19 +146,19 @@ func (s *OrchestrationService) ProcessUserMessage(ctx context.Context, req *Orch
 	// 阶段 1: 任务分析
 	analysis, err := s.analyzeTask(ctx, session, req)
 	if err != nil {
-		return s.errorResponse(session, fmt.Sprintf("任务分析失败: %w", err)), nil
+		return s.errorResponse(session, fmt.Sprintf("任务分析失败: %v", err)), nil
 	}
 
 	// 阶段 2: 团队规划
 	plan, err := s.planTeam(ctx, session, analysis)
 	if err != nil {
-		return s.errorResponse(session, fmt.Sprintf("团队规划失败: %w", err)), nil
+		return s.errorResponse(session, fmt.Sprintf("团队规划失败: %v", err)), nil
 	}
 
 	// 阶段 3: 确认流程
 	confirmation, err := s.createConfirmation(ctx, session, plan)
 	if err != nil {
-		return s.errorResponse(session, fmt.Sprintf("创建确认流程失败: %w", err)), nil
+		return s.errorResponse(session, fmt.Sprintf("创建确认流程失败: %v", err)), nil
 	}
 
 	// 检查是否可以自动批准
@@ -493,12 +493,12 @@ func (s *OrchestrationService) executePlan(ctx context.Context, session *Orchest
 		CreatedAt:   time.Now(),
 	})
 	if err != nil {
-		return s.errorResponse(session, fmt.Sprintf("创建团队失败: %w", err)), nil
+		return s.errorResponse(session, fmt.Sprintf("创建团队失败: %v", err)), nil
 	}
 
 	// 启动执行
 	if err := s.teamOrchestrator.StartExecution(team.ID); err != nil {
-		return s.errorResponse(session, fmt.Sprintf("启动执行失败: %w", err)), nil
+		return s.errorResponse(session, fmt.Sprintf("启动执行失败: %v", err)), nil
 	}
 
 	// 异步监控执行
@@ -738,7 +738,7 @@ func (s *OrchestrationService) adjustPlan(ctx context.Context, session *Orchestr
 
 	resp, err := s.llmClient.Chat(ctx, req)
 	if err != nil {
-		return s.errorResponse(session, fmt.Sprintf("调整方案失败: %w", err)), nil
+		return s.errorResponse(session, fmt.Sprintf("调整方案失败: %v", err)), nil
 	}
 
 	if len(resp.Choices) == 0 {

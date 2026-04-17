@@ -9,12 +9,24 @@ import (
 
 // Config 根配置结构
 type Config struct {
-	Models    []ModelConfig  `json:"models"`
-	Feishu    FeishuConfig   `json:"feishu"`
-	Voice     VoiceConfig    `json:"voice"`
-	Sandbox   SandboxConfig  `json:"sandbox"`
-	Email     EmailConfig    `json:"email"`
-	Embedding EmbeddingConfig `json:"embedding"` // 嵌入服务配置（可选）
+	Models          []ModelConfig   `json:"models"`
+	Feishu          FeishuConfig    `json:"feishu"`
+	Voice           VoiceConfig     `json:"voice"`
+	Sandbox         SandboxConfig   `json:"sandbox"`
+	Email           EmailConfig     `json:"email"`
+	Embedding       EmbeddingConfig `json:"embedding"` // 嵌入服务配置（可选）
+	Context         ContextConfig   `json:"context"`   // 上下文引擎配置 (Hermes Agent)
+	ActivityTimeout string          `json:"activity_timeout"` // 基于活动超时时间 (Hermes Agent)
+}
+
+// ContextConfig 上下文引擎配置 (Hermes Agent)
+type ContextConfig struct {
+	CompressionEnabled bool   `json:"compression_enabled"`
+	CompressionMode    string `json:"compression_mode"`
+	MaxTokens          int    `json:"max_tokens"`
+	KeepLastN          int    `json:"keep_last_n"`
+	PreserveToolCalls  bool   `json:"preserve_tool_calls"`
+	FallbackToSummary  bool   `json:"fallback_to_summary"`
 }
 
 // EmbeddingConfig 嵌入服务配置
@@ -160,8 +172,18 @@ func loadConfig() (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			// 配置文件不存在，返回默认配置
-			return &Config{Models: []ModelConfig{}}, nil
+			return &Config{
+				Models: []ModelConfig{},
+				Context: ContextConfig{
+					CompressionEnabled: true,
+					CompressionMode:    "balanced",
+					MaxTokens:          8000,
+					KeepLastN:          4,
+					PreserveToolCalls:  true,
+					FallbackToSummary:  true,
+				},
+				ActivityTimeout: "30m",
+			}, nil
 		}
 		return nil, err
 	}
@@ -169,6 +191,20 @@ func loadConfig() (*Config, error) {
 	var cfg Config
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, err
+	}
+
+	// 默认值
+	if cfg.Context.CompressionMode == "" {
+		cfg.Context.CompressionMode = "balanced"
+	}
+	if cfg.Context.MaxTokens == 0 {
+		cfg.Context.MaxTokens = 8000
+	}
+	if cfg.Context.KeepLastN == 0 {
+		cfg.Context.KeepLastN = 4
+	}
+	if cfg.ActivityTimeout == "" {
+		cfg.ActivityTimeout = "30m"
 	}
 
 	return &cfg, nil

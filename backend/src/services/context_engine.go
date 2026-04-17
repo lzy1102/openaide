@@ -41,11 +41,11 @@ var DefaultCompressionConfig = CompressionConfig{
 
 // ContextEngine 可插拔上下文引擎接口
 type ContextEngine interface {
-	Compress(ctx context.Context, dialogueID string) (*CompressedContext, error)
+	Compress(ctx context.Context, dialogueID string) (*models.CompressedContext, error)
 	Summarize(ctx context.Context, dialogueID string) (string, error)
 	ExtractImportantInfo(ctx context.Context, dialogueID string) (map[string]interface{}, error)
 	ClearExpired(before time.Time) error
-	GetMetrics() *ContextMetrics
+	GetMetrics() *models.ContextMetrics
 	Name() string
 }
 
@@ -75,7 +75,7 @@ func (e *DefaultContextEngine) Name() string {
 	return "default"
 }
 
-func (e *DefaultContextEngine) Compress(ctx context.Context, dialogueID string) (*CompressedContext, error) {
+func (e *DefaultContextEngine) Compress(ctx context.Context, dialogueID string) (*models.CompressedContext, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -112,7 +112,7 @@ func (e *DefaultContextEngine) Compress(ctx context.Context, dialogueID string) 
 
 	importantInfo, _ := e.extractImportantInfo(&dialogue)
 
-	compressedCtx := &CompressedContext{
+	compressedCtx := &models.CompressedContext{
 		DialogueID:    dialogueID,
 		Title:         dialogue.Title,
 		Summary:       summary,
@@ -337,20 +337,20 @@ func (e *DefaultContextEngine) extractImportantInfo(dialogue *models.Dialogue) (
 	return importantInfo, nil
 }
 
-func (e *DefaultContextEngine) GetMetrics() *ContextMetrics {
+func (e *DefaultContextEngine) GetMetrics() *models.ContextMetrics {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	var metrics ContextMetrics
+	var metrics models.ContextMetrics
 
-	e.db.Model(&CompressedContext{}).Count(&metrics.TotalContexts)
+	e.db.Model(&models.CompressedContext{}).Count(&metrics.TotalContexts)
 	e.db.Model(&models.Dialogue{}).Where("status = ?", "active").Count(&metrics.ActiveDialogues)
 
-	var compressedCtxs []CompressedContext
+	var compressedCtxs []models.CompressedContext
 	e.db.Find(&compressedCtxs)
 	metrics.TotalMessages = 0
 	metrics.TotalTokens = 0
 	for _, ctx := range compressedCtxs {
-		metrics.TotalMessages += int64(ctx.TokenCount)
+		metrics.TotalTokens += int64(ctx.TokenCount)
 		if ctx.CreatedAt.Before(metrics.OldestContext) || metrics.OldestContext.IsZero() {
 			metrics.OldestContext = ctx.CreatedAt
 		}
@@ -367,7 +367,7 @@ func (e *DefaultContextEngine) GetMetrics() *ContextMetrics {
 func (e *DefaultContextEngine) ClearExpired(before time.Time) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	var expired []CompressedContext
+	var expired []models.CompressedContext
 	expiresAt := before
 	if expiresAt.IsZero() {
 		expiresAt = time.Now().Add(-24 * time.Hour)

@@ -164,6 +164,9 @@ type WebSocketService struct {
 	taskService     *TaskService
 	workflowService *WorkflowService
 
+	// 基于活动的超时跟踪器 (Hermes Agent)
+	ActivityTracker *ActivityTracker
+
 	// 配置
 	pingInterval   time.Duration
 	pongWait       time.Duration
@@ -427,6 +430,11 @@ func (s *WebSocketService) handleUnsubscribe(client WebSocketClient, msg WebSock
 
 // handleChat 处理聊天
 func (s *WebSocketService) handleChat(client WebSocketClient, msg WebSocketMessage) {
+	// 记录活动 (Hermes Agent 基于活动超时)
+	if s.ActivityTracker != nil {
+		s.ActivityTracker.RecordActivity(client.GetID())
+	}
+
 	payload, ok := msg.Payload.(map[string]interface{})
 	if !ok {
 		s.sendError(client, msg.ID, "invalid chat payload")
