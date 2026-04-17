@@ -48,6 +48,8 @@ vendor/
 *.swp
 *.swo
 *~
+.claude/
+.trae/
 
 # OS
 .DS_Store
