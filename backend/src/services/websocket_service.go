@@ -505,15 +505,20 @@ func (s *WebSocketService) handleChatStream(client WebSocketClient, msg WebSocke
 			}
 
 			if len(chunk.Choices) > 0 {
-				isDone := chunk.Choices[0].FinishReason != ""
-				s.sendToClient(client, WebSocketMessage{
-					Type: WSTypeChatChunk,
-					ID:   msg.ID,
-					Payload: map[string]interface{}{
-						"content": chunk.Choices[0].Delta.Content,
-						"done":    isDone,
-					},
-				})
+			isDone := chunk.Choices[0].FinishReason != ""
+			delta := chunk.Choices[0].Delta
+			payload := map[string]interface{}{
+				"content": delta.Content,
+				"done":    isDone,
+			}
+			if delta.ReasoningContent != "" {
+				payload["reasoning_content"] = delta.ReasoningContent
+			}
+			s.sendToClient(client, WebSocketMessage{
+				Type: WSTypeChatChunk,
+				ID:   msg.ID,
+				Payload: payload,
+			})
 
 				if isDone {
 					s.sendToClient(client, WebSocketMessage{

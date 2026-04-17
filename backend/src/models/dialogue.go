@@ -16,9 +16,10 @@ type Dialogue struct {
 
 // Message 消息模型
 type Message struct {
-	ID        string    `json:"id"`
-	DialogueID string    `json:"dialogue_id"`
-	Sender    string    `json:"sender"` // user or assistant
-	Content   string    `json:"content"`
-	CreatedAt time.Time `json:"created_at"`
+	ID               string    `json:"id"`
+	DialogueID       string    `json:"dialogue_id"`
+	Sender           string    `json:"sender"` // user or assistant
+	Content          string    `json:"content"`
+	ReasoningContent string    `json:"reasoning_content,omitempty"` // AI 思考过程
+	CreatedAt        time.Time `json:"created_at"`
 }
