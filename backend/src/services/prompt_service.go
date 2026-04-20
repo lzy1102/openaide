@@ -126,5 +126,59 @@ func (s *PromptService) Compose(ctx context.Context, userID, dialogueID, query s
 		}
 	}
 
+	// 6. 思维链 (Chain of Thought) - 让模型先思考再回答
+	if !s.shouldSkipThinking(options) {
+		thinkingTemplate := s.buildThinkingTemplate(userID, query, options)
+		if thinkingTemplate != "" {
+			parts = append(parts, thinkingTemplate)
+		}
+	}
+
 	return strings.Join(parts, "\n\n")
+}
+
+// shouldSkipThinking 判断是否跳过思考过程
+func (s *PromptService) shouldSkipThinking(options map[string]interface{}) bool {
+	if options == nil {
+		return false
+	}
+	if v, ok := options["skip_thinking"]; ok {
+		if b, ok := v.(bool); ok && b {
+			return true
+		}
+	}
+	return false
+}
+
+// buildThinkingTemplate 构建思维链思考模板
+func (s *PromptService) buildThinkingTemplate(userID, query string, options map[string]interface{}) string {
+	hasTools := false
+	if options != nil {
+		if _, ok := options["skill_tools"]; ok {
+			hasTools = true
+		}
+		if _, ok := options["tool_filter"]; ok {
+			hasTools = true
+		}
+	}
+
+	if hasTools {
+		return `【思维链 - 请先进行结构化思考，再用 <thinking>...</thinking> 标签输出思考过程】
+在回复前，请按以下步骤思考：
+1. **理解意图** - 用户的真正需求是什么？核心问题是什么？
+2. **分析上下文** - 结合用户偏好、记忆、已有信息，判断当前任务的背景
+3. **任务拆解** - 如果需要多个步骤，按什么顺序执行？步骤间有什么依赖？
+4. **工具选择** - 需要调用哪些工具？为什么选择这些工具？
+5. **风险评估** - 有什么潜在的陷阱或边界情况？
+
+请用 <thinking> 标签输出你的完整思考过程，然后再开始正式回复。`
+	}
+
+	return `【思维链 - 请先思考，再用 <thinking>...</thinking> 标签输出】
+在回复前，请进行简要思考：
+- 用户的核心需求是什么？
+- 需要哪些关键信息？
+- 回答的结构应该是什么样的？
+
+用 <thinking> 标签输出思考过程，然后开始正式回复。`
 }

@@ -3,6 +3,7 @@ package services
 import (
 	"encoding/json"
 	"log"
+	"strings"
 	"sync"
 	"time"
 )
@@ -493,6 +494,10 @@ func (s *WebSocketService) handleChatStream(client WebSocketClient, msg WebSocke
 
 	// 异步发送流式数据
 	go func() {
+		var thinkingBuffer strings.Builder
+		var inThinking bool
+		var hasThinkingContent bool
+
 		for chunk := range chunkChan {
 			if chunk.Error != nil {
 				s.sendToClient(client, WebSocketMessage{
@@ -506,23 +511,76 @@ func (s *WebSocketService) handleChatStream(client WebSocketClient, msg WebSocke
 			}
 
 			if len(chunk.Choices) > 0 {
-			isDone := chunk.Choices[0].FinishReason != ""
-			payload := map[string]interface{}{
-				"content": chunk.Choices[0].Delta.Content,
-				"done":    isDone,
-			}
-			s.sendToClient(client, WebSocketMessage{
-				Type: WSTypeChatChunk,
-				ID:   msg.ID,
-				Payload: payload,
-			})
+				isDone := chunk.Choices[0].FinishReason != ""
+				delta := chunk.Choices[0].Delta
+
+				// 1. 推送 reasoning_content (DeepSeek 等模型的专用推理字段)
+				if delta.ReasoningContent != "" {
+					s.sendToClient(client, WebSocketMessage{
+						Type: "thinking",
+						ID:   msg.ID,
+						Payload: map[string]interface{}{
+							"content":  delta.ReasoningContent,
+							"partial":  true,
+							"complete": false,
+						},
+					})
+				}
+
+				// 2. 解析 <thinking> 标签 (通用模型推理提取)
+				content := delta.Content
+				if content != "" {
+					content, extractedThinking, newInThinking, newHasThinking := s.extractThinkingTag(content, inThinking, &thinkingBuffer)
+					inThinking = newInThinking
+					hasThinkingContent = hasThinkingContent || newHasThinking
+
+					// 推送提取的思考内容
+					if extractedThinking != "" {
+						s.sendToClient(client, WebSocketMessage{
+							Type: "thinking",
+							ID:   msg.ID,
+							Payload: map[string]interface{}{
+								"content":  extractedThinking,
+								"partial":  true,
+								"complete": false,
+							},
+						})
+					}
+
+					// 只推送非思考部分的内容
+					if content != "" {
+						payload := map[string]interface{}{
+							"content": content,
+							"done":    isDone,
+						}
+						s.sendToClient(client, WebSocketMessage{
+							Type: WSTypeChatChunk,
+							ID:   msg.ID,
+							Payload: payload,
+						})
+					}
+				}
 
 				if isDone {
+					// 思考完成
+					if hasThinkingContent || thinkingBuffer.Len() > 0 {
+						s.sendToClient(client, WebSocketMessage{
+							Type: "thinking",
+							ID:   msg.ID,
+							Payload: map[string]interface{}{
+								"content":  thinkingBuffer.String(),
+								"partial":  false,
+								"complete": true,
+							},
+						})
+					}
+
 					s.sendToClient(client, WebSocketMessage{
 						Type: WSTypeChatComplete,
 						ID:   msg.ID,
 						Payload: map[string]interface{}{
-							"model": chunk.Model,
+							"model":     chunk.Model,
+							"has_thought": hasThinkingContent || thinkingBuffer.Len() > 0,
 						},
 					})
 				}
@@ -797,6 +855,59 @@ func (s *WebSocketService) NotifySkillFeedbackRequest(dialogueID string, skillNa
 			"questions":   questions,
 		},
 	})
+}
+
+// extractThinkingTag 从内容流中提取 <thinking> 标签内的内容
+// 返回: (剩余内容, 提取的思考内容, 是否仍在思考标签内, 是否有思考内容)
+func (s *WebSocketService) extractThinkingTag(content string, inThinking bool, buffer *strings.Builder) (remaining, extracted string, stillThinking, hasThinking bool) {
+	const openTag = "<thinking>"
+	const closeTag = "</thinking>"
+
+	// 快速路径：如果没有标签，直接返回
+	if !inThinking && !strings.Contains(content, openTag) && !strings.Contains(content, closeTag) {
+		return content, "", false, false
+	}
+
+	result := content
+	for len(result) > 0 {
+		if !inThinking {
+			// 查找 <thinking> 开始标签
+			startIdx := strings.Index(result, openTag)
+			if startIdx == -1 {
+				return result, "", false, buffer.Len() > 0
+			}
+
+			// 发送标签前的内容
+			if startIdx > 0 {
+				remaining = result[:startIdx]
+				result = result[startIdx:]
+			}
+
+			// 进入思考模式
+			inThinking = true
+			hasThinking = true
+			result = result[len(openTag):]
+		} else {
+			// 查找 </thinking> 结束标签
+			endIdx := strings.Index(result, closeTag)
+			if endIdx == -1 {
+				// 标签还没结束，所有内容都加入缓冲区
+				buffer.WriteString(result)
+				return "", "", true, true
+			}
+
+			// 提取思考内容
+			extracted = result[:endIdx]
+			buffer.WriteString(extracted)
+			result = result[endIdx+len(closeTag):]
+
+			// 思考结束
+			inThinking = false
+			return remaining + result, buffer.String(), false, true
+		}
+	}
+
+	return remaining, "", inThinking, hasThinking
 }
 
 // ActivityTracker 基于活动的超时跟踪器 (Hermes Agent 智能超时)
