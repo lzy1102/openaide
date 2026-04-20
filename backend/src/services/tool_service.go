@@ -114,6 +114,14 @@ func (s *ToolService) registerBuiltinTools() {
 	s.registry.builtin["git"] = &GitTool{}
 	s.registry.builtin["file_search"] = &FileSearchTool{}
 	s.registry.builtin["dependency"] = &DependencyTool{}
+
+	// 扩展工具
+	s.registry.builtin["docker"] = &DockerTool{}
+	s.registry.builtin["api_test"] = &APITestTool{}
+	s.registry.builtin["system_monitor"] = &SystemMonitorTool{}
+	s.registry.builtin["file_archive"] = &FileArchiveTool{}
+	s.registry.builtin["network_diag"] = &NetworkDiagTool{}
+	s.registry.builtin["regex"] = &RegexTool{}
 }
 
 // loadToolsFromDB 从数据库加载工具
@@ -721,6 +729,11 @@ func (s *ToolService) GetToolDefinitions() []map[string]interface{} {
 	}
 
 	return definitions
+}
+
+// GetExtendedToolDefinitions 获取扩展工具定义（从 extended_tools.go）
+func (s *ToolService) GetExtendedToolDefinitions() []map[string]interface{} {
+	return GetExtendedToolDefinitions()
 }
 
 // GetToolDefinitionsWithMCP 获取包含 MCP 工具的所有定义
