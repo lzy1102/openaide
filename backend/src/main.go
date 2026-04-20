@@ -184,6 +184,10 @@ func main() {
 	// 初始化编排服务（用于任务规划）
 	orchestrationService := services.NewOrchestrationServiceWithModel(db, modelService, nil, agentExecutor)
 
+	// 初始化结构化规划引擎（深度理解 + 结构化规划 + 依赖分析 + 工具规划 + 回退策略）
+	structuredPlanner := services.NewStructuredPlanner(modelService.GetLLMClient(), "", memoryService, skillService)
+	orchestrationService.SetStructuredPlanner(structuredPlanner)
+
 	// 初始化规划服务
 	planService := services.NewPlanService(db, orchestrationService, modelService, modelRouter, loggerService)
 

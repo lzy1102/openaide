@@ -27,6 +27,9 @@ type OrchestrationService struct {
 	confirmFlow    *orchestration.ConfirmationFlow
 	teamOrchestrator *orchestration.TeamOrchestrator
 
+	// 结构化规划引擎
+	structuredPlanner *StructuredPlanner
+
 	// 运行中的任务
 	sessions      map[string]*OrchestrationSession
 	sessionMutex  sync.RWMutex
@@ -124,6 +127,16 @@ func NewOrchestrationService(db *gorm.DB, llmClient llm.LLMClient, coordinator *
 			EnableCache:          true,
 		},
 	}
+}
+
+// SetStructuredPlanner 设置结构化规划引擎
+func (s *OrchestrationService) SetStructuredPlanner(planner *StructuredPlanner) {
+	s.structuredPlanner = planner
+}
+
+// GetStructuredPlan 获取结构化规划结果
+func (s *OrchestrationService) GetStructuredPlan() *StructuredPlan {
+	return nil
 }
 
 // ProcessUserMessage 处理用户消息 - 主入口
