@@ -106,6 +106,14 @@ func (s *ToolService) registerBuiltinTools() {
 	s.registry.builtin["execute_command"] = &CommandTool{}
 	s.registry.builtin["http_request"] = &HTTPRequestTool{}
 	s.registry.builtin["json_parse"] = &JSONParseTool{}
+
+	// 开发工具
+	s.registry.builtin["code_format"] = &CodeFormatTool{}
+	s.registry.builtin["lint"] = &LintTool{}
+	s.registry.builtin["database"] = &DatabaseTool{}
+	s.registry.builtin["git"] = &GitTool{}
+	s.registry.builtin["file_search"] = &FileSearchTool{}
+	s.registry.builtin["dependency"] = &DependencyTool{}
 }
 
 // loadToolsFromDB 从数据库加载工具
@@ -600,6 +608,107 @@ func (s *ToolService) GetToolDefinitions() []map[string]interface{} {
 						},
 					},
 					"required": []string{"language", "code"},
+				},
+			},
+		},
+		"code_format": {
+			"type": "function",
+			"function": map[string]interface{}{
+				"name":        "code_format",
+				"description": "格式化代码文件。支持 go, python, javascript, typescript, rust, c/cpp",
+				"parameters": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"path":     map[string]interface{}{"type": "string", "description": "文件路径"},
+						"language": map[string]interface{}{"type": "string", "description": "编程语言（可选，会自动检测）"},
+					},
+					"required": []string{"path"},
+				},
+			},
+		},
+		"lint": {
+			"type": "function",
+			"function": map[string]interface{}{
+				"name":        "lint",
+				"description": "语法检查和代码审查。支持 go, python, javascript, typescript, rust",
+				"parameters": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"path":     map[string]interface{}{"type": "string", "description": "文件或目录路径"},
+						"language": map[string]interface{}{"type": "string", "description": "编程语言（可选）"},
+					},
+					"required": []string{"path"},
+				},
+			},
+		},
+		"database": {
+			"type": "function",
+			"function": map[string]interface{}{
+				"name":        "database",
+				"description": "数据库连接和查询。支持 MySQL, PostgreSQL, SQLite",
+				"parameters": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"action": map[string]interface{}{"type": "string", "description": "操作类型: query, execute, schema"},
+						"driver": map[string]interface{}{"type": "string", "description": "数据库驱动: mysql, postgres, sqlite3"},
+						"dsn":    map[string]interface{}{"type": "string", "description": "数据库连接字符串"},
+						"query":  map[string]interface{}{"type": "string", "description": "SQL 查询语句"},
+					},
+					"required": []string{"action", "driver", "dsn"},
+				},
+			},
+		},
+		"git": {
+			"type": "function",
+			"function": map[string]interface{}{
+				"name":        "git",
+				"description": "Git 版本控制操作。支持 status, log, diff, add, commit, push, pull, branch, checkout",
+				"parameters": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"action":    map[string]interface{}{"type": "string", "description": "Git 操作"},
+						"repo_path": map[string]interface{}{"type": "string", "description": "仓库路径"},
+						"message":   map[string]interface{}{"type": "string", "description": "提交信息"},
+						"branch":    map[string]interface{}{"type": "string", "description": "分支名"},
+						"files":     map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "文件列表"},
+						"create":    map[string]interface{}{"type": "boolean", "description": "是否创建新分支"},
+						"limit":     map[string]interface{}{"type": "number", "description": "日志条数"},
+						"file":      map[string]interface{}{"type": "string", "description": "特定文件"},
+					},
+					"required": []string{"action"},
+				},
+			},
+		},
+		"file_search": {
+			"type": "function",
+			"function": map[string]interface{}{
+				"name":        "file_search",
+				"description": "文件搜索。支持按文件名查找（find）和按内容搜索（grep）",
+				"parameters": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"action":      map[string]interface{}{"type": "string", "description": "搜索类型: find, grep"},
+						"path":        map[string]interface{}{"type": "string", "description": "搜索路径"},
+						"pattern":     map[string]interface{}{"type": "string", "description": "搜索模式"},
+						"type":        map[string]interface{}{"type": "string", "description": "文件类型"},
+						"ignore_case": map[string]interface{}{"type": "boolean", "description": "忽略大小写"},
+					},
+					"required": []string{"action", "pattern"},
+				},
+			},
+		},
+		"dependency": {
+			"type": "function",
+			"function": map[string]interface{}{
+				"name":        "dependency",
+				"description": "依赖包管理。支持 npm, yarn, pip, go, apt, brew, cargo",
+				"parameters": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"package_manager": map[string]interface{}{"type": "string", "description": "包管理器名称"},
+						"packages":        map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "要安装的包列表"},
+					},
+					"required": []string{"package_manager", "packages"},
 				},
 			},
 		},
