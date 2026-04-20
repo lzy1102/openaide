@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -29,6 +30,10 @@ type OrchestrationService struct {
 
 	// 结构化规划引擎
 	structuredPlanner *StructuredPlanner
+
+	// 计划回顾与动态调整
+	planReview      *PlanReviewService
+	replanningEngine *ReplanningEngine
 
 	// 运行中的任务
 	sessions      map[string]*OrchestrationSession
@@ -132,11 +137,70 @@ func NewOrchestrationService(db *gorm.DB, llmClient llm.LLMClient, coordinator *
 // SetStructuredPlanner 设置结构化规划引擎
 func (s *OrchestrationService) SetStructuredPlanner(planner *StructuredPlanner) {
 	s.structuredPlanner = planner
+
+	// 同时初始化回顾和调整引擎
+	if planner.llmClient != nil {
+		s.planReview = NewPlanReviewService(planner.llmClient, "")
+		s.replanningEngine = NewReplanningEngine(planner.llmClient, "", planner)
+	}
 }
 
-// GetStructuredPlan 获取结构化规划结果
-func (s *OrchestrationService) GetStructuredPlan() *StructuredPlan {
-	return nil
+// ReviewAndAdapt 执行中回顾和动态调整计划
+// 在每个子任务完成后调用，检查是否需要调整计划
+func (s *OrchestrationService) ReviewAndAdapt(ctx context.Context, plan *StructuredPlan, checkpoints []ExecutionCheckpoint, currentSubtask string, userMessage string) (*PlanReviewResult, *ReplanResult, error) {
+	if s.planReview == nil {
+		return nil, nil, fmt.Errorf("plan review service not initialized")
+	}
+
+	// 步骤 1: 回顾执行状态
+	review, err := s.planReview.ReviewExecution(ctx, plan, checkpoints, currentSubtask)
+	if err != nil {
+		log.Printf("[Orchestration] Plan review failed: %v", err)
+		return nil, nil, err
+	}
+
+	log.Printf("[Orchestration] Review result: status=%s, recommendation=%s, replan=%v",
+		review.OverallStatus, review.Recommendation, review.ReplanRequired)
+
+	// 步骤 2: 如果需要调整，调用调整引擎
+	var replanResult *ReplanResult
+	if review.ReplanRequired && s.replanningEngine != nil {
+		replanLevel := review.Recommendation
+		if replanLevel == "abort" {
+			replanLevel = "fallback"
+		}
+
+		replanReq := &ReplanRequest{
+			OriginalPlan:   plan,
+			Checkpoints:    checkpoints,
+			Issues:         review.Issues,
+			UserMessage:    userMessage,
+			CurrentSubtask: currentSubtask,
+			ReplanLevel:    replanLevel,
+		}
+
+		replanResult, err = s.replanningEngine.Replan(ctx, replanReq)
+		if err != nil {
+			log.Printf("[Orchestration] Replanning failed: %v", err)
+		} else {
+			log.Printf("[Orchestration] Replan result: level=%s, changes=%d", replanResult.Level, len(replanResult.Changes))
+		}
+	}
+
+	return review, replanResult, nil
+}
+
+// CreateCheckpoint 创建执行检查点
+func (s *OrchestrationService) CreateCheckpoint(planID string, phaseIndex int, subtaskID string, status string, output, errMsg string) ExecutionCheckpoint {
+	if s.planReview == nil {
+		return ExecutionCheckpoint{
+			ID:         fmt.Sprintf("cp_%s_%d_%s", planID, phaseIndex, subtaskID),
+			Status:     status,
+			Output:     output,
+			Error:      errMsg,
+		}
+	}
+	return s.planReview.CreateCheckpoint(planID, phaseIndex, subtaskID, status, output, errMsg)
 }
 
 // ProcessUserMessage 处理用户消息 - 主入口
