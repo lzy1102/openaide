@@ -19,12 +19,12 @@ import (
 type MemoryExtractionService struct {
 	db            *gorm.DB
 	memoryService *MemoryService
-	llmClient     llm.Client
+	llmClient     llm.LLMClient
 	enabled       bool
 }
 
 // NewMemoryExtractionService 创建自动记忆提取服务
-func NewMemoryExtractionService(db *gorm.DB, memoryService *MemoryService, llmClient llm.Client, enabled bool) *MemoryExtractionService {
+func NewMemoryExtractionService(db *gorm.DB, memoryService *MemoryService, llmClient llm.LLMClient, enabled bool) *MemoryExtractionService {
 	return &MemoryExtractionService{
 		db:            db,
 		memoryService: memoryService,
@@ -65,7 +65,7 @@ func (s *MemoryExtractionService) ExtractMemoriesFromDialogue(ctx context.Contex
 		if err := s.memoryService.CreateMemory(&mem); err != nil {
 			log.Printf("[MemoryExtract] failed to save memory: %v", err)
 		} else {
-			log.Printf("[MemoryExtract] extracted %s memory: %s", mem.MemoryType, truncate(mem.Content, 50))
+			log.Printf("[MemoryExtract] extracted %s memory: %s", mem.MemoryType, truncateStr(mem.Content, 50))
 		}
 	}
 
@@ -168,11 +168,15 @@ func (s *MemoryExtractionService) buildConversationText(messages []models.Messag
 		if msg.Sender == "assistant" {
 			sender = "助手"
 		}
-		content := msg.Content
-		if len(content) > 500 {
-			content = content[:500] + "..."
-		}
+		content := truncateStr(msg.Content, 500)
 		sb.WriteString(fmt.Sprintf("%s: %s", sender, content))
 	}
 	return sb.String()
+}
+
+func truncateStr(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }

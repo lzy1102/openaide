@@ -424,6 +424,44 @@ func main() {
 	// 启动技能进化定时任务 (Hermes Agent 自我进化)
 	go skillEvolutionService.RunPeriodicEvolution(context.Background())
 
+	// 启动技能发现服务 (从对话中自动提炼新技能)
+	skillDiscoverySvc := services.NewSkillDiscoveryService(db, skillService, modelService, memoryService, true)
+	go func() {
+		time.Sleep(30 * time.Second) // 等待系统稳定
+		skillDiscoverySvc.RunPeriodicDiscovery(context.Background())
+		ticker := time.NewTicker(6 * time.Hour) // 每 6 小时扫描一次
+		defer ticker.Stop()
+		for range ticker.C {
+			skillDiscoverySvc.RunPeriodicDiscovery(context.Background())
+		}
+	}()
+
+	// 启动模式检测器 (检测重复操作序列)
+	patternDetector := services.NewPatternDetector(db, modelService, true)
+	go func() {
+		time.Sleep(60 * time.Second)
+		patternDetector.RunPeriodicPatternDetection(context.Background())
+		ticker := time.NewTicker(12 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			patternDetector.RunPeriodicPatternDetection(context.Background())
+		}
+	}()
+
+	// 启动用户反馈收集器
+	userFeedbackCollector := services.NewUserFeedbackCollector(db, modelService, skillService, memoryService, wsService, true)
+	go func() {
+		time.Sleep(90 * time.Second)
+		userFeedbackCollector.RunPeriodicFeedbackAnalysis(context.Background())
+		ticker := time.NewTicker(4 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			userFeedbackCollector.RunPeriodicFeedbackAnalysis(context.Background())
+		}
+	}()
+
+	log.Printf("[Self-Evolution] Skill discovery, pattern detection, and feedback collection enabled")
+
 	// ==================== 初始化所有 Handler ====================
 
 	// 已有 handler

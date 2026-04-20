@@ -15,7 +15,7 @@ import (
 
 // MemoryService 记忆服务 - 三层记忆架构
 type MemoryService struct {
-	BaseService        BaseService
+	BaseService
 	store              MemoryStore
 	embeddingSvc       *MemoryEmbeddingService
 }

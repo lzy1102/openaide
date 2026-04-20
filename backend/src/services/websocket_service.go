@@ -31,7 +31,8 @@ const (
 	WSTypeTaskUpdate     WebSocketMessageType = "task_update"     // 任务状态更新
 	WSTypeWorkflowUpdate WebSocketMessageType = "workflow_update" // 工作流状态更新
 	WSTypeNotification   WebSocketMessageType = "notification"    // 通知消息
-	WSTypeTaskCompleted  WebSocketMessageType = "task_completed"  // 后台任务完成通知 (Hermes Agent)
+	WSTypeTaskCompleted     WebSocketMessageType = "task_completed"      // 后台任务完成通知 (Hermes Agent)
+	WSTypeSkillFeedbackRequest WebSocketMessageType = "skill_feedback_request" // 技能反馈请求 (自我进化)
 )
 
 // WebSocketMessage WebSocket 消息结构
@@ -506,13 +507,9 @@ func (s *WebSocketService) handleChatStream(client WebSocketClient, msg WebSocke
 
 			if len(chunk.Choices) > 0 {
 			isDone := chunk.Choices[0].FinishReason != ""
-			delta := chunk.Choices[0].Delta
 			payload := map[string]interface{}{
-				"content": delta.Content,
+				"content": chunk.Choices[0].Delta.Content,
 				"done":    isDone,
-			}
-			if delta.ReasoningContent != "" {
-				payload["reasoning_content"] = delta.ReasoningContent
 			}
 			s.sendToClient(client, WebSocketMessage{
 				Type: WSTypeChatChunk,
@@ -785,6 +782,19 @@ func (s *WebSocketService) NotifyTaskCompleted(userID string, taskID string, sta
 			"status":       status,
 			"result":       result,
 			"completed_at": time.Now().Format(time.RFC3339),
+		},
+	})
+}
+
+// NotifySkillFeedbackRequest 发送技能反馈请求
+func (s *WebSocketService) NotifySkillFeedbackRequest(dialogueID string, skillName string, questions []FeedbackQuestion) {
+	s.Broadcast(WebSocketMessage{
+		Type: WSTypeSkillFeedbackRequest,
+		Timestamp: time.Now().Unix(),
+		Payload: map[string]interface{}{
+			"dialogue_id": dialogueID,
+			"skill_name":  skillName,
+			"questions":   questions,
 		},
 	})
 }
