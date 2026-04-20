@@ -6,12 +6,14 @@ import (
 
 // Dialogue 对话模型
 type Dialogue struct {
-	ID        string    `json:"id"`
-	UserID    string    `json:"user_id"`
-	Title     string    `json:"title"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Messages  []Message `json:"messages"`
+	ID               string    `json:"id"`
+	UserID           string    `json:"user_id"`
+	Title            string    `json:"title"`
+	Status           string    `json:"status" gorm:"default:active"`       // active, completed
+	MessagesExtracted bool     `json:"messages_extracted" gorm:"default:false"` // 是否已提取记忆
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
+	Messages         []Message `json:"messages"`
 }
 
 // Message 消息模型

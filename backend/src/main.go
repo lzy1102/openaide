@@ -381,7 +381,29 @@ func main() {
 	
 	// 使用 Memory Provider 替代原有 memoryService
 	memoryStore := memoryRegistry.GetActiveProvider()
-	memoryService = services.NewMemoryServiceWithStore(memoryStore, cacheService)
+	memoryService = services.NewMemoryServiceWithStore(db, memoryStore, cacheService)
+	
+	// 将向量嵌入服务注入到 memoryService
+	if memoryEmbeddingSvc != nil {
+		memoryService.SetEmbeddingService(memoryEmbeddingSvc)
+		log.Printf("[Memory] Semantic search enabled with embedding provider: %s", cfg.Embedding.Provider)
+	}
+	
+	// 初始化自动记忆提取服务 (LLM 驱动)
+	memoryExtractionSvc := services.NewMemoryExtractionService(db, memoryService, modelService.GetLLMClient(), true)
+	go func() {
+		time.Sleep(5 * time.Second)
+		if err := memoryExtractionSvc.BatchExtractPendingDialogues("", 5); err != nil {
+			log.Printf("[MemoryExtract] batch extraction failed: %v", err)
+		}
+		ticker := time.NewTicker(10 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			if err := memoryExtractionSvc.BatchExtractPendingDialogues("", 10); err != nil {
+				log.Printf("[MemoryExtract] periodic extraction failed: %v", err)
+			}
+		}
+	}()
 	
 	feishuConfig := services.FeishuConfig{
 		Enabled:        cfg.Feishu.Enabled,

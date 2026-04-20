@@ -15,8 +15,9 @@ import (
 
 // MemoryService 记忆服务 - 三层记忆架构
 type MemoryService struct {
-	BaseService
-	store MemoryStore
+	BaseService        BaseService
+	store              MemoryStore
+	embeddingSvc       *MemoryEmbeddingService
 }
 
 // NewMemoryService 创建记忆服务实例
@@ -28,11 +29,16 @@ func NewMemoryService(db *gorm.DB, cache *CacheService) *MemoryService {
 }
 
 // NewMemoryServiceWithStore 创建记忆服务实例（可注入自定义存储）
-func NewMemoryServiceWithStore(store MemoryStore, cache *CacheService) *MemoryService {
+func NewMemoryServiceWithStore(db *gorm.DB, store MemoryStore, cache *CacheService) *MemoryService {
 	return &MemoryService{
-		BaseService: BaseService{Cache: cache},
+		BaseService: BaseService{DB: db, Cache: cache},
 		store:       store,
 	}
+}
+
+// SetEmbeddingService 设置向量嵌入服务
+func (s *MemoryService) SetEmbeddingService(embeddingSvc *MemoryEmbeddingService) {
+	s.embeddingSvc = embeddingSvc
 }
 
 // ==================== 长期记忆（第三层）====================
@@ -40,7 +46,21 @@ func NewMemoryServiceWithStore(store MemoryStore, cache *CacheService) *MemorySe
 // CreateMemory 创建记忆
 func (s *MemoryService) CreateMemory(memory *models.Memory) error {
 	memory.ID = uuid.New().String()
-	return s.store.Create(context.Background(), memory)
+	err := s.store.Create(context.Background(), memory)
+	if err != nil {
+		return err
+	}
+
+	// 自动生成向量
+	if s.embeddingSvc != nil {
+		go func() {
+			if err := s.embeddingSvc.AutoEmbedNewMemories(memory.ID); err != nil {
+				log.Printf("[Memory] failed to embed memory %s: %v", memory.ID, err)
+			}
+		}()
+	}
+
+	return nil
 }
 
 // CreateFactMemory 创建事实记忆
@@ -152,12 +172,26 @@ func (s *MemoryService) SearchMemoriesByType(userID, keyword, memoryType string)
 	return s.store.SearchByType(context.Background(), userID, keyword, memoryType)
 }
 
-// GetRelevantMemories 获取与输入相关的记忆（按标签和内容匹配）
+// GetRelevantMemories 获取与输入相关的记忆（优先使用语义搜索）
 func (s *MemoryService) GetRelevantMemories(userID, content string, limit int) ([]models.Memory, error) {
 	if limit <= 0 {
 		limit = 5
 	}
 
+	// 如果有向量服务，使用语义搜索
+	if s.embeddingSvc != nil {
+		results, err := s.embeddingSvc.HybridSearch(context.Background(), userID, content, limit, 0.7)
+		if err == nil && len(results) > 0 {
+			memories := make([]models.Memory, 0, len(results))
+			for _, r := range results {
+				memories = append(memories, r.Memory)
+				s.AccessMemory(r.Memory.ID)
+			}
+			return memories, nil
+		}
+	}
+
+	// 回退到传统字符串匹配
 	memories, err := s.GetMemoriesByUser(userID)
 	if err != nil {
 		return nil, err
