@@ -220,7 +220,7 @@ func (s *SmartCacheService) hashOptions(options map[string]interface{}) string {
 }
 
 // containsSensitiveInfo 检查是否包含敏感信息
-func (s *SmartCacheService) containsSensitiveInfo(query string) string {
+func (s *SmartCacheService) containsSensitiveInfo(query string) bool {
 	sensitivePatterns := []string{
 		"密码", "password", "passwd", "pwd",
 		"密钥", "secret", "key", "token",
