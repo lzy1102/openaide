@@ -53,11 +53,11 @@ type Subtask struct {
 type TaskContext struct {
 	ProjectID      string                 `json:"project_id,omitempty"`
 	Module         string                 `json:"module,omitempty"`
-	RelatedFiles   JSONSlice              `json:"related_files,omitempty"`
-	RelatedIssues  JSONSlice              `json:"related_issues,omitempty"`
+	RelatedFiles   JSONSlice              `json:"related_files,omitempty" gorm:"type:json"`
+	RelatedIssues  JSONSlice              `json:"related_issues,omitempty" gorm:"type:json"`
 	Metadata       JSONMap                `json:"metadata,omitempty" gorm:"type:json"`
-	Requirements   JSONSlice              `json:"requirements,omitempty"`
-	Constraints    JSONSlice              `json:"constraints,omitempty"`
+	Requirements   JSONSlice              `json:"requirements,omitempty" gorm:"type:json"`
+	Constraints    JSONSlice              `json:"constraints,omitempty" gorm:"type:json"`
 }
 
 // TaskDependency 任务依赖关系
@@ -83,7 +83,7 @@ type TaskResult struct {
 	Success    bool                   `json:"success"`
 	Output     string                 `json:"output,omitempty"`
 	Error      string                 `json:"error,omitempty"`
-	Artifacts  JSONSlice              `json:"artifacts,omitempty"`
+	Artifacts  JSONSlice              `json:"artifacts,omitempty" gorm:"type:json"`
 	Metrics    JSONMap                `json:"metrics,omitempty" gorm:"type:json"`
 	Summary    string                 `json:"summary,omitempty"`
 }

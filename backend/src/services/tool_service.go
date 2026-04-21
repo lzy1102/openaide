@@ -534,7 +534,7 @@ func (s *ToolService) GetToolDefinitions() []map[string]interface{} {
 		})
 	}
 
-	// 添加内置工具定义
+	// 添加内置工具定义（包含基础工具、开发工具、扩展工具）
 	builtinDefs := map[string]map[string]interface{}{
 		"get_current_time": {
 			"type": "function",
@@ -727,6 +727,10 @@ func (s *ToolService) GetToolDefinitions() []map[string]interface{} {
 			definitions = append(definitions, def)
 		}
 	}
+
+	// 添加扩展工具定义（docker, api_test, system_monitor, file_archive, network_diag, regex）
+	extendedDefs := GetExtendedToolDefinitions()
+	definitions = append(definitions, extendedDefs...)
 
 	return definitions
 }

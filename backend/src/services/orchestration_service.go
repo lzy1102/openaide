@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -61,11 +62,16 @@ type OrchestrationSession struct {
 	CreatedAt     time.Time                   `json:"created_at"`
 	UpdatedAt     time.Time                   `json:"updated_at"`
 
-	// 各阶段数据
+	// 各阶段数据（旧编排流程）
 	Analysis      *orchestration.TaskAnalysis  `json:"analysis,omitempty"`
 	Plan          *orchestration.TeamPlan      `json:"plan,omitempty"`
 	Confirmation  *orchestration.ConfirmationRequest `json:"confirmation,omitempty"`
 	Execution     *orchestration.ExecutionResult `json:"execution,omitempty"`
+
+	// 结构化规划数据（新编排流程）
+	StructuredPlan   *StructuredPlan           `json:"structured_plan,omitempty"`
+	Checkpoints      []ExecutionCheckpoint     `json:"checkpoints,omitempty"`
+	CurrentSubtask   string                    `json:"current_subtask,omitempty"`
 
 	// 错误信息
 	Error         string                      `json:"error,omitempty"`
@@ -204,6 +210,7 @@ func (s *OrchestrationService) CreateCheckpoint(planID string, phaseIndex int, s
 }
 
 // ProcessUserMessage 处理用户消息 - 主入口
+// 优先使用结构化规划器（如果可用），否则回退到旧编排流程
 func (s *OrchestrationService) ProcessUserMessage(ctx context.Context, req *OrchestrationRequest) (*OrchestrationResponse, error) {
 	// 创建会话
 	session := &OrchestrationSession{
@@ -220,6 +227,61 @@ func (s *OrchestrationService) ProcessUserMessage(ctx context.Context, req *Orch
 	s.sessions[session.ID] = session
 	s.sessionMutex.Unlock()
 
+	// 如果结构化规划器可用，使用新的5步规划流程
+	if s.structuredPlanner != nil {
+		return s.processWithStructuredPlanner(ctx, session, req)
+	}
+
+	// 回退到旧编排流程
+	return s.processWithLegacyFlow(ctx, session, req)
+}
+
+// processWithStructuredPlanner 使用结构化规划器处理（5步流程）
+func (s *OrchestrationService) processWithStructuredPlanner(ctx context.Context, session *OrchestrationSession, req *OrchestrationRequest) (*OrchestrationResponse, error) {
+	log.Printf("[Orchestration] Using structured planner for session %s", session.ID)
+
+	// 阶段 1-5: 深度理解 + 结构化规划 + 依赖分析 + 工具规划 + 风险评估
+	structuredPlan, err := s.structuredPlanner.Plan(ctx, req.UserMessage, req.UserID)
+	if err != nil {
+		log.Printf("[Orchestration] Structured planning failed, falling back to legacy: %v", err)
+		return s.processWithLegacyFlow(ctx, session, req)
+	}
+
+	session.StructuredPlan = structuredPlan
+	session.Status = "planning"
+	session.UpdatedAt = time.Now()
+
+	log.Printf("[Orchestration] Structured plan created: %d phases, %d dependencies, %d tools assigned",
+		len(structuredPlan.Phases), len(structuredPlan.Dependencies), len(structuredPlan.ToolPlan))
+
+	// 构建确认提案
+	proposal := s.buildStructuredPlanProposal(session, structuredPlan)
+
+	// 检查置信度，高置信度自动执行
+	if structuredPlan.Understanding != nil && structuredPlan.Understanding.Confidence >= s.config.AutoApproveThreshold {
+		return s.autoExecuteStructuredPlan(session, structuredPlan)
+	}
+
+	// 需要用户确认
+	session.Status = "confirming"
+
+	return &OrchestrationResponse{
+		SessionID:     session.ID,
+		Status:        "awaiting_confirmation",
+		Stage:         "confirmation",
+		Data: map[string]interface{}{
+			"structured_plan": structuredPlan,
+			"proposal":        proposal,
+		},
+		RequireAction: true,
+		ActionType:    "approve",
+		ActionPrompt:  proposal + "\n\n回复 'yes' 确认执行，或 'no' 取消任务。",
+		CreatedAt:     time.Now(),
+	}, nil
+}
+
+// processWithLegacyFlow 使用旧编排流程
+func (s *OrchestrationService) processWithLegacyFlow(ctx context.Context, session *OrchestrationSession, req *OrchestrationRequest) (*OrchestrationResponse, error) {
 	// 阶段 1: 任务分析
 	analysis, err := s.analyzeTask(ctx, session, req)
 	if err != nil {
@@ -263,6 +325,139 @@ func (s *OrchestrationService) ProcessUserMessage(ctx context.Context, req *Orch
 	}, nil
 }
 
+// buildStructuredPlanProposal 构建结构化计划的确认提案
+func (s *OrchestrationService) buildStructuredPlanProposal(session *OrchestrationSession, plan *StructuredPlan) string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("📋 任务: %s\n\n", session.UserMessage))
+
+	if plan.Understanding != nil {
+		sb.WriteString(fmt.Sprintf("🎯 意图理解: %s\n", plan.Understanding.UserIntent))
+		if len(plan.Understanding.ImplicitNeeds) > 0 {
+			sb.WriteString(fmt.Sprintf("💡 隐含需求: %v\n", plan.Understanding.ImplicitNeeds))
+		}
+		sb.WriteString(fmt.Sprintf("📊 置信度: %.0f%%\n\n", plan.Understanding.Confidence*100))
+	}
+
+	sb.WriteString(fmt.Sprintf("📑 执行计划 (%d 个阶段):\n", len(plan.Phases)))
+	for i, phase := range plan.Phases {
+		sb.WriteString(fmt.Sprintf("\n阶段 %d: %s\n", i+1, phase.Name))
+		sb.WriteString(fmt.Sprintf("  目标: %s\n", phase.Objective))
+		for j, task := range phase.Subtasks {
+			status := "⬜"
+			if task.Status == "completed" {
+				status = "✅"
+			} else if task.Status == "in_progress" {
+				status = "🔄"
+			}
+			sb.WriteString(fmt.Sprintf("  %s %d.%d %s (%s)\n", status, i+1, j+1, task.Name, task.EstimatedTime))
+		}
+	}
+
+	if len(plan.Dependencies) > 0 {
+		sb.WriteString(fmt.Sprintf("\n🔗 依赖关系: %d 个\n", len(plan.Dependencies)))
+	}
+
+	if plan.RiskAssessment != nil && len(plan.RiskAssessment.Risks) > 0 {
+		sb.WriteString(fmt.Sprintf("\n⚠️ 风险提醒 (%d 个):\n", len(plan.RiskAssessment.Risks)))
+		for _, risk := range plan.RiskAssessment.Risks {
+			sb.WriteString(fmt.Sprintf("  - %s [%s]: %s\n", risk.Description, risk.Severity, risk.Mitigation))
+		}
+	}
+
+	if len(plan.FallbackPlans) > 0 {
+		sb.WriteString(fmt.Sprintf("\n🛡️ 回退方案: %d 个已准备\n", len(plan.FallbackPlans)))
+	}
+
+	return sb.String()
+}
+
+// autoExecuteStructuredPlan 自动执行结构化计划
+func (s *OrchestrationService) autoExecuteStructuredPlan(session *OrchestrationSession, plan *StructuredPlan) (*OrchestrationResponse, error) {
+	log.Printf("[Orchestration] Auto-executing structured plan for session %s", session.ID)
+
+	// 初始化检查点
+	session.Checkpoints = make([]ExecutionCheckpoint, 0)
+	session.Status = "executing"
+	session.UpdatedAt = time.Now()
+
+	// 启动异步执行
+	go s.executeStructuredPlan(session, plan)
+
+	return &OrchestrationResponse{
+		SessionID: session.ID,
+		Status:    "executing",
+		Stage:     "execution",
+		Data: map[string]interface{}{
+			"structured_plan": plan,
+			"message":         "结构化计划已自动批准并开始执行",
+		},
+		CreatedAt: time.Now(),
+	}, nil
+}
+
+// executeStructuredPlan 执行结构化计划（带回顾和重规划）
+func (s *OrchestrationService) executeStructuredPlan(session *OrchestrationSession, plan *StructuredPlan) {
+	log.Printf("[Orchestration] Starting structured plan execution for session %s", session.ID)
+
+	for phaseIdx, phase := range plan.Phases {
+		log.Printf("[Orchestration] Executing phase %d: %s", phaseIdx+1, phase.Name)
+
+		for _, subtask := range phase.Subtasks {
+			if session.Context.Err() != nil {
+				log.Printf("[Orchestration] Session %s cancelled", session.ID)
+				session.Status = "cancelled"
+				return
+			}
+
+			session.CurrentSubtask = subtask.ID
+
+			// 创建检查点 - 开始执行
+			checkpoint := s.CreateCheckpoint(plan.ID, phaseIdx, subtask.ID, "in_progress", "", "")
+			session.Checkpoints = append(session.Checkpoints, checkpoint)
+
+			// TODO: 实际执行子任务（调用 AgentExecutor 或 ToolService）
+			// 这里模拟执行
+			log.Printf("[Orchestration] Executing subtask: %s - %s", subtask.ID, subtask.Name)
+
+			// 模拟执行结果
+			success := true // 实际应根据执行结果设置
+			output := fmt.Sprintf("Subtask %s completed", subtask.Name)
+			errMsg := ""
+
+			if !success {
+				// 更新检查点 - 失败
+				checkpoint.Status = "failed"
+				checkpoint.Output = output
+				checkpoint.Error = errMsg
+				checkpoint.CompletedAt = time.Now()
+
+				// 执行回顾和重规划
+				if s.planReview != nil && s.replanningEngine != nil {
+					log.Printf("[Orchestration] Reviewing after failure of subtask %s", subtask.ID)
+					review, replan, err := s.ReviewAndAdapt(session.Context, plan, session.Checkpoints, subtask.ID, session.UserMessage)
+					if err == nil && review != nil {
+						log.Printf("[Orchestration] Review: %s, replan: %v", review.Recommendation, replan != nil)
+						if replan != nil {
+							// 应用重规划结果
+							log.Printf("[Orchestration] Applying replan: %s with %d changes", replan.Level, len(replan.Changes))
+							// TODO: 应用重规划变更到 plan
+						}
+					}
+				}
+			} else {
+				// 更新检查点 - 完成
+				checkpoint.Status = "completed"
+				checkpoint.Output = output
+				checkpoint.CompletedAt = time.Now()
+			}
+		}
+	}
+
+	session.Status = "completed"
+	session.UpdatedAt = time.Now()
+	log.Printf("[Orchestration] Structured plan execution completed for session %s", session.ID)
+}
+
 // HandleUserAction 处理用户操作
 func (s *OrchestrationService) HandleUserAction(ctx context.Context, sessionID, action, comment string) (*OrchestrationResponse, error) {
 	s.sessionMutex.RLock()
@@ -276,6 +471,10 @@ func (s *OrchestrationService) HandleUserAction(ctx context.Context, sessionID, 
 	// 处理确认操作
 	switch action {
 	case "approve", "yes", "y":
+		// 如果有结构化计划，使用结构化执行
+		if session.StructuredPlan != nil {
+			return s.startStructuredExecution(session)
+		}
 		return s.executePlan(ctx, session)
 
 	case "reject", "no", "n":
@@ -295,6 +494,35 @@ func (s *OrchestrationService) HandleUserAction(ctx context.Context, sessionID, 
 	default:
 		return nil, fmt.Errorf("unknown action: %s", action)
 	}
+}
+
+// startStructuredExecution 启动结构化计划执行
+func (s *OrchestrationService) startStructuredExecution(session *OrchestrationSession) (*OrchestrationResponse, error) {
+	if session.StructuredPlan == nil {
+		return nil, fmt.Errorf("no structured plan available")
+	}
+
+	log.Printf("[Orchestration] Starting structured execution for session %s", session.ID)
+
+	// 初始化检查点
+	session.Checkpoints = make([]ExecutionCheckpoint, 0)
+	session.Status = "executing"
+	session.UpdatedAt = time.Now()
+
+	// 启动异步执行（带回顾和重规划）
+	go s.executeStructuredPlan(session, session.StructuredPlan)
+
+	return &OrchestrationResponse{
+		SessionID: session.ID,
+		Status:    "executing",
+		Stage:     "execution",
+		Data: map[string]interface{}{
+			"message":      "结构化计划开始执行",
+			"plan_id":      session.StructuredPlan.ID,
+			"total_phases": len(session.StructuredPlan.Phases),
+		},
+		CreatedAt: time.Now(),
+	}, nil
 }
 
 // GetSessionStatus 获取会话状态

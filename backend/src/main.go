@@ -188,6 +188,14 @@ func main() {
 	structuredPlanner := services.NewStructuredPlanner(modelService.GetLLMClient(), "", memoryService, skillService)
 	orchestrationService.SetStructuredPlanner(structuredPlanner)
 
+	// 初始化计划回顾服务（执行检查点、偏差检测、深度回顾）
+	planReviewService := services.NewPlanReviewService(db, modelService.GetLLMClient(), loggerService)
+	orchestrationService.SetPlanReview(planReviewService)
+
+	// 初始化动态重规划引擎（局部调整、完整重规划、降级方案）
+	replanningEngine := services.NewReplanningEngine(modelService.GetLLMClient(), structuredPlanner, toolService, loggerService)
+	orchestrationService.SetReplanningEngine(replanningEngine)
+
 	// 初始化规划服务
 	planService := services.NewPlanService(db, orchestrationService, modelService, modelRouter, loggerService)
 
