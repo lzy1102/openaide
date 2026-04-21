@@ -91,6 +91,9 @@ type ChatResponse struct {
 	// Usage token 使用情况
 	Usage *Usage `json:"usage,omitempty"`
 
+	// Cached 是否来自缓存
+	Cached bool `json:"cached,omitempty"`
+
 	// RawResponse 原始响应数据 (可选)
 	RawResponse map[string]interface{} `json:"raw_response,omitempty"`
 }

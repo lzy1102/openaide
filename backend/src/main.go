@@ -225,6 +225,15 @@ func main() {
 	dialogueService.SetUsageService(usageService)
 	toolCallingService.SetUsageService(usageService)
 
+	// 初始化智能缓存服务（注入到对话服务）
+	dialogueService.SetCacheService(cacheService)
+
+	// 初始化Token限制和告警服务
+	tokenLimitService := services.NewTokenLimitService(db, usageService, loggerService)
+
+	// 初始化成本优化服务
+	costOptimizer := services.NewCostOptimizer(modelService, usageService, loggerService)
+
 	// 初始化知识库相关服务
 	embeddingService := services.NewOpenAIEmbeddingService("", "", "", cacheService)
 	vectorManager, err := services.NewVectorManager(config.DefaultPaths.VectorDir, embeddingService)
