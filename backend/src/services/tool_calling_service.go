@@ -105,7 +105,6 @@ func (s *ToolCallingService) SendMessageWithTools(
 	startTime := time.Now()
 
 	for round := 0; round < s.maxRounds; round++ {
-		roundStart := time.Now()
 		resp, err := s.modelSvc.ChatWithTools(modelID, messages, llmTools, options)
 		if err != nil {
 			return nil, fmt.Errorf("LLM call failed: %w", err)

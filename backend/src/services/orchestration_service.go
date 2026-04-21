@@ -241,7 +241,7 @@ func (s *OrchestrationService) processWithStructuredPlanner(ctx context.Context,
 	log.Printf("[Orchestration] Using structured planner for session %s", session.ID)
 
 	// 阶段 1-5: 深度理解 + 结构化规划 + 依赖分析 + 工具规划 + 风险评估
-	structuredPlan, err := s.structuredPlanner.Plan(ctx, req.UserMessage, req.UserID)
+	structuredPlan, err := s.structuredPlanner.Plan(ctx, req.UserMessage, req.UserID, nil)
 	if err != nil {
 		log.Printf("[Orchestration] Structured planning failed, falling back to legacy: %v", err)
 		return s.processWithLegacyFlow(ctx, session, req)
@@ -341,15 +341,11 @@ func (s *OrchestrationService) buildStructuredPlanProposal(session *Orchestratio
 	sb.WriteString(fmt.Sprintf("📑 执行计划 (%d 个阶段):\n", len(plan.Phases)))
 	for i, phase := range plan.Phases {
 		sb.WriteString(fmt.Sprintf("\n阶段 %d: %s\n", i+1, phase.Name))
-		sb.WriteString(fmt.Sprintf("  目标: %s\n", phase.Objective))
+		if phase.Description != "" {
+			sb.WriteString(fmt.Sprintf("  描述: %s\n", phase.Description))
+		}
 		for j, task := range phase.Subtasks {
-			status := "⬜"
-			if task.Status == "completed" {
-				status = "✅"
-			} else if task.Status == "in_progress" {
-				status = "🔄"
-			}
-			sb.WriteString(fmt.Sprintf("  %s %d.%d %s (%s)\n", status, i+1, j+1, task.Name, task.EstimatedTime))
+			sb.WriteString(fmt.Sprintf("  ⬜ %d.%d %s (%d分钟)\n", i+1, j+1, task.Title, task.Estimated))
 		}
 	}
 
@@ -357,10 +353,10 @@ func (s *OrchestrationService) buildStructuredPlanProposal(session *Orchestratio
 		sb.WriteString(fmt.Sprintf("\n🔗 依赖关系: %d 个\n", len(plan.Dependencies)))
 	}
 
-	if plan.RiskAssessment != nil && len(plan.RiskAssessment.Risks) > 0 {
-		sb.WriteString(fmt.Sprintf("\n⚠️ 风险提醒 (%d 个):\n", len(plan.RiskAssessment.Risks)))
-		for _, risk := range plan.RiskAssessment.Risks {
-			sb.WriteString(fmt.Sprintf("  - %s [%s]: %s\n", risk.Description, risk.Severity, risk.Mitigation))
+	if plan.RiskAssessment != nil && len(plan.RiskAssessment.TopRisks) > 0 {
+		sb.WriteString(fmt.Sprintf("\n⚠️ 风险提醒 (%d 个):\n", len(plan.RiskAssessment.TopRisks)))
+		for _, risk := range plan.RiskAssessment.TopRisks {
+			sb.WriteString(fmt.Sprintf("  - %s [概率:%s 影响:%s]: %s\n", risk.Description, risk.Probability, risk.Impact, risk.Mitigation))
 		}
 	}
 
@@ -417,11 +413,11 @@ func (s *OrchestrationService) executeStructuredPlan(session *OrchestrationSessi
 
 			// TODO: 实际执行子任务（调用 AgentExecutor 或 ToolService）
 			// 这里模拟执行
-			log.Printf("[Orchestration] Executing subtask: %s - %s", subtask.ID, subtask.Name)
+			log.Printf("[Orchestration] Executing subtask: %s - %s", subtask.ID, subtask.Title)
 
 			// 模拟执行结果
 			success := true // 实际应根据执行结果设置
-			output := fmt.Sprintf("Subtask %s completed", subtask.Name)
+			output := fmt.Sprintf("Subtask %s completed", subtask.Title)
 			errMsg := ""
 
 			if !success {

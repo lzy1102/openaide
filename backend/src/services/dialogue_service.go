@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -148,6 +149,9 @@ func (s *DialogueService) SendMessage(ctx context.Context, dialogueID, userID, c
 		return nil, err
 	}
 
+	// 保存助手回复
+	assistantMessage := s.AddMessage(dialogueID, "assistant", resp.Choices[0].Message.Content)
+
 	// 记录响应
 	if resp.Usage != nil {
 		s.logger.Info(ctx, "LLM response received in %v, tokens: %d+%d=%d",
@@ -158,9 +162,6 @@ func (s *DialogueService) SendMessage(ctx context.Context, dialogueID, userID, c
 			go s.recordUsage(ctx, userID, dialogueID, assistantMessage.ID, modelID, resp, duration, false)
 		}
 	}
-
-	// 保存助手回复
-	assistantMessage := s.AddMessage(dialogueID, "assistant", resp.Choices[0].Message.Content)
 
 	return &assistantMessage, nil
 }

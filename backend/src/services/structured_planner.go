@@ -48,6 +48,8 @@ type TaskUnderstanding struct {
 
 // StructuredPlan 结构化规划结果
 type StructuredPlan struct {
+	ID string `json:"id"`
+
 	Understanding *TaskUnderstanding `json:"understanding"`
 
 	// Phases 阶段（大任务先分阶段，每个阶段包含子任务）

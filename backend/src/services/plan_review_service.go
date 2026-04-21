@@ -29,6 +29,7 @@ type ExecutionCheckpoint struct {
 	PhaseIndex    int       `json:"phase_index"`
 	SubtaskID     string    `json:"subtask_id"`
 	Timestamp     time.Time `json:"timestamp"`
+	CompletedAt   time.Time `json:"completed_at,omitempty"`
 
 	// 状态
 	Status        string `json:"status"` // in_progress, completed, failed, blocked, skipped
