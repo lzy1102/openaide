@@ -188,7 +188,7 @@ func (t *DockerTool) dockerRun(ctx context.Context, params map[string]interface{
 			args = append(args, "-v", fmt.Sprintf("%v", v))
 		}
 	}
-	if detach, ok := params["detach"].(bool); !detach {
+	if detach, ok := params["detach"].(bool); ok && !detach {
 		args[1] = "--rm" // 如果不是后台运行，自动清理
 	}
 
@@ -284,7 +284,7 @@ func (t *DockerTool) dockerExec(ctx context.Context, params map[string]interface
 
 func (t *DockerTool) dockerImages(ctx context.Context) (interface{}, error) {
 	cmd := exec.CommandContext(ctx, "docker", "images", "--format", "{{.Repository}}:{{.Tag}}\t{{.ID}}\t{{.Size}}")
-	output, err := cmd.CombinedOutput()
+	output, _ := cmd.CombinedOutput()
 
 	var images []map[string]interface{}
 	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
@@ -359,7 +359,7 @@ func (t *DockerTool) dockerInspect(ctx context.Context, params map[string]interf
 	}
 
 	cmd := exec.CommandContext(ctx, "docker", "inspect", container)
-	output, err := cmd.CombinedOutput()
+	output, _ := cmd.CombinedOutput()
 
 	var result []map[string]interface{}
 	json.Unmarshal(output, &result)

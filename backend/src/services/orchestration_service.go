@@ -151,6 +151,16 @@ func (s *OrchestrationService) SetStructuredPlanner(planner *StructuredPlanner) 
 	}
 }
 
+// SetPlanReview 设置计划回顾服务
+func (s *OrchestrationService) SetPlanReview(planReview *PlanReviewService) {
+	s.planReview = planReview
+}
+
+// SetReplanningEngine 设置动态重规划引擎
+func (s *OrchestrationService) SetReplanningEngine(replanningEngine *ReplanningEngine) {
+	s.replanningEngine = replanningEngine
+}
+
 // ReviewAndAdapt 执行中回顾和动态调整计划
 // 在每个子任务完成后调用，检查是否需要调整计划
 func (s *OrchestrationService) ReviewAndAdapt(ctx context.Context, plan *StructuredPlan, checkpoints []ExecutionCheckpoint, currentSubtask string, userMessage string) (*PlanReviewResult, *ReplanResult, error) {
