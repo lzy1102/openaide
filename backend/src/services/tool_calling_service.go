@@ -14,16 +14,22 @@ import (
 // ToolCallingService 工具调用循环服务
 // 将 ToolService 与 LLM 对话连接，实现完整的 tool calling 闭环
 type ToolCallingService struct {
-	toolSvc   *ToolService
-	modelSvc  *ModelService
-	logger    *LoggerService
-	eventBus  *EventBus
-	maxRounds int // 最大工具调用轮次，防止无限循环
+	toolSvc      *ToolService
+	modelSvc     *ModelService
+	logger       *LoggerService
+	usageService *UsageService
+	eventBus     *EventBus
+	maxRounds    int // 最大工具调用轮次，防止无限循环
 }
 
 // SetEventBus 设置事件总线（可选依赖注入）
 func (s *ToolCallingService) SetEventBus(bus *EventBus) {
 	s.eventBus = bus
+}
+
+// SetUsageService 设置使用量统计服务
+func (s *ToolCallingService) SetUsageService(usageService *UsageService) {
+	s.usageService = usageService
 }
 
 // NewToolCallingService 创建工具调用服务
@@ -95,10 +101,21 @@ func (s *ToolCallingService) SendMessageWithTools(
 	}
 
 	// 4. 工具调用循环
+	var totalUsage llm.Usage
+	startTime := time.Now()
+
 	for round := 0; round < s.maxRounds; round++ {
+		roundStart := time.Now()
 		resp, err := s.modelSvc.ChatWithTools(modelID, messages, llmTools, options)
 		if err != nil {
 			return nil, fmt.Errorf("LLM call failed: %w", err)
+		}
+
+		// 累计token使用量
+		if resp.Usage != nil {
+			totalUsage.PromptTokens += resp.Usage.PromptTokens
+			totalUsage.CompletionTokens += resp.Usage.CompletionTokens
+			totalUsage.TotalTokens += resp.Usage.TotalTokens
 		}
 
 		if len(resp.Choices) == 0 {
@@ -118,12 +135,16 @@ func (s *ToolCallingService) SendMessageWithTools(
 			if result == "" {
 				result = "(无回复内容)"
 			}
+
+			// 记录总token使用量（所有轮次累计）
+			if s.usageService != nil && totalUsage.TotalTokens > 0 {
+				go s.recordToolCallingUsage(ctx, userID, dialogueID, modelID, &totalUsage, time.Since(startTime))
+			}
+
 			return s.saveToolCallingResult(dialogueID, "assistant", result), nil
 		}
 
 		// 执行工具调用
-		s.logger.Info(ctx, "Tool calling round %d: %d tool calls", round+1, len(assistantMsg.ToolCalls))
-
 		for _, tc := range assistantMsg.ToolCalls {
 			toolResult := s.executeToolCall(ctx, tc, dialogueID)
 
@@ -138,7 +159,47 @@ func (s *ToolCallingService) SendMessageWithTools(
 
 	// 超出最大轮次，返回最后一条 assistant 消息
 	lastMsg := messages[len(messages)-1]
+
+	// 记录总token使用量（即使超出轮次也要记录）
+	if s.usageService != nil && totalUsage.TotalTokens > 0 {
+		go s.recordToolCallingUsage(ctx, userID, dialogueID, modelID, &totalUsage, time.Since(startTime))
+	}
+
 	return s.saveToolCallingResult(dialogueID, "assistant", lastMsg.Content), nil
+}
+
+// recordToolCallingUsage 记录工具调用的token使用量
+func (s *ToolCallingService) recordToolCallingUsage(ctx context.Context, userID, dialogueID, modelID string, usage *llm.Usage, duration time.Duration) {
+	if s.usageService == nil {
+		return
+	}
+
+	// 获取模型信息
+	model, err := s.modelSvc.GetModel(modelID)
+	if err != nil {
+		model = &models.Model{Name: modelID, Provider: "unknown"}
+	}
+
+	record := &models.UsageRecord{
+		ID:               GenerateUUID(),
+		UserID:           userID,
+		DialogueID:       dialogueID,
+		MessageID:        fmt.Sprintf("tool_call_%d", time.Now().Unix()),
+		Provider:         model.Provider,
+		ModelID:          model.ID,
+		ModelName:        model.Name,
+		PromptTokens:     int64(usage.PromptTokens),
+		CompletionTokens: int64(usage.CompletionTokens),
+		TotalTokens:      int64(usage.TotalTokens),
+		RequestType:      "tool_calling",
+		IsStreaming:      false,
+		Duration:         duration.Milliseconds(),
+		Success:          true,
+	}
+
+	if err := s.usageService.RecordUsage(record); err != nil {
+		s.logger.Error(ctx, "Failed to record tool calling usage: %v", err)
+	}
 }
 
 // executeToolCall 执行单个工具调用

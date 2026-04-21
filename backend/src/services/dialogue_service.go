@@ -16,6 +16,7 @@ type DialogueService struct {
 	db            *gorm.DB
 	modelService  *ModelService
 	logger        *LoggerService
+	usageService  *UsageService
 }
 
 // NewDialogueService 创建对话服务实例
@@ -25,6 +26,11 @@ func NewDialogueService(db *gorm.DB, modelService *ModelService, logger *LoggerS
 		modelService: modelService,
 		logger:       logger,
 	}
+}
+
+// SetUsageService 设置使用量统计服务
+func (s *DialogueService) SetUsageService(usageService *UsageService) {
+	s.usageService = usageService
 }
 
 // CreateDialogue 创建新对话
@@ -146,6 +152,11 @@ func (s *DialogueService) SendMessage(ctx context.Context, dialogueID, userID, c
 	if resp.Usage != nil {
 		s.logger.Info(ctx, "LLM response received in %v, tokens: %d+%d=%d",
 			duration, resp.Usage.PromptTokens, resp.Usage.CompletionTokens, resp.Usage.TotalTokens)
+
+		// 记录Token使用量
+		if s.usageService != nil {
+			go s.recordUsage(ctx, userID, dialogueID, assistantMessage.ID, modelID, resp, duration, false)
+		}
 	}
 
 	// 保存助手回复
@@ -199,12 +210,95 @@ func (s *DialogueService) SendMessageStream(ctx context.Context, dialogueID, use
 	}
 
 	// 调用 LLM 获取流式回复
-	return s.modelService.ChatStream(modelID, llmMessages, options)
+	startTime := time.Now()
+	chunkChan, err := s.modelService.ChatStream(modelID, llmMessages, options)
+	if err != nil {
+		return nil, err
+	}
+
+	// 包装流式通道，在最后统计token
+	if s.usageService != nil {
+		return s.wrapStreamWithUsage(chunkChan, userID, dialogueID, modelID, startTime), nil
+	}
+
+	return chunkChan, nil
+}
+
+// wrapStreamWithUsage 包装流式通道，在最后统计token使用量
+func (s *DialogueService) wrapStreamWithUsage(
+	chunkChan <-chan llm.ChatStreamChunk,
+	userID, dialogueID, modelID string,
+	startTime time.Time,
+) <-chan llm.ChatStreamChunk {
+	wrapped := make(chan llm.ChatStreamChunk)
+
+	go func() {
+		defer close(wrapped)
+
+		var lastChunk llm.ChatStreamChunk
+		var hasUsage bool
+
+		for chunk := range chunkChan {
+			lastChunk = chunk
+			if chunk.Usage != nil {
+				hasUsage = true
+			}
+			wrapped <- chunk
+		}
+
+		// 流结束后统计token
+		if hasUsage && lastChunk.Usage != nil {
+			duration := time.Since(startTime)
+			resp := &llm.ChatResponse{
+				Usage: lastChunk.Usage,
+			}
+			// 流式消息ID用对话ID+时间戳
+			messageID := fmt.Sprintf("stream_%d", time.Now().Unix())
+			s.recordUsage(context.Background(), userID, dialogueID, messageID, modelID, resp, duration, true)
+		}
+	}()
+
+	return wrapped
 }
 
 // SaveStreamMessage 保存流式消息的完整内容
 func (s *DialogueService) SaveStreamMessage(dialogueID string, content string) models.Message {
 	return s.AddMessage(dialogueID, "assistant", content)
+}
+
+// recordUsage 记录Token使用量
+func (s *DialogueService) recordUsage(ctx context.Context, userID, dialogueID, messageID, modelID string, resp *llm.ChatResponse, duration time.Duration, isStreaming bool) {
+	if s.usageService == nil {
+		return
+	}
+
+	// 获取模型信息
+	model, err := s.modelService.GetModel(modelID)
+	if err != nil {
+		s.logger.Error(ctx, "Failed to get model for usage recording: %v", err)
+		model = &models.Model{Name: modelID, Provider: "unknown"}
+	}
+
+	record := &models.UsageRecord{
+		ID:               uuid.New().String(),
+		UserID:           userID,
+		DialogueID:       dialogueID,
+		MessageID:        messageID,
+		Provider:         model.Provider,
+		ModelID:          model.ID,
+		ModelName:        model.Name,
+		PromptTokens:     int64(resp.Usage.PromptTokens),
+		CompletionTokens: int64(resp.Usage.CompletionTokens),
+		TotalTokens:      int64(resp.Usage.TotalTokens),
+		RequestType:      "chat",
+		IsStreaming:      isStreaming,
+		Duration:         duration.Milliseconds(),
+		Success:          true,
+	}
+
+	if err := s.usageService.RecordUsage(record); err != nil {
+		s.logger.Error(ctx, "Failed to record usage: %v", err)
+	}
 }
 
 // DeleteDialogue 删除对话

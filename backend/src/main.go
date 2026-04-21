@@ -221,6 +221,10 @@ func main() {
 	// 初始化使用量统计服务
 	usageService := services.NewUsageService(db, cacheService, loggerService)
 
+	// 将使用量统计服务注入到对话服务和工具调用服务
+	dialogueService.SetUsageService(usageService)
+	toolCallingService.SetUsageService(usageService)
+
 	// 初始化知识库相关服务
 	embeddingService := services.NewOpenAIEmbeddingService("", "", "", cacheService)
 	vectorManager, err := services.NewVectorManager(config.DefaultPaths.VectorDir, embeddingService)
