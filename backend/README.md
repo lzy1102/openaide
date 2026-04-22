@@ -51,6 +51,11 @@ OpenAIDE is an intelligent assistant project supporting multi-model LLM integrat
 | **Prompt Templates** | Template management with versioning and variables | ✅ |
 | **Usage Analytics** | Usage statistics and cost tracking | ✅ |
 | **Task Scheduler** | Cron-based scheduled tasks and reminders | ✅ |
+| **Self-Evolution** | Skill discovery, pattern detection, feedback collection, memory extraction, skill evolution | ✅ |
+| **Structured Planning** | 5-step pipeline with execution review and dynamic replanning | ✅ |
+| **Local Knowledge First** | Auto-extract knowledge, query local KB before LLM, high-confidence direct return | ✅ |
+| **Smart Token Management** | Token estimation, smart truncation, intelligent caching, cost optimization, token limits | ✅ |
+| **Extended Tools** | 22 built-in tools: dev tools, DevOps, system monitoring, network diagnostics | ✅ |
 
 ## Project Structure
 

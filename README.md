@@ -18,6 +18,9 @@ A full-featured AI Agent development platform with multi-model support, multi-ag
 - **Knowledge Base & RAG**: Document import, vector embedding, semantic search, retrieval-augmented generation
 - **Three-Layer Memory**: Working memory, short-term (dialogue summaries with TTL), long-term (facts/preferences/procedures/context with decay)
 - **5-Layer System Prompt**: Base prompt → optimization suggestions → user preferences → memory context → RAG context
+- **Local Knowledge First**: Auto-extract knowledge from dialogues, store locally, query local KB before calling LLM (high-confidence direct return saves tokens)
+- **Self-Evolution**: Skill discovery, pattern detection, feedback collection, memory extraction, skill evolution — closed-loop learning
+- **Structured Planning**: 5-step pipeline (understanding → planning → dependencies → tools → risks) with execution review and dynamic replanning
 - **Thinking & Reasoning**: Chain-of-Thought, Multi-Step Reasoning, Tree-of-Thought with correction system
 - **Tool Calling Framework**: HTTP requests, code execution, web search, weather, file I/O, and MCP external tools — with SSRF protection
 - **Workflow Engine**: Step-by-step workflow execution with state machine, rollback, and scheduling
@@ -30,6 +33,7 @@ A full-featured AI Agent development platform with multi-model support, multi-ag
 - **WebSocket**: Real-time bidirectional communication and streaming dialogue
 - **Feishu Integration**: Enterprise messaging bot with card callbacks and `/skill` command execution for matched skills
 - **Adaptive Learning**: Feedback collection, preference learning, prompt optimization
+- **Smart Token Management**: Pre-send token estimation, smart context truncation, intelligent caching, cost optimization, user/dialogue token limits
 - **Usage Analytics**: Token/cost tracking, budget management, threshold alerts via email
 - **Authentication**: JWT tokens, API keys, role-based access control
 
@@ -334,6 +338,9 @@ Interactive mode:
 - **知识库 & RAG**：文档导入、向量嵌入、语义搜索、检索增强生成
 - **三层记忆架构**：工作记忆、短期记忆（对话摘要+TTL）、长期记忆（事实/偏好/流程/上下文+衰减机制）
 - **5 层 System Prompt**：基础 Prompt → 优化建议 → 用户偏好 → 记忆上下文 → RAG 上下文
+- **本地知识优先**：自动从对话中提取知识点并存储，查询时优先检索本地知识库，高置信度直接返回（节省token）
+- **自我进化**：技能发现、模式检测、反馈收集、记忆提取、技能进化 — 闭环学习
+- **结构化规划**：5步流水线（理解→规划→依赖→工具→风险），执行回顾与动态重规划
 - **思考推理**：思维链(CoT)、多步推理、思维树(ToT)、纠正系统、可视化
 - **工具调用框架**：HTTP 请求、代码执行、网页搜索、天气查询、文件读写，以及 MCP 外部工具接入，内置 SSRF 防护
 - **工作流引擎**：步骤编排、状态机、回滚恢复、调度执行
@@ -346,6 +353,7 @@ Interactive mode:
 - **WebSocket**：实时双向通信、流式对话
 - **飞书集成**：企业消息机器人、卡片回调，以及 `/skill` 命令的技能匹配与执行
 - **自适应学习**：反馈收集、偏好学习、Prompt 自动优化
+- **智能 Token 管理**：预发送 Token 估算、智能上下文截断、智能缓存、成本优化、用户/对话级 Token 限额
 - **使用量统计**：Token/成本追踪、预算管理、阈值邮件告警
 - **认证鉴权**：JWT Token、API Key、角色权限控制
 
