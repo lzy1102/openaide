@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 	"time"
@@ -90,7 +89,10 @@ func (c *CostOptimizer) GetOptimalModel(ctx context.Context, query string, prefe
 	bestScore := -1.0
 
 	for _, model := range models {
-		pricing, ok := pricings[model.ID]
+		pricing, ok := pricings[model.Name]
+		if !ok {
+			pricing, ok = pricings[model.ID]
+		}
 		if !ok {
 			continue
 		}
@@ -113,7 +115,7 @@ func (c *CostOptimizer) GetOptimalModel(ctx context.Context, query string, prefe
 
 		if score > bestScore {
 			bestScore = score
-			bestModel = model.ID
+			bestModel = model.Name
 		}
 	}
 

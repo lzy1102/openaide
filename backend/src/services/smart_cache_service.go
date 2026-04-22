@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"openaide/backend/src/services/llm"
@@ -14,11 +16,12 @@ import (
 // SmartCacheService 智能缓存服务
 // 缓存常见查询的响应，减少重复token消耗
 type SmartCacheService struct {
-	cache           *CacheService
-	tokenEstimator  *TokenEstimator
-	hitCount        map[string]int
-	missCount       int
+	cache            *CacheService
+	tokenEstimator   *TokenEstimator
+	hitCount         map[string]int
+	missCount        int64
 	totalSavedTokens int64
+	mu               sync.Mutex
 }
 
 // CacheEntry 缓存条目
@@ -69,23 +72,23 @@ func (s *SmartCacheService) Get(query string, modelID string, options map[string
 
 	if val, found := s.cache.Get("smart_cache:" + key); found {
 		if entry, ok := val.(*CacheEntry); ok {
-			// 检查是否过期
 			if time.Now().Before(entry.ExpiresAt) {
+				s.mu.Lock()
 				entry.HitCount++
 				s.hitCount[key]++
+				s.mu.Unlock()
 
-				// 估算节省的token
 				savedTokens := s.tokenEstimator.EstimateTokens(query, modelID)
 				savedTokens += s.tokenEstimator.EstimateTokens(entry.Response, modelID)
-				s.totalSavedTokens += int64(savedTokens)
-				entry.SavedTokens += int64(savedTokens)
+				atomic.AddInt64(&s.totalSavedTokens, int64(savedTokens))
+				atomic.AddInt64(&entry.SavedTokens, int64(savedTokens))
 
 				return entry, true
 			}
 		}
 	}
 
-	s.missCount++
+	atomic.AddInt64(&s.missCount, 1)
 	return nil, false
 }
 
@@ -142,32 +145,37 @@ func (s *SmartCacheService) ShouldCache(query string, options map[string]interfa
 
 // GetStats 获取缓存统计
 func (s *SmartCacheService) GetStats() map[string]interface{} {
+	s.mu.Lock()
 	totalHits := 0
 	for _, count := range s.hitCount {
 		totalHits += count
 	}
+	s.mu.Unlock()
 
-	totalRequests := totalHits + s.missCount
+	missCount := atomic.LoadInt64(&s.missCount)
+	totalRequests := totalHits + int(missCount)
 	hitRate := 0.0
 	if totalRequests > 0 {
 		hitRate = float64(totalHits) / float64(totalRequests) * 100
 	}
 
 	return map[string]interface{}{
-		"total_hits":        totalHits,
-		"total_misses":      s.missCount,
-		"hit_rate":          fmt.Sprintf("%.2f%%", hitRate),
-		"total_saved_tokens": s.totalSavedTokens,
-		"unique_queries":    len(s.hitCount),
+		"total_hits":         totalHits,
+		"total_misses":       missCount,
+		"hit_rate":           fmt.Sprintf("%.2f%%", hitRate),
+		"total_saved_tokens": atomic.LoadInt64(&s.totalSavedTokens),
+		"unique_queries":     len(s.hitCount),
 	}
 }
 
 // Clear 清空缓存
 func (s *SmartCacheService) Clear() {
 	s.cache.Flush()
+	s.mu.Lock()
 	s.hitCount = make(map[string]int)
-	s.missCount = 0
-	s.totalSavedTokens = 0
+	s.mu.Unlock()
+	atomic.StoreInt64(&s.missCount, 0)
+	atomic.StoreInt64(&s.totalSavedTokens, 0)
 }
 
 // normalizeQuery 规范化查询
@@ -223,11 +231,11 @@ func (s *SmartCacheService) hashOptions(options map[string]interface{}) string {
 func (s *SmartCacheService) containsSensitiveInfo(query string) bool {
 	sensitivePatterns := []string{
 		"密码", "password", "passwd", "pwd",
-		"密钥", "secret", "key", "token",
-		"身份证", "id card", "身份证号",
-		"银行卡", "credit card", "cvv",
-		"手机号", "phone", "手机号码",
-		"地址", "address", "住址",
+		"密钥", "secret",
+		"身份证号", "身份证号码",
+		"银行卡号", "credit card number", "cvv",
+		"手机号码", "手机号号",
+		"住址", "家庭住址",
 	}
 
 	lowerQuery := strings.ToLower(query)
@@ -243,13 +251,14 @@ func (s *SmartCacheService) containsSensitiveInfo(query string) bool {
 func (s *SmartCacheService) isCacheableQueryType(query string) bool {
 	// 知识类查询关键词
 	knowledgePatterns := []string{
-		"什么是", "什么是", "解释", "介绍", "定义",
+		"什么是", "解释", "介绍", "定义",
 		"how to", "what is", "explain", "define", "describe",
 		"区别", "比较", "对比", "difference", "compare",
-		"原理", "机制", "原理", "principle", "mechanism",
+		"原理", "机制", "principle", "mechanism",
 		"教程", "指南", "tutorial", "guide", "how do",
 		"为什么", "原因", "why", "reason", "cause",
 		"列表", "列举", "list", "enumerate",
+		"翻译", "translate", "转换", "convert",
 	}
 
 	lowerQuery := strings.ToLower(query)

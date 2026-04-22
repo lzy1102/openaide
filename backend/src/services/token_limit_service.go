@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
@@ -16,12 +15,12 @@ type TokenLimitService struct {
 	usageService *UsageService
 	logger       *LoggerService
 
-	// 内存中的限制配置（用户ID -> 限制配置）
 	userLimits   map[string]*UserTokenLimit
 	limitsMutex  sync.RWMutex
 
-	// 告警回调
 	alertCallbacks []AlertCallback
+
+	stopCh chan struct{}
 }
 
 // UserTokenLimit 用户Token限制配置
@@ -58,12 +57,17 @@ func NewTokenLimitService(db *gorm.DB, usageService *UsageService, logger *Logge
 		logger:         logger,
 		userLimits:     make(map[string]*UserTokenLimit),
 		alertCallbacks: make([]AlertCallback, 0),
+		stopCh:         make(chan struct{}),
 	}
 
-	// 启动后台监控任务
 	go service.startMonitoring()
 
 	return service
+}
+
+// Stop 停止监控goroutine
+func (s *TokenLimitService) Stop() {
+	close(s.stopCh)
 }
 
 // SetUserLimit 设置用户Token限制
@@ -222,11 +226,10 @@ func (s *TokenLimitService) getDailyUsage(userID string) int64 {
 		return 0
 	}
 
-	// 获取今日使用量
 	today := time.Now().Format("2006-01-02")
 	usage, err := s.usageService.GetDailyUsage(userID, today)
 	if err != nil {
-		log.Printf("Failed to get daily usage for user %s: %v", userID, err)
+		s.logger.Error(context.Background(), "Failed to get daily usage for user %s: %v", userID, err)
 		return 0
 	}
 
@@ -239,11 +242,10 @@ func (s *TokenLimitService) getMonthlyUsage(userID string) int64 {
 		return 0
 	}
 
-	// 获取本月使用量
 	month := time.Now().Format("2006-01")
 	usage, err := s.usageService.GetMonthlyUsage(userID, month)
 	if err != nil {
-		log.Printf("Failed to get monthly usage for user %s: %v", userID, err)
+		s.logger.Error(context.Background(), "Failed to get monthly usage for user %s: %v", userID, err)
 		return 0
 	}
 
@@ -273,17 +275,22 @@ func (s *TokenLimitService) startMonitoring() {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		s.limitsMutex.RLock()
-		userIDs := make([]string, 0, len(s.userLimits))
-		for userID := range s.userLimits {
-			userIDs = append(userIDs, userID)
-		}
-		s.limitsMutex.RUnlock()
+	for {
+		select {
+		case <-s.stopCh:
+			return
+		case <-ticker.C:
+			s.limitsMutex.RLock()
+			userIDs := make([]string, 0, len(s.userLimits))
+			for userID := range s.userLimits {
+				userIDs = append(userIDs, userID)
+			}
+			s.limitsMutex.RUnlock()
 
-		ctx := context.Background()
-		for _, userID := range userIDs {
-			s.CheckAndAlert(ctx, userID)
+			ctx := context.Background()
+			for _, userID := range userIDs {
+				s.CheckAndAlert(ctx, userID)
+			}
 		}
 	}
 }
