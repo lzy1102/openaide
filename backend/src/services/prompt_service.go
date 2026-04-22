@@ -112,6 +112,13 @@ func (s *PromptService) Compose(ctx context.Context, userID, dialogueID, query s
 		}
 	}
 
+	// 4.5 本地知识部分匹配上下文
+	if localCtx, ok := options["local_knowledge_context"]; ok {
+		if ctxStr, ok := localCtx.(string); ok && ctxStr != "" {
+			parts = append(parts, "本地知识库匹配内容（请优先参考）：\n"+ctxStr)
+		}
+	}
+
 	// 5. RAG 上下文
 	if query != "" && s.ragSvc != nil {
 		ragCtx, cancel := context.WithTimeout(ctx, 2*time.Second)

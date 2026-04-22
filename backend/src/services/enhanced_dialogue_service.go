@@ -29,6 +29,7 @@ type EnhancedDialogueService struct {
 	eventBus        *EventBus
 	promptSvc       *PromptService
 	postHookSvc     *PostHookService
+	localKnowledge  *LocalKnowledgeFirst
 }
 
 // NewEnhancedDialogueService 创建增强对话服务
@@ -60,6 +61,10 @@ func NewEnhancedDialogueService(
 	}
 }
 
+func (s *EnhancedDialogueService) SetLocalKnowledge(lk *LocalKnowledgeFirst) {
+	s.localKnowledge = lk
+}
+
 // ComposeSystemPrompt 组装 system prompt（委托给 PromptService）
 func (s *EnhancedDialogueService) ComposeSystemPrompt(ctx context.Context, userID, dialogueID, query string, options map[string]interface{}) string {
 	return s.promptSvc.Compose(ctx, userID, dialogueID, query, options)
@@ -71,7 +76,6 @@ func (s *EnhancedDialogueService) SendMessageStreamEnhanced(
 	dialogueID, userID, content, modelID string,
 	options map[string]interface{},
 ) (<-chan llm.ChatStreamChunk, error) {
-	// 发布消息接收事件
 	if s.eventBus != nil {
 		s.eventBus.Publish(ctx, models.EventTopicMessage, models.EventTypeMessageReceived, "dialogue", map[string]interface{}{
 			"dialogue_id": dialogueID,
@@ -80,21 +84,42 @@ func (s *EnhancedDialogueService) SendMessageStreamEnhanced(
 		})
 	}
 
-	// 组装 system prompt 并注入 options
+	if s.localKnowledge != nil && s.localKnowledge.ShouldTryLocal(content) {
+		localResult, err := s.localKnowledge.Query(ctx, content, 3)
+		if err == nil && localResult != nil && localResult.FromLocal {
+			log.Printf("[EnhancedDialogue] local knowledge hit: score=%.2f, saved_tokens=%d", localResult.Score, localResult.SavedTokens)
+			if s.eventBus != nil {
+				s.eventBus.Publish(ctx, "knowledge", "local_hit", "local_knowledge", map[string]interface{}{
+					"query":        content,
+					"score":        localResult.Score,
+					"saved_tokens": localResult.SavedTokens,
+					"sources":      len(localResult.Sources),
+				})
+			}
+			return s.localKnowledge.ToStreamChunks(localResult.Answer), nil
+		}
+
+		if localResult != nil && !localResult.FromLocal && localResult.Score >= LocalKnowledgeMediumThreshold {
+			if options == nil {
+				options = make(map[string]interface{})
+			}
+			options["local_knowledge_context"] = localResult.Answer
+			log.Printf("[EnhancedDialogue] local knowledge partial match: score=%.2f, injecting as context", localResult.Score)
+		}
+	}
+
 	composedPrompt := s.ComposeSystemPrompt(ctx, userID, dialogueID, content, options)
 	if options == nil {
 		options = make(map[string]interface{})
 	}
 	options["system"] = composedPrompt
 
-	// 调用原始 SendMessageStream
 	chunkChan, err := s.dialogueSvc.SendMessageStream(ctx, dialogueID, userID, content, modelID, options)
 	if err != nil {
 		return nil, err
 	}
 
-	// 包装通道，流结束后触发后置钩子
-	return s.postHookSvc.WrapStream(chunkChan, dialogueID, userID), nil
+	return s.postHookSvc.WrapStream(chunkChan, dialogueID, userID, content), nil
 }
 
 // OnResponseComplete 响应完成后的后置处理（委托给 PostHookService）

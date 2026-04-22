@@ -73,8 +73,17 @@ func (s *PostHookService) OnResponseComplete(ctx context.Context, dialogueID, us
 	go func() {
 		extractCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		if _, err := s.extractionSvc.ExtractFromDialogue(extractCtx, dialogueID); err != nil {
+		extracted, err := s.extractionSvc.ExtractFromDialogue(extractCtx, dialogueID)
+		if err != nil {
 			log.Printf("[PostHook] knowledge extraction failed for %s: %v", dialogueID, err)
+			return
+		}
+		if len(extracted) > 0 && userID != "" {
+			if saveErr := s.extractionSvc.AutoSave(extractCtx, extracted, userID); saveErr != nil {
+				log.Printf("[PostHook] knowledge auto-save failed for %s: %v", dialogueID, saveErr)
+			} else {
+				log.Printf("[PostHook] knowledge extracted and saved: %d items from %s", len(extracted), dialogueID)
+			}
 		}
 	}()
 
@@ -125,7 +134,7 @@ func (s *PostHookService) OnResponseCompleteLegacy(ctx context.Context, dialogue
 
 func (s *PostHookService) WrapStream(
 	source <-chan llm.ChatStreamChunk,
-	dialogueID, userID string,
+	dialogueID, userID, userQuery string,
 ) <-chan llm.ChatStreamChunk {
 	out := make(chan llm.ChatStreamChunk, 16)
 
@@ -138,7 +147,7 @@ func (s *PostHookService) WrapStream(
 				fullContent.WriteString(chunk.Choices[0].Delta.Content)
 			}
 		}
-		go s.OnResponseCompleteLegacy(context.Background(), dialogueID, userID, fullContent.String())
+		go s.OnResponseComplete(context.Background(), dialogueID, userID, userQuery, fullContent.String())
 	}()
 
 	return out

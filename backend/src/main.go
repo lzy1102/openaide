@@ -283,6 +283,9 @@ func main() {
 		postHookService,
 	)
 
+	localKnowledgeFirst := services.NewLocalKnowledgeFirst(knowledgeService, ragService, tokenEstimator)
+	enhancedDialogueService.SetLocalKnowledge(localKnowledgeFirst)
+
 	// 初始化认证服务
 	authService := services.NewAuthService(db, cacheService, nil)
 	authHandler := handlers.NewAuthHandler(authService)
