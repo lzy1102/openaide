@@ -720,6 +720,82 @@ func (s *ToolService) GetToolDefinitions() []map[string]interface{} {
 				},
 			},
 		},
+		"execute_command": {
+			"type": "function",
+			"function": map[string]interface{}{
+				"name":        "execute_command",
+				"description": "在服务器上执行 Shell 命令并返回输出结果。可以运行 curl、ls、cat、python 等任何命令。危险命令（rm、sudo、shutdown 等）需要用户确认。",
+				"parameters": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"command":  map[string]interface{}{"type": "string", "description": "要执行的 Shell 命令"},
+						"approved": map[string]interface{}{"type": "boolean", "description": "是否已获用户批准执行危险命令（可选）"},
+					},
+					"required": []string{"command"},
+				},
+			},
+		},
+		"http_request": {
+			"type": "function",
+			"function": map[string]interface{}{
+				"name":        "http_request",
+				"description": "发送 HTTP 请求并返回响应。支持 GET、POST、PUT、DELETE 等方法，可自定义请求头和请求体。可用于调用 API、查询公网IP、获取网页内容等。不支持访问内网地址。",
+				"parameters": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"url":     map[string]interface{}{"type": "string", "description": "请求的 URL 地址"},
+						"method":  map[string]interface{}{"type": "string", "description": "HTTP 方法：GET、POST、PUT、DELETE 等，默认 GET"},
+						"headers": map[string]interface{}{"type": "object", "description": "自定义请求头（可选）"},
+						"body":    map[string]interface{}{"type": "string", "description": "请求体内容（POST/PUT/PATCH 时使用，可选）"},
+					},
+					"required": []string{"url"},
+				},
+			},
+		},
+		"read_file": {
+			"type": "function",
+			"function": map[string]interface{}{
+				"name":        "read_file",
+				"description": "读取服务器上的文件内容。支持文本文件，自动限制读取大小。",
+				"parameters": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"path": map[string]interface{}{"type": "string", "description": "文件路径"},
+					},
+					"required": []string{"path"},
+				},
+			},
+		},
+		"write_file": {
+			"type": "function",
+			"function": map[string]interface{}{
+				"name":        "write_file",
+				"description": "向服务器写入文件内容。如果文件已存在则覆盖。",
+				"parameters": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"path":    map[string]interface{}{"type": "string", "description": "文件路径"},
+						"content": map[string]interface{}{"type": "string", "description": "要写入的文件内容"},
+					},
+					"required": []string{"path", "content"},
+				},
+			},
+		},
+		"json_parse": {
+			"type": "function",
+			"function": map[string]interface{}{
+				"name":        "json_parse",
+				"description": "解析 JSON 字符串并返回结构化数据。支持 JSON Path 查询。",
+				"parameters": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"data": map[string]interface{}{"type": "string", "description": "JSON 字符串"},
+						"path": map[string]interface{}{"type": "string", "description": "JSON Path 查询路径（可选）"},
+					},
+					"required": []string{"data"},
+				},
+			},
+		},
 	}
 
 	for name, def := range builtinDefs {
