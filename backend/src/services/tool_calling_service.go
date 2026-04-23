@@ -213,6 +213,12 @@ func (s *ToolCallingService) executeToolCall(ctx context.Context, tc llm.ToolCal
 
 	result, err := s.toolSvc.ExecuteTool(ctx, toolCall, dialogueID, "", "")
 	if err != nil {
+		if confirmErr, ok := err.(*ConfirmationRequiredError); ok {
+			warningMsg := fmt.Sprintf("⚠️ 需要用户确认才能执行此命令: %s\n风险: %s\n请使用 approved=true 参数重新调用，或在确认后再次请求。", confirmErr.Command, confirmErr.Risk)
+			s.logger.Warn(ctx, "Tool %s requires confirmation: %s", tc.Function.Name, confirmErr.Command)
+			return warningMsg
+		}
+
 		errMsg := fmt.Sprintf("Tool execution error: %v", err)
 		s.logger.Error(ctx, "Tool %s failed: %v", tc.Function.Name, err)
 		if s.eventBus != nil {
@@ -225,7 +231,6 @@ func (s *ToolCallingService) executeToolCall(ctx context.Context, tc llm.ToolCal
 		return errMsg
 	}
 
-	// 发布工具完成事件
 	if s.eventBus != nil {
 		s.eventBus.Publish(ctx, models.EventTopicTool, models.EventTypeToolCompleted, "tool_calling", map[string]interface{}{
 			"tool_name":    tc.Function.Name,
@@ -234,7 +239,6 @@ func (s *ToolCallingService) executeToolCall(ctx context.Context, tc llm.ToolCal
 		})
 	}
 
-	// 序列化结果为 JSON 字符串
 	resultJSON, err := json.Marshal(result.Content)
 	if err != nil {
 		return fmt.Sprintf("%v", result.Content)

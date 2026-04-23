@@ -1536,8 +1536,19 @@ func (t *CommandTool) Execute(ctx context.Context, params map[string]interface{}
 	execCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(execCtx, cmdParts[0], cmdParts[1:]...)
-	cmd.Dir = "/tmp"
+	var cmd *exec.Cmd
+	if isWindowsCmd(command) {
+		cmd = exec.CommandContext(execCtx, "cmd", "/C", command)
+	} else {
+		cmdParts := strings.Fields(command)
+		if len(cmdParts) == 0 {
+			return nil, fmt.Errorf("empty command")
+		}
+		cmd = exec.CommandContext(execCtx, cmdParts[0], cmdParts[1:]...)
+	}
+
+	tmpDir := os.TempDir()
+	cmd.Dir = tmpDir
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -1558,25 +1569,29 @@ func (t *CommandTool) Execute(ctx context.Context, params map[string]interface{}
 // isDangerousCommand 判断是否为危险命令
 func isDangerousCommand(cmd string) bool {
 	dangerous := map[string]bool{
-		// 破坏性操作
 		"rm": true, "rmdir": true, "shred": true, "mkfs": true, "dd": true,
-		// 系统控制
 		"shutdown": true, "reboot": true, "halt": true, "poweroff": true, "init": true,
-		// 权限提升
 		"su": true, "sudo": true, "chroot": true,
-		// 用户管理
 		"passwd": true, "useradd": true, "userdel": true, "usermod": true,
-		// 磁盘/分区
 		"fdisk": true, "parted": true, "mount": true, "umount": true,
 		"swapon": true, "swapoff": true,
-		// 网络管理
 		"iptables": true, "nft": true, "ifconfig": true,
-		// 服务管理
 		"systemctl": true, "service": true,
-		// 内核模块
 		"modprobe": true, "insmod": true, "rmmod": true,
+		"del": true, "format": true, "rd": true,
 	}
 	return dangerous[cmd]
+}
+
+func isWindowsCmd(command string) bool {
+	lower := strings.ToLower(command)
+	windowsPrefixes := []string{"dir ", "type ", "copy ", "xcopy ", "del ", "rd ", "md ", "move ", "ren ", "tasklist", "taskkill", "net ", "ipconfig", "ping ", "tracert", "nslookup", "systeminfo", "wmic ", "powershell", "cmd ", "echo ", "set ", "findstr"}
+	for _, prefix := range windowsPrefixes {
+		if strings.HasPrefix(lower, prefix) {
+			return true
+		}
+	}
+	return strings.Contains(lower, "&") || strings.Contains(lower, "|") || strings.Contains(lower, ">") || strings.Contains(lower, "<")
 }
 
 // getCommandRisk 获取命令风险描述

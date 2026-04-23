@@ -336,7 +336,65 @@ func (s *EnhancedDialogueService) SendMessageStreamRouted(
 		}
 	}
 
+	if s.toolCallingSvc != nil && s.needsToolExecution(content) {
+		log.Printf("[EnhancedDialogue] tool execution needed, using tool-calling path")
+		return s.SendMessageWithToolsStream(ctx, dialogueID, userID, content, modelID, options)
+	}
+
 	return s.SendMessageStreamEnhanced(ctx, dialogueID, userID, content, modelID, options)
+}
+
+func (s *EnhancedDialogueService) needsToolExecution(content string) bool {
+	lower := strings.ToLower(content)
+	toolIndicators := []string{
+		"执行", "运行", "跑一下", "跑个", "curl", "wget", "ping ",
+		"ls ", "cat ", "查看ip", "公网ip", "查ip", "ip地址",
+		"执行命令", "运行命令", "跑命令", "shell", "终端",
+		"docker", "git ", "npm ", "pip ", "go run",
+		"python ", "node ", "java ",
+		"读文件", "写文件", "创建文件", "删除文件",
+		"查一下", "查询", "调用", "请求", "api",
+		"format", "lint", "test", "build",
+	}
+	for _, indicator := range toolIndicators {
+		if strings.Contains(lower, indicator) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *EnhancedDialogueService) SendMessageWithToolsStream(
+	ctx context.Context,
+	dialogueID, userID, content, modelID string,
+	options map[string]interface{},
+) (<-chan llm.ChatStreamChunk, error) {
+	if s.toolCallingSvc == nil {
+		return s.SendMessageStreamEnhanced(ctx, dialogueID, userID, content, modelID, options)
+	}
+
+	msg, err := s.toolCallingSvc.SendMessageWithTools(ctx, dialogueID, userID, content, modelID, options)
+	if err != nil {
+		return nil, err
+	}
+
+	go s.OnResponseComplete(context.Background(), dialogueID, userID, content)
+
+	ch := make(chan llm.ChatStreamChunk, 1)
+	go func() {
+		defer close(ch)
+		ch <- llm.ChatStreamChunk{
+			Choices: []llm.StreamChoice{
+				{
+					Delta: llm.StreamDelta{
+						Content: msg.Content,
+						Role:    "assistant",
+					},
+				},
+			},
+		}
+	}()
+	return ch, nil
 }
 
 // SendMessageWithPlan 带规划的聊天（自动判断是否需要规划）
