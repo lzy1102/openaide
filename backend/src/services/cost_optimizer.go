@@ -135,7 +135,7 @@ func (c *CostOptimizer) GetBudgetFriendlyModel(ctx context.Context, userID strin
 		return preferredModel, nil
 	}
 
-	today := time.Now().Format("2006-01-02")
+	today := time.Now()
 	dailyUsage, err := c.usageService.GetDailyUsage(userID, today)
 	if err != nil {
 		return preferredModel, nil

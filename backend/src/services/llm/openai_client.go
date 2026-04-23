@@ -186,16 +186,17 @@ func (c *OpenAIClient) buildChatRequest(req *ChatRequest) ([]byte, error) {
 	}
 
 	type openaiRequest struct {
-		Model            string          `json:"model"`
-		Messages         []openaiMessage `json:"messages"`
-		Temperature      float64         `json:"temperature,omitempty"`
-		MaxTokens        int             `json:"max_tokens,omitempty"`
-		TopP             float64         `json:"top_p,omitempty"`
-		Stop             []string        `json:"stop,omitempty"`
-		PresencePenalty  float64         `json:"presence_penalty,omitempty"`
-		FrequencyPenalty float64         `json:"frequency_penalty,omitempty"`
-		Tools            []openaiToolDef `json:"tools,omitempty"`
-		ToolChoice       interface{}     `json:"tool_choice,omitempty"`
+		Model               string          `json:"model"`
+		Messages            []openaiMessage `json:"messages"`
+		Temperature         float64         `json:"temperature,omitempty"`
+		MaxTokens           int             `json:"max_tokens,omitempty"`
+		MaxCompletionTokens int             `json:"max_completion_tokens,omitempty"`
+		TopP                float64         `json:"top_p,omitempty"`
+		Stop                []string        `json:"stop,omitempty"`
+		PresencePenalty     float64         `json:"presence_penalty,omitempty"`
+		FrequencyPenalty    float64         `json:"frequency_penalty,omitempty"`
+		Tools               []openaiToolDef `json:"tools,omitempty"`
+		ToolChoice          interface{}     `json:"tool_choice,omitempty"`
 	}
 
 	messages := make([]openaiMessage, len(req.Messages))
@@ -210,15 +211,16 @@ func (c *OpenAIClient) buildChatRequest(req *ChatRequest) ([]byte, error) {
 	}
 
 	openaiReq := openaiRequest{
-		Model:            req.Model,
-		Messages:         messages,
-		Temperature:      req.Temperature,
-		MaxTokens:        req.MaxTokens,
-		TopP:             req.TopP,
-		Stop:             req.Stop,
-		PresencePenalty:  req.PresencePenalty,
-		FrequencyPenalty: req.FrequencyPenalty,
-		ToolChoice:       req.ToolChoice,
+		Model:               req.Model,
+		Messages:            messages,
+		Temperature:         req.Temperature,
+		MaxTokens:           req.MaxTokens,
+		MaxCompletionTokens: req.MaxTokens,
+		TopP:                req.TopP,
+		Stop:                req.Stop,
+		PresencePenalty:     req.PresencePenalty,
+		FrequencyPenalty:    req.FrequencyPenalty,
+		ToolChoice:          req.ToolChoice,
 	}
 
 	// 转换工具定义

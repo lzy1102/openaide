@@ -177,7 +177,7 @@ func (s *LocalKnowledgeFirst) ToStreamChunks(answer string) <-chan llm.ChatStrea
 		ch <- llm.ChatStreamChunk{
 			Choices: []llm.StreamChoice{
 				{
-					Delta: llm.StreamDelta{
+					Delta: llm.MessageDelta{
 						Content: answer,
 						Role:    "assistant",
 					},

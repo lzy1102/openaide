@@ -197,14 +197,15 @@ func (c *GLMClient) buildChatRequest(req *ChatRequest) ([]byte, error) {
 	}
 
 	type glmRequest struct {
-		Model            string          `json:"model"`
-		Messages         []glmMessage    `json:"messages"`
-		Temperature      float64         `json:"temperature,omitempty"`
-		MaxTokens        int             `json:"max_tokens,omitempty"`
-		TopP             float64         `json:"top_p,omitempty"`
-		Stop             []string        `json:"stop,omitempty"`
-		PresencePenalty  float64         `json:"presence_penalty,omitempty"`
-		FrequencyPenalty float64         `json:"frequency_penalty,omitempty"`
+		Model               string       `json:"model"`
+		Messages            []glmMessage `json:"messages"`
+		Temperature         float64      `json:"temperature,omitempty"`
+		MaxTokens           int          `json:"max_tokens,omitempty"`
+		MaxCompletionTokens int          `json:"max_completion_tokens,omitempty"`
+		TopP                float64      `json:"top_p,omitempty"`
+		Stop                []string     `json:"stop,omitempty"`
+		PresencePenalty     float64      `json:"presence_penalty,omitempty"`
+		FrequencyPenalty    float64      `json:"frequency_penalty,omitempty"`
 	}
 
 	messages := make([]glmMessage, len(req.Messages))
@@ -216,12 +217,13 @@ func (c *GLMClient) buildChatRequest(req *ChatRequest) ([]byte, error) {
 	}
 
 	glmReq := glmRequest{
-		Model:            req.Model,
-		Messages:         messages,
-		Temperature:      req.Temperature,
-		MaxTokens:        req.MaxTokens,
-		TopP:             req.TopP,
-		Stop:             req.Stop,
+		Model:               req.Model,
+		Messages:            messages,
+		Temperature:         req.Temperature,
+		MaxTokens:           req.MaxTokens,
+		MaxCompletionTokens: req.MaxTokens,
+		TopP:                req.TopP,
+		Stop:                req.Stop,
 		PresencePenalty:  req.PresencePenalty,
 		FrequencyPenalty: req.FrequencyPenalty,
 	}

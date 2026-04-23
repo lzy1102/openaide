@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -1584,6 +1585,9 @@ func isDangerousCommand(cmd string) bool {
 }
 
 func isWindowsCmd(command string) bool {
+	if runtime.GOOS != "windows" {
+		return false
+	}
 	lower := strings.ToLower(command)
 	windowsPrefixes := []string{"dir ", "type ", "copy ", "xcopy ", "del ", "rd ", "md ", "move ", "ren ", "tasklist", "taskkill", "net ", "ipconfig", "ping ", "tracert", "nslookup", "systeminfo", "wmic ", "powershell", "cmd ", "echo ", "set ", "findstr"}
 	for _, prefix := range windowsPrefixes {

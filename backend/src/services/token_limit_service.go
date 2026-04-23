@@ -226,7 +226,7 @@ func (s *TokenLimitService) getDailyUsage(userID string) int64 {
 		return 0
 	}
 
-	today := time.Now().Format("2006-01-02")
+	today := time.Now()
 	usage, err := s.usageService.GetDailyUsage(userID, today)
 	if err != nil {
 		s.logger.Error(context.Background(), "Failed to get daily usage for user %s: %v", userID, err)
@@ -242,8 +242,8 @@ func (s *TokenLimitService) getMonthlyUsage(userID string) int64 {
 		return 0
 	}
 
-	month := time.Now().Format("2006-01")
-	usage, err := s.usageService.GetMonthlyUsage(userID, month)
+	now := time.Now()
+	usage, err := s.usageService.GetMonthlyUsage(userID, now.Year(), int(now.Month()))
 	if err != nil {
 		s.logger.Error(context.Background(), "Failed to get monthly usage for user %s: %v", userID, err)
 		return 0

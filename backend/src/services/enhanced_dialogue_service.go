@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -386,7 +387,7 @@ func (s *EnhancedDialogueService) SendMessageWithToolsStream(
 		ch <- llm.ChatStreamChunk{
 			Choices: []llm.StreamChoice{
 				{
-					Delta: llm.StreamDelta{
+					Delta: llm.MessageDelta{
 						Content: msg.Content,
 						Role:    "assistant",
 					},

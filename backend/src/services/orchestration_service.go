@@ -896,6 +896,7 @@ func (a *llmServiceAdapter) Chat(ctx context.Context, messages []map[string]stri
 		Messages:    llmMessages,
 		Model:       "gpt-4",
 		Temperature: 0.7,
+		MaxTokens:   4000,
 	}
 
 	if temp, ok := options["temperature"].(float64); ok {
@@ -1045,6 +1046,7 @@ func (s *OrchestrationService) adjustPlan(ctx context.Context, session *Orchestr
 		},
 		Model:       s.config.DefaultLLMModel,
 		Temperature: 0.3,
+		MaxTokens:   4000,
 	}
 
 	resp, err := s.llmClient.Chat(ctx, req)

@@ -88,13 +88,19 @@ func (h *ToolHandler) ExecuteTool(c *gin.Context) {
 		Arguments: string(argsJSON),
 	}
 
-	userID, _ := c.Get("user_id")
+	userID, exists := c.Get("user_id")
+	userIDStr := ""
+	if exists {
+		if id, ok := userID.(string); ok {
+			userIDStr = id
+		}
+	}
 	result, err := h.toolService.ExecuteTool(
 		c.Request.Context(),
 		toolCall,
 		req.DialogueID,
 		req.MessageID,
-		userID.(string),
+		userIDStr,
 	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

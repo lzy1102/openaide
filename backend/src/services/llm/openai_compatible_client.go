@@ -233,6 +233,7 @@ func (c *OpenAICompatibleClient) buildChatRequest(req *ChatRequest) ([]byte, err
 	}
 	if req.MaxTokens > 0 {
 		reqMap["max_tokens"] = req.MaxTokens
+		reqMap["max_completion_tokens"] = req.MaxTokens
 	}
 	if req.TopP > 0 {
 		reqMap["top_p"] = req.TopP

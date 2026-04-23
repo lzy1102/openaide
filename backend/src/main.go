@@ -229,10 +229,13 @@ func main() {
 	dialogueService.SetCacheService(cacheService)
 
 	// 初始化Token限制和告警服务
+	tokenEstimator := services.NewTokenEstimator()
 	tokenLimitService := services.NewTokenLimitService(db, usageService, loggerService)
+	_ = tokenLimitService
 
 	// 初始化成本优化服务
 	costOptimizer := services.NewCostOptimizer(modelService, usageService, loggerService)
+	_ = costOptimizer
 
 	// 初始化知识库相关服务
 	embeddingService := services.NewOpenAIEmbeddingService("", "", "", cacheService)
