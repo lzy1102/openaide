@@ -172,8 +172,19 @@ func main() {
 	mcpManager := mcp.NewMCPManager(db, loggerService)
 	toolService := services.NewToolService(db, cacheService, loggerService, mcpManager)
 
+	// 初始化事件总线（提前到权限服务之前）
+	eventBus := services.NewEventBus(db, loggerService, true)
+
+	// 初始化权限服务（参考 OpenCode allow/ask/deny 三级权限系统）
+	permissionService := services.NewPermissionService(toolService, eventBus)
+
 	// 初始化工具调用服务
 	toolCallingService := services.NewToolCallingService(toolService, modelService, loggerService)
+	toolCallingService.SetEventBus(eventBus)
+
+	// 初始化 Task 工具（子代理委托，参考 OpenCode TaskTool）
+	taskTool := services.NewTaskTool(toolService, modelService, permissionService, dialogueService, eventBus)
+	toolService.RegisterSelfRegisteringTool(taskTool)
 
 	// 初始化 Agent 执行引擎
 	agentExecutor := services.NewAgentExecutor(modelService, toolService, loggerService)
@@ -199,9 +210,7 @@ func main() {
 	// 初始化规划服务
 	planService := services.NewPlanService(db, orchestrationService, modelService, modelRouter, loggerService)
 
-	// 初始化事件总线
-	eventBus := services.NewEventBus(db, loggerService, true)
-	toolCallingService.SetEventBus(eventBus)
+	// 事件总线已提前初始化
 
 	// 初始化多 Agent 协作服务
 	multiAgentService := services.NewMultiAgentService(modelService, modelRouter, loggerService)
@@ -1145,6 +1154,57 @@ func main() {
 					}
 				}
 				c.SSEvent("message", map[string]interface{}{"type": "done", "model": usedModel, "done": true})
+			})
+		}
+
+		// 权限接口（参考 OpenCode Permission System）
+		permGroup := api.Group("/permissions")
+		{
+			permGroup.GET("/profiles", func(c *gin.Context) {
+				profiles := permissionService.ListProfiles()
+				c.JSON(http.StatusOK, profiles)
+			})
+
+			permGroup.GET("/profiles/:mode", func(c *gin.Context) {
+				mode := services.AgentMode(c.Param("mode"))
+				profile := permissionService.GetProfile(mode)
+				if profile == nil {
+					c.JSON(http.StatusNotFound, gin.H{"error": "profile not found"})
+					return
+				}
+				c.JSON(http.StatusOK, profile)
+			})
+
+			permGroup.POST("/respond", func(c *gin.Context) {
+				var req struct {
+					AskID  string                      `json:"ask_id" binding:"required"`
+					Action services.PermissionAction    `json:"action" binding:"required"`
+				}
+				if err := c.ShouldBindJSON(&req); err != nil {
+					c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+				if err := permissionService.RespondAsk(req.AskID, req.Action); err != nil {
+					c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+					return
+				}
+				c.JSON(http.StatusOK, gin.H{"status": "ok"})
+			})
+
+			permGroup.POST("/rules", func(c *gin.Context) {
+				var rules []services.PermissionRule
+				if err := c.ShouldBindJSON(&rules); err != nil {
+					c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+				permissionService.UpdateGlobalRules(rules)
+				c.JSON(http.StatusOK, gin.H{"status": "updated"})
+			})
+
+			permGroup.DELETE("/session/:sessionID", func(c *gin.Context) {
+				sessionID := c.Param("sessionID")
+				permissionService.ClearSessionApprovals(sessionID)
+				c.JSON(http.StatusOK, gin.H{"status": "cleared"})
 			})
 		}
 

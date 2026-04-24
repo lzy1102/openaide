@@ -105,6 +105,16 @@ func NewToolService(db *gorm.DB, cache *CacheService, logger *LoggerService, mcp
 	return s
 }
 
+// RegisterSelfRegisteringTool 注册外部自注册工具（用于需要依赖注入的工具如 TaskTool）
+func (s *ToolService) RegisterSelfRegisteringTool(tool SelfRegisteringTool) {
+	s.registry.mu.Lock()
+	defer s.registry.mu.Unlock()
+
+	name := tool.Name()
+	s.registry.builtin[name] = tool
+	s.registry.schemas[name] = tool.Definition()
+}
+
 // registerBuiltinTools 注册内置工具（自注册模式：每个工具定义自己的 schema 和 handler）
 func (s *ToolService) registerBuiltinTools() {
 	selfRegistering := []SelfRegisteringTool{
