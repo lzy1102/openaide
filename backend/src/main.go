@@ -723,7 +723,7 @@ func main() {
 					return
 				}
 				ctx := c.Request.Context()
-				message, err := dialogueService.SendMessage(ctx, id, req.UserID, req.Content, req.ModelID, req.Options)
+				message, err := enhancedDialogueService.SendMessage(ctx, id, req.UserID, req.Content, req.ModelID, req.Options)
 				if err != nil {
 					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 					return
@@ -743,7 +743,7 @@ func main() {
 					return
 				}
 				ctx := c.Request.Context()
-				chunkChan, err := dialogueService.SendMessageStream(ctx, id, req.UserID, req.Content, req.ModelID, req.Options)
+				chunkChan, err := enhancedDialogueService.SendMessageStream(ctx, id, req.UserID, req.Content, req.ModelID, req.Options)
 				if err != nil {
 					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 					return

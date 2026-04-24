@@ -148,12 +148,24 @@ func (s *EnhancedDialogueService) SaveStreamMessage(dialogueID, content string) 
 	return s.dialogueSvc.SaveStreamMessage(dialogueID, content)
 }
 
-// SendMessageStream 流式消息发送（代理方法，供 FeishuService 等使用）
+// SendMessageStream 流式消息发送（自动路由+工具检测）
 func (s *EnhancedDialogueService) SendMessageStream(
 	ctx context.Context, dialogueID, userID, content, modelID string,
 	options map[string]interface{},
 ) (<-chan llm.ChatStreamChunk, error) {
-	return s.dialogueSvc.SendMessageStream(ctx, dialogueID, userID, content, modelID, options)
+	return s.SendMessageStreamRouted(ctx, dialogueID, userID, content, modelID, options)
+}
+
+// SendMessage 非流式消息发送（自动路由+工具检测）
+func (s *EnhancedDialogueService) SendMessage(
+	ctx context.Context, dialogueID, userID, content, modelID string,
+	options map[string]interface{},
+) (*models.Message, error) {
+	if s.toolCallingSvc != nil && s.needsToolExecution(content) {
+		log.Printf("[EnhancedDialogue] SendMessage: tool execution needed, using tool-calling path")
+		return s.SendMessageWithTools(ctx, dialogueID, userID, content, modelID, options)
+	}
+	return s.dialogueSvc.SendMessage(ctx, dialogueID, userID, content, modelID, options)
 }
 
 // AddMessage 添加消息（代理方法）
@@ -350,12 +362,19 @@ func (s *EnhancedDialogueService) needsToolExecution(content string) bool {
 	toolIndicators := []string{
 		"执行", "运行", "跑一下", "跑个", "curl", "wget", "ping ",
 		"ls ", "cat ", "查看ip", "公网ip", "查ip", "ip地址",
+		"查一下ip", "我的ip", "本机ip", "ip是什么", "ip是多少",
 		"执行命令", "运行命令", "跑命令", "shell", "终端",
 		"docker", "git ", "npm ", "pip ", "go run",
 		"python ", "node ", "java ",
 		"读文件", "写文件", "创建文件", "删除文件",
 		"查一下", "查询", "调用", "请求", "api",
 		"format", "lint", "test", "build",
+		"天气", "气温", "温度多少", "天气预报",
+		"搜索", "搜索一下", "搜一下", "查搜索",
+		"帮我查", "帮我执行", "帮我运行", "帮我跑",
+		"安装", "卸载", "更新", "升级",
+		"启动", "停止", "重启", "部署",
+		"编译", "打包", "发布",
 	}
 	for _, indicator := range toolIndicators {
 		if strings.Contains(lower, indicator) {
