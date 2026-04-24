@@ -186,6 +186,12 @@ func main() {
 	taskTool := services.NewTaskTool(toolService, modelService, permissionService, dialogueService, eventBus)
 	toolService.RegisterSelfRegisteringTool(taskTool)
 
+	// 初始化 Agent 路由（参考 OpenClaude agentModels + agentRouting）
+	agentRouter := services.NewAgentRouter(modelService)
+
+	// 初始化 Slash 命令系统（参考 OpenClaude /compact, /model, /clear）
+	slashRegistry := services.NewSlashCommandRegistry()
+
 	// 初始化 Agent 执行引擎
 	agentExecutor := services.NewAgentExecutor(modelService, toolService, loggerService)
 
@@ -1177,8 +1183,8 @@ func main() {
 
 			permGroup.POST("/respond", func(c *gin.Context) {
 				var req struct {
-					AskID  string                      `json:"ask_id" binding:"required"`
-					Action services.PermissionAction    `json:"action" binding:"required"`
+					AskID  string                   `json:"ask_id" binding:"required"`
+					Action services.PermissionAction `json:"action" binding:"required"`
 				}
 				if err := c.ShouldBindJSON(&req); err != nil {
 					c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -1205,6 +1211,63 @@ func main() {
 				sessionID := c.Param("sessionID")
 				permissionService.ClearSessionApprovals(sessionID)
 				c.JSON(http.StatusOK, gin.H{"status": "cleared"})
+			})
+		}
+
+		// Agent 路由接口（参考 OpenClaude agentModels + agentRouting）
+		routingGroup := api.Group("/agent-routing")
+		{
+			routingGroup.GET("/config", func(c *gin.Context) {
+				config := agentRouter.GetConfig()
+				c.JSON(http.StatusOK, config)
+			})
+
+			routingGroup.GET("/routes", func(c *gin.Context) {
+				routes := agentRouter.ListRoutes()
+				c.JSON(http.StatusOK, routes)
+			})
+
+			routingGroup.GET("/route/:agent", func(c *gin.Context) {
+				agentType := c.Param("agent")
+				modelID := agentRouter.RouteModelID(agentType)
+				c.JSON(http.StatusOK, gin.H{"agent": agentType, "model": modelID})
+			})
+
+			routingGroup.POST("/config", func(c *gin.Context) {
+				var config services.AgentRoutingConfig
+				if err := c.ShouldBindJSON(&config); err != nil {
+					c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+				agentRouter.UpdateConfig(config)
+				c.JSON(http.StatusOK, gin.H{"status": "updated"})
+			})
+		}
+
+		// Slash 命令接口（参考 OpenClaude /compact, /model, /clear）
+		slashGroup := api.Group("/slash")
+		{
+			slashGroup.GET("/commands", func(c *gin.Context) {
+				commands := slashRegistry.ListCommands()
+				c.JSON(http.StatusOK, commands)
+			})
+
+			slashGroup.POST("/execute", func(c *gin.Context) {
+				var req struct {
+					Command   string `json:"command" binding:"required"`
+					Args      string `json:"args"`
+					SessionID string `json:"session_id"`
+				}
+				if err := c.ShouldBindJSON(&req); err != nil {
+					c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+				result, err := slashRegistry.Execute(c.Request.Context(), req.Command, req.Args, req.SessionID)
+				if err != nil {
+					c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+				c.JSON(http.StatusOK, gin.H{"result": result})
 			})
 		}
 

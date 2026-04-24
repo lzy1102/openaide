@@ -974,7 +974,34 @@ func (t *WebSearchTool) Execute(ctx context.Context, params map[string]interface
 		maxResults = int(n)
 	}
 
-	// 使用 DuckDuckGo Instant Answer API（无需 API Key）
+	results, err := t.duckduckgoSearch(ctx, query, maxResults)
+	if err == nil && len(results) > 0 {
+		return map[string]interface{}{
+			"query":   query,
+			"results": results,
+			"count":   len(results),
+			"engine":  "duckduckgo",
+		}, nil
+	}
+
+	results, err = t.duckduckgoHTMLSearch(ctx, query, maxResults)
+	if err != nil {
+		return map[string]interface{}{
+			"query":   query,
+			"results": []interface{}{},
+			"note":    fmt.Sprintf("搜索失败: %v，请尝试更具体的关键词", err),
+		}, nil
+	}
+
+	return map[string]interface{}{
+		"query":   query,
+		"results": results,
+		"count":   len(results),
+		"engine":  "duckduckgo_html",
+	}, nil
+}
+
+func (t *WebSearchTool) duckduckgoSearch(ctx context.Context, query string, maxResults int) ([]map[string]interface{}, error) {
 	apiURL := fmt.Sprintf("https://api.duckduckgo.com/?q=%s&format=json&no_html=1&skip_disambig=1",
 		url.QueryEscape(query))
 
@@ -1011,7 +1038,6 @@ func (t *WebSearchTool) Execute(ctx context.Context, params map[string]interface
 
 	results := []map[string]interface{}{}
 
-	// 添加摘要结果
 	if data.AbstractText != "" {
 		results = append(results, map[string]interface{}{
 			"title":   data.Heading,
@@ -1021,7 +1047,6 @@ func (t *WebSearchTool) Execute(ctx context.Context, params map[string]interface
 		})
 	}
 
-	// 添加相关主题
 	for _, topic := range data.RelatedTopics {
 		if topic.Text == "" {
 			continue
@@ -1036,19 +1061,89 @@ func (t *WebSearchTool) Execute(ctx context.Context, params map[string]interface
 		}
 	}
 
-	if len(results) == 0 {
-		return map[string]interface{}{
-			"query":   query,
-			"results": []interface{}{},
-			"note":    "未找到相关结果，请尝试更具体的关键词",
-		}, nil
+	return results, nil
+}
+
+func (t *WebSearchTool) duckduckgoHTMLSearch(ctx context.Context, query string, maxResults int) ([]map[string]interface{}, error) {
+	searchURL := fmt.Sprintf("https://html.duckduckgo.com/html/?q=%s", url.QueryEscape(query))
+
+	req, err := http.NewRequestWithContext(ctx, "GET", searchURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; OpenAIDE/1.0)")
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
 	}
 
-	return map[string]interface{}{
-		"query":   query,
-		"results": results,
-		"count":   len(results),
-	}, nil
+	htmlContent := string(body)
+	results := []map[string]interface{}{}
+
+	resultBlocks := strings.Split(htmlContent, "result__")
+	for _, block := range resultBlocks {
+		title := extractBetween(block, "result__a\"", ">", "</a>")
+		snippet := extractBetween(block, "result__snippet\"", ">", "</a>")
+		href := extractBetween(block, "result__url\"", ">", "</a>")
+
+		title = cleanHTML(title)
+		snippet = cleanHTML(snippet)
+		href = cleanHTML(href)
+
+		if title == "" && snippet == "" {
+			continue
+		}
+
+		results = append(results, map[string]interface{}{
+			"title":   title,
+			"snippet": snippet,
+			"url":     href,
+		})
+
+		if len(results) >= maxResults {
+			break
+		}
+	}
+
+	return results, nil
+}
+
+func extractBetween(s, startMarker, startEnd, endMarker string) string {
+	idx := strings.Index(s, startMarker)
+	if idx == -1 {
+		return ""
+	}
+	s = s[idx+len(startMarker):]
+
+	idx = strings.Index(s, startEnd)
+	if idx == -1 {
+		return ""
+	}
+	s = s[idx+len(startEnd):]
+
+	idx = strings.Index(s, endMarker)
+	if idx == -1 {
+		return s
+	}
+	return s[:idx]
+}
+
+func cleanHTML(s string) string {
+	s = strings.ReplaceAll(s, "&amp;", "&")
+	s = strings.ReplaceAll(s, "&lt;", "<")
+	s = strings.ReplaceAll(s, "&gt;", ">")
+	s = strings.ReplaceAll(s, "&quot;", "\"")
+	s = strings.ReplaceAll(s, "&#39;", "'")
+	s = strings.TrimSpace(s)
+	return s
 }
 
 // CalculatorTool 计算器工具
