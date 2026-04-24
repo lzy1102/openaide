@@ -156,13 +156,12 @@ func (s *EnhancedDialogueService) SendMessageStream(
 	return s.SendMessageStreamRouted(ctx, dialogueID, userID, content, modelID, options)
 }
 
-// SendMessage 非流式消息发送（自动路由+工具检测）
+// SendMessage 非流式消息发送（始终传工具定义，LLM自主决策）
 func (s *EnhancedDialogueService) SendMessage(
 	ctx context.Context, dialogueID, userID, content, modelID string,
 	options map[string]interface{},
 ) (*models.Message, error) {
-	if s.toolCallingSvc != nil && s.needsToolExecution(content) {
-		log.Printf("[EnhancedDialogue] SendMessage: tool execution needed, using tool-calling path")
+	if s.toolCallingSvc != nil {
 		return s.SendMessageWithTools(ctx, dialogueID, userID, content, modelID, options)
 	}
 	return s.dialogueSvc.SendMessage(ctx, dialogueID, userID, content, modelID, options)
@@ -349,8 +348,8 @@ func (s *EnhancedDialogueService) SendMessageStreamRouted(
 		}
 	}
 
-	if s.toolCallingSvc != nil && s.needsToolExecution(content) {
-		log.Printf("[EnhancedDialogue] tool execution needed, using tool-calling path")
+	if s.toolCallingSvc != nil {
+		log.Printf("[EnhancedDialogue] using tool-calling path (LLM decides tool usage)")
 		return s.SendMessageWithToolsStream(ctx, dialogueID, userID, content, modelID, options)
 	}
 

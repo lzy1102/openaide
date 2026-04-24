@@ -27,6 +27,40 @@ import (
 // DockerTool Docker 工具
 type DockerTool struct{}
 
+func (t *DockerTool) Name() string { return "docker" }
+
+func (t *DockerTool) Definition() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "function",
+		"function": map[string]interface{}{
+			"name":        "docker",
+			"description": "Docker 容器操作。支持 ps, logs, build, run, stop, start, rm, exec, images, compose, inspect",
+			"parameters": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"action":    map[string]interface{}{"type": "string", "description": "Docker 操作"},
+					"container": map[string]interface{}{"type": "string", "description": "容器名/ID"},
+					"image":     map[string]interface{}{"type": "string", "description": "镜像名"},
+					"tag":       map[string]interface{}{"type": "string", "description": "镜像标签"},
+					"path":      map[string]interface{}{"type": "string", "description": "路径"},
+					"name":      map[string]interface{}{"type": "string", "description": "容器名"},
+					"ports":     map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "端口映射"},
+					"env":       map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "环境变量"},
+					"volumes":   map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "卷挂载"},
+					"command":   map[string]interface{}{"type": "string", "description": "命令"},
+					"tail":      map[string]interface{}{"type": "string", "description": "日志行数"},
+					"follow":    map[string]interface{}{"type": "boolean", "description": "跟随日志"},
+					"force":     map[string]interface{}{"type": "boolean", "description": "强制删除"},
+					"file":      map[string]interface{}{"type": "string", "description": "compose 文件"},
+					"detach":    map[string]interface{}{"type": "boolean", "description": "后台运行"},
+					"build":     map[string]interface{}{"type": "boolean", "description": "构建镜像"},
+				},
+				"required": []string{"action"},
+			},
+		},
+	}
+}
+
 func (t *DockerTool) Execute(ctx context.Context, params map[string]interface{}) (interface{}, error) {
 	action, _ := params["action"].(string)
 	if action == "" {
@@ -377,6 +411,30 @@ func (t *DockerTool) dockerInspect(ctx context.Context, params map[string]interf
 // APITestTool API 测试工具
 type APITestTool struct{}
 
+func (t *APITestTool) Name() string { return "api_test" }
+
+func (t *APITestTool) Definition() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "function",
+		"function": map[string]interface{}{
+			"name":        "api_test",
+			"description": "API 测试工具。支持发送请求和批量测试用例",
+			"parameters": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"action":     map[string]interface{}{"type": "string", "description": "操作: request, test", "enum": []string{"request", "test"}},
+					"method":     map[string]interface{}{"type": "string", "description": "HTTP 方法"},
+					"url":        map[string]interface{}{"type": "string", "description": "URL"},
+					"headers":    map[string]interface{}{"type": "object", "description": "请求头"},
+					"body":       map[string]interface{}{"type": "string", "description": "请求体"},
+					"test_cases": map[string]interface{}{"type": "string", "description": "测试用例 JSON 数组"},
+				},
+				"required": []string{"action"},
+			},
+		},
+	}
+}
+
 func (t *APITestTool) Execute(ctx context.Context, params map[string]interface{}) (interface{}, error) {
 	action, _ := params["action"].(string)
 	if action == "" {
@@ -587,6 +645,26 @@ func (t *APITestTool) checkAssertion(assertion APIAssertion, statusCode int, bod
 // SystemMonitorTool 系统监控工具
 type SystemMonitorTool struct{}
 
+func (t *SystemMonitorTool) Name() string { return "system_monitor" }
+
+func (t *SystemMonitorTool) Definition() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "function",
+		"function": map[string]interface{}{
+			"name":        "system_monitor",
+			"description": "系统监控工具。查看 CPU、内存、磁盘、网络、进程状态",
+			"parameters": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"action": map[string]interface{}{"type": "string", "description": "监控类型: overview, cpu, memory, disk, network, process", "enum": []string{"overview", "cpu", "memory", "disk", "network", "process"}},
+					"name":   map[string]interface{}{"type": "string", "description": "进程名（process 时使用）"},
+				},
+				"required": []string{"action"},
+			},
+		},
+	}
+}
+
 func (t *SystemMonitorTool) Execute(ctx context.Context, params map[string]interface{}) (interface{}, error) {
 	action, _ := params["action"].(string)
 	if action == "" {
@@ -711,6 +789,29 @@ func (t *SystemMonitorTool) processInfo(ctx context.Context, params map[string]i
 
 // FileArchiveTool 文件压缩解压工具
 type FileArchiveTool struct{}
+
+func (t *FileArchiveTool) Name() string { return "file_archive" }
+
+func (t *FileArchiveTool) Definition() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "function",
+		"function": map[string]interface{}{
+			"name":        "file_archive",
+			"description": "文件压缩解压工具。支持 zip 和 tar.gz 格式",
+			"parameters": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"action": map[string]interface{}{"type": "string", "description": "操作: compress, extract", "enum": []string{"compress", "extract"}},
+					"source": map[string]interface{}{"type": "string", "description": "源文件/目录"},
+					"output": map[string]interface{}{"type": "string", "description": "输出文件（compress 时）"},
+					"dest":   map[string]interface{}{"type": "string", "description": "解压目录（extract 时）"},
+					"format": map[string]interface{}{"type": "string", "description": "格式: zip, tar.gz"},
+				},
+				"required": []string{"action", "source"},
+			},
+		},
+	}
+}
 
 func (t *FileArchiveTool) Execute(ctx context.Context, params map[string]interface{}) (interface{}, error) {
 	action, _ := params["action"].(string)
@@ -1008,6 +1109,33 @@ func (t *FileArchiveTool) extractTarGz(source, dest string) (interface{}, error)
 // NetworkDiagTool 网络诊断工具
 type NetworkDiagTool struct{}
 
+func (t *NetworkDiagTool) Name() string { return "network_diag" }
+
+func (t *NetworkDiagTool) Definition() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "function",
+		"function": map[string]interface{}{
+			"name":        "network_diag",
+			"description": "网络诊断工具。支持 ping, curl, dns, traceroute, port_check",
+			"parameters": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"action":   map[string]interface{}{"type": "string", "description": "诊断类型: ping, curl, dns, traceroute, port_check"},
+					"host":     map[string]interface{}{"type": "string", "description": "目标主机"},
+					"url":      map[string]interface{}{"type": "string", "description": "URL"},
+					"port":     map[string]interface{}{"type": "number", "description": "端口号"},
+					"hostname": map[string]interface{}{"type": "string", "description": "域名"},
+					"method":   map[string]interface{}{"type": "string", "description": "HTTP 方法"},
+					"headers":  map[string]interface{}{"type": "object", "description": "请求头"},
+					"body":     map[string]interface{}{"type": "string", "description": "请求体"},
+					"count":    map[string]interface{}{"type": "number", "description": "ping 次数"},
+				},
+				"required": []string{"action"},
+			},
+		},
+	}
+}
+
 func (t *NetworkDiagTool) Execute(ctx context.Context, params map[string]interface{}) (interface{}, error) {
 	action, _ := params["action"].(string)
 	if action == "" {
@@ -1176,6 +1304,28 @@ func (t *NetworkDiagTool) portCheck(ctx context.Context, params map[string]inter
 // RegexTool 正则表达式工具
 type RegexTool struct{}
 
+func (t *RegexTool) Name() string { return "regex" }
+
+func (t *RegexTool) Definition() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "function",
+		"function": map[string]interface{}{
+			"name":        "regex",
+			"description": "正则表达式工具。支持匹配、替换、查找",
+			"parameters": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"action":      map[string]interface{}{"type": "string", "description": "操作: match, replace, find_all", "enum": []string{"match", "replace", "find_all"}},
+					"pattern":     map[string]interface{}{"type": "string", "description": "正则表达式"},
+					"text":        map[string]interface{}{"type": "string", "description": "输入文本"},
+					"replacement": map[string]interface{}{"type": "string", "description": "替换文本（replace 时）"},
+				},
+				"required": []string{"action", "pattern", "text"},
+			},
+		},
+	}
+}
+
 func (t *RegexTool) Execute(ctx context.Context, params map[string]interface{}) (interface{}, error) {
 	action, _ := params["action"].(string)
 	if action == "" {
@@ -1259,144 +1409,4 @@ func (t *RegexTool) regexFindAll(ctx context.Context, params map[string]interfac
 		"matches": matches,
 		"count":   len(matches),
 	}, nil
-}
-
-// ========================================
-// 注册函数
-// ========================================
-
-// RegisterExtendedTools 注册扩展工具
-func RegisterExtendedTools(toolService *ToolService) {
-	toolService.registry.builtin["docker"] = &DockerTool{}
-	toolService.registry.builtin["api_test"] = &APITestTool{}
-	toolService.registry.builtin["system_monitor"] = &SystemMonitorTool{}
-	toolService.registry.builtin["file_archive"] = &FileArchiveTool{}
-	toolService.registry.builtin["network_diag"] = &NetworkDiagTool{}
-	toolService.registry.builtin["regex"] = &RegexTool{}
-}
-
-// GetExtendedToolDefinitions 获取扩展工具定义
-func GetExtendedToolDefinitions() []map[string]interface{} {
-	return []map[string]interface{}{
-		{
-			"type": "function",
-			"function": map[string]interface{}{
-				"name":        "docker",
-				"description": "Docker 容器操作。支持 ps, logs, build, run, stop, start, rm, exec, images, compose, inspect",
-				"parameters": map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"action":    map[string]interface{}{"type": "string", "description": "Docker 操作"},
-						"container": map[string]interface{}{"type": "string", "description": "容器名/ID"},
-						"image":     map[string]interface{}{"type": "string", "description": "镜像名"},
-						"tag":       map[string]interface{}{"type": "string", "description": "镜像标签"},
-						"path":      map[string]interface{}{"type": "string", "description": "路径"},
-						"name":      map[string]interface{}{"type": "string", "description": "容器名"},
-						"ports":     map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "端口映射"},
-						"env":       map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "环境变量"},
-						"volumes":   map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "卷挂载"},
-						"command":   map[string]interface{}{"type": "string", "description": "命令"},
-						"tail":      map[string]interface{}{"type": "string", "description": "日志行数"},
-						"follow":    map[string]interface{}{"type": "boolean", "description": "跟随日志"},
-						"force":     map[string]interface{}{"type": "boolean", "description": "强制删除"},
-						"file":      map[string]interface{}{"type": "string", "description": "compose 文件"},
-						"detach":    map[string]interface{}{"type": "boolean", "description": "后台运行"},
-						"build":     map[string]interface{}{"type": "boolean", "description": "构建镜像"},
-					},
-					"required": []string{"action"},
-				},
-			},
-		},
-		{
-			"type": "function",
-			"function": map[string]interface{}{
-				"name":        "api_test",
-				"description": "API 测试工具。支持发送请求和批量测试用例",
-				"parameters": map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"action":     map[string]interface{}{"type": "string", "description": "操作: request, test", "enum": []string{"request", "test"}},
-						"method":     map[string]interface{}{"type": "string", "description": "HTTP 方法"},
-						"url":        map[string]interface{}{"type": "string", "description": "URL"},
-						"headers":    map[string]interface{}{"type": "object", "description": "请求头"},
-						"body":       map[string]interface{}{"type": "string", "description": "请求体"},
-						"test_cases": map[string]interface{}{"type": "string", "description": "测试用例 JSON 数组"},
-					},
-					"required": []string{"action"},
-				},
-			},
-		},
-		{
-			"type": "function",
-			"function": map[string]interface{}{
-				"name":        "system_monitor",
-				"description": "系统监控工具。查看 CPU、内存、磁盘、网络、进程状态",
-				"parameters": map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"action": map[string]interface{}{"type": "string", "description": "监控类型: overview, cpu, memory, disk, network, process", "enum": []string{"overview", "cpu", "memory", "disk", "network", "process"}},
-						"name":   map[string]interface{}{"type": "string", "description": "进程名（process 时使用）"},
-					},
-					"required": []string{"action"},
-				},
-			},
-		},
-		{
-			"type": "function",
-			"function": map[string]interface{}{
-				"name":        "file_archive",
-				"description": "文件压缩解压工具。支持 zip 和 tar.gz 格式",
-				"parameters": map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"action": map[string]interface{}{"type": "string", "description": "操作: compress, extract", "enum": []string{"compress", "extract"}},
-						"source": map[string]interface{}{"type": "string", "description": "源文件/目录"},
-						"output": map[string]interface{}{"type": "string", "description": "输出文件（compress 时）"},
-						"dest":   map[string]interface{}{"type": "string", "description": "解压目录（extract 时）"},
-						"format": map[string]interface{}{"type": "string", "description": "格式: zip, tar.gz"},
-					},
-					"required": []string{"action", "source"},
-				},
-			},
-		},
-		{
-			"type": "function",
-			"function": map[string]interface{}{
-				"name":        "network_diag",
-				"description": "网络诊断工具。支持 ping, curl, dns, traceroute, port_check",
-				"parameters": map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"action":    map[string]interface{}{"type": "string", "description": "诊断类型: ping, curl, dns, traceroute, port_check"},
-						"host":      map[string]interface{}{"type": "string", "description": "目标主机"},
-						"url":       map[string]interface{}{"type": "string", "description": "URL"},
-						"port":      map[string]interface{}{"type": "number", "description": "端口号"},
-						"hostname":  map[string]interface{}{"type": "string", "description": "域名"},
-						"method":    map[string]interface{}{"type": "string", "description": "HTTP 方法"},
-						"headers":   map[string]interface{}{"type": "object", "description": "请求头"},
-						"body":      map[string]interface{}{"type": "string", "description": "请求体"},
-						"count":     map[string]interface{}{"type": "number", "description": "ping 次数"},
-					},
-					"required": []string{"action"},
-				},
-			},
-		},
-		{
-			"type": "function",
-			"function": map[string]interface{}{
-				"name":        "regex",
-				"description": "正则表达式工具。支持匹配、替换、查找",
-				"parameters": map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"action":      map[string]interface{}{"type": "string", "description": "操作: match, replace, find_all", "enum": []string{"match", "replace", "find_all"}},
-						"pattern":     map[string]interface{}{"type": "string", "description": "正则表达式"},
-						"text":        map[string]interface{}{"type": "string", "description": "输入文本"},
-						"replacement": map[string]interface{}{"type": "string", "description": "替换文本（replace 时）"},
-					},
-					"required": []string{"action", "pattern", "text"},
-				},
-			},
-		},
-	}
 }

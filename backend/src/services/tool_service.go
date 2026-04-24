@@ -62,11 +62,20 @@ type ToolRegistry struct {
 	mu      sync.RWMutex
 	tools   map[string]*models.Tool
 	builtin map[string]ToolExecutor
+	schemas map[string]map[string]interface{}
 }
 
 // ToolExecutor 工具执行器接口
 type ToolExecutor interface {
 	Execute(ctx context.Context, params map[string]interface{}) (interface{}, error)
+}
+
+// SelfRegisteringTool 自注册工具接口（参考 Hermes Agent 的自注册模式）
+// 每个工具同时提供 schema 和 handler，不再分散定义
+type SelfRegisteringTool interface {
+	ToolExecutor
+	Definition() map[string]interface{}
+	Name() string
 }
 
 // NewToolService 创建工具服务
@@ -79,6 +88,7 @@ func NewToolService(db *gorm.DB, cache *CacheService, logger *LoggerService, mcp
 		registry: &ToolRegistry{
 			tools:   make(map[string]*models.Tool),
 			builtin: make(map[string]ToolExecutor),
+			schemas: make(map[string]map[string]interface{}),
 		},
 		httpClient: &http.Client{
 			Timeout: 60 * time.Second,
@@ -95,34 +105,38 @@ func NewToolService(db *gorm.DB, cache *CacheService, logger *LoggerService, mcp
 	return s
 }
 
-// registerBuiltinTools 注册内置工具
+// registerBuiltinTools 注册内置工具（自注册模式：每个工具定义自己的 schema 和 handler）
 func (s *ToolService) registerBuiltinTools() {
-	s.registry.builtin["get_current_time"] = &TimeTool{}
-	s.registry.builtin["get_weather"] = &WeatherTool{}
-	s.registry.builtin["search_web"] = &WebSearchTool{}
-	s.registry.builtin["calculate"] = &CalculatorTool{}
-	s.registry.builtin["run_code"] = &CodeRunTool{}
-	s.registry.builtin["read_file"] = &FileReadTool{}
-	s.registry.builtin["write_file"] = &FileWriteTool{}
-	s.registry.builtin["execute_command"] = &CommandTool{}
-	s.registry.builtin["http_request"] = &HTTPRequestTool{}
-	s.registry.builtin["json_parse"] = &JSONParseTool{}
+	selfRegistering := []SelfRegisteringTool{
+		&TimeTool{},
+		&WeatherTool{},
+		&WebSearchTool{},
+		&CalculatorTool{},
+		&CodeRunTool{},
+		&FileReadTool{},
+		&FileWriteTool{},
+		&CommandTool{},
+		&HTTPRequestTool{},
+		&JSONParseTool{},
+		&CodeFormatTool{},
+		&LintTool{},
+		&DatabaseTool{},
+		&GitTool{},
+		&FileSearchTool{},
+		&DependencyTool{},
+		&DockerTool{},
+		&APITestTool{},
+		&SystemMonitorTool{},
+		&FileArchiveTool{},
+		&NetworkDiagTool{},
+		&RegexTool{},
+	}
 
-	// 开发工具
-	s.registry.builtin["code_format"] = &CodeFormatTool{}
-	s.registry.builtin["lint"] = &LintTool{}
-	s.registry.builtin["database"] = &DatabaseTool{}
-	s.registry.builtin["git"] = &GitTool{}
-	s.registry.builtin["file_search"] = &FileSearchTool{}
-	s.registry.builtin["dependency"] = &DependencyTool{}
-
-	// 扩展工具
-	s.registry.builtin["docker"] = &DockerTool{}
-	s.registry.builtin["api_test"] = &APITestTool{}
-	s.registry.builtin["system_monitor"] = &SystemMonitorTool{}
-	s.registry.builtin["file_archive"] = &FileArchiveTool{}
-	s.registry.builtin["network_diag"] = &NetworkDiagTool{}
-	s.registry.builtin["regex"] = &RegexTool{}
+	for _, tool := range selfRegistering {
+		name := tool.Name()
+		s.registry.builtin[name] = tool
+		s.registry.schemas[name] = tool.Definition()
+	}
 }
 
 // loadToolsFromDB 从数据库加载工具
@@ -535,286 +549,14 @@ func (s *ToolService) GetToolDefinitions() []map[string]interface{} {
 		})
 	}
 
-	// 添加内置工具定义（包含基础工具、开发工具、扩展工具）
-	builtinDefs := map[string]map[string]interface{}{
-		"get_current_time": {
-			"type": "function",
-			"function": map[string]interface{}{
-				"name":        "get_current_time",
-				"description": "获取当前日期和时间",
-				"parameters": map[string]interface{}{
-					"type":       "object",
-					"properties": map[string]interface{}{},
-				},
-			},
-		},
-		"get_weather": {
-			"type": "function",
-			"function": map[string]interface{}{
-				"name":        "get_weather",
-				"description": "获取指定城市的天气信息",
-				"parameters": map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"city": map[string]interface{}{
-							"type":        "string",
-							"description": "城市名称",
-						},
-					},
-					"required": []string{"city"},
-				},
-			},
-		},
-		"search_web": {
-			"type": "function",
-			"function": map[string]interface{}{
-				"name":        "search_web",
-				"description": "在网络上搜索信息",
-				"parameters": map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"query": map[string]interface{}{
-							"type":        "string",
-							"description": "搜索关键词",
-						},
-					},
-					"required": []string{"query"},
-				},
-			},
-		},
-		"calculate": {
-			"type": "function",
-			"function": map[string]interface{}{
-				"name":        "calculate",
-				"description": "执行数学计算",
-				"parameters": map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"expression": map[string]interface{}{
-							"type":        "string",
-							"description": "数学表达式",
-						},
-					},
-					"required": []string{"expression"},
-				},
-			},
-		},
-		"run_code": {
-			"type": "function",
-			"function": map[string]interface{}{
-				"name":        "run_code",
-				"description": "执行代码并返回结果",
-				"parameters": map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"language": map[string]interface{}{
-							"type":        "string",
-							"description": "编程语言 (python, javascript, go)",
-						},
-						"code": map[string]interface{}{
-							"type":        "string",
-							"description": "要执行的代码",
-						},
-					},
-					"required": []string{"language", "code"},
-				},
-			},
-		},
-		"code_format": {
-			"type": "function",
-			"function": map[string]interface{}{
-				"name":        "code_format",
-				"description": "格式化代码文件。支持 go, python, javascript, typescript, rust, c/cpp",
-				"parameters": map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"path":     map[string]interface{}{"type": "string", "description": "文件路径"},
-						"language": map[string]interface{}{"type": "string", "description": "编程语言（可选，会自动检测）"},
-					},
-					"required": []string{"path"},
-				},
-			},
-		},
-		"lint": {
-			"type": "function",
-			"function": map[string]interface{}{
-				"name":        "lint",
-				"description": "语法检查和代码审查。支持 go, python, javascript, typescript, rust",
-				"parameters": map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"path":     map[string]interface{}{"type": "string", "description": "文件或目录路径"},
-						"language": map[string]interface{}{"type": "string", "description": "编程语言（可选）"},
-					},
-					"required": []string{"path"},
-				},
-			},
-		},
-		"database": {
-			"type": "function",
-			"function": map[string]interface{}{
-				"name":        "database",
-				"description": "数据库连接和查询。支持 MySQL, PostgreSQL, SQLite",
-				"parameters": map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"action": map[string]interface{}{"type": "string", "description": "操作类型: query, execute, schema"},
-						"driver": map[string]interface{}{"type": "string", "description": "数据库驱动: mysql, postgres, sqlite3"},
-						"dsn":    map[string]interface{}{"type": "string", "description": "数据库连接字符串"},
-						"query":  map[string]interface{}{"type": "string", "description": "SQL 查询语句"},
-					},
-					"required": []string{"action", "driver", "dsn"},
-				},
-			},
-		},
-		"git": {
-			"type": "function",
-			"function": map[string]interface{}{
-				"name":        "git",
-				"description": "Git 版本控制操作。支持 status, log, diff, add, commit, push, pull, branch, checkout",
-				"parameters": map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"action":    map[string]interface{}{"type": "string", "description": "Git 操作"},
-						"repo_path": map[string]interface{}{"type": "string", "description": "仓库路径"},
-						"message":   map[string]interface{}{"type": "string", "description": "提交信息"},
-						"branch":    map[string]interface{}{"type": "string", "description": "分支名"},
-						"files":     map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "文件列表"},
-						"create":    map[string]interface{}{"type": "boolean", "description": "是否创建新分支"},
-						"limit":     map[string]interface{}{"type": "number", "description": "日志条数"},
-						"file":      map[string]interface{}{"type": "string", "description": "特定文件"},
-					},
-					"required": []string{"action"},
-				},
-			},
-		},
-		"file_search": {
-			"type": "function",
-			"function": map[string]interface{}{
-				"name":        "file_search",
-				"description": "文件搜索。支持按文件名查找（find）和按内容搜索（grep）",
-				"parameters": map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"action":      map[string]interface{}{"type": "string", "description": "搜索类型: find, grep"},
-						"path":        map[string]interface{}{"type": "string", "description": "搜索路径"},
-						"pattern":     map[string]interface{}{"type": "string", "description": "搜索模式"},
-						"type":        map[string]interface{}{"type": "string", "description": "文件类型"},
-						"ignore_case": map[string]interface{}{"type": "boolean", "description": "忽略大小写"},
-					},
-					"required": []string{"action", "pattern"},
-				},
-			},
-		},
-		"dependency": {
-			"type": "function",
-			"function": map[string]interface{}{
-				"name":        "dependency",
-				"description": "依赖包管理。支持 npm, yarn, pip, go, apt, brew, cargo",
-				"parameters": map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"package_manager": map[string]interface{}{"type": "string", "description": "包管理器名称"},
-						"packages":        map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "要安装的包列表"},
-					},
-					"required": []string{"package_manager", "packages"},
-				},
-			},
-		},
-		"execute_command": {
-			"type": "function",
-			"function": map[string]interface{}{
-				"name":        "execute_command",
-				"description": "在服务器上执行 Shell 命令并返回输出结果。可以运行 curl、ls、cat、python 等任何命令。危险命令（rm、sudo、shutdown 等）需要用户确认。",
-				"parameters": map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"command":  map[string]interface{}{"type": "string", "description": "要执行的 Shell 命令"},
-						"approved": map[string]interface{}{"type": "boolean", "description": "是否已获用户批准执行危险命令（可选）"},
-					},
-					"required": []string{"command"},
-				},
-			},
-		},
-		"http_request": {
-			"type": "function",
-			"function": map[string]interface{}{
-				"name":        "http_request",
-				"description": "发送 HTTP 请求并返回响应。支持 GET、POST、PUT、DELETE 等方法，可自定义请求头和请求体。可用于调用 API、查询公网IP、获取网页内容等。不支持访问内网地址。",
-				"parameters": map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"url":     map[string]interface{}{"type": "string", "description": "请求的 URL 地址"},
-						"method":  map[string]interface{}{"type": "string", "description": "HTTP 方法：GET、POST、PUT、DELETE 等，默认 GET"},
-						"headers": map[string]interface{}{"type": "object", "description": "自定义请求头（可选）"},
-						"body":    map[string]interface{}{"type": "string", "description": "请求体内容（POST/PUT/PATCH 时使用，可选）"},
-					},
-					"required": []string{"url"},
-				},
-			},
-		},
-		"read_file": {
-			"type": "function",
-			"function": map[string]interface{}{
-				"name":        "read_file",
-				"description": "读取服务器上的文件内容。支持文本文件，自动限制读取大小。",
-				"parameters": map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"path": map[string]interface{}{"type": "string", "description": "文件路径"},
-					},
-					"required": []string{"path"},
-				},
-			},
-		},
-		"write_file": {
-			"type": "function",
-			"function": map[string]interface{}{
-				"name":        "write_file",
-				"description": "向服务器写入文件内容。如果文件已存在则覆盖。",
-				"parameters": map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"path":    map[string]interface{}{"type": "string", "description": "文件路径"},
-						"content": map[string]interface{}{"type": "string", "description": "要写入的文件内容"},
-					},
-					"required": []string{"path", "content"},
-				},
-			},
-		},
-		"json_parse": {
-			"type": "function",
-			"function": map[string]interface{}{
-				"name":        "json_parse",
-				"description": "解析 JSON 字符串并返回结构化数据。支持 JSON Path 查询。",
-				"parameters": map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"data": map[string]interface{}{"type": "string", "description": "JSON 字符串"},
-						"path": map[string]interface{}{"type": "string", "description": "JSON Path 查询路径（可选）"},
-					},
-					"required": []string{"data"},
-				},
-			},
-		},
-	}
-
-	for name, def := range builtinDefs {
-		if _, exists := s.registry.builtin[name]; exists {
-			definitions = append(definitions, def)
+	// 添加内置工具定义（使用自注册的 schema）
+	for name := range s.registry.builtin {
+		if schema, ok := s.registry.schemas[name]; ok {
+			definitions = append(definitions, schema)
 		}
 	}
 
-	// 添加扩展工具定义（docker, api_test, system_monitor, file_archive, network_diag, regex）
-	extendedDefs := GetExtendedToolDefinitions()
-	definitions = append(definitions, extendedDefs...)
-
 	return definitions
-}
-
-// GetExtendedToolDefinitions 获取扩展工具定义（从 extended_tools.go）
-func (s *ToolService) GetExtendedToolDefinitions() []map[string]interface{} {
-	return GetExtendedToolDefinitions()
 }
 
 // GetToolDefinitionsWithMCP 获取包含 MCP 工具的所有定义
@@ -1054,6 +796,22 @@ func (s *ToolService) ListPendingConfirmations() []PendingCommandConfirmation {
 // TimeTool 时间工具
 type TimeTool struct{}
 
+func (t *TimeTool) Name() string { return "get_current_time" }
+
+func (t *TimeTool) Definition() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "function",
+		"function": map[string]interface{}{
+			"name":        "get_current_time",
+			"description": "获取当前日期和时间",
+			"parameters": map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
+			},
+		},
+	}
+}
+
 func (t *TimeTool) Execute(ctx context.Context, params map[string]interface{}) (interface{}, error) {
 	now := time.Now()
 	return map[string]interface{}{
@@ -1068,6 +826,25 @@ func (t *TimeTool) Execute(ctx context.Context, params map[string]interface{}) (
 
 // WeatherTool 天气工具
 type WeatherTool struct{}
+
+func (t *WeatherTool) Name() string { return "get_weather" }
+
+func (t *WeatherTool) Definition() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "function",
+		"function": map[string]interface{}{
+			"name":        "get_weather",
+			"description": "获取指定城市的天气信息",
+			"parameters": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"city": map[string]interface{}{"type": "string", "description": "城市名称"},
+				},
+				"required": []string{"city"},
+			},
+		},
+	}
+}
 
 func (t *WeatherTool) Execute(ctx context.Context, params map[string]interface{}) (interface{}, error) {
 	city, _ := params["city"].(string)
@@ -1156,6 +933,25 @@ func (t *WeatherTool) fallbackWeather(city string) map[string]interface{} {
 
 // WebSearchTool 网络搜索工具
 type WebSearchTool struct{}
+
+func (t *WebSearchTool) Name() string { return "search_web" }
+
+func (t *WebSearchTool) Definition() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "function",
+		"function": map[string]interface{}{
+			"name":        "search_web",
+			"description": "在网络上搜索信息",
+			"parameters": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"query": map[string]interface{}{"type": "string", "description": "搜索关键词"},
+				},
+				"required": []string{"query"},
+			},
+		},
+	}
+}
 
 func (t *WebSearchTool) Execute(ctx context.Context, params map[string]interface{}) (interface{}, error) {
 	query, _ := params["query"].(string)
@@ -1248,6 +1044,25 @@ func (t *WebSearchTool) Execute(ctx context.Context, params map[string]interface
 // CalculatorTool 计算器工具
 type CalculatorTool struct{}
 
+func (t *CalculatorTool) Name() string { return "calculate" }
+
+func (t *CalculatorTool) Definition() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "function",
+		"function": map[string]interface{}{
+			"name":        "calculate",
+			"description": "执行数学计算",
+			"parameters": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"expression": map[string]interface{}{"type": "string", "description": "数学表达式"},
+				},
+				"required": []string{"expression"},
+			},
+		},
+	}
+}
+
 func (t *CalculatorTool) Execute(ctx context.Context, params map[string]interface{}) (interface{}, error) {
 	expression, _ := params["expression"].(string)
 	if expression == "" {
@@ -1266,6 +1081,26 @@ func (t *CalculatorTool) Execute(ctx context.Context, params map[string]interfac
 
 // CodeRunTool 代码执行工具
 type CodeRunTool struct{}
+
+func (t *CodeRunTool) Name() string { return "run_code" }
+
+func (t *CodeRunTool) Definition() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "function",
+		"function": map[string]interface{}{
+			"name":        "run_code",
+			"description": "执行代码并返回结果",
+			"parameters": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"language": map[string]interface{}{"type": "string", "description": "编程语言 (python, javascript, go)"},
+					"code":     map[string]interface{}{"type": "string", "description": "要执行的代码"},
+				},
+				"required": []string{"language", "code"},
+			},
+		},
+	}
+}
 
 func (t *CodeRunTool) Execute(ctx context.Context, params map[string]interface{}) (interface{}, error) {
 	language, _ := params["language"].(string)
@@ -1338,6 +1173,25 @@ func (t *CodeRunTool) Execute(ctx context.Context, params map[string]interface{}
 type FileReadTool struct {
 	AllowedBaseDirs []string // 允许的根目录白名单
 	MaxFileSize     int64    // 最大文件大小 (默认 1MB)
+}
+
+func (t *FileReadTool) Name() string { return "read_file" }
+
+func (t *FileReadTool) Definition() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "function",
+		"function": map[string]interface{}{
+			"name":        "read_file",
+			"description": "读取服务器上的文件内容。支持文本文件，自动限制读取大小。",
+			"parameters": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"path": map[string]interface{}{"type": "string", "description": "文件路径"},
+				},
+				"required": []string{"path"},
+			},
+		},
+	}
 }
 
 func (t *FileReadTool) Execute(ctx context.Context, params map[string]interface{}) (interface{}, error) {
@@ -1423,6 +1277,26 @@ type FileWriteTool struct {
 	MaxFileSize     int64    // 最大文件大小 (默认 1MB)
 }
 
+func (t *FileWriteTool) Name() string { return "write_file" }
+
+func (t *FileWriteTool) Definition() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "function",
+		"function": map[string]interface{}{
+			"name":        "write_file",
+			"description": "向服务器写入文件内容。会自动创建所需的父目录。",
+			"parameters": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"path":    map[string]interface{}{"type": "string", "description": "文件路径"},
+					"content": map[string]interface{}{"type": "string", "description": "文件内容"},
+				},
+				"required": []string{"path", "content"},
+			},
+		},
+	}
+}
+
 func (t *FileWriteTool) Execute(ctx context.Context, params map[string]interface{}) (interface{}, error) {
 	path, _ := params["path"].(string)
 	content, _ := params["content"].(string)
@@ -1492,6 +1366,26 @@ func (t *FileWriteTool) isPathAllowed(absPath string) bool {
 type CommandTool struct {
 	allowedDangerous map[string]bool
 	mu               sync.RWMutex
+}
+
+func (t *CommandTool) Name() string { return "execute_command" }
+
+func (t *CommandTool) Definition() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "function",
+		"function": map[string]interface{}{
+			"name":        "execute_command",
+			"description": "在服务器上执行 shell 命令。危险命令需要用户确认。",
+			"parameters": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"command":  map[string]interface{}{"type": "string", "description": "要执行的命令"},
+					"approved": map[string]interface{}{"type": "boolean", "description": "是否已获用户批准（危险命令需要）"},
+				},
+				"required": []string{"command"},
+			},
+		},
+	}
 }
 
 // AllowCommand 将命令加入已批准列表
@@ -1627,6 +1521,28 @@ func getCommandRisk(cmd string) string {
 // HTTPRequestTool HTTP 请求工具
 type HTTPRequestTool struct{}
 
+func (t *HTTPRequestTool) Name() string { return "http_request" }
+
+func (t *HTTPRequestTool) Definition() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "function",
+		"function": map[string]interface{}{
+			"name":        "http_request",
+			"description": "发送 HTTP 请求并返回响应。支持 GET、POST 等方法，自动防护 SSRF 攻击。",
+			"parameters": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"url":     map[string]interface{}{"type": "string", "description": "请求 URL"},
+					"method":  map[string]interface{}{"type": "string", "description": "HTTP 方法 (GET, POST, PUT, DELETE)"},
+					"headers": map[string]interface{}{"type": "object", "description": "请求头"},
+					"body":    map[string]interface{}{"type": "string", "description": "请求体"},
+				},
+				"required": []string{"url"},
+			},
+		},
+	}
+}
+
 func (t *HTTPRequestTool) Execute(ctx context.Context, params map[string]interface{}) (interface{}, error) {
 	url, _ := params["url"].(string)
 	method, _ := params["method"].(string)
@@ -1705,6 +1621,25 @@ func (t *HTTPRequestTool) Execute(ctx context.Context, params map[string]interfa
 
 // JSONParseTool JSON 解析工具
 type JSONParseTool struct{}
+
+func (t *JSONParseTool) Name() string { return "parse_json" }
+
+func (t *JSONParseTool) Definition() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "function",
+		"function": map[string]interface{}{
+			"name":        "parse_json",
+			"description": "解析 JSON 字符串并返回结构化数据。",
+			"parameters": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"json": map[string]interface{}{"type": "string", "description": "要解析的 JSON 字符串"},
+				},
+				"required": []string{"json"},
+			},
+		},
+	}
+}
 
 func (t *JSONParseTool) Execute(ctx context.Context, params map[string]interface{}) (interface{}, error) {
 	jsonStr, _ := params["json"].(string)

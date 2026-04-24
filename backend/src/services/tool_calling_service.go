@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	"openaide/backend/src/models"
@@ -38,7 +39,7 @@ func NewToolCallingService(toolSvc *ToolService, modelSvc *ModelService, logger 
 		toolSvc:   toolSvc,
 		modelSvc:  modelSvc,
 		logger:    logger,
-		maxRounds: 5,
+		maxRounds: 20,
 	}
 }
 
@@ -100,11 +101,14 @@ func (s *ToolCallingService) SendMessageWithTools(
 		{Role: llm.RoleUser, Content: content},
 	}
 
-	// 4. 工具调用循环
+	// 4. 工具调用循环（ReAct 模式，参考 Hermes Agent）
 	var totalUsage llm.Usage
 	startTime := time.Now()
 
 	for round := 0; round < s.maxRounds; round++ {
+		// 上下文压缩：当消息过长时，裁剪旧的工具输出（Hermes Phase 1: Tool Pruning）
+		messages = s.compressToolOutputs(messages)
+
 		resp, err := s.modelSvc.ChatWithTools(modelID, messages, llmTools, options)
 		if err != nil {
 			return nil, fmt.Errorf("LLM call failed: %w", err)
@@ -143,16 +147,41 @@ func (s *ToolCallingService) SendMessageWithTools(
 			return s.saveToolCallingResult(dialogueID, "assistant", result), nil
 		}
 
-		// 执行工具调用
-		for _, tc := range assistantMsg.ToolCalls {
-			toolResult := s.executeToolCall(ctx, tc, dialogueID)
-
-			// 将工具结果作为 tool 消息追加
-			messages = append(messages, llm.Message{
-				Role:       llm.RoleTool,
-				Content:    toolResult,
-				ToolCallID: tc.ID,
-			})
+		// 执行工具调用（并行执行多个工具，参考 Hermes Agent 的并发模式）
+		if len(assistantMsg.ToolCalls) > 1 {
+			type toolResult struct {
+				toolCallID string
+				content    string
+			}
+			results := make([]toolResult, len(assistantMsg.ToolCalls))
+			var wg sync.WaitGroup
+			for i, tc := range assistantMsg.ToolCalls {
+				wg.Add(1)
+				go func(idx int, toolCall llm.ToolCall) {
+					defer wg.Done()
+					results[idx] = toolResult{
+						toolCallID: toolCall.ID,
+						content:    s.executeToolCall(ctx, toolCall, dialogueID),
+					}
+				}(i, tc)
+			}
+			wg.Wait()
+			for _, r := range results {
+				messages = append(messages, llm.Message{
+					Role:       llm.RoleTool,
+					Content:    r.content,
+					ToolCallID: r.toolCallID,
+				})
+			}
+		} else {
+			for _, tc := range assistantMsg.ToolCalls {
+				toolResult := s.executeToolCall(ctx, tc, dialogueID)
+				messages = append(messages, llm.Message{
+					Role:       llm.RoleTool,
+					Content:    toolResult,
+					ToolCallID: tc.ID,
+				})
+			}
 		}
 	}
 
@@ -287,4 +316,33 @@ func toStringSlice(raw interface{}) []string {
 		return result
 	}
 	return nil
+}
+
+// compressToolOutputs 上下文压缩：裁剪旧的工具输出（参考 Hermes Agent Phase 1: Tool Pruning）
+// 当消息数量超过阈值时，将旧的工具输出替换为占位符，保留最近的工具输出
+func (s *ToolCallingService) compressToolOutputs(messages []llm.Message) []llm.Message {
+	const maxMessages = 40
+	const keepRecent = 10
+
+	if len(messages) <= maxMessages {
+		return messages
+	}
+
+	compressed := make([]llm.Message, 0, len(messages))
+	oldCount := len(messages) - keepRecent
+
+	for i, msg := range messages {
+		if i < oldCount && msg.Role == llm.RoleTool && len(msg.Content) > 200 {
+			compressed = append(compressed, llm.Message{
+				Role:       msg.Role,
+				Content:    "[Old tool output cleared for context compression]",
+				ToolCallID: msg.ToolCallID,
+			})
+		} else {
+			compressed = append(compressed, msg)
+		}
+	}
+
+	log.Printf("[ToolCalling] Context compression: %d messages, %d old tool outputs pruned", len(messages), oldCount)
+	return compressed
 }
