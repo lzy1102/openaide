@@ -544,7 +544,9 @@ func (s *FeishuService) handleCommand(ctx context.Context, chatID, chatType, ope
 			return
 		}
 
-		s.enhancedDialogueSvc.AddMessage(session.DialogueID, "user", skillContent)
+		if err := s.enhancedDialogueSvc.AddMessage(session.DialogueID, "user", skillContent); err != nil {
+			log.Printf("[Feishu] Failed to add user message: %v", err)
+		}
 
 		execution, err := s.skillSvc.ExecuteSkillWithContent(ctx, match.Skill, skillContent, openID)
 		duration := time.Since(startTime)
@@ -566,7 +568,9 @@ func (s *FeishuService) handleCommand(ctx context.Context, chatID, chatType, ope
 		}
 
 		finalContent := formatSkillExecutionCardContent(match, execution)
-		s.enhancedDialogueSvc.AddMessage(session.DialogueID, "assistant", finalContent)
+		if err := s.enhancedDialogueSvc.AddMessage(session.DialogueID, "assistant", finalContent); err != nil {
+			log.Printf("[Feishu] Failed to add assistant message: %v", err)
+		}
 		s.db.Model(&models.FeishuSession{}).Where("id = ?", session.ID).
 			Update("message_count", gorm.Expr("message_count + ?", 1))
 

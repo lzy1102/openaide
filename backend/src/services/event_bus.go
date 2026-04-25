@@ -165,7 +165,10 @@ func (bus *EventBus) invokeHandler(ctx context.Context, sub *EventSubscription, 
 					log.Printf("[EventBus] panic in async handler for %s: %v", event.Type, r)
 				}
 			}()
-			sub.Handler(context.Background(), event)
+			// 使用带超时的 context 避免 handler 永久阻塞
+			execCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			sub.Handler(execCtx, event)
 		}()
 	} else {
 		func() {

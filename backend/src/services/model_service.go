@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -20,6 +21,7 @@ type ModelService struct {
 	db          *gorm.DB
 	cache       *CacheService
 	llmClients  map[string]llm.LLMClient
+	clientsMu   sync.RWMutex
 }
 
 // NewModelService 创建模型服务实例
@@ -45,7 +47,9 @@ func (s *ModelService) UpdateModel(model *models.Model) error {
 	model.UpdatedAt = time.Now()
 
 	// 清除客户端缓存,以便重新初始化
+	s.clientsMu.Lock()
 	delete(s.llmClients, model.ID)
+	s.clientsMu.Unlock()
 
 	return s.db.Save(model).Error
 }
@@ -470,9 +474,12 @@ func (s *ModelService) ChatStream(modelID string, messages []llm.Message, option
 // getLLMClient 获取或创建 LLM 客户端
 func (s *ModelService) getLLMClient(model *models.Model) (llm.LLMClient, error) {
 	// 检查缓存
+	s.clientsMu.RLock()
 	if client, ok := s.llmClients[model.ID]; ok {
+		s.clientsMu.RUnlock()
 		return client, nil
 	}
+	s.clientsMu.RUnlock()
 
 	// 确定提供商类型
 	var provider llm.ProviderType
@@ -565,7 +572,9 @@ func (s *ModelService) getLLMClient(model *models.Model) (llm.LLMClient, error) 
 	}
 
 	// 缓存客户端
+	s.clientsMu.Lock()
 	s.llmClients[model.ID] = client
+	s.clientsMu.Unlock()
 
 	return client, nil
 }

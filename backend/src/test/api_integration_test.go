@@ -200,8 +200,12 @@ func setupTestRouter(t *testing.T) (*gin.Engine, *gorm.DB) {
 					c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 					return
 				}
-				message := dialogueService.AddMessage(id, "user", req.Content)
-				c.JSON(http.StatusOK, message)
+				message, err := dialogueService.AddMessage(id, "user", req.Content)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, message)
 			})
 
 			dialogues.GET("/:id/messages", func(c *gin.Context) {

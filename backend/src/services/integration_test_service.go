@@ -386,8 +386,12 @@ func (s *IntegrationTestService) testContextManagerCompress(ctx *TestContext) er
 	ctx.TestData["dialogue_id"] = dialogue.ID
 
 	// 添加消息
-	s.dialogueService.AddMessage(dialogue.ID, "user", "Hello, how are you?")
-	s.dialogueService.AddMessage(dialogue.ID, "assistant", "I'm doing well, thank you!")
+	if _, err := s.dialogueService.AddMessage(dialogue.ID, "user", "Hello, how are you?"); err != nil {
+		return fmt.Errorf("failed to add user message: %w", err)
+	}
+	if _, err := s.dialogueService.AddMessage(dialogue.ID, "assistant", "I'm doing well, thank you!"); err != nil {
+		return fmt.Errorf("failed to add assistant message: %w", err)
+	}
 
 	// 执行压缩
 	compressed, err := s.contextManager.Compress(dialogue.ID)
@@ -428,8 +432,12 @@ func (s *IntegrationTestService) testContextManagerSummarize(ctx *TestContext) e
 	dialogue := s.dialogueService.CreateDialogue("test-user", "Test Summary")
 
 	// 添加消息
-	s.dialogueService.AddMessage(dialogue.ID, "user", "What is AI?")
-	s.dialogueService.AddMessage(dialogue.ID, "assistant", "AI stands for Artificial Intelligence.")
+	if _, err := s.dialogueService.AddMessage(dialogue.ID, "user", "What is AI?"); err != nil {
+		return fmt.Errorf("failed to add user message: %w", err)
+	}
+	if _, err := s.dialogueService.AddMessage(dialogue.ID, "assistant", "AI stands for Artificial Intelligence."); err != nil {
+		return fmt.Errorf("failed to add assistant message: %w", err)
+	}
 
 	// 执行摘要
 	summary, err := s.contextManager.Summarize(dialogue.ID)
@@ -866,7 +874,10 @@ func (s *IntegrationTestService) testDialogueServiceSendMessage(ctx *TestContext
 	dialogue := s.dialogueService.CreateDialogue("test-user", "Message Test")
 
 	// 添加消息
-	msg := s.dialogueService.AddMessage(dialogue.ID, "user", "Hello, AI!")
+	msg, err := s.dialogueService.AddMessage(dialogue.ID, "user", "Hello, AI!")
+	if err != nil {
+		return fmt.Errorf("failed to add message: %w", err)
+	}
 
 	// 获取消息
 	messages := s.dialogueService.GetMessages(dialogue.ID)
@@ -987,7 +998,9 @@ func (s *IntegrationTestService) testFullContextManager(ctx *TestContext) error 
 
 	// 添加多条消息
 	for i := 0; i < 5; i++ {
-		s.dialogueService.AddMessage(dialogue.ID, "user", fmt.Sprintf("Message %d", i))
+		if _, err := s.dialogueService.AddMessage(dialogue.ID, "user", fmt.Sprintf("Message %d", i)); err != nil {
+			return fmt.Errorf("failed to add message %d: %w", i, err)
+		}
 	}
 
 	// 测试压缩
@@ -1105,7 +1118,9 @@ func (s *IntegrationTestService) testFullDialogueService(ctx *TestContext) error
 	// 添加多条消息
 	messages := []string{"Hello", "How are you?", "What's the weather?"}
 	for _, msg := range messages {
-		s.dialogueService.AddMessage(dialogue.ID, "user", msg)
+		if _, err := s.dialogueService.AddMessage(dialogue.ID, "user", msg); err != nil {
+			return fmt.Errorf("failed to add message: %w", err)
+		}
 	}
 
 	// 获取对话

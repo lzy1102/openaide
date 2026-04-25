@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -183,9 +184,18 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 
 // GetProfile 获取当前用户信息
 func (h *AuthHandler) GetProfile(c *gin.Context) {
-	userID, _ := c.Get("user_id")
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+	userIDStr, ok := userID.(string)
+	if !ok || userIDStr == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户ID"})
+		return
+	}
 
-	user, err := h.authService.GetUser(userID.(string))
+	user, err := h.authService.GetUser(userIDStr)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
 		return
@@ -196,7 +206,16 @@ func (h *AuthHandler) GetProfile(c *gin.Context) {
 
 // UpdateProfile 更新当前用户信息
 func (h *AuthHandler) UpdateProfile(c *gin.Context) {
-	userID, _ := c.Get("user_id")
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+	userIDStr, ok := userID.(string)
+	if !ok || userIDStr == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户ID"})
+		return
+	}
 
 	var updates map[string]interface{}
 	if err := c.ShouldBindJSON(&updates); err != nil {
@@ -204,7 +223,7 @@ func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 		return
 	}
 
-	user, err := h.authService.UpdateUser(userID.(string), updates)
+	user, err := h.authService.UpdateUser(userIDStr, updates)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -215,7 +234,16 @@ func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 
 // ChangePassword 修改密码
 func (h *AuthHandler) ChangePassword(c *gin.Context) {
-	userID, _ := c.Get("user_id")
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+	userIDStr, ok := userID.(string)
+	if !ok || userIDStr == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户ID"})
+		return
+	}
 
 	var req ChangePasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -223,7 +251,7 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	err := h.authService.ChangePassword(userID.(string), req.OldPassword, req.NewPassword)
+	err := h.authService.ChangePassword(userIDStr, req.OldPassword, req.NewPassword)
 	if err != nil {
 		switch err {
 		case services.ErrInvalidPassword:
@@ -239,9 +267,18 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 
 // GetSessions 获取当前用户的会话列表
 func (h *AuthHandler) GetSessions(c *gin.Context) {
-	userID, _ := c.Get("user_id")
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+	userIDStr, ok := userID.(string)
+	if !ok || userIDStr == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户ID"})
+		return
+	}
 
-	sessions, err := h.authService.GetSessions(userID.(string))
+	sessions, err := h.authService.GetSessions(userIDStr)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -253,10 +290,19 @@ func (h *AuthHandler) GetSessions(c *gin.Context) {
 // LogoutSession 登出指定会话
 func (h *AuthHandler) LogoutSession(c *gin.Context) {
 	sessionID := c.Param("id")
-	userID, _ := c.Get("user_id")
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+	userIDStr, ok := userID.(string)
+	if !ok || userIDStr == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户ID"})
+		return
+	}
 
 	// 验证会话属于当前用户
-	sessions, _ := h.authService.GetSessions(userID.(string))
+	sessions, _ := h.authService.GetSessions(userIDStr)
 	isOwner := false
 	for _, s := range sessions {
 		if s.ID == sessionID {
@@ -280,9 +326,18 @@ func (h *AuthHandler) LogoutSession(c *gin.Context) {
 
 // ListAPIKeys 列出用户的 API Keys
 func (h *AuthHandler) ListAPIKeys(c *gin.Context) {
-	userID, _ := c.Get("user_id")
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+	userIDStr, ok := userID.(string)
+	if !ok || userIDStr == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户ID"})
+		return
+	}
 
-	keys, err := h.authService.ListAPIKeys(userID.(string))
+	keys, err := h.authService.ListAPIKeys(userIDStr)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -293,7 +348,16 @@ func (h *AuthHandler) ListAPIKeys(c *gin.Context) {
 
 // CreateAPIKey 创建 API Key
 func (h *AuthHandler) CreateAPIKey(c *gin.Context) {
-	userID, _ := c.Get("user_id")
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+	userIDStr, ok := userID.(string)
+	if !ok || userIDStr == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户ID"})
+		return
+	}
 
 	var req CreateAPIKeyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -307,7 +371,7 @@ func (h *AuthHandler) CreateAPIKey(c *gin.Context) {
 		expiresAt = &t
 	}
 
-	apiKey, keyString, err := h.authService.CreateAPIKey(userID.(string), req.Name, req.Permissions, expiresAt)
+	apiKey, keyString, err := h.authService.CreateAPIKey(userIDStr, req.Name, req.Permissions, expiresAt)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -540,11 +604,9 @@ func (h *AuthHandler) PermissionRequired(permission string) gin.HandlerFunc {
 
 // 辅助函数
 func parseInt(s string) int {
-	var result int
-	for _, c := range s {
-		if c >= '0' && c <= '9' {
-			result = result*10 + int(c-'0')
-		}
+	result, _ := strconv.Atoi(s)
+	if result < 0 {
+		result = 0
 	}
 	return result
 }

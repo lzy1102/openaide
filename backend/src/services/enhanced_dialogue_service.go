@@ -144,7 +144,7 @@ func (s *EnhancedDialogueService) GetMessages(dialogueID string) []models.Messag
 }
 
 // SaveStreamMessage 保存流式消息（代理方法）
-func (s *EnhancedDialogueService) SaveStreamMessage(dialogueID, content string) models.Message {
+func (s *EnhancedDialogueService) SaveStreamMessage(dialogueID, content string) (models.Message, error) {
 	return s.dialogueSvc.SaveStreamMessage(dialogueID, content)
 }
 
@@ -168,8 +168,9 @@ func (s *EnhancedDialogueService) SendMessage(
 }
 
 // AddMessage 添加消息（代理方法）
-func (s *EnhancedDialogueService) AddMessage(dialogueID, sender, content string) {
-	s.dialogueSvc.AddMessage(dialogueID, sender, content)
+func (s *EnhancedDialogueService) AddMessage(dialogueID, sender, content string) error {
+	_, err := s.dialogueSvc.AddMessage(dialogueID, sender, content)
+	return err
 }
 
 // SendMessageWithTools 带工具调用的增强消息发送
@@ -192,7 +193,11 @@ func (s *EnhancedDialogueService) SendMessageWithTools(
 	}
 
 	// 保存用户消息
-	s.dialogueSvc.AddMessage(dialogueID, "user", content)
+	if _, err := s.dialogueSvc.AddMessage(dialogueID, "user", content); err != nil {
+		if s.loggerSvc != nil {
+			s.loggerSvc.Error(ctx, "Failed to save user message: %v", err)
+		}
+	}
 
 	// 组装 system prompt
 	composedPrompt := s.ComposeSystemPrompt(ctx, userID, dialogueID, content, options)

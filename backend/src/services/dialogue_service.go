@@ -95,7 +95,7 @@ func (s *DialogueService) ListDialoguesByUser(userID string) []models.Dialogue {
 }
 
 // AddMessage 添加消息到对话
-func (s *DialogueService) AddMessage(dialogueID, sender, content string) models.Message {
+func (s *DialogueService) AddMessage(dialogueID, sender, content string) (models.Message, error) {
 	message := models.Message{
 		ID:         uuid.New().String(),
 		DialogueID: dialogueID,
@@ -104,12 +104,16 @@ func (s *DialogueService) AddMessage(dialogueID, sender, content string) models.
 		CreatedAt:  time.Now(),
 	}
 
-	s.db.Create(&message)
+	if err := s.db.Create(&message).Error; err != nil {
+		return message, fmt.Errorf("failed to create message: %w", err)
+	}
 
 	// 更新对话的更新时间
-	s.db.Model(&models.Dialogue{}).Where("id = ?", dialogueID).Update("updated_at", time.Now())
+	if err := s.db.Model(&models.Dialogue{}).Where("id = ?", dialogueID).Update("updated_at", time.Now()).Error; err != nil {
+		s.logger.Error(context.Background(), "Failed to update dialogue updated_at: %v", err)
+	}
 
-	return message
+	return message, nil
 }
 
 // GetMessages 获取对话消息
@@ -131,7 +135,9 @@ func (s *DialogueService) GetMessagesWithPagination(dialogueID string, page, pag
 // SendMessage 发送消息并获取 AI 回复
 func (s *DialogueService) SendMessage(ctx context.Context, dialogueID, userID, content string, modelID string, options map[string]interface{}) (*models.Message, error) {
 	// 保存用户消息
-	s.AddMessage(dialogueID, "user", content)
+	if _, err := s.AddMessage(dialogueID, "user", content); err != nil {
+		s.logger.Error(ctx, "Failed to save user message: %v", err)
+	}
 
 	// 检查智能缓存
 	if s.smartCache != nil {
@@ -140,12 +146,18 @@ func (s *DialogueService) SendMessage(ctx context.Context, dialogueID, userID, c
 		}); err == nil {
 			if cached {
 				// 缓存命中，保存缓存的响应
-				assistantMessage := s.AddMessage(dialogueID, "assistant", resp.Choices[0].Message.Content)
+				assistantMessage, err := s.AddMessage(dialogueID, "assistant", resp.Choices[0].Message.Content)
+				if err != nil {
+					s.logger.Error(ctx, "Failed to save assistant message: %v", err)
+				}
 				s.logger.Info(ctx, "Cache hit for dialogue %s, returning cached response", dialogueID)
 				return &assistantMessage, nil
 			}
 			// 非缓存响应，正常处理
-			assistantMessage := s.AddMessage(dialogueID, "assistant", resp.Choices[0].Message.Content)
+			assistantMessage, err := s.AddMessage(dialogueID, "assistant", resp.Choices[0].Message.Content)
+			if err != nil {
+				s.logger.Error(ctx, "Failed to save assistant message: %v", err)
+			}
 
 			// 记录响应
 			if resp.Usage != nil {
@@ -175,13 +187,22 @@ func (s *DialogueService) executeChat(ctx context.Context, dialogueID, userID, c
 	llmMessages := make([]llm.Message, 0, len(messages))
 	for _, msg := range messages {
 		role := "user"
-		if msg.Sender == "assistant" {
+		switch msg.Sender {
+		case "assistant":
 			role = "assistant"
+		case "system":
+			role = "system"
+		case "tool":
+			role = "tool"
 		}
-		llmMessages = append(llmMessages, llm.Message{
+		llmMsg := llm.Message{
 			Role:    role,
 			Content: msg.Content,
-		})
+		}
+		if msg.ToolCallID != "" {
+			llmMsg.ToolCallID = msg.ToolCallID
+		}
+		llmMessages = append(llmMessages, llmMsg)
 	}
 
 	// 调用 LLM 获取回复
@@ -205,7 +226,10 @@ func (s *DialogueService) executeChatAndSave(ctx context.Context, dialogueID, us
 	}
 
 	// 保存助手回复
-	assistantMessage := s.AddMessage(dialogueID, "assistant", resp.Choices[0].Message.Content)
+	assistantMessage, err := s.AddMessage(dialogueID, "assistant", resp.Choices[0].Message.Content)
+	if err != nil {
+		s.logger.Error(ctx, "Failed to save assistant message: %v", err)
+	}
 
 	// 记录响应
 	if resp.Usage != nil {
@@ -224,7 +248,9 @@ func (s *DialogueService) executeChatAndSave(ctx context.Context, dialogueID, us
 // SendMessageStream 发送消息并获取流式 AI 回复
 func (s *DialogueService) SendMessageStream(ctx context.Context, dialogueID, userID, content string, modelID string, options map[string]interface{}) (<-chan llm.ChatStreamChunk, error) {
 	// 保存用户消息
-	s.AddMessage(dialogueID, "user", content)
+	if _, err := s.AddMessage(dialogueID, "user", content); err != nil {
+		s.logger.Error(ctx, "Failed to save user message: %v", err)
+	}
 
 	// 构建对话历史（最多最近20条消息，控制token消耗）
 	messages := s.GetMessages(dialogueID)
@@ -258,13 +284,22 @@ func (s *DialogueService) SendMessageStream(ctx context.Context, dialogueID, use
 
 	for _, msg := range messages {
 		role := "user"
-		if msg.Sender == "assistant" {
+		switch msg.Sender {
+		case "assistant":
 			role = "assistant"
+		case "system":
+			role = "system"
+		case "tool":
+			role = "tool"
 		}
-		llmMessages = append(llmMessages, llm.Message{
+		llmMsg := llm.Message{
 			Role:    role,
 			Content: msg.Content,
-		})
+		}
+		if msg.ToolCallID != "" {
+			llmMsg.ToolCallID = msg.ToolCallID
+		}
+		llmMessages = append(llmMessages, llmMsg)
 	}
 
 	// Token预估和智能截断
@@ -378,7 +413,7 @@ func (s *DialogueService) wrapStreamWithUsage(
 }
 
 // SaveStreamMessage 保存流式消息的完整内容
-func (s *DialogueService) SaveStreamMessage(dialogueID string, content string) models.Message {
+func (s *DialogueService) SaveStreamMessage(dialogueID string, content string) (models.Message, error) {
 	return s.AddMessage(dialogueID, "assistant", content)
 }
 

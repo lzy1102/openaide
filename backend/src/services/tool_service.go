@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -1174,14 +1175,97 @@ func (t *CalculatorTool) Execute(ctx context.Context, params map[string]interfac
 		return nil, fmt.Errorf("expression parameter is required")
 	}
 
-	// 使用 expr 库或简单解析
-	// 这里使用一个简化的实现
-	result := "计算结果"
+	result, err := evaluateExpression(expression)
+	if err != nil {
+		return map[string]interface{}{
+			"expression": expression,
+			"error":      err.Error(),
+		}, nil
+	}
+
 	return map[string]interface{}{
 		"expression": expression,
 		"result":     result,
-		"note":       "请使用 govaluate 或其他表达式解析库实现",
 	}, nil
+}
+
+// evaluateExpression 计算简单的数学表达式
+func evaluateExpression(expr string) (float64, error) {
+	expr = strings.TrimSpace(expr)
+	if expr == "" {
+		return 0, fmt.Errorf("empty expression")
+	}
+
+	// 尝试直接解析为数字
+	if val, err := strconv.ParseFloat(expr, 64); err == nil {
+		return val, nil
+	}
+
+	// 简单的二元运算解析
+	operators := []struct {
+		op    string
+		prec  int
+		assoc int // 0=left, 1=right
+	}{
+		{"+", 1, 0}, {"-", 1, 0},
+		{"*", 2, 0}, {"/", 2, 0},
+		{"%", 2, 0}, {"**", 3, 1},
+	}
+
+	for _, op := range operators {
+		idx := strings.Index(expr, op.op)
+		if idx > 0 {
+			left := strings.TrimSpace(expr[:idx])
+			right := strings.TrimSpace(expr[idx+len(op.op):])
+			if left == "" || right == "" {
+				continue
+			}
+			lval, err := evaluateExpression(left)
+			if err != nil {
+				return 0, err
+			}
+			rval, err := evaluateExpression(right)
+			if err != nil {
+				return 0, err
+			}
+			switch op.op {
+			case "+":
+				return lval + rval, nil
+			case "-":
+				return lval - rval, nil
+			case "*":
+				return lval * rval, nil
+			case "/":
+				if rval == 0 {
+					return 0, fmt.Errorf("division by zero")
+				}
+				return lval / rval, nil
+			case "%":
+				if rval == 0 {
+					return 0, fmt.Errorf("division by zero")
+				}
+				return float64(int64(lval) % int64(rval)), nil
+			case "**":
+				return pow(lval, rval), nil
+			}
+		}
+	}
+
+	return 0, fmt.Errorf("unsupported expression: %s", expr)
+}
+
+func pow(base, exp float64) float64 {
+	if exp == 0 {
+		return 1
+	}
+	if exp < 0 {
+		return 1 / pow(base, -exp)
+	}
+	result := 1.0
+	for i := 0; i < int(exp); i++ {
+		result *= base
+	}
+	return result
 }
 
 // CodeRunTool 代码执行工具
@@ -1213,6 +1297,12 @@ func (t *CodeRunTool) Execute(ctx context.Context, params map[string]interface{}
 
 	if language == "" || code == "" {
 		return nil, fmt.Errorf("language and code parameters are required")
+	}
+
+	// 代码长度限制
+	const maxCodeLength = 50000
+	if len(code) > maxCodeLength {
+		return nil, fmt.Errorf("code exceeds maximum length of %d characters", maxCodeLength)
 	}
 
 	// 安全检查
@@ -1248,17 +1338,32 @@ func (t *CodeRunTool) Execute(ctx context.Context, params map[string]interface{}
 		return nil, fmt.Errorf("unsupported language: %s (supported: python, javascript, bash, go)", language)
 	}
 
+	// 资源限制：设置临时目录为工作目录，限制输出大小
+	cmd.Dir = os.TempDir()
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
+
+	// 环境变量清理：移除敏感环境变量
+	cmd.Env = filterSafeEnvVars(os.Environ())
 
 	err := cmd.Run()
 	duration := time.Since(startTime)
 
+	const maxOutputSize = 100000
+	outStr := stdout.String()
+	if len(outStr) > maxOutputSize {
+		outStr = outStr[:maxOutputSize] + "\n... [output truncated]"
+	}
+	errStr := stderr.String()
+	if len(errStr) > maxOutputSize {
+		errStr = errStr[:maxOutputSize] + "\n... [stderr truncated]"
+	}
+
 	if err != nil {
 		return map[string]interface{}{
 			"language": language,
-			"stdout":   stdout.String(),
-			"stderr":   stderr.String(),
+			"stdout":   outStr,
+			"stderr":   errStr,
 			"duration": duration.String(),
 			"success":  false,
 			"error":    err.Error(),
@@ -1267,17 +1372,40 @@ func (t *CodeRunTool) Execute(ctx context.Context, params map[string]interface{}
 
 	return map[string]interface{}{
 		"language": language,
-		"stdout":   stdout.String(),
-		"stderr":   stderr.String(),
+		"stdout":   outStr,
+		"stderr":   errStr,
 		"duration": duration.String(),
 		"success":  true,
 	}, nil
+}
+
+// filterSafeEnvVars 过滤掉敏感的环境变量
+func filterSafeEnvVars(env []string) []string {
+	sensitivePrefixes := []string{
+		"OPENAI_API_KEY", "ANTHROPIC_API_KEY", "API_KEY", "SECRET", "PASSWORD",
+		"TOKEN", "PRIVATE_KEY", "AWS_", "AZURE_", "GCP_", "GOOGLE_",
+	}
+	var safe []string
+	for _, e := range env {
+		isSafe := true
+		for _, prefix := range sensitivePrefixes {
+			if strings.HasPrefix(strings.ToUpper(e), prefix) {
+				isSafe = false
+				break
+			}
+		}
+		if isSafe {
+			safe = append(safe, e)
+		}
+	}
+	return safe
 }
 
 // FileReadTool 文件读取工具
 type FileReadTool struct {
 	AllowedBaseDirs []string // 允许的根目录白名单
 	MaxFileSize     int64    // 最大文件大小 (默认 1MB)
+	once            sync.Once
 }
 
 func (t *FileReadTool) Name() string { return "read_file" }
@@ -1363,11 +1491,13 @@ func (t *FileReadTool) Execute(ctx context.Context, params map[string]interface{
 
 // isPathAllowed 检查路径是否在允许的目录白名单内
 func (t *FileReadTool) isPathAllowed(absPath string) bool {
-	if len(t.AllowedBaseDirs) == 0 {
-		// 没有配置白名单时，允许当前工作目录和 /tmp
-		cwd, _ := os.Getwd()
-		t.AllowedBaseDirs = []string{cwd, "/tmp"}
-	}
+	t.once.Do(func() {
+		if len(t.AllowedBaseDirs) == 0 {
+			// 没有配置白名单时，允许当前工作目录和 /tmp
+			cwd, _ := os.Getwd()
+			t.AllowedBaseDirs = []string{cwd, "/tmp"}
+		}
+	})
 	for _, base := range t.AllowedBaseDirs {
 		if strings.HasPrefix(absPath, base) {
 			return true
@@ -1380,6 +1510,7 @@ func (t *FileReadTool) isPathAllowed(absPath string) bool {
 type FileWriteTool struct {
 	AllowedBaseDirs []string // 允许的根目录白名单
 	MaxFileSize     int64    // 最大文件大小 (默认 1MB)
+	once            sync.Once
 }
 
 func (t *FileWriteTool) Name() string { return "write_file" }
@@ -1455,10 +1586,12 @@ func (t *FileWriteTool) Execute(ctx context.Context, params map[string]interface
 
 // isPathAllowed 检查路径是否在允许的目录白名单内
 func (t *FileWriteTool) isPathAllowed(absPath string) bool {
-	if len(t.AllowedBaseDirs) == 0 {
-		cwd, _ := os.Getwd()
-		t.AllowedBaseDirs = []string{cwd, "/tmp"}
-	}
+	t.once.Do(func() {
+		if len(t.AllowedBaseDirs) == 0 {
+			cwd, _ := os.Getwd()
+			t.AllowedBaseDirs = []string{cwd, "/tmp"}
+		}
+	})
 	for _, base := range t.AllowedBaseDirs {
 		if strings.HasPrefix(absPath, base) {
 			return true
@@ -1780,12 +1913,17 @@ func isPrivateURL(rawURL string) bool {
 		return isPrivateIP(ip)
 	}
 
-	// 解析域名（简单检查，不阻止公网域名）
+	// 解析域名：检查所有返回的 IP，任一指向内网即阻止
 	ips, err := net.LookupIP(host)
 	if err != nil || len(ips) == 0 {
-		return false // DNS 解析失败不阻塞
+		return true // DNS 解析失败视为不安全
 	}
-	return isPrivateIP(ips[0])
+	for _, ip := range ips {
+		if isPrivateIP(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 // isPrivateIP 检查 IP 是否为内网地址
