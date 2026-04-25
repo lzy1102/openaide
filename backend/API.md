@@ -26,6 +26,9 @@ Complete API reference for the OpenAIDE backend service.
 - [Confirmations & Channels](#confirmations--channels)
 - [Events](#events)
 - [WebSocket](#websocket)
+- [Permissions](#permissions)
+- [Agent Routing](#agent-routing)
+- [Slash Commands](#slash-commands)
 - [Error Responses](#error-responses)
 
 ---
@@ -174,9 +177,10 @@ Automatically selects the best model based on content.
 | GET | `/api/dialogues/:id` | Get dialogue |
 | PUT | `/api/dialogues/:id` | Update dialogue |
 | DELETE | `/api/dialogues/:id` | Delete dialogue |
-| GET | `/api/dialogues/:id/messages` | Get messages |
-| POST | `/api/dialogues/:id/messages` | Send message |
+| GET | `/api/dialogues/:id/messages` | Get messages (includes `reasoning_content`) |
+| POST | `/api/dialogues/:id/messages` | Send message (returns `reasoning_content` if model supports it) |
 | POST | `/api/dialogues/:id/stream` | Streaming message (SSE) |
+| POST | `/api/dialogues/:id/save-stream` | Save streaming message with `reasoning_content` |
 | DELETE | `/api/dialogues/:id/messages` | Clear messages |
 
 ---
@@ -794,6 +798,43 @@ MCP support currently covers server management, initialize handshake, tool disco
 | `/api/ws/send/:user_id` | Send to user |
 | `/api/ws/notify/task/:id` | Notify task |
 | `/api/ws/dialogue/stream` | Streaming dialogue |
+
+---
+
+## Permissions
+
+Fine-grained permission system with agent profiles.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/permissions/profiles` | List built-in agent profiles (build/plan/general/explore) |
+| POST | `/api/permissions/respond` | Respond to permission ask (allow/deny) |
+| GET | `/api/permissions/rules` | Get global security rules |
+| GET | `/api/permissions/session/:id` | Get session permission state |
+
+---
+
+## Agent Routing
+
+Route different agent types to different models for cost optimization.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/agent-routing/config` | Get routing configuration |
+| PUT | `/api/agent-routing/config` | Update routing configuration |
+| GET | `/api/agent-routing/routes` | List all routes |
+| GET | `/api/agent-routing/route/:agent` | Get route for agent type |
+
+---
+
+## Slash Commands
+
+Built-in slash commands for quick operations.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/slash/commands` | List available slash commands |
+| POST | `/api/slash/execute` | Execute a slash command |
 
 ---
 
