@@ -834,6 +834,23 @@ func main() {
 				}
 				c.JSON(http.StatusOK, gin.H{"message": "Messages cleared successfully"})
 			})
+			dialogues.POST("/:id/save-stream", func(c *gin.Context) {
+				id := c.Param("id")
+				var req struct {
+					Content          string `json:"content"`
+					ReasoningContent string `json:"reasoning_content"`
+				}
+				if err := c.ShouldBindJSON(&req); err != nil {
+					c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+				message, err := dialogueService.SaveStreamMessage(id, req.Content, req.ReasoningContent)
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+					return
+				}
+				c.JSON(http.StatusOK, message)
+			})
 		}
 
 		// 工作流接口（保留内联 - 核心路由）

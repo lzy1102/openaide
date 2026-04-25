@@ -95,13 +95,16 @@ func (s *DialogueService) ListDialoguesByUser(userID string) []models.Dialogue {
 }
 
 // AddMessage 添加消息到对话
-func (s *DialogueService) AddMessage(dialogueID, sender, content string) (models.Message, error) {
+func (s *DialogueService) AddMessage(dialogueID, sender, content string, reasoningContent ...string) (models.Message, error) {
 	message := models.Message{
 		ID:         uuid.New().String(),
 		DialogueID: dialogueID,
 		Sender:     sender,
 		Content:    content,
 		CreatedAt:  time.Now(),
+	}
+	if len(reasoningContent) > 0 && reasoningContent[0] != "" {
+		message.ReasoningContent = reasoningContent[0]
 	}
 
 	if err := s.db.Create(&message).Error; err != nil {
@@ -145,16 +148,18 @@ func (s *DialogueService) SendMessage(ctx context.Context, dialogueID, userID, c
 			return s.executeChat(ctx, dialogueID, userID, content, modelID, options)
 		}); err == nil {
 			if cached {
-				// 缓存命中，保存缓存的响应
-				assistantMessage, err := s.AddMessage(dialogueID, "assistant", resp.Choices[0].Message.Content)
+				// 缓存命中，保存缓存的响应（包含思考过程）
+				assistantMsg := resp.Choices[0].Message
+				assistantMessage, err := s.AddMessage(dialogueID, "assistant", assistantMsg.Content, assistantMsg.ReasoningContent)
 				if err != nil {
 					s.logger.Error(ctx, "Failed to save assistant message: %v", err)
 				}
 				s.logger.Info(ctx, "Cache hit for dialogue %s, returning cached response", dialogueID)
 				return &assistantMessage, nil
 			}
-			// 非缓存响应，正常处理
-			assistantMessage, err := s.AddMessage(dialogueID, "assistant", resp.Choices[0].Message.Content)
+			// 非缓存响应，正常处理（包含思考过程）
+			assistantMsg := resp.Choices[0].Message
+			assistantMessage, err := s.AddMessage(dialogueID, "assistant", assistantMsg.Content, assistantMsg.ReasoningContent)
 			if err != nil {
 				s.logger.Error(ctx, "Failed to save assistant message: %v", err)
 			}
@@ -199,6 +204,9 @@ func (s *DialogueService) executeChat(ctx context.Context, dialogueID, userID, c
 			Role:    role,
 			Content: msg.Content,
 		}
+		if msg.ReasoningContent != "" {
+			llmMsg.ReasoningContent = msg.ReasoningContent
+		}
 		if msg.ToolCallID != "" {
 			llmMsg.ToolCallID = msg.ToolCallID
 		}
@@ -225,8 +233,9 @@ func (s *DialogueService) executeChatAndSave(ctx context.Context, dialogueID, us
 		return nil, err
 	}
 
-	// 保存助手回复
-	assistantMessage, err := s.AddMessage(dialogueID, "assistant", resp.Choices[0].Message.Content)
+	// 保存助手回复（包含思考过程）
+	assistantMsg := resp.Choices[0].Message
+	assistantMessage, err := s.AddMessage(dialogueID, "assistant", assistantMsg.Content, assistantMsg.ReasoningContent)
 	if err != nil {
 		s.logger.Error(ctx, "Failed to save assistant message: %v", err)
 	}
@@ -295,6 +304,9 @@ func (s *DialogueService) SendMessageStream(ctx context.Context, dialogueID, use
 		llmMsg := llm.Message{
 			Role:    role,
 			Content: msg.Content,
+		}
+		if msg.ReasoningContent != "" {
+			llmMsg.ReasoningContent = msg.ReasoningContent
 		}
 		if msg.ToolCallID != "" {
 			llmMsg.ToolCallID = msg.ToolCallID
@@ -413,8 +425,8 @@ func (s *DialogueService) wrapStreamWithUsage(
 }
 
 // SaveStreamMessage 保存流式消息的完整内容
-func (s *DialogueService) SaveStreamMessage(dialogueID string, content string) (models.Message, error) {
-	return s.AddMessage(dialogueID, "assistant", content)
+func (s *DialogueService) SaveStreamMessage(dialogueID string, content string, reasoningContent ...string) (models.Message, error) {
+	return s.AddMessage(dialogueID, "assistant", content, reasoningContent...)
 }
 
 // recordUsage 记录Token使用量

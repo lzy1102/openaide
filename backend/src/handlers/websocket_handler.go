@@ -246,13 +246,18 @@ func (h *WebSocketHandler) DialogueStreamHandler(dialogueService *services.Dialo
 			}
 
 			if len(chunk.Choices) > 0 {
+				payload := map[string]interface{}{
+					"content":       chunk.Choices[0].Delta.Content,
+					"finish_reason": chunk.Choices[0].FinishReason,
+					"model":         chunk.Model,
+				}
+				// 如果有思考过程，一并发送
+				if chunk.Choices[0].Delta.ReasoningContent != "" {
+					payload["reasoning_content"] = chunk.Choices[0].Delta.ReasoningContent
+				}
 				msg := services.WebSocketMessage{
-					Type: services.WSTypeChatChunk,
-					Payload: map[string]interface{}{
-						"content":       chunk.Choices[0].Delta.Content,
-						"finish_reason": chunk.Choices[0].FinishReason,
-						"model":         chunk.Model,
-					},
+					Type:    services.WSTypeChatChunk,
+					Payload: payload,
 				}
 				data, _ := encodeJSON(msg)
 				conn.WriteMessage(websocket.TextMessage, data)

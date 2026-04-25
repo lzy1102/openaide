@@ -153,7 +153,7 @@ func (s *ToolCallingService) SendMessageWithTools(
 				go s.recordToolCallingUsage(ctx, userID, dialogueID, modelID, &totalUsage, time.Since(startTime))
 			}
 
-			return s.saveToolCallingResult(dialogueID, "assistant", result), nil
+			return s.saveToolCallingResult(dialogueID, "assistant", result, assistantMsg.ReasoningContent), nil
 		}
 
 		// 执行工具调用（并行执行多个工具，参考 Hermes Agent 的并发模式）
@@ -196,9 +196,11 @@ func (s *ToolCallingService) SendMessageWithTools(
 
 	// 超出最大轮次，查找最后一条 assistant 消息
 	lastAssistantContent := ""
+	lastAssistantReasoning := ""
 	for i := len(messages) - 1; i >= 0; i-- {
 		if messages[i].Role == llm.RoleAssistant && messages[i].Content != "" {
 			lastAssistantContent = messages[i].Content
+			lastAssistantReasoning = messages[i].ReasoningContent
 			break
 		}
 	}
@@ -211,7 +213,7 @@ func (s *ToolCallingService) SendMessageWithTools(
 		go s.recordToolCallingUsage(ctx, userID, dialogueID, modelID, &totalUsage, time.Since(startTime))
 	}
 
-	return s.saveToolCallingResult(dialogueID, "assistant", lastAssistantContent), nil
+	return s.saveToolCallingResult(dialogueID, "assistant", lastAssistantContent, lastAssistantReasoning), nil
 }
 
 // recordToolCallingUsage 记录工具调用的token使用量
@@ -296,7 +298,7 @@ func (s *ToolCallingService) executeToolCall(ctx context.Context, tc llm.ToolCal
 }
 
 // saveToolCallingResult 保存工具调用的最终结果
-func (s *ToolCallingService) saveToolCallingResult(dialogueID, sender, content string) *models.Message {
+func (s *ToolCallingService) saveToolCallingResult(dialogueID, sender, content string, reasoningContent ...string) *models.Message {
 	// 通过数据库直接插入消息
 	now := time.Now()
 	msg := &models.Message{
@@ -305,6 +307,9 @@ func (s *ToolCallingService) saveToolCallingResult(dialogueID, sender, content s
 		Sender:     sender,
 		Content:    content,
 		CreatedAt:  now,
+	}
+	if len(reasoningContent) > 0 && reasoningContent[0] != "" {
+		msg.ReasoningContent = reasoningContent[0]
 	}
 
 	// 使用 toolSvc 的 db 连接保存
@@ -548,6 +553,9 @@ func (s *ToolCallingService) buildMessagesWithHistory(ctx context.Context, dialo
 			llmMsg := llm.Message{
 				Role:    role,
 				Content: content,
+			}
+			if msg.ReasoningContent != "" {
+				llmMsg.ReasoningContent = msg.ReasoningContent
 			}
 			if msg.ToolCallID != "" {
 				llmMsg.ToolCallID = msg.ToolCallID

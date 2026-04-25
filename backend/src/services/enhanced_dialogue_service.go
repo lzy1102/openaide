@@ -144,8 +144,8 @@ func (s *EnhancedDialogueService) GetMessages(dialogueID string) []models.Messag
 }
 
 // SaveStreamMessage 保存流式消息（代理方法）
-func (s *EnhancedDialogueService) SaveStreamMessage(dialogueID, content string) (models.Message, error) {
-	return s.dialogueSvc.SaveStreamMessage(dialogueID, content)
+func (s *EnhancedDialogueService) SaveStreamMessage(dialogueID, content string, reasoningContent ...string) (models.Message, error) {
+	return s.dialogueSvc.SaveStreamMessage(dialogueID, content, reasoningContent...)
 }
 
 // SendMessageStream 流式消息发送（自动路由+工具检测）
