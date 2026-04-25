@@ -36,6 +36,13 @@ A full-featured AI Agent development platform with multi-model support, multi-ag
 - **Smart Token Management**: Pre-send token estimation, smart context truncation, intelligent caching, cost optimization, user/dialogue token limits
 - **Usage Analytics**: Token/cost tracking, budget management, threshold alerts via email
 - **Authentication**: JWT tokens, API keys, role-based access control
+- **Reasoning Content Support**: Save and pass model reasoning/thinking content (DeepSeek, etc.), supports both streaming and non-streaming
+- **Fine-grained Permission System**: Agent-level permission control (build/plan/general/explore), command execution risk grading (allow/ask/deny)
+- **Agent Smart Routing**: Auto-route tasks to different models (fast/code/reasoning) for cost/performance optimization
+- **Slash Command System**: Built-in /compact, /model, /clear, /agent, /tools, /help shortcuts
+- **Task Tool (Sub-agent)**: Delegate sub-tasks to child agents with independent ReAct loops
+- **Smart Context Compaction**: Two-phase compression (simple pruning + LLM summarization) to prevent context overflow
+- **DuckDuckGo Dual-Engine Search**: Instant Answer API + HTML search fallback, no API key required
 
 #### Architecture
 
@@ -356,6 +363,13 @@ Interactive mode:
 - **智能 Token 管理**：预发送 Token 估算、智能上下文截断、智能缓存、成本优化、用户/对话级 Token 限额
 - **使用量统计**：Token/成本追踪、预算管理、阈值邮件告警
 - **认证鉴权**：JWT Token、API Key、角色权限控制
+- **Reasoning Content 支持**：保存并传递模型的推理/思考过程（DeepSeek 等），支持流式与非流式场景
+- **细粒度权限系统**：Agent 级别权限控制（build/plan/general/explore），命令执行风险分级（allow/ask/deny）
+- **Agent 智能路由**：根据任务类型自动路由到不同模型（fast/code/reasoning），优化成本与性能
+- **Slash 命令系统**：内置 /compact、/model、/clear、/agent、/tools、/help 等快捷命令
+- **任务工具（Task Tool）**：子 Agent 委派，独立 ReAct 循环执行子任务
+- **智能上下文压缩**：两阶段压缩（简单修剪 + LLM 摘要），防止上下文窗口溢出
+- **DuckDuckGo 双引擎搜索**：Instant Answer API + HTML 搜索回退，无需 API Key
 
 ### 系统架构
 
