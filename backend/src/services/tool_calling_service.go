@@ -18,20 +18,23 @@ import (
 type ToolCallingService struct {
 	toolSvc      *ToolService
 	modelSvc     *ModelService
+	dialogueSvc  *DialogueService
 	logger       *LoggerService
 	usageService *UsageService
 	eventBus     *EventBus
-	maxRounds    int // 最大工具调用轮次，防止无限循环
+	maxRounds    int
 }
 
-// SetEventBus 设置事件总线（可选依赖注入）
 func (s *ToolCallingService) SetEventBus(bus *EventBus) {
 	s.eventBus = bus
 }
 
-// SetUsageService 设置使用量统计服务
 func (s *ToolCallingService) SetUsageService(usageService *UsageService) {
 	s.usageService = usageService
+}
+
+func (s *ToolCallingService) SetDialogueService(dialogueSvc *DialogueService) {
+	s.dialogueSvc = dialogueSvc
 }
 
 // NewToolCallingService 创建工具调用服务
@@ -97,10 +100,8 @@ func (s *ToolCallingService) SendMessageWithTools(
 		return nil, fmt.Errorf("no valid tool definitions")
 	}
 
-	// 3. 构建初始消息
-	messages := []llm.Message{
-		{Role: llm.RoleUser, Content: content},
-	}
+	// 3. 构建消息（加载历史对话以保持上下文记忆）
+	messages := s.buildMessagesWithHistory(ctx, dialogueID, content)
 
 	// 4. 工具调用循环（ReAct 模式，参考 Hermes Agent）
 	var totalUsage llm.Usage
@@ -461,4 +462,63 @@ Provide a detailed summary for continuing the conversation:`, historyText.String
 
 	log.Printf("[ToolCalling] LLM summarization: %d old messages -> summary + %d recent messages", len(oldMessages), len(recentMessages))
 	return result
+}
+
+// buildMessagesWithHistory 构建包含历史对话的消息列表，保持上下文记忆
+func (s *ToolCallingService) buildMessagesWithHistory(ctx context.Context, dialogueID string, currentContent string) []llm.Message {
+	messages := []llm.Message{}
+
+	dialogueSvc := s.getDialogueService()
+	if dialogueSvc != nil {
+		history := dialogueSvc.GetMessages(dialogueID)
+		const maxHistoryMessages = 50
+		startIdx := 0
+		if len(history) > maxHistoryMessages {
+			startIdx = len(history) - maxHistoryMessages
+		}
+
+		for i := startIdx; i < len(history); i++ {
+			msg := history[i]
+			var role string
+			switch msg.Sender {
+			case "user":
+				role = llm.RoleUser
+			case "assistant":
+				role = llm.RoleAssistant
+			case "system":
+				role = llm.RoleSystem
+			case "tool":
+				role = llm.RoleTool
+			default:
+				role = llm.RoleUser
+			}
+
+			content := msg.Content
+			if role == llm.RoleAssistant && len(content) > 1000 {
+				content = content[:1000] + "..."
+			}
+			if role == llm.RoleTool && len(content) > 500 {
+				content = content[:500] + "..."
+			}
+
+			messages = append(messages, llm.Message{
+				Role:    role,
+				Content: content,
+			})
+		}
+	}
+
+	messages = append(messages, llm.Message{
+		Role:    llm.RoleUser,
+		Content: currentContent,
+	})
+
+	return messages
+}
+
+func (s *ToolCallingService) getDialogueService() *DialogueService {
+	if s.dialogueSvc != nil {
+		return s.dialogueSvc
+	}
+	return nil
 }

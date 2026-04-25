@@ -17,6 +17,7 @@ openaide-*
 *.so
 *.dylib
 backend/openaide-*
+backend/openaide[0-9]*
 backend/src/openaide-*
 terminal/openaide-*
 deploy/

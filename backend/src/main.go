@@ -181,6 +181,7 @@ func main() {
 	// 初始化工具调用服务
 	toolCallingService := services.NewToolCallingService(toolService, modelService, loggerService)
 	toolCallingService.SetEventBus(eventBus)
+	toolCallingService.SetDialogueService(dialogueService)
 
 	// 初始化 Task 工具（子代理委托，参考 OpenCode TaskTool）
 	taskTool := services.NewTaskTool(toolService, modelService, permissionService, dialogueService, eventBus)
