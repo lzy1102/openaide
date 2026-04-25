@@ -3,6 +3,7 @@ package services
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,10 +40,12 @@ func NewAgentRouter(svc *ModelService) *AgentRouter {
 }
 
 func (r *AgentRouter) loadConfig() {
-	configPaths := []string{
-		filepath.Join(os.Getenv("HOME"), ".openaide", "agent_routing.json"),
-		filepath.Join(".", "agent_routing.json"),
+	home, _ := os.UserHomeDir()
+	configPaths := []string{}
+	if home != "" {
+		configPaths = append(configPaths, filepath.Join(home, ".openaide", "agent_routing.json"))
 	}
+	configPaths = append(configPaths, filepath.Join(".", "agent_routing.json"))
 
 	for _, path := range configPaths {
 		data, err := os.ReadFile(path)
@@ -51,6 +54,7 @@ func (r *AgentRouter) loadConfig() {
 		}
 		var cfg AgentRoutingConfig
 		if err := json.Unmarshal(data, &cfg); err != nil {
+			log.Printf("[AgentRouter] Failed to parse config %s: %v", path, err)
 			continue
 		}
 		r.mu.Lock()
@@ -105,15 +109,21 @@ func (r *AgentRouter) initDefaultRouting() {
 
 	r.config.AgentRouting = map[string]string{
 		"build":    defaultModel,
-		"plan":     reasoningModel,
-		"explore":  fastModel,
-		"general":  codeModel,
+		"plan":     defaultModel,
+		"explore":  defaultModel,
+		"general":  defaultModel,
 		"default":  defaultModel,
 	}
 
+	if reasoningModel != "" {
+		r.config.AgentRouting["plan"] = reasoningModel
+	}
 	if fastModel != "" {
 		r.config.AgentRouting["explore"] = fastModel
 		r.config.AgentRouting["compact"] = fastModel
+	}
+	if codeModel != "" {
+		r.config.AgentRouting["general"] = codeModel
 	}
 }
 
@@ -217,7 +227,7 @@ func normalizeAgentName(name string) string {
 }
 
 func maskKey(key string) string {
-	if len(key) <= 8 {
+	if len(key) <= 12 {
 		return "****"
 	}
 	return key[:4] + "****" + key[len(key)-4:]

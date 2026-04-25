@@ -19,6 +19,7 @@ openaide-*
 backend/openaide-*
 backend/openaide[0-9]*
 backend/src/openaide-*
+backend/src/openaide[0-9]*
 terminal/openaide-*
 deploy/
 

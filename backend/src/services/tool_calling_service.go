@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -193,15 +194,24 @@ func (s *ToolCallingService) SendMessageWithTools(
 		}
 	}
 
-	// 超出最大轮次，返回最后一条 assistant 消息
-	lastMsg := messages[len(messages)-1]
+	// 超出最大轮次，查找最后一条 assistant 消息
+	lastAssistantContent := ""
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == llm.RoleAssistant && messages[i].Content != "" {
+			lastAssistantContent = messages[i].Content
+			break
+		}
+	}
+	if lastAssistantContent == "" {
+		lastAssistantContent = "I reached the maximum number of tool-calling rounds. Please continue the conversation if you need more work done."
+	}
 
 	// 记录总token使用量（即使超出轮次也要记录）
 	if s.usageService != nil && totalUsage.TotalTokens > 0 {
 		go s.recordToolCallingUsage(ctx, userID, dialogueID, modelID, &totalUsage, time.Since(startTime))
 	}
 
-	return s.saveToolCallingResult(dialogueID, "assistant", lastMsg.Content), nil
+	return s.saveToolCallingResult(dialogueID, "assistant", lastAssistantContent), nil
 }
 
 // recordToolCallingUsage 记录工具调用的token使用量
@@ -250,7 +260,8 @@ func (s *ToolCallingService) executeToolCall(ctx context.Context, tc llm.ToolCal
 
 	result, err := s.toolSvc.ExecuteTool(ctx, toolCall, dialogueID, "", "")
 	if err != nil {
-		if confirmErr, ok := err.(*ConfirmationRequiredError); ok {
+		var confirmErr *ConfirmationRequiredError
+		if errors.As(err, &confirmErr) {
 			warningMsg := fmt.Sprintf("⚠️ 需要用户确认才能执行此命令: %s\n风险: %s\n请使用 approved=true 参数重新调用，或在确认后再次请求。", confirmErr.Command, confirmErr.Risk)
 			s.logger.Warn(ctx, "Tool %s requires confirmation: %s", tc.Function.Name, confirmErr.Command)
 			return warningMsg
@@ -300,7 +311,9 @@ func (s *ToolCallingService) saveToolCallingResult(dialogueID, sender, content s
 	if s.toolSvc != nil {
 		db := s.toolSvc.db
 		if db != nil {
-			db.Create(msg)
+			if err := db.Create(msg).Error; err != nil {
+				log.Printf("[ToolCalling] Failed to save message: %v", err)
+			}
 			return msg
 		}
 	}
@@ -347,7 +360,16 @@ func (s *ToolCallingService) compressToolOutputs(messages []llm.Message) []llm.M
 				Content:    "[Old tool output cleared for context compression]",
 				ToolCallID: msg.ToolCallID,
 			})
+			if i > 0 && messages[i-1].Role == llm.RoleAssistant && len(messages[i-1].ToolCalls) > 0 {
+				compressed = append(compressed, llm.Message{
+					Role:      llm.RoleAssistant,
+					Content:   messages[i-1].Content,
+					ToolCalls: messages[i-1].ToolCalls,
+				})
+			}
 			prunedCount++
+		} else if i > 0 && i-1 < oldCount && messages[i-1].Role == llm.RoleTool && len(messages[i-1].Content) > 200 {
+			continue
 		} else {
 			compressed = append(compressed, msg)
 		}
@@ -431,11 +453,12 @@ Provide a detailed summary for continuing the conversation:`, historyText.String
 	summaryModelID := modelID
 	models, err := s.modelSvc.ListModels()
 	if err == nil {
+	outer:
 		for _, m := range models {
 			for _, tag := range m.Tags {
 				if strings.TrimSpace(tag) == "fast" {
 					summaryModelID = m.ID
-					break
+					break outer
 				}
 			}
 		}
@@ -458,7 +481,28 @@ Provide a detailed summary for continuing the conversation:`, historyText.String
 	result := []llm.Message{
 		{Role: llm.RoleSystem, Content: fmt.Sprintf("[Conversation Summary]\n%s\n[End of Summary - Continue from here]", summary)},
 	}
-	result = append(result, recentMessages...)
+
+	for i, msg := range recentMessages {
+		if msg.Role == llm.RoleTool {
+			if i == 0 {
+				continue
+			}
+			hasAssistantBefore := false
+			for j := i - 1; j >= 0; j-- {
+				if recentMessages[j].Role == llm.RoleAssistant && len(recentMessages[j].ToolCalls) > 0 {
+					hasAssistantBefore = true
+					break
+				}
+				if recentMessages[j].Role != llm.RoleTool {
+					break
+				}
+			}
+			if !hasAssistantBefore {
+				continue
+			}
+		}
+		result = append(result, msg)
+	}
 
 	log.Printf("[ToolCalling] LLM summarization: %d old messages -> summary + %d recent messages", len(oldMessages), len(recentMessages))
 	return result
@@ -501,11 +545,26 @@ func (s *ToolCallingService) buildMessagesWithHistory(ctx context.Context, dialo
 				content = content[:500] + "..."
 			}
 
-			messages = append(messages, llm.Message{
+			llmMsg := llm.Message{
 				Role:    role,
 				Content: content,
-			})
+			}
+			if msg.ToolCallID != "" {
+				llmMsg.ToolCallID = msg.ToolCallID
+			}
+			messages = append(messages, llmMsg)
 		}
+	}
+
+	lastUserIdx := -1
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == llm.RoleUser {
+			lastUserIdx = i
+			break
+		}
+	}
+	if lastUserIdx >= 0 && messages[lastUserIdx].Content == currentContent {
+		return messages
 	}
 
 	messages = append(messages, llm.Message{

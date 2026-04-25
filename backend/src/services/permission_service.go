@@ -226,8 +226,8 @@ func (s *PermissionService) Check(ctx context.Context, sessionID string, agentMo
 	}
 
 	return PermissionCheckResult{
-		Action: PermissionAllow,
-		Reason: "no matching rule, default allow",
+		Action: PermissionAsk,
+		Reason: "no matching rule, default ask for safety",
 	}
 }
 
@@ -237,7 +237,7 @@ func (s *PermissionService) CheckToolAccess(agentMode AgentMode, toolName string
 
 	profile, ok := s.profiles[agentMode]
 	if !ok {
-		return PermissionCheckResult{Action: PermissionAllow, Reason: "unknown agent mode, default allow"}
+		return PermissionCheckResult{Action: PermissionAsk, Reason: "unknown agent mode, default ask for safety"}
 	}
 
 	for _, denied := range profile.DeniedTools {
@@ -249,12 +249,18 @@ func (s *PermissionService) CheckToolAccess(agentMode AgentMode, toolName string
 		}
 	}
 
-	for _, allowed := range profile.AllowedTools {
-		if allowed == toolName {
-			return PermissionCheckResult{
-				Action: PermissionAllow,
-				Reason: fmt.Sprintf("agent %s allows tool: %s", agentMode, toolName),
+	if len(profile.AllowedTools) > 0 {
+		for _, allowed := range profile.AllowedTools {
+			if allowed == toolName {
+				return PermissionCheckResult{
+					Action: PermissionAllow,
+					Reason: fmt.Sprintf("agent %s allows tool: %s", agentMode, toolName),
+				}
 			}
+		}
+		return PermissionCheckResult{
+			Action: PermissionAsk,
+			Reason: fmt.Sprintf("tool %s not in agent %s allowed list", toolName, agentMode),
 		}
 	}
 

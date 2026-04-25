@@ -159,7 +159,15 @@ func main() {
 	confirmationService := services.NewConfirmationService(db)
 	thinkingService := services.NewThinkingService(db, modelService.GetLLMClient())
 	feedbackService := services.NewFeedbackService(db)
-	memoryService := services.NewMemoryService(db, cacheService)
+
+	// 初始化 Memory Provider 注册表 (提前初始化，避免引用断裂)
+	memoryRegistry := services.NewMemoryProviderRegistry()
+	memoryRegistry.Register("gorm", func() services.MemoryProvider {
+		return services.NewGormMemoryProvider(db)
+	})
+	memoryRegistry.SetActiveProvider(services.NewGormMemoryProvider(db))
+	memoryStore := memoryRegistry.GetActiveProvider()
+	memoryService := services.NewMemoryServiceWithStore(db, memoryStore, cacheService)
 	
 	// 初始化记忆向量嵌入服务（可选，需要配置 embedding 服务）
 	var memoryEmbeddingSvc *services.MemoryEmbeddingService
@@ -192,6 +200,10 @@ func main() {
 
 	// 初始化 Slash 命令系统（参考 OpenClaude /compact, /model, /clear）
 	slashRegistry := services.NewSlashCommandRegistry()
+	slashRegistry.SetDialogueService(dialogueService)
+	slashRegistry.SetToolService(toolService)
+	slashRegistry.SetModelService(modelService)
+	slashRegistry.SetAgentRouter(agentRouter)
 
 	// 初始化 Agent 执行引擎
 	agentExecutor := services.NewAgentExecutor(modelService, toolService, loggerService)
@@ -240,6 +252,7 @@ func main() {
 	// 将使用量统计服务注入到对话服务和工具调用服务
 	dialogueService.SetUsageService(usageService)
 	toolCallingService.SetUsageService(usageService)
+	slashRegistry.SetUsageService(usageService)
 
 	// 初始化智能缓存服务（注入到对话服务）
 	dialogueService.SetCacheService(cacheService)
@@ -418,17 +431,6 @@ func main() {
 		}
 		memoryEmbeddingSvc = services.NewMemoryEmbeddingService(db, embeddingSvc, cacheService)
 	}
-	
-	// 初始化 Memory Provider 注册表 (Hermes Agent 插件化架构)
-	memoryRegistry := services.NewMemoryProviderRegistry()
-	memoryRegistry.Register("gorm", func() services.MemoryProvider {
-		return services.NewGormMemoryProvider(db)
-	})
-	memoryRegistry.SetActiveProvider(services.NewGormMemoryProvider(db))
-	
-	// 使用 Memory Provider 替代原有 memoryService
-	memoryStore := memoryRegistry.GetActiveProvider()
-	memoryService = services.NewMemoryServiceWithStore(db, memoryStore, cacheService)
 	
 	// 将向量嵌入服务注入到 memoryService
 	if memoryEmbeddingSvc != nil {

@@ -98,7 +98,7 @@ func (t *TaskTool) Execute(ctx context.Context, params map[string]interface{}) (
 		agentMode = AgentModeExplore
 	}
 
-	taskID := fmt.Sprintf("task-%d", time.Now().UnixNano())
+	taskID := fmt.Sprintf("task-%s", GenerateUUID())
 	taskCtx := &TaskContext{
 		ID:           taskID,
 		SubAgentType: agentMode,
@@ -113,7 +113,9 @@ func (t *TaskTool) Execute(ctx context.Context, params map[string]interface{}) (
 	defer func() {
 		now := time.Now()
 		taskCtx.CompletedAt = &now
-		taskCtx.Status = "completed"
+		if taskCtx.Status == "running" {
+			taskCtx.Status = "completed"
+		}
 	}()
 
 	result, err := t.runSubAgent(ctx, taskCtx, agentMode, description, params)
@@ -237,7 +239,7 @@ func (t *TaskTool) runSubAgent(ctx context.Context, taskCtx *TaskContext, agentM
 		messages = compressToolOutputs(messages)
 	}
 
-	return "sub-agent reached maximum rounds", nil
+	return "", fmt.Errorf("sub-agent reached maximum rounds (%d) without completing the task", maxRounds)
 }
 
 func (t *TaskTool) executeSubAgentTool(ctx context.Context, taskCtx *TaskContext, agentMode AgentMode, toolCall llm.ToolCall) string {

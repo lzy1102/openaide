@@ -20,8 +20,10 @@ type Dialogue struct {
 type Message struct {
 	ID               string    `json:"id"`
 	DialogueID       string    `json:"dialogue_id"`
-	Sender           string    `json:"sender"` // user or assistant
+	Sender           string    `json:"sender"`
 	Content          string    `json:"content"`
-	ReasoningContent string    `json:"reasoning_content,omitempty"` // AI 思考过程
+	ReasoningContent string    `json:"reasoning_content,omitempty"`
+	ToolCallID       string    `json:"tool_call_id,omitempty"`
+	ModelID          string    `json:"model_id,omitempty"`
 	CreatedAt        time.Time `json:"created_at"`
 }
