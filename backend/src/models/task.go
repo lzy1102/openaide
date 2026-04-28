@@ -192,3 +192,42 @@ type TaskStatusUpdate struct {
 	Reason      string    `json:"reason,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 }
+
+// OrchestrationRecord 编排执行记录（持久化任务分解执行结果）
+type OrchestrationRecord struct {
+	ID           string    `json:"id" gorm:"primaryKey"`
+	SessionID    string    `json:"session_id" gorm:"index"`
+	UserID       string    `json:"user_id" gorm:"index"`
+	UserMessage  string    `json:"user_message" gorm:"type:text"`
+	Status       string    `json:"status" gorm:"index"` // analyzing, planning, executing, completed, failed, cancelled
+	TaskType     string    `json:"task_type,omitempty"`
+	Complexity   string    `json:"complexity,omitempty"`
+	PlanJSON     string    `json:"plan_json,omitempty" gorm:"type:text"`       // StructuredPlan JSON
+	CheckpointsJSON string `json:"checkpoints_json,omitempty" gorm:"type:text"` // ExecutionCheckpoint array JSON
+	ResultJSON   string    `json:"result_json,omitempty" gorm:"type:text"`     // 执行结果汇总
+	Error        string    `json:"error,omitempty" gorm:"type:text"`
+	StartedAt    time.Time `json:"started_at"`
+	CompletedAt  *time.Time `json:"completed_at,omitempty"`
+	DurationMs   int64     `json:"duration_ms"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+// SubtaskExecutionRecord 子任务执行记录
+type SubtaskExecutionRecord struct {
+	ID              string    `json:"id" gorm:"primaryKey"`
+	OrchestrationID string    `json:"orchestration_id" gorm:"index"`
+	SessionID       string    `json:"session_id" gorm:"index"`
+	SubtaskID       string    `json:"subtask_id"`
+	PhaseIndex      int       `json:"phase_index"`
+	Title           string    `json:"title"`
+	Description     string    `json:"description" gorm:"type:text"`
+	Type            string    `json:"type"`
+	Status          string    `json:"status" gorm:"index"` // in_progress, completed, failed, skipped
+	Output          string    `json:"output,omitempty" gorm:"type:text"`
+	Error           string    `json:"error,omitempty" gorm:"type:text"`
+	StartedAt       time.Time `json:"started_at"`
+	CompletedAt     *time.Time `json:"completed_at,omitempty"`
+	DurationMs      int64     `json:"duration_ms"`
+	CreatedAt       time.Time `json:"created_at"`
+}

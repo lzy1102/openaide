@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 
 	"openaide/backend/src/services"
@@ -259,6 +260,62 @@ func (h *OrchestrationHandler) GetTemplate(c *gin.Context) {
 	c.JSON(http.StatusOK, template)
 }
 
+// GetHistory 获取编排执行历史
+// @Summary 获取编排执行历史
+// @Description 获取当前用户的任务分解执行历史记录
+// @Tags orchestration
+// @Produce json
+// @Param limit query int false "限制数量" default(20)
+// @Success 200 {object} map[string]interface{} "历史记录"
+// @Router /api/orchestration/history [get]
+func (h *OrchestrationHandler) GetHistory(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	uid := ""
+	if userID != nil {
+		uid = userID.(string)
+	}
+
+	limit := 20
+	if l := c.Query("limit"); l != "" {
+		fmt.Sscanf(l, "%d", &limit)
+	}
+
+	records, err := h.orchestrationService.GetOrchestrationHistory(uid, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"records": records,
+		"count":   len(records),
+	})
+}
+
+// GetSubtaskRecords 获取子任务执行记录
+// @Summary 获取子任务执行记录
+// @Description 获取指定会话的子任务执行详情
+// @Tags orchestration
+// @Produce json
+// @Param session_id path string true "会话ID"
+// @Success 200 {object} map[string]interface{} "子任务记录"
+// @Router /api/orchestration/:session_id/subtasks [get]
+func (h *OrchestrationHandler) GetSubtaskRecords(c *gin.Context) {
+	sessionID := c.Param("session_id")
+
+	records, err := h.orchestrationService.GetSubtaskRecords(sessionID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"session_id": sessionID,
+		"records":    records,
+		"count":      len(records),
+	})
+}
+
 // RegisterRoutes 注册路由
 func (h *OrchestrationHandler) RegisterRoutes(r *gin.RouterGroup) {
 	orchestration := r.Group("/orchestration")
@@ -266,19 +323,19 @@ func (h *OrchestrationHandler) RegisterRoutes(r *gin.RouterGroup) {
 		// 主流程
 		orchestration.POST("/process", h.ProcessMessage)              // 处理消息并开始编排
 
-		// 会话管理
+		// 固定路由（必须在参数路由之前注册）
 		orchestration.GET("/sessions", h.ListSessions)                // 列出会话
+		orchestration.GET("/history", h.GetHistory)                   // 执行历史
+		orchestration.POST("/analyze", h.AnalyzeTask)                 // 仅分析任务
+		orchestration.POST("/plan", h.PlanTeam)                      // 仅规划团队
+		orchestration.GET("/templates", h.GetTemplates)               // 列出模板
+		orchestration.GET("/templates/:name", h.GetTemplate)          // 获取模板详情
+
+		// 会话管理（参数路由，放最后）
 		orchestration.GET("/:session_id", h.GetSession)               // 获取会话状态
 		orchestration.GET("/:session_id/progress", h.GetProgress)     // 获取执行进度
 		orchestration.POST("/:session_id/cancel", h.CancelSession)    // 取消会话
 		orchestration.POST("/:session_id/action", h.HandleAction)     // 处理用户操作
-
-		// 分析和规划（独立功能）
-		orchestration.POST("/analyze", h.AnalyzeTask)                 // 仅分析任务
-		orchestration.POST("/plan", h.PlanTeam)                      // 仅规划团队
-
-		// 模板管理
-		orchestration.GET("/templates", h.GetTemplates)               // 列出模板
-		orchestration.GET("/templates/:name", h.GetTemplate)          // 获取模板详情
+		orchestration.GET("/:session_id/subtasks", h.GetSubtaskRecords) // 获取子任务记录
 	}
 }

@@ -128,6 +128,9 @@ func main() {
 		&models.EvolutionMetrics{},
 		// 上下文压缩模型 (Hermes Agent)
 		&models.CompressedContext{},
+		// 任务分解执行记录
+		&models.OrchestrationRecord{},
+		&models.SubtaskExecutionRecord{},
 	); err != nil {
 		log.Printf("AutoMigrate warning: %v", err)
 	}
@@ -213,6 +216,10 @@ func main() {
 
 	// 初始化编排服务（用于任务规划）
 	orchestrationService := services.NewOrchestrationServiceWithModel(db, modelService, nil, agentExecutor)
+
+	// 注入工具调用服务和对话服务（用于子任务真正执行）
+	orchestrationService.SetToolCallingService(toolCallingService)
+	orchestrationService.SetDialogueService(dialogueService)
 
 	// 初始化结构化规划引擎（深度理解 + 结构化规划 + 依赖分析 + 工具规划 + 回退策略）
 	structuredPlanner := services.NewStructuredPlanner(modelService.GetLLMClient(), "", memoryService, skillService)

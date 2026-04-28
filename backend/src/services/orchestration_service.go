@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
@@ -35,6 +36,11 @@ type OrchestrationService struct {
 	// 计划回顾与动态调整
 	planReview      *PlanReviewService
 	replanningEngine *ReplanningEngine
+
+	// 执行引擎（真正执行子任务）
+	agentExecutor    *AgentExecutor
+	toolCallingSvc   *ToolCallingService
+	dialogueSvc      *DialogueService
 
 	// 运行中的任务
 	sessions      map[string]*OrchestrationSession
@@ -129,6 +135,7 @@ func NewOrchestrationService(db *gorm.DB, llmClient llm.LLMClient, coordinator *
 		teamPlanner:     teamPlanner,
 		confirmFlow:     confirmFlow,
 		teamOrchestrator: teamOrchestrator,
+		agentExecutor:   executor,
 		sessions:        make(map[string]*OrchestrationSession),
 		config: OrchestrationConfig{
 			DefaultLLMModel:      "gpt-4",
@@ -138,6 +145,16 @@ func NewOrchestrationService(db *gorm.DB, llmClient llm.LLMClient, coordinator *
 			EnableCache:          true,
 		},
 	}
+}
+
+// SetToolCallingService 设置工具调用服务（用于子任务执行）
+func (s *OrchestrationService) SetToolCallingService(toolCallingSvc *ToolCallingService) {
+	s.toolCallingSvc = toolCallingSvc
+}
+
+// SetDialogueService 设置对话服务（用于创建临时对话执行子任务）
+func (s *OrchestrationService) SetDialogueService(dialogueSvc *DialogueService) {
+	s.dialogueSvc = dialogueSvc
 }
 
 // SetStructuredPlanner 设置结构化规划引擎
@@ -402,66 +419,292 @@ func (s *OrchestrationService) autoExecuteStructuredPlan(session *OrchestrationS
 }
 
 // executeStructuredPlan 执行结构化计划（带回顾和重规划）
+// 真正调用 AgentExecutor 或 ToolCallingService 执行每个子任务
 func (s *OrchestrationService) executeStructuredPlan(session *OrchestrationSession, plan *StructuredPlan) {
 	log.Printf("[Orchestration] Starting structured plan execution for session %s", session.ID)
+
+	// 保存初始编排记录
+	if err := s.saveOrchestrationRecord(session, plan); err != nil {
+		log.Printf("[Orchestration] Failed to save initial record: %v", err)
+	}
+
+	// 收集前置子任务的输出，作为后续子任务的上下文
+	subtaskOutputs := make(map[string]string)
+	var orchestrationID string
+	// 从已保存的记录中获取 orchestrationID
+	if s.db != nil {
+		var record models.OrchestrationRecord
+		if err := s.db.Where("session_id = ?", session.ID).Order("created_at DESC").First(&record).Error; err == nil {
+			orchestrationID = record.ID
+		}
+	}
 
 	for phaseIdx, phase := range plan.Phases {
 		log.Printf("[Orchestration] Executing phase %d: %s", phaseIdx+1, phase.Name)
 
-		for _, subtask := range phase.Subtasks {
+		// 判断阶段内子任务是否可以并行执行
+		parallelTasks := make([]*Subtask, 0)
+		sequentialTasks := make([]*Subtask, 0)
+
+		for i := range phase.Subtasks {
+			st := &phase.Subtasks[i]
+			if st.CanParallel && len(st.Skills) > 0 {
+				parallelTasks = append(parallelTasks, st)
+			} else {
+				sequentialTasks = append(sequentialTasks, st)
+			}
+		}
+
+		// 先执行并行任务
+		if len(parallelTasks) > 0 {
+			log.Printf("[Orchestration] Phase %d: executing %d parallel subtasks", phaseIdx+1, len(parallelTasks))
+			var wg sync.WaitGroup
+			var mu sync.Mutex
+
+			for _, st := range parallelTasks {
+				wg.Add(1)
+				go func(subtask *Subtask) {
+					defer wg.Done()
+					output, success, errMsg, duration := s.executeSubtaskWithMetrics(session, plan, phaseIdx, subtask, subtaskOutputs)
+					mu.Lock()
+					if success {
+						subtaskOutputs[subtask.ID] = output
+					}
+					mu.Unlock()
+					// 持久化子任务记录
+					if orchestrationID != "" {
+						go s.saveSubtaskRecord(session.ID, orchestrationID, phaseIdx, subtask, output, errMsg, success, duration)
+					}
+				}(st)
+			}
+			wg.Wait()
+		}
+
+		// 再执行串行任务
+		for _, subtask := range sequentialTasks {
 			if session.Context.Err() != nil {
 				log.Printf("[Orchestration] Session %s cancelled", session.ID)
 				session.Status = "cancelled"
+				s.updateOrchestrationRecord(session)
 				return
 			}
 
-			session.CurrentSubtask = subtask.ID
-
-			// 创建检查点 - 开始执行
-			checkpoint := s.CreateCheckpoint(plan.ID, phaseIdx, subtask.ID, "in_progress", "", "")
-			session.Checkpoints = append(session.Checkpoints, checkpoint)
-
-			// TODO: 实际执行子任务（调用 AgentExecutor 或 ToolService）
-			// 这里模拟执行
-			log.Printf("[Orchestration] Executing subtask: %s - %s", subtask.ID, subtask.Title)
-
-			// 模拟执行结果
-			success := true // 实际应根据执行结果设置
-			output := fmt.Sprintf("Subtask %s completed", subtask.Title)
-			errMsg := ""
-
-			if !success {
-				// 更新检查点 - 失败
-				checkpoint.Status = "failed"
-				checkpoint.Output = output
-				checkpoint.Error = errMsg
-				checkpoint.CompletedAt = time.Now()
-
-				// 执行回顾和重规划
-				if s.planReview != nil && s.replanningEngine != nil {
-					log.Printf("[Orchestration] Reviewing after failure of subtask %s", subtask.ID)
-					review, replan, err := s.ReviewAndAdapt(session.Context, plan, session.Checkpoints, subtask.ID, session.UserMessage)
-					if err == nil && review != nil {
-						log.Printf("[Orchestration] Review: %s, replan: %v", review.Recommendation, replan != nil)
-						if replan != nil {
-							// 应用重规划结果
-							log.Printf("[Orchestration] Applying replan: %s with %d changes", replan.Level, len(replan.Changes))
-							// TODO: 应用重规划变更到 plan
-						}
-					}
-				}
-			} else {
-				// 更新检查点 - 完成
-				checkpoint.Status = "completed"
-				checkpoint.Output = output
-				checkpoint.CompletedAt = time.Now()
+			output, success, errMsg, duration := s.executeSubtaskWithMetrics(session, plan, phaseIdx, subtask, subtaskOutputs)
+			if success {
+				subtaskOutputs[subtask.ID] = output
+			}
+			// 持久化子任务记录
+			if orchestrationID != "" {
+				go s.saveSubtaskRecord(session.ID, orchestrationID, phaseIdx, subtask, output, errMsg, success, duration)
 			}
 		}
+
+		// 每个阶段结束后更新编排记录
+		s.updateOrchestrationRecord(session)
 	}
 
 	session.Status = "completed"
 	session.UpdatedAt = time.Now()
+	s.updateOrchestrationRecord(session)
 	log.Printf("[Orchestration] Structured plan execution completed for session %s", session.ID)
+}
+
+// executeSubtaskWithMetrics 执行单个子任务，返回 (输出, 是否成功, 错误信息, 耗时)
+func (s *OrchestrationService) executeSubtaskWithMetrics(
+	session *OrchestrationSession,
+	plan *StructuredPlan,
+	phaseIdx int,
+	subtask *Subtask,
+	previousOutputs map[string]string,
+) (string, bool, string, time.Duration) {
+	session.CurrentSubtask = subtask.ID
+
+	// 创建检查点 - 开始执行
+	checkpoint := s.CreateCheckpoint(plan.ID, phaseIdx, subtask.ID, "in_progress", "", "")
+	session.Checkpoints = append(session.Checkpoints, checkpoint)
+
+	log.Printf("[Orchestration] Executing subtask: %s - %s (type=%s)", subtask.ID, subtask.Title, subtask.Type)
+
+	// 构建子任务的执行上下文（包含前置任务输出）
+	ctx := session.Context
+	startTime := time.Now()
+
+	// 构建任务描述，包含前置依赖的输出
+	taskDescription := s.buildSubtaskDescription(subtask, plan, previousOutputs)
+
+	// 选择执行方式：优先使用 AgentExecutor，回退到 ToolCallingService
+	var output string
+	var success bool
+	var errMsg string
+
+	if s.agentExecutor != nil {
+		// 使用 AgentExecutor 执行（完整的 ReAct 循环）
+		output, success, errMsg = s.executeWithAgentExecutor(ctx, session, subtask, taskDescription)
+	} else if s.toolCallingSvc != nil && s.dialogueSvc != nil {
+		// 使用 ToolCallingService 执行（创建临时对话）
+		output, success, errMsg = s.executeWithToolCallingService(ctx, session, subtask, taskDescription)
+	} else {
+		// 降级：直接调用 LLM，无工具
+		output, success, errMsg = s.executeWithLLMOnly(ctx, session, subtask, taskDescription)
+	}
+
+	duration := time.Since(startTime)
+
+	// 更新检查点
+	checkpoint.CompletedAt = time.Now()
+	if success {
+		checkpoint.Status = "completed"
+		checkpoint.Output = output
+		log.Printf("[Orchestration] Subtask %s completed in %v (output=%d chars)", subtask.ID, duration, len(output))
+	} else {
+		checkpoint.Status = "failed"
+		checkpoint.Output = output
+		checkpoint.Error = errMsg
+		log.Printf("[Orchestration] Subtask %s failed after %v: %s", subtask.ID, duration, errMsg)
+
+		// 执行回顾和重规划
+		if s.planReview != nil && s.replanningEngine != nil {
+			log.Printf("[Orchestration] Reviewing after failure of subtask %s", subtask.ID)
+			review, replan, err := s.ReviewAndAdapt(ctx, plan, session.Checkpoints, subtask.ID, session.UserMessage)
+			if err == nil && review != nil {
+				log.Printf("[Orchestration] Review: %s, replan: %v", review.Recommendation, replan != nil)
+				if replan != nil {
+					log.Printf("[Orchestration] Applying replan: %s with %d changes", replan.Level, len(replan.Changes))
+					// TODO: 应用重规划变更到 plan（需要线程安全）
+				}
+			}
+		}
+	}
+
+	return output, success, errMsg, duration
+}
+
+// buildSubtaskDescription 构建子任务描述，包含上下文
+func (s *OrchestrationService) buildSubtaskDescription(subtask *Subtask, plan *StructuredPlan, previousOutputs map[string]string) string {
+	var sb strings.Builder
+
+	sb.WriteString(fmt.Sprintf("任务: %s\n", subtask.Title))
+	sb.WriteString(fmt.Sprintf("描述: %s\n", subtask.Description))
+	if len(subtask.Skills) > 0 {
+		sb.WriteString(fmt.Sprintf("所需技能: %v\n", subtask.Skills))
+	}
+
+	// 添加总体目标上下文
+	if plan.Understanding != nil {
+		sb.WriteString(fmt.Sprintf("\n总体目标: %s\n", plan.Understanding.UserIntent))
+	}
+
+	// 添加前置任务的输出作为上下文
+	if len(previousOutputs) > 0 {
+		sb.WriteString("\n前置任务输出（供参考）:\n")
+		for id, output := range previousOutputs {
+			// 截断过长的输出
+			displayOutput := output
+			if len(displayOutput) > 500 {
+				displayOutput = displayOutput[:500] + "..."
+			}
+			sb.WriteString(fmt.Sprintf("- [%s]: %s\n", id, displayOutput))
+		}
+	}
+
+	return sb.String()
+}
+
+// executeWithAgentExecutor 使用 AgentExecutor 执行子任务（完整 ReAct 循环）
+func (s *OrchestrationService) executeWithAgentExecutor(
+	ctx context.Context,
+	session *OrchestrationSession,
+	subtask *Subtask,
+	description string,
+) (string, bool, string) {
+	req := &TaskExecRequest{
+		TaskID:          subtask.ID,
+		TaskTitle:       subtask.Title,
+		TaskDescription: description,
+		AgentName:       fmt.Sprintf("Agent-%s", subtask.Type),
+		AgentRole:       subtask.Type,
+		AgentPrompt:     fmt.Sprintf("你是一个专业的 %s 专家。请高效完成分配给你的任务。", subtask.Type),
+		ModelID:         "", // 使用默认模型
+		Context: map[string]interface{}{
+			"subtask_type": subtask.Type,
+			"session_id":   session.ID,
+			"phase":        session.CurrentSubtask,
+		},
+	}
+
+	result, err := s.agentExecutor.Execute(ctx, req)
+	if err != nil {
+		return "", false, fmt.Sprintf("AgentExecutor 执行失败: %v", err)
+	}
+
+	return result.Output, result.Success, ""
+}
+
+// executeWithToolCallingService 使用 ToolCallingService 执行子任务
+func (s *OrchestrationService) executeWithToolCallingService(
+	ctx context.Context,
+	session *OrchestrationSession,
+	subtask *Subtask,
+	description string,
+) (string, bool, string) {
+	// 创建临时对话来执行子任务
+	var dialogueID string
+	if s.dialogueSvc != nil {
+		dialogue := s.dialogueSvc.CreateDialogue(session.UserID, fmt.Sprintf("subtask-%s", subtask.ID))
+		dialogueID = dialogue.ID
+	} else {
+		dialogueID = fmt.Sprintf("orch-%s-%s", session.ID, subtask.ID)
+	}
+
+	// 使用 ToolCallingService 执行（带完整工具调用循环）
+	msg, err := s.toolCallingSvc.SendMessageWithTools(
+		ctx,
+		dialogueID,
+		session.UserID,
+		description,
+		"", // 使用默认模型
+		map[string]interface{}{},
+	)
+	if err != nil {
+		return "", false, fmt.Sprintf("ToolCallingService 执行失败: %v", err)
+	}
+
+	if msg == nil {
+		return "", false, "ToolCallingService 返回空消息"
+	}
+
+	return msg.Content, true, ""
+}
+
+// executeWithLLMOnly 仅使用 LLM 执行（无工具，降级方案）
+func (s *OrchestrationService) executeWithLLMOnly(
+	ctx context.Context,
+	session *OrchestrationSession,
+	subtask *Subtask,
+	description string,
+) (string, bool, string) {
+	messages := []llm.Message{
+		{Role: "system", Content: fmt.Sprintf("你是一个专业的 %s 专家。请完成以下任务。", subtask.Type)},
+		{Role: "user", Content: description},
+	}
+
+	req := &llm.ChatRequest{
+		Messages:    messages,
+		Model:       s.config.DefaultLLMModel,
+		Temperature: 0.7,
+		MaxTokens:   4000,
+	}
+
+	resp, err := s.llmClient.Chat(ctx, req)
+	if err != nil {
+		return "", false, fmt.Sprintf("LLM 调用失败: %v", err)
+	}
+
+	if len(resp.Choices) == 0 {
+		return "", false, "LLM 返回空响应"
+	}
+
+	return resp.Choices[0].Message.Content, true, ""
 }
 
 // HandleUserAction 处理用户操作
@@ -1117,4 +1360,152 @@ func (s *OrchestrationService) getExecutionProgress(session *OrchestrationSessio
 	}
 
 	return progress
+}
+
+// ==================== 持久化方法 ====================
+
+// saveOrchestrationRecord 保存编排执行记录到数据库
+func (s *OrchestrationService) saveOrchestrationRecord(session *OrchestrationSession, plan *StructuredPlan) error {
+	if s.db == nil {
+		return nil
+	}
+
+	record := &models.OrchestrationRecord{
+		ID:          uuid.New().String(),
+		SessionID:   session.ID,
+		UserID:      session.UserID,
+		UserMessage: session.UserMessage,
+		Status:      session.Status,
+		StartedAt:   session.CreatedAt,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+
+	if session.Analysis != nil {
+		record.TaskType = session.Analysis.TaskType
+		record.Complexity = session.Analysis.Complexity
+	}
+
+	if plan != nil {
+		planJSON, _ := json.Marshal(plan)
+		record.PlanJSON = string(planJSON)
+	}
+
+	if len(session.Checkpoints) > 0 {
+		cpJSON, _ := json.Marshal(session.Checkpoints)
+		record.CheckpointsJSON = string(cpJSON)
+	}
+
+	if session.Status == "completed" || session.Status == "failed" || session.Status == "cancelled" {
+		now := time.Now()
+		record.CompletedAt = &now
+		record.DurationMs = time.Since(session.CreatedAt).Milliseconds()
+	}
+
+	if session.Error != "" {
+		record.Error = session.Error
+	}
+
+	return s.db.Create(record).Error
+}
+
+// saveSubtaskRecord 保存子任务执行记录
+func (s *OrchestrationService) saveSubtaskRecord(sessionID, orchestrationID string, phaseIdx int, subtask *Subtask, output, errMsg string, success bool, duration time.Duration) error {
+	if s.db == nil {
+		return nil
+	}
+
+	status := "completed"
+	if !success {
+		status = "failed"
+	}
+
+	record := &models.SubtaskExecutionRecord{
+		ID:              uuid.New().String(),
+		OrchestrationID: orchestrationID,
+		SessionID:       sessionID,
+		SubtaskID:       subtask.ID,
+		PhaseIndex:      phaseIdx,
+		Title:           subtask.Title,
+		Description:     subtask.Description,
+		Type:            subtask.Type,
+		Status:          status,
+		Output:          output,
+		Error:           errMsg,
+		StartedAt:       time.Now().Add(-duration),
+		DurationMs:      duration.Milliseconds(),
+		CreatedAt:       time.Now(),
+	}
+
+	if success {
+		now := time.Now()
+		record.CompletedAt = &now
+	}
+
+	return s.db.Create(record).Error
+}
+
+// updateOrchestrationRecord 更新编排记录状态
+func (s *OrchestrationService) updateOrchestrationRecord(session *OrchestrationSession) error {
+	if s.db == nil {
+		return nil
+	}
+
+	var record models.OrchestrationRecord
+	if err := s.db.Where("session_id = ?", session.ID).Order("created_at DESC").First(&record).Error; err != nil {
+		return err
+	}
+
+	record.Status = session.Status
+	record.UpdatedAt = time.Now()
+
+	if len(session.Checkpoints) > 0 {
+		cpJSON, _ := json.Marshal(session.Checkpoints)
+		record.CheckpointsJSON = string(cpJSON)
+	}
+
+	if session.Status == "completed" || session.Status == "failed" || session.Status == "cancelled" {
+		now := time.Now()
+		record.CompletedAt = &now
+		record.DurationMs = time.Since(session.CreatedAt).Milliseconds()
+	}
+
+	if session.Error != "" {
+		record.Error = session.Error
+	}
+
+	return s.db.Save(&record).Error
+}
+
+// GetOrchestrationHistory 获取用户的编排执行历史
+func (s *OrchestrationService) GetOrchestrationHistory(userID string, limit int) ([]models.OrchestrationRecord, error) {
+	if s.db == nil {
+		return nil, fmt.Errorf("database not available")
+	}
+
+	var records []models.OrchestrationRecord
+	query := s.db.Where("user_id = ?", userID).Order("created_at DESC")
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+
+	if err := query.Find(&records).Error; err != nil {
+		return nil, err
+	}
+
+	return records, nil
+}
+
+// GetSubtaskRecords 获取子任务执行记录
+func (s *OrchestrationService) GetSubtaskRecords(sessionID string) ([]models.SubtaskExecutionRecord, error) {
+	if s.db == nil {
+		return nil, fmt.Errorf("database not available")
+	}
+
+	var records []models.SubtaskExecutionRecord
+	if err := s.db.Where("session_id = ?", sessionID).Order("phase_index, created_at").Find(&records).Error; err != nil {
+		return nil, err
+	}
+
+	return records, nil
 }
