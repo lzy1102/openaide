@@ -158,9 +158,9 @@ func main() {
 	skillService.InitBuiltinSkills()
 	pluginService := services.NewPluginService(db, cacheService)
 	automationService := services.NewAutomationService(db)
-	codeService := services.NewCodeService(db)
-	confirmationService := services.NewConfirmationService(db)
 	thinkingService := services.NewThinkingService(db, modelService.GetLLMClient())
+	codeService := services.NewCodeService(db, modelService.GetLLMClient(), thinkingService)
+	confirmationService := services.NewConfirmationService(db)
 	feedbackService := services.NewFeedbackService(db)
 
 	// 初始化 Memory Provider 注册表 (提前初始化，避免引用断裂)
