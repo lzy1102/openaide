@@ -24,8 +24,13 @@ func (j *JSONMap) Scan(value interface{}) error {
 		*j = nil
 		return nil
 	}
-	bytes, ok := value.([]byte)
-	if !ok {
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
 		return errors.New("type assertion to []byte failed")
 	}
 	return json.Unmarshal(bytes, j)
@@ -50,8 +55,13 @@ func (j *JSONAny) Scan(value interface{}) error {
 		j.Data = nil
 		return nil
 	}
-	bytes, ok := value.([]byte)
-	if !ok {
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
 		return errors.New("type assertion to []byte failed")
 	}
 	return json.Unmarshal(bytes, &j.Data)
@@ -74,8 +84,13 @@ func (j *JSONSlice) Scan(value interface{}) error {
 		*j = nil
 		return nil
 	}
-	bytes, ok := value.([]byte)
-	if !ok {
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
 		return errors.New("type assertion to []byte failed")
 	}
 	return json.Unmarshal(bytes, j)
@@ -98,8 +113,13 @@ func (j *JSONTimeSlice) Scan(value interface{}) error {
 		*j = nil
 		return nil
 	}
-	bytes, ok := value.([]byte)
-	if !ok {
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
 		return errors.New("type assertion to []byte failed")
 	}
 	return json.Unmarshal(bytes, j)
@@ -122,8 +142,13 @@ func (j *MemberStatsSlice) Scan(value interface{}) error {
 		*j = nil
 		return nil
 	}
-	bytes, ok := value.([]byte)
-	if !ok {
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
 		return errors.New("type assertion to []byte failed")
 	}
 	return json.Unmarshal(bytes, j)
@@ -146,8 +171,13 @@ func (j *PromptVariableSlice) Scan(value interface{}) error {
 		*j = nil
 		return nil
 	}
-	bytes, ok := value.([]byte)
-	if !ok {
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
 		return errors.New("type assertion to []byte failed")
 	}
 	return json.Unmarshal(bytes, j)
