@@ -24,6 +24,8 @@ type ToolCallingService struct {
 	usageService *UsageService
 	eventBus     *EventBus
 	maxRounds    int
+	sessionRecorder *SessionRecorder // ReAct 会话记录器
+	metricsCollector *ToolMetricsCollector // 工具指标收集器
 }
 
 func (s *ToolCallingService) SetEventBus(bus *EventBus) {
@@ -41,10 +43,12 @@ func (s *ToolCallingService) SetDialogueService(dialogueSvc *DialogueService) {
 // NewToolCallingService 创建工具调用服务
 func NewToolCallingService(toolSvc *ToolService, modelSvc *ModelService, logger *LoggerService) *ToolCallingService {
 	return &ToolCallingService{
-		toolSvc:   toolSvc,
-		modelSvc:  modelSvc,
-		logger:    logger,
-		maxRounds: 20,
+		toolSvc:          toolSvc,
+		modelSvc:         modelSvc,
+		logger:           logger,
+		maxRounds:        20,
+		sessionRecorder:  NewSessionRecorder(""),
+		metricsCollector: NewToolMetricsCollector(),
 	}
 }
 
@@ -104,7 +108,11 @@ func (s *ToolCallingService) SendMessageWithTools(
 	// 3. 构建消息（加载历史对话以保持上下文记忆）
 	messages := s.buildMessagesWithHistory(ctx, dialogueID, content)
 
-	// 4. 工具调用循环（ReAct 模式，参考 Hermes Agent）
+	// 4. 初始化 ReAct 状态机
+	sessionID := GenerateUUID()
+	stateMachine := s.sessionRecorder.StartSession(sessionID, dialogueID, userID, modelID)
+
+	// 5. 工具调用循环（ReAct 模式，参考 Hermes Agent）
 	var totalUsage llm.Usage
 	startTime := time.Now()
 
@@ -118,8 +126,12 @@ func (s *ToolCallingService) SendMessageWithTools(
 			messages = s.summarizeWithLLM(ctx, messages, modelID)
 		}
 
+		// === ReAct: Thinking 阶段 ===
+		thinkStep := stateMachine.StartThinking()
+
 		resp, err := s.modelSvc.ChatWithTools(modelID, messages, llmTools, options)
 		if err != nil {
+			stateMachine.Complete(StateError, totalUsage.TotalTokens)
 			return nil, fmt.Errorf("LLM call failed: %w", err)
 		}
 
@@ -131,11 +143,15 @@ func (s *ToolCallingService) SendMessageWithTools(
 		}
 
 		if len(resp.Choices) == 0 {
+			stateMachine.Complete(StateError, totalUsage.TotalTokens)
 			return nil, fmt.Errorf("empty response from LLM")
 		}
 
 		choice := resp.Choices[0]
 		assistantMsg := choice.Message
+
+		// 结束 Thinking 阶段
+		stateMachine.EndThinking(thinkStep, &assistantMsg)
 
 		// 追加 assistant 消息到历史
 		messages = append(messages, assistantMsg)
@@ -153,10 +169,19 @@ func (s *ToolCallingService) SendMessageWithTools(
 				go s.recordToolCallingUsage(ctx, userID, dialogueID, modelID, &totalUsage, time.Since(startTime))
 			}
 
+			// 完成 ReAct 会话
+			stateMachine.Complete(StateCompleted, totalUsage.TotalTokens)
+			go s.saveSessionAsync(sessionID)
+
 			return s.saveToolCallingResult(dialogueID, "assistant", result, assistantMsg.ReasoningContent), nil
 		}
 
+		// === ReAct: Tool Call 阶段 ===
+		toolStep := stateMachine.StartToolCall(assistantMsg.ToolCalls)
+		toolStart := time.Now()
+
 		// 执行工具调用（并行执行多个工具，参考 Hermes Agent 的并发模式）
+		var toolRecords []ToolCallRecord
 		if len(assistantMsg.ToolCalls) > 1 {
 			type toolResult struct {
 				toolCallID string
@@ -192,6 +217,16 @@ func (s *ToolCallingService) SendMessageWithTools(
 				})
 			}
 		}
+
+		// 结束 Tool Call 阶段
+		stateMachine.EndToolCall(toolStep, toolRecords)
+
+		// === ReAct: Observation 阶段 ===
+		obsStep := stateMachine.StartObservation(fmt.Sprintf("Completed %d tool calls in round %d", len(assistantMsg.ToolCalls), round+1))
+		stateMachine.EndObservation(obsStep)
+
+		// 记录指标
+		s.metricsCollector.RecordCall("batch", true, false, time.Since(toolStart))
 	}
 
 	// 超出最大轮次，查找最后一条 assistant 消息
@@ -212,6 +247,10 @@ func (s *ToolCallingService) SendMessageWithTools(
 	if s.usageService != nil && totalUsage.TotalTokens > 0 {
 		go s.recordToolCallingUsage(ctx, userID, dialogueID, modelID, &totalUsage, time.Since(startTime))
 	}
+
+	// 完成 ReAct 会话（超出轮次）
+	stateMachine.Complete(StateMaxRounds, totalUsage.TotalTokens)
+	go s.saveSessionAsync(sessionID)
 
 	return s.saveToolCallingResult(dialogueID, "assistant", lastAssistantContent, lastAssistantReasoning), nil
 }
@@ -588,4 +627,43 @@ func (s *ToolCallingService) getDialogueService() *DialogueService {
 		return s.dialogueSvc
 	}
 	return nil
+}
+
+// saveSessionAsync 异步保存 ReAct 会话到文件
+func (s *ToolCallingService) saveSessionAsync(sessionID string) {
+	if s.sessionRecorder == nil {
+		return
+	}
+	go func() {
+		filename, err := s.sessionRecorder.SaveSessionToFile(sessionID)
+		if err != nil {
+			log.Printf("[ToolCalling] Failed to save session %s: %v", sessionID, err)
+		} else {
+			log.Printf("[ToolCalling] Session %s saved to %s", sessionID, filename)
+		}
+	}()
+}
+
+// GetSessionMetrics 获取工具调用指标
+func (s *ToolCallingService) GetSessionMetrics() ToolCallMetrics {
+	if s.metricsCollector == nil {
+		return ToolCallMetrics{ToolBreakdown: make(map[string]int)}
+	}
+	return s.metricsCollector.GetMetrics()
+}
+
+// GetSessionExport 导出指定会话
+func (s *ToolCallingService) GetSessionExport(sessionID string) ([]byte, error) {
+	if s.sessionRecorder == nil {
+		return nil, fmt.Errorf("session recorder not initialized")
+	}
+	return s.sessionRecorder.ExportSession(sessionID)
+}
+
+// ListReActSessions 列出所有 ReAct 会话
+func (s *ToolCallingService) ListReActSessions() []string {
+	if s.sessionRecorder == nil {
+		return []string{}
+	}
+	return s.sessionRecorder.ListSessions()
 }

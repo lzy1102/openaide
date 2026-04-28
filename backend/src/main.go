@@ -554,47 +554,7 @@ func main() {
 	// 全局限流中间件
 	r.Use(rateLimitHandler.RateLimitMiddleware())
 
-	// 静态文件服务 - 提供前端文件
-	frontendDir := os.Getenv("OPENAIDE_FRONTEND_DIR")
-	if frontendDir == "" {
-		execPath, _ := os.Executable()
-		candidates := []string{
-			filepath.Join(filepath.Dir(execPath), "frontend"),
-			"/usr/share/openaide/frontend",
-			"./frontend",
-		}
-		for _, dir := range candidates {
-			if _, err := os.Stat(dir); err == nil {
-				frontendDir = dir
-				break
-			}
-		}
-	}
-	if frontendDir != "" {
-		log.Printf("Frontend directory: %s", frontendDir)
-		r.Static("/src", filepath.Join(frontendDir, "src"))
-		r.Static("/public", filepath.Join(frontendDir, "public"))
-		faviconPath := filepath.Join(frontendDir, "favicon.ico")
-		if _, err := os.Stat(faviconPath); err == nil {
-			r.StaticFile("/favicon.ico", faviconPath)
-		}
-
-		r.GET("/", func(c *gin.Context) {
-			c.File(filepath.Join(frontendDir, "index.html"))
-		})
-
-		r.NoRoute(func(c *gin.Context) {
-			path := c.Request.URL.Path
-			filePath := filepath.Join(frontendDir, path)
-			if _, err := os.Stat(filePath); err == nil {
-				c.File(filePath)
-				return
-			}
-			c.File(filepath.Join(frontendDir, "index.html"))
-		})
-	}
-
-	// 健康检查接口
+	// 健康检查接口（必须在静态文件之前注册）
 	r.GET("/health", func(c *gin.Context) {
 		enabledModels, _ := modelService.ListEnabledModels()
 		activeProvider := memoryRegistry.GetActiveProvider()
@@ -850,6 +810,28 @@ func main() {
 					return
 				}
 				c.JSON(http.StatusOK, message)
+			})
+		}
+
+		// ReAct 会话接口
+		react := api.Group("/react")
+		{
+			react.GET("/sessions", func(c *gin.Context) {
+				sessions := toolCallingService.ListReActSessions()
+				c.JSON(http.StatusOK, gin.H{"sessions": sessions})
+			})
+			react.GET("/sessions/:id/export", func(c *gin.Context) {
+				id := c.Param("id")
+				data, err := toolCallingService.GetSessionExport(id)
+				if err != nil {
+					c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+					return
+				}
+				c.Data(http.StatusOK, "application/json", data)
+			})
+			react.GET("/metrics", func(c *gin.Context) {
+				metrics := toolCallingService.GetSessionMetrics()
+				c.JSON(http.StatusOK, metrics)
 			})
 		}
 
@@ -2067,6 +2049,46 @@ func main() {
 			ws.POST("/notify/task/:id", wsHandler.HandleNotifyTask)
 			ws.GET("/dialogue/stream", wsHandler.DialogueStreamHandler(dialogueService))
 		}
+	}
+
+	// 静态文件服务 - 提供前端文件（必须在所有 API 路由之后注册）
+	frontendDir := os.Getenv("OPENAIDE_FRONTEND_DIR")
+	if frontendDir == "" {
+		execPath, _ := os.Executable()
+		candidates := []string{
+			filepath.Join(filepath.Dir(execPath), "frontend"),
+			"/usr/share/openaide/frontend",
+			"./frontend",
+		}
+		for _, dir := range candidates {
+			if _, err := os.Stat(dir); err == nil {
+				frontendDir = dir
+				break
+			}
+		}
+	}
+	if frontendDir != "" {
+		log.Printf("Frontend directory: %s", frontendDir)
+		r.Static("/src", filepath.Join(frontendDir, "src"))
+		r.Static("/public", filepath.Join(frontendDir, "public"))
+		faviconPath := filepath.Join(frontendDir, "favicon.ico")
+		if _, err := os.Stat(faviconPath); err == nil {
+			r.StaticFile("/favicon.ico", faviconPath)
+		}
+
+		r.GET("/", func(c *gin.Context) {
+			c.File(filepath.Join(frontendDir, "index.html"))
+		})
+
+		r.NoRoute(func(c *gin.Context) {
+			path := c.Request.URL.Path
+			filePath := filepath.Join(frontendDir, path)
+			if _, err := os.Stat(filePath); err == nil {
+				c.File(filePath)
+				return
+			}
+			c.File(filepath.Join(frontendDir, "index.html"))
+		})
 	}
 
 	// 启动服务器
