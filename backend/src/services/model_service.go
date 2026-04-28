@@ -5,76 +5,266 @@ import (
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"openaide/backend/src/config"
 	"openaide/backend/src/models"
 	"openaide/backend/src/services/llm"
 )
 
-// ModelService 模型服务
+// ModelService 模型服务 - 模型配置从配置文件加载，不依赖数据库
 type ModelService struct {
-	db          *gorm.DB
-	cache       *CacheService
-	llmClients  map[string]llm.LLMClient
-	clientsMu   sync.RWMutex
+	models     []config.ModelConfig // 从配置文件加载的模型列表
+	modelsMu   sync.RWMutex
+	cfg        *config.Config       // 配置引用，用于回写
+	cache      *CacheService
+	db         *gorm.DB             // 仅用于 model_instances / model_executions
+	llmClients map[string]llm.LLMClient
+	clientsMu  sync.RWMutex
 }
 
 // NewModelService 创建模型服务实例
-func NewModelService(db *gorm.DB, cache *CacheService) *ModelService {
-	return &ModelService{
-		db:         db,
+func NewModelService(cfg *config.Config, cache *CacheService, db *gorm.DB) *ModelService {
+	svc := &ModelService{
+		models:     make([]config.ModelConfig, 0),
+		cfg:        cfg,
 		cache:      cache,
+		db:         db,
 		llmClients: make(map[string]llm.LLMClient),
+	}
+	// 从配置加载模型
+	svc.ReloadModels()
+	return svc
+}
+
+// ReloadModels 从配置文件重新加载模型列表
+func (s *ModelService) ReloadModels() {
+	s.modelsMu.Lock()
+	defer s.modelsMu.Unlock()
+
+	if s.cfg != nil && len(s.cfg.Models) > 0 {
+		s.models = make([]config.ModelConfig, len(s.cfg.Models))
+		copy(s.models, s.cfg.Models)
+	} else {
+		s.models = make([]config.ModelConfig, 0)
 	}
 }
 
-// CreateModel 创建模型
+// saveConfig 保存配置到文件（线程安全）
+func (s *ModelService) saveConfig() error {
+	s.modelsMu.Lock()
+	defer s.modelsMu.Unlock()
+
+	if s.cfg == nil {
+		return fmt.Errorf("config is nil")
+	}
+	// 同步内存中的模型列表到配置
+	s.cfg.Models = make([]config.ModelConfig, len(s.models))
+	copy(s.cfg.Models, s.models)
+	return config.Save(s.cfg)
+}
+
+// configToModel 将 config.ModelConfig 转换为 models.Model（用于兼容现有接口）
+func configToModel(cfg config.ModelConfig, id string) *models.Model {
+	return &models.Model{
+		ID:          id,
+		Name:        cfg.Name,
+		Description: cfg.Description,
+		Type:        cfg.Type,
+		Provider:    cfg.Provider,
+		Version:     cfg.Version,
+		APIKey:      cfg.APIKey,
+		BaseURL:     cfg.BaseURL,
+		Config:      models.JSONMap(cfg.Config),
+		Status:      cfg.Status,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+}
+
+// modelToConfig 将 models.Model 转换为 config.ModelConfig
+func modelToConfig(m *models.Model) config.ModelConfig {
+	var cfgMap map[string]interface{}
+	if m.Config != nil {
+		cfgMap = map[string]interface{}(m.Config)
+	}
+	return config.ModelConfig{
+		Name:        m.Name,
+		Description: m.Description,
+		Type:        m.Type,
+		Provider:    m.Provider,
+		Version:     m.Version,
+		APIKey:      m.APIKey,
+		BaseURL:     m.BaseURL,
+		Config:      cfgMap,
+		Status:      m.Status,
+	}
+}
+
+// generateModelID 根据模型名称生成稳定的 ID
+func generateModelID(name string) string {
+	return fmt.Sprintf("%x", md5.Sum([]byte(name)))[:12]
+}
+
+// CreateModel 创建模型（追加到配置文件）
 func (s *ModelService) CreateModel(model *models.Model) error {
-	model.ID = uuid.New().String()
-	model.Status = "enabled"
+	if model.Name == "" {
+		return fmt.Errorf("model name is required")
+	}
+
+	s.modelsMu.Lock()
+	defer s.modelsMu.Unlock()
+
+	// 检查是否已存在
+	for _, m := range s.models {
+		if m.Name == model.Name {
+			return fmt.Errorf("model with name '%s' already exists", model.Name)
+		}
+	}
+
+	if model.Status == "" {
+		model.Status = "enabled"
+	}
+	if model.Type == "" {
+		model.Type = "llm"
+	}
+
+	cfg := modelToConfig(model)
+	s.models = append(s.models, cfg)
+
+	// 回写配置文件
+	if s.cfg != nil {
+		s.cfg.Models = make([]config.ModelConfig, len(s.models))
+		copy(s.cfg.Models, s.models)
+		if err := config.Save(s.cfg); err != nil {
+			// 回滚
+			s.models = s.models[:len(s.models)-1]
+			return fmt.Errorf("failed to save config: %w", err)
+		}
+	}
+
+	model.ID = generateModelID(model.Name)
 	model.CreatedAt = time.Now()
 	model.UpdatedAt = time.Now()
-	return s.db.Create(model).Error
+	return nil
 }
 
-// UpdateModel 更新模型
+// UpdateModel 更新模型（修改配置文件）
 func (s *ModelService) UpdateModel(model *models.Model) error {
-	model.UpdatedAt = time.Now()
+	if model.ID == "" && model.Name == "" {
+		return fmt.Errorf("model id or name is required")
+	}
 
-	// 清除客户端缓存,以便重新初始化
-	s.clientsMu.Lock()
-	delete(s.llmClients, model.ID)
-	s.clientsMu.Unlock()
+	s.modelsMu.Lock()
+	defer s.modelsMu.Unlock()
 
-	return s.db.Save(model).Error
+	// 查找并更新
+	found := false
+	for i, m := range s.models {
+		match := false
+		if model.ID != "" && generateModelID(m.Name) == model.ID {
+			match = true
+		}
+		if model.Name != "" && m.Name == model.Name {
+			match = true
+		}
+		if match {
+			if model.Description != "" {
+				s.models[i].Description = model.Description
+			}
+			if model.Type != "" {
+				s.models[i].Type = model.Type
+			}
+			if model.Provider != "" {
+				s.models[i].Provider = model.Provider
+			}
+			if model.Version != "" {
+				s.models[i].Version = model.Version
+			}
+			if model.APIKey != "" {
+				s.models[i].APIKey = model.APIKey
+			}
+			if model.BaseURL != "" {
+				s.models[i].BaseURL = model.BaseURL
+			}
+			if model.Config != nil {
+				s.models[i].Config = map[string]interface{}(model.Config)
+			}
+			if model.Status != "" {
+				s.models[i].Status = model.Status
+			}
+			found = true
+
+			// 清除客户端缓存
+			s.clientsMu.Lock()
+			delete(s.llmClients, generateModelID(m.Name))
+			s.clientsMu.Unlock()
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("model not found: %s", model.ID)
+	}
+
+	// 回写配置文件
+	if s.cfg != nil {
+		s.cfg.Models = make([]config.ModelConfig, len(s.models))
+		copy(s.cfg.Models, s.models)
+		return config.Save(s.cfg)
+	}
+	return nil
 }
 
-// DeleteModel 删除模型
+// DeleteModel 删除模型（从配置文件移除）
 func (s *ModelService) DeleteModel(id string) error {
-	// 清除客户端缓存
-	delete(s.llmClients, id)
-	return s.db.Where("id = ?", id).Delete(&models.Model{}).Error
+	s.modelsMu.Lock()
+	defer s.modelsMu.Unlock()
+
+	found := false
+	newModels := make([]config.ModelConfig, 0, len(s.models))
+	for _, m := range s.models {
+		mid := generateModelID(m.Name)
+		if mid == id || m.Name == id {
+			found = true
+			// 清除客户端缓存
+			s.clientsMu.Lock()
+			delete(s.llmClients, mid)
+			s.clientsMu.Unlock()
+			continue
+		}
+		newModels = append(newModels, m)
+	}
+
+	if !found {
+		return fmt.Errorf("model not found: %s", id)
+	}
+
+	s.models = newModels
+
+	// 回写配置文件
+	if s.cfg != nil {
+		s.cfg.Models = make([]config.ModelConfig, len(s.models))
+		copy(s.cfg.Models, s.models)
+		return config.Save(s.cfg)
+	}
+	return nil
 }
 
 // GetModel 获取模型 (通过 ID 或名称)
 func (s *ModelService) GetModel(idOrName string) (*models.Model, error) {
-	var model models.Model
+	s.modelsMu.RLock()
+	defer s.modelsMu.RUnlock()
 
-	// 先按 UUID 查询
-	if len(idOrName) == 36 && strings.Contains(idOrName, "-") {
-		if err := s.db.First(&model, "id = ?", idOrName).Error; err == nil {
-			return &model, nil
+	for _, m := range s.models {
+		mid := generateModelID(m.Name)
+		if mid == idOrName || m.Name == idOrName {
+			return configToModel(m, mid), nil
 		}
-	}
-
-	// 按 name 查询
-	if err := s.db.Where("name = ?", idOrName).First(&model).Error; err == nil {
-		return &model, nil
 	}
 
 	return nil, fmt.Errorf("model not found: %s", idOrName)
@@ -82,69 +272,105 @@ func (s *ModelService) GetModel(idOrName string) (*models.Model, error) {
 
 // ListModels 列出所有模型
 func (s *ModelService) ListModels() ([]models.Model, error) {
-	var models []models.Model
-	err := s.db.Find(&models).Error
-	return models, err
+	s.modelsMu.RLock()
+	defer s.modelsMu.RUnlock()
+
+	result := make([]models.Model, 0, len(s.models))
+	for _, m := range s.models {
+		result = append(result, *configToModel(m, generateModelID(m.Name)))
+	}
+	return result, nil
 }
 
 // ListEnabledModels 列出所有已启用的模型
 func (s *ModelService) ListEnabledModels() ([]models.Model, error) {
-	var models []models.Model
-	err := s.db.Where("status = ?", "enabled").Find(&models).Error
-	return models, err
+	s.modelsMu.RLock()
+	defer s.modelsMu.RUnlock()
+
+	result := make([]models.Model, 0)
+	for _, m := range s.models {
+		if m.Status == "enabled" {
+			result = append(result, *configToModel(m, generateModelID(m.Name)))
+		}
+	}
+	return result, nil
 }
 
 // GetDefaultModel 获取默认模型（第一个 enabled 的 LLM 模型）
 func (s *ModelService) GetDefaultModel() (*models.Model, error) {
-	var model models.Model
-	err := s.db.Where("status = ? AND type = ?", "enabled", "llm").Order("priority DESC, created_at ASC").First(&model).Error
-	if err != nil {
-		// 无 llm 类型则取任意 enabled
-		err = s.db.Where("status = ?", "enabled").Order("priority DESC, created_at ASC").First(&model).Error
-		if err != nil {
-			return nil, fmt.Errorf("no enabled model available")
+	s.modelsMu.RLock()
+	defer s.modelsMu.RUnlock()
+
+	// 先找 enabled 的 llm
+	for _, m := range s.models {
+		if m.Status == "enabled" && m.Type == "llm" {
+			return configToModel(m, generateModelID(m.Name)), nil
 		}
 	}
-	return &model, nil
+
+	// 再找任意 enabled
+	for _, m := range s.models {
+		if m.Status == "enabled" {
+			return configToModel(m, generateModelID(m.Name)), nil
+		}
+	}
+
+	return nil, fmt.Errorf("no enabled model available")
 }
 
 // EnableModel 启用模型
 func (s *ModelService) EnableModel(id string) error {
-	model, err := s.GetModel(id)
-	if err != nil {
-		return err
+	s.modelsMu.Lock()
+	defer s.modelsMu.Unlock()
+
+	for i, m := range s.models {
+		if generateModelID(m.Name) == id || m.Name == id {
+			s.models[i].Status = "enabled"
+			if s.cfg != nil {
+				s.cfg.Models = make([]config.ModelConfig, len(s.models))
+				copy(s.cfg.Models, s.models)
+				return config.Save(s.cfg)
+			}
+			return nil
+		}
 	}
-	model.Status = "enabled"
-	model.UpdatedAt = time.Now()
-	return s.db.Save(model).Error
+	return fmt.Errorf("model not found: %s", id)
 }
 
 // DisableModel 禁用模型
 func (s *ModelService) DisableModel(id string) error {
-	model, err := s.GetModel(id)
-	if err != nil {
-		return err
+	s.modelsMu.Lock()
+	defer s.modelsMu.Unlock()
+
+	for i, m := range s.models {
+		if generateModelID(m.Name) == id || m.Name == id {
+			s.models[i].Status = "disabled"
+			if s.cfg != nil {
+				s.cfg.Models = make([]config.ModelConfig, len(s.models))
+				copy(s.cfg.Models, s.models)
+				return config.Save(s.cfg)
+			}
+			return nil
+		}
 	}
-	model.Status = "disabled"
-	model.UpdatedAt = time.Now()
-	return s.db.Save(model).Error
+	return fmt.Errorf("model not found: %s", id)
 }
 
-// CreateModelInstance 创建模型实例
-func (s *ModelService) CreateModelInstance(modelID string, config map[string]interface{}) (*models.ModelInstance, error) {
+// CreateModelInstance 创建模型实例（仍使用数据库）
+func (s *ModelService) CreateModelInstance(modelID string, cfg map[string]interface{}) (*models.ModelInstance, error) {
 	model, err := s.GetModel(modelID)
 	if err != nil {
 		return nil, err
 	}
 
 	instance := &models.ModelInstance{
-		ID:         uuid.New().String(),
-		ModelID:    modelID,
-		ModelName:  model.Name,
-		Config:     config,
-		Status:     "pending",
-		CreatedAt:  time.Now(),
-		UpdatedAt:  time.Now(),
+		ID:        uuid.New().String(),
+		ModelID:   modelID,
+		ModelName: model.Name,
+		Config:    cfg,
+		Status:    "pending",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
 	}
 
 	err = s.db.Create(instance).Error
@@ -153,11 +379,9 @@ func (s *ModelService) CreateModelInstance(modelID string, config map[string]int
 
 // ExecuteModel 执行模型（带缓存）
 func (s *ModelService) ExecuteModel(instanceID string, parameters map[string]interface{}) (*models.ModelExecution, error) {
-	// 构建缓存键
 	paramsJSON, _ := json.Marshal(parameters)
 	cacheKey := fmt.Sprintf("model:execute:%s:%x", instanceID, md5.Sum(paramsJSON))
 
-	// 尝试从缓存获取
 	if cached, found := s.cache.Get(cacheKey); found {
 		return cached.(*models.ModelExecution), nil
 	}
@@ -183,7 +407,6 @@ func (s *ModelService) ExecuteModel(instanceID string, parameters map[string]int
 		StartedAt:  time.Now(),
 	}
 
-	// 执行模型逻辑
 	result, err := s.executeModelLogic(model, &instance, parameters)
 	if err != nil {
 		execution.Status = "failed"
@@ -200,7 +423,6 @@ func (s *ModelService) ExecuteModel(instanceID string, parameters map[string]int
 	execution.EndedAt = time.Now()
 	s.db.Create(execution)
 
-	// 更新缓存，设置过期时间为30分钟
 	s.cache.Set(cacheKey, execution, 30*time.Minute)
 	return execution, nil
 }
@@ -224,34 +446,27 @@ func (s *ModelService) executeLLM(model *models.Model, parameters map[string]int
 		return nil, fmt.Errorf("parameter 'prompt' is required")
 	}
 
-	// 获取或创建 LLM 客户端
 	client, err := s.getLLMClient(model)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create LLM client: %w", err)
 	}
 
-	// 构建聊天请求
 	messages := []llm.Message{
 		{Role: "user", Content: prompt},
 	}
-
-	// 如果有历史消息,添加到请求中
 	if history, ok := parameters["history"].([]llm.Message); ok {
 		messages = append(history, messages...)
 	}
 
-	// 获取参数
 	temperature := 0.7
 	if t, ok := parameters["temperature"].(float64); ok {
 		temperature = t
 	}
-
 	maxTokens := 2048
 	if mt, ok := parameters["max_tokens"].(float64); ok {
 		maxTokens = int(mt)
 	}
 
-	// 调用 LLM API
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -267,14 +482,11 @@ func (s *ModelService) executeLLM(model *models.Model, parameters map[string]int
 		return nil, fmt.Errorf("LLM API call failed: %w", err)
 	}
 
-	// 构建响应
 	result := map[string]interface{}{
 		"response": resp.Choices[0].Message.Content,
 		"model":    resp.Model,
 		"provider": model.Provider,
 	}
-
-	// 添加 token 使用情况
 	if resp.Usage != nil {
 		result["usage"] = map[string]int{
 			"prompt_tokens":     resp.Usage.PromptTokens,
@@ -282,7 +494,6 @@ func (s *ModelService) executeLLM(model *models.Model, parameters map[string]int
 			"total_tokens":      resp.Usage.TotalTokens,
 		}
 	}
-
 	return result, nil
 }
 
@@ -293,7 +504,6 @@ func (s *ModelService) executeEmbedding(model *models.Model, parameters map[stri
 		return nil, fmt.Errorf("parameter 'text' is required")
 	}
 
-	// 模拟嵌入向量 (实际应该调用 embedding API)
 	embedding := make([]float64, 10)
 	for i := range embedding {
 		embedding[i] = float64(i) * 0.1
@@ -328,19 +538,15 @@ func (s *ModelService) Chat(modelID string, messages []llm.Message, options map[
 		return nil, fmt.Errorf("model is disabled")
 	}
 
-	// 获取 LLM 客户端
 	client, err := s.getLLMClient(model)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create LLM client: %w", err)
 	}
 
-	// 构建请求
 	req := &llm.ChatRequest{
 		Model:    model.Name,
 		Messages: messages,
 	}
-
-	// 应用选项
 	if temp, ok := options["temperature"].(float64); ok {
 		req.Temperature = temp
 	}
@@ -351,7 +557,6 @@ func (s *ModelService) Chat(modelID string, messages []llm.Message, options map[
 		req.System = system
 	}
 
-	// 调用 API
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -389,8 +594,6 @@ func (s *ModelService) ChatWithTools(modelID string, messages []llm.Message, too
 		Messages: messages,
 		Tools:    tools,
 	}
-
-	// 应用选项
 	if temp, ok := options["temperature"].(float64); ok {
 		req.Temperature = temp
 	}
@@ -401,7 +604,6 @@ func (s *ModelService) ChatWithTools(modelID string, messages []llm.Message, too
 		req.System = system
 	}
 
-	// 工具调用通常需要更长的超时
 	timeout := 120 * time.Second
 	if t, ok := options["timeout"].(int); ok && t > 0 {
 		timeout = time.Duration(t) * time.Second
@@ -434,19 +636,15 @@ func (s *ModelService) ChatStream(modelID string, messages []llm.Message, option
 		return nil, fmt.Errorf("model is disabled")
 	}
 
-	// 获取 LLM 客户端
 	client, err := s.getLLMClient(model)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create LLM client: %w", err)
 	}
 
-	// 构建请求
 	req := &llm.ChatRequest{
 		Model:    model.Name,
 		Messages: messages,
 	}
-
-	// 应用选项
 	if temp, ok := options["temperature"].(float64); ok {
 		req.Temperature = temp
 	}
@@ -457,12 +655,7 @@ func (s *ModelService) ChatStream(modelID string, messages []llm.Message, option
 		req.System = system
 	}
 
-	// 调用 API
-	// 使用更长的超时时间，因为模型在 CPU 上运行可能需要几分钟
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
-
-	// 注意: 调用者需要负责在适当的时候调用 cancel()
-	// 这里我们使用 context.Background() 的一个变体来避免资源泄漏
 	go func() {
 		<-ctx.Done()
 		cancel()
@@ -473,7 +666,6 @@ func (s *ModelService) ChatStream(modelID string, messages []llm.Message, option
 
 // getLLMClient 获取或创建 LLM 客户端
 func (s *ModelService) getLLMClient(model *models.Model) (llm.LLMClient, error) {
-	// 检查缓存
 	s.clientsMu.RLock()
 	if client, ok := s.llmClients[model.ID]; ok {
 		s.clientsMu.RUnlock()
@@ -481,18 +673,14 @@ func (s *ModelService) getLLMClient(model *models.Model) (llm.LLMClient, error) 
 	}
 	s.clientsMu.RUnlock()
 
-	// 确定提供商类型
 	var provider llm.ProviderType
 	switch model.Provider {
-	// 原有提供商
 	case "openai":
 		provider = llm.ProviderOpenAI
 	case "anthropic", "claude":
 		provider = llm.ProviderAnthropic
 	case "glm", "zhipu":
 		provider = llm.ProviderGLM
-
-	// 国内大模型
 	case "qwen", "tongyi", "dashscope":
 		provider = llm.ProviderQwen
 	case "ernie", "wenxin", "baidu":
@@ -509,8 +697,6 @@ func (s *ModelService) getLLMClient(model *models.Model) (llm.LLMClient, error) 
 		provider = llm.ProviderMiniMax
 	case "deepseek":
 		provider = llm.ProviderDeepSeek
-
-	// 国际大模型
 	case "gemini", "google":
 		provider = llm.ProviderGemini
 	case "mistral":
@@ -521,20 +707,14 @@ func (s *ModelService) getLLMClient(model *models.Model) (llm.LLMClient, error) 
 		provider = llm.ProviderGroq
 	case "openrouter":
 		provider = llm.ProviderOpenAI
-
-	// 本地模型
 	case "ollama", "local":
 		provider = llm.ProviderOllama
 	case "vllm":
 		provider = llm.ProviderVLLM
-
 	default:
 		return nil, fmt.Errorf("unsupported provider: %s", model.Provider)
 	}
 
-	// 创建客户端配置
-	// 默认超时 300 秒，给 CPU 运行的大模型足够时间
-	// 使用 model.Config 中的 model 名称（如果有），否则使用 model.Name
 	modelName := model.Name
 	if model.Config != nil {
 		if cfgModel, ok := model.Config["model"].(string); ok && cfgModel != "" {
@@ -542,7 +722,7 @@ func (s *ModelService) getLLMClient(model *models.Model) (llm.LLMClient, error) 
 		}
 	}
 
-	config := &llm.ClientConfig{
+	cfg := &llm.ClientConfig{
 		Provider:   provider,
 		APIKey:     model.APIKey,
 		BaseURL:    model.BaseURL,
@@ -552,26 +732,23 @@ func (s *ModelService) getLLMClient(model *models.Model) (llm.LLMClient, error) 
 		RetryDelay: 1000,
 	}
 
-	// 应用模型特定配置
 	if model.Config != nil {
 		if timeout, ok := model.Config["timeout"].(float64); ok {
-			config.Timeout = int(timeout)
+			cfg.Timeout = int(timeout)
 		}
 		if maxRetries, ok := model.Config["max_retries"].(float64); ok {
-			config.MaxRetries = int(maxRetries)
+			cfg.MaxRetries = int(maxRetries)
 		}
 		if retryDelay, ok := model.Config["retry_delay"].(float64); ok {
-			config.RetryDelay = int(retryDelay)
+			cfg.RetryDelay = int(retryDelay)
 		}
 	}
 
-	// 创建客户端
-	client, err := llm.NewClient(config)
+	client, err := llm.NewClient(cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	// 缓存客户端
 	s.clientsMu.Lock()
 	s.llmClients[model.ID] = client
 	s.clientsMu.Unlock()
@@ -579,7 +756,7 @@ func (s *ModelService) getLLMClient(model *models.Model) (llm.LLMClient, error) 
 	return client, nil
 }
 
-// GetModelExecutions 获取模型执行历史
+// GetModelExecutions 获取模型执行历史（仍使用数据库）
 func (s *ModelService) GetModelExecutions(modelID string) ([]models.ModelExecution, error) {
 	var executions []models.ModelExecution
 	err := s.db.Where("model_id = ?", modelID).Order("started_at DESC").Find(&executions).Error
@@ -588,7 +765,6 @@ func (s *ModelService) GetModelExecutions(modelID string) ([]models.ModelExecuti
 
 // ValidateModelConfig 验证模型配置
 func (s *ModelService) ValidateModelConfig(model *models.Model) error {
-	// 检查必需字段
 	if model.Name == "" {
 		return fmt.Errorf("model name is required")
 	}
@@ -599,38 +775,24 @@ func (s *ModelService) ValidateModelConfig(model *models.Model) error {
 		return fmt.Errorf("model provider is required")
 	}
 
-	// 本地模型标识
 	localProviders := map[string]bool{
 		"ollama": true,
 		"local":  true,
 		"vllm":   true,
 	}
 
-	// 检查 LLM 模型的 API Key (本地模型可选)
 	if model.Type == "llm" && model.APIKey == "" && !localProviders[model.Provider] {
 		return fmt.Errorf("API key is required for LLM models")
 	}
 
-	// 验证提供商
 	switch model.Provider {
-	// 原有提供商
-	case "openai", "anthropic", "claude", "glm", "zhipu":
-		// 有效提供商
-
-	// 国内大模型
-	case "qwen", "tongyi", "dashscope", "ernie", "wenxin", "baidu",
+	case "openai", "anthropic", "claude", "glm", "zhipu",
+		"qwen", "tongyi", "dashscope", "ernie", "wenxin", "baidu",
 		"hunyuan", "tencent", "spark", "xunfei", "moonshot", "kimi",
-		"baichuan", "minimax", "deepseek":
-		// 有效提供商
-
-	// 国际大模型
-	case "gemini", "google", "mistral", "cohere", "groq", "openrouter":
-		// 有效提供商
-
-	// 本地模型
-	case "ollama", "local", "vllm":
-		// 有效提供商 (本地模型不强制要求 API Key)
-
+		"baichuan", "minimax", "deepseek",
+		"gemini", "google", "mistral", "cohere", "groq", "openrouter",
+		"ollama", "local", "vllm":
+		// valid
 	default:
 		return fmt.Errorf("unsupported provider: %s", model.Provider)
 	}
@@ -640,13 +802,12 @@ func (s *ModelService) ValidateModelConfig(model *models.Model) error {
 
 // GetLLMClient 获取默认 LLM 客户端
 func (s *ModelService) GetLLMClient() llm.LLMClient {
-	var model models.Model
-	result := s.db.Where("type = ? AND status = ?", "llm", "enabled").First(&model)
-	if result.Error != nil {
+	model, err := s.GetDefaultModel()
+	if err != nil {
 		return nil
 	}
 
-	client, err := s.getLLMClient(&model)
+	client, err := s.getLLMClient(model)
 	if err != nil {
 		return nil
 	}

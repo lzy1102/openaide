@@ -8,6 +8,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	"openaide/backend/src/config"
 	"openaide/backend/src/models"
 )
 
@@ -37,7 +38,7 @@ func TestDialogueService_CreateDialogue(t *testing.T) {
 	db, err := setupTestDBForDialogue()
 	assert.NoError(t, err)
 
-	modelService := NewModelService(db, nil)
+	modelService := NewModelService(&config.Config{Models: []config.ModelConfig{}}, nil, db)
 	loggerService, _ := NewLoggerService(LogLevelInfo, "")
 	dialogueService := NewDialogueService(db, modelService, loggerService)
 
@@ -61,7 +62,7 @@ func TestDialogueService_ListDialogues(t *testing.T) {
 	db, err := setupTestDBForDialogue()
 	assert.NoError(t, err)
 
-	modelService := NewModelService(db, nil)
+	modelService := NewModelService(&config.Config{Models: []config.ModelConfig{}}, nil, db)
 	loggerService, _ := NewLoggerService(LogLevelInfo, "")
 	dialogueService := NewDialogueService(db, modelService, loggerService)
 
@@ -70,11 +71,11 @@ func TestDialogueService_ListDialogues(t *testing.T) {
 	dialogueService.CreateDialogue("user1", "Dialogue 2")
 	dialogueService.CreateDialogue("user2", "Dialogue 3")
 
-	// 测试列出所有对话
+	// 测试列出所有对�?
 	dialogues := dialogueService.ListDialogues()
 	assert.GreaterOrEqual(t, len(dialogues), 3)
 
-	// 测试列出特定用户的对话
+	// 测试列出特定用户的对�?
 	user1Dialogues := dialogueService.ListDialoguesByUser("user1")
 	assert.GreaterOrEqual(t, len(user1Dialogues), 2)
 	for _, d := range user1Dialogues {
@@ -87,7 +88,7 @@ func TestDialogueService_GetDialogue(t *testing.T) {
 	db, err := setupTestDBForDialogue()
 	assert.NoError(t, err)
 
-	modelService := NewModelService(db, nil)
+	modelService := NewModelService(&config.Config{Models: []config.ModelConfig{}}, nil, db)
 	loggerService, _ := NewLoggerService(LogLevelInfo, "")
 	dialogueService := NewDialogueService(db, modelService, loggerService)
 
@@ -109,7 +110,7 @@ func TestDialogueService_UpdateDialogue(t *testing.T) {
 	db, err := setupTestDBForDialogue()
 	assert.NoError(t, err)
 
-	modelService := NewModelService(db, nil)
+	modelService := NewModelService(&config.Config{Models: []config.ModelConfig{}}, nil, db)
 	loggerService, _ := NewLoggerService(LogLevelInfo, "")
 	dialogueService := NewDialogueService(db, modelService, loggerService)
 
@@ -134,7 +135,7 @@ func TestDialogueService_DeleteDialogue(t *testing.T) {
 	db, err := setupTestDBForDialogue()
 	assert.NoError(t, err)
 
-	modelService := NewModelService(db, nil)
+	modelService := NewModelService(&config.Config{Models: []config.ModelConfig{}}, nil, db)
 	loggerService, _ := NewLoggerService(LogLevelInfo, "")
 	dialogueService := NewDialogueService(db, modelService, loggerService)
 
@@ -157,7 +158,7 @@ func TestDialogueService_SendMessage(t *testing.T) {
 	assert.NoError(t, err)
 
 	// 创建带有模拟 LLM 客户端的模型服务
-	modelService := NewModelService(db, nil)
+	modelService := NewModelService(&config.Config{Models: []config.ModelConfig{}}, nil, db)
 
 	loggerService, _ := NewLoggerService(LogLevelInfo, "")
 	dialogueService := NewDialogueService(db, modelService, loggerService)
@@ -165,8 +166,8 @@ func TestDialogueService_SendMessage(t *testing.T) {
 	// 创建测试对话
 	dialogue := dialogueService.CreateDialogue("user1", "Test Dialogue")
 
-	// 测试发送消息 - 由于需要真实模型，这里只测试消息添加逻辑
-	// 先手动添加用户消息
+	// 测试发送消�?- 由于需要真实模型，这里只测试消息添加逻辑
+	// 先手动添加用户消�?
 	userMsg, err := dialogueService.AddMessage(dialogue.ID, "user", "Hello")
 	assert.NoError(t, err)
 	assert.NotEmpty(t, userMsg.ID)

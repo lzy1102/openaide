@@ -11,6 +11,7 @@ import (
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
+	"openaide/backend/src/config"
 	"openaide/backend/src/models"
 	"openaide/backend/src/services/llm"
 )
@@ -114,7 +115,8 @@ func (s *IntegrationTestService) initServices() {
 	}
 
 	// 创建模型服务
-	s.modelService = NewModelService(s.db, s.cacheService)
+	cfg := &config.Config{Models: []config.ModelConfig{}}
+	s.modelService = NewModelService(cfg, s.cacheService, s.db)
 
 	// 创建对话服务
 	s.dialogueService = NewDialogueService(s.db, s.modelService, s.loggerService)

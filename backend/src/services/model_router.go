@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	"gorm.io/gorm"
-
 	"openaide/backend/src/models"
 )
 
@@ -54,15 +52,13 @@ var taskTypePriority = map[string]int{
 
 // ModelRouter 模型路由服务
 type ModelRouter struct {
-	db       *gorm.DB
 	modelSvc *ModelService
 	logger   *LoggerService
 }
 
 // NewModelRouter 创建模型路由服务
-func NewModelRouter(db *gorm.DB, modelSvc *ModelService, logger *LoggerService) *ModelRouter {
+func NewModelRouter(modelSvc *ModelService, logger *LoggerService) *ModelRouter {
 	return &ModelRouter{
-		db:       db,
 		modelSvc: modelSvc,
 		logger:   logger,
 	}
@@ -74,24 +70,14 @@ func (r *ModelRouter) Route(ctx context.Context, content string, requiredCapabil
 
 	var matchedModels []models.Model
 
-	// 按标签查询匹配的模型（使用 LIKE 匹配 JSON 数组中的标签）
+	// 按标签查询匹配的模型（从内存中过滤）
 	if taskType != "chat" {
-		r.db.Raw(`
-			SELECT * FROM models
-			WHERE status = 'enabled' AND type = 'llm'
-			AND (
-				tags LIKE ? OR tags LIKE ? OR tags LIKE ? OR
-				tags LIKE ? OR tags LIKE ? OR tags = ?
-			)
-			ORDER BY priority DESC, created_at ASC
-		`,
-			"%\""+taskType+"\"%",
-			"%\""+taskType+",%",
-			"%,"+taskType+"\"%",
-			"%,"+taskType+",%",
-			"[\""+taskType+"\"]",
-			"\""+taskType+"\"",
-		).Scan(&matchedModels)
+		allModels, _ := r.modelSvc.ListEnabledModels()
+		for _, m := range allModels {
+			if m.Type == "llm" && r.modelHasTag(&m, taskType) {
+				matchedModels = append(matchedModels, m)
+			}
+		}
 
 		// 过滤能力
 		if len(requiredCapabilities) > 0 {
@@ -132,22 +118,12 @@ func (r *ModelRouter) RouteWithFallback(ctx context.Context, content string, req
 	var candidates []models.Model
 
 	if taskType != "chat" {
-		r.db.Raw(`
-			SELECT * FROM models
-			WHERE status = 'enabled' AND type = 'llm'
-			AND (
-				tags LIKE ? OR tags LIKE ? OR tags LIKE ? OR
-				tags LIKE ? OR tags LIKE ? OR tags = ?
-			)
-			ORDER BY priority DESC, created_at ASC
-		`,
-			"%\""+taskType+"\"%",
-			"%\""+taskType+",%",
-			"%,"+taskType+"\"%",
-			"%,"+taskType+",%",
-			"[\""+taskType+"\"]",
-			"\""+taskType+"\"",
-		).Scan(&candidates)
+		allModels, _ := r.modelSvc.ListEnabledModels()
+		for _, m := range allModels {
+			if m.Type == "llm" && r.modelHasTag(&m, taskType) {
+				candidates = append(candidates, m)
+			}
+		}
 	}
 
 	// 能力过滤
@@ -183,6 +159,16 @@ func (r *ModelRouter) RouteWithFallback(ctx context.Context, content string, req
 	return nil, fmt.Errorf("no fallback model available (tried %d)", len(triedModelIDs))
 }
 
+// modelHasTag 检查模型是否包含指定标签
+func (r *ModelRouter) modelHasTag(model *models.Model, tag string) bool {
+	for _, t := range model.Tags {
+		if strings.EqualFold(t, tag) {
+			return true
+		}
+	}
+	return false
+}
+
 // GetRouteInfo 返回路由决策详情
 func (r *ModelRouter) GetRouteInfo(ctx context.Context, content string) RouteInfo {
 	taskType := r.classifyTask(content)
@@ -195,7 +181,7 @@ func (r *ModelRouter) GetRouteInfo(ctx context.Context, content string) RouteInf
 		reason = err.Error()
 	} else {
 		selectedModel = model.Name
-		reason = fmt.Sprintf("task type '%s' matched model '%s' (priority=%d)", taskType, model.Name, model.Priority)
+		reason = fmt.Sprintf("task type '%s' matched model '%s'", taskType, model.Name)
 	}
 
 	return RouteInfo{

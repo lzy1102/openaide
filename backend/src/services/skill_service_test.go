@@ -8,6 +8,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	"openaide/backend/src/config"
 	"openaide/backend/src/models"
 )
 
@@ -16,7 +17,7 @@ func TestSkillService_CreateSkill(t *testing.T) {
 	db, err := setupTestDBForSkill()
 	assert.NoError(t, err)
 
-	modelService := NewModelService(db, nil)
+	modelService := NewModelService(&config.Config{Models: []config.ModelConfig{}}, nil, db)
 	loggerService, _ := NewLoggerService(LogLevelInfo, "")
 	skillService := NewSkillService(db, modelService, loggerService)
 
@@ -46,7 +47,7 @@ func TestSkillService_ListSkills(t *testing.T) {
 	db, err := setupTestDBForSkill()
 	assert.NoError(t, err)
 
-	modelService := NewModelService(db, nil)
+	modelService := NewModelService(&config.Config{Models: []config.ModelConfig{}}, nil, db)
 	loggerService, _ := NewLoggerService(LogLevelInfo, "")
 	skillService := NewSkillService(db, modelService, loggerService)
 
@@ -86,7 +87,7 @@ func TestSkillService_ListEnabledSkills(t *testing.T) {
 	db, err := setupTestDBForSkill()
 	assert.NoError(t, err)
 
-	modelService := NewModelService(db, nil)
+	modelService := NewModelService(&config.Config{Models: []config.ModelConfig{}}, nil, db)
 	loggerService, _ := NewLoggerService(LogLevelInfo, "")
 	skillService := NewSkillService(db, modelService, loggerService)
 
@@ -130,7 +131,7 @@ func TestSkillService_MatchSkill(t *testing.T) {
 	db, err := setupTestDBForSkill()
 	assert.NoError(t, err)
 
-	modelService := NewModelService(db, nil)
+	modelService := NewModelService(&config.Config{Models: []config.ModelConfig{}}, nil, db)
 	loggerService, _ := NewLoggerService(LogLevelInfo, "")
 	skillService := NewSkillService(db, modelService, loggerService)
 
@@ -159,7 +160,7 @@ func TestSkillService_CreateSkillParameter(t *testing.T) {
 	db, err := setupTestDBForSkill()
 	assert.NoError(t, err)
 
-	modelService := NewModelService(db, nil)
+	modelService := NewModelService(&config.Config{Models: []config.ModelConfig{}}, nil, db)
 	loggerService, _ := NewLoggerService(LogLevelInfo, "")
 	skillService := NewSkillService(db, modelService, loggerService)
 
@@ -179,12 +180,12 @@ func TestSkillService_CreateSkillParameter(t *testing.T) {
 
 	// 创建技能参数
 	param := &models.SkillParameter{
-		SkillID:      skill.ID,
-		Name:         "text",
-		Description:  "Text to process",
-		Type:         "string",
-		Required:     true,
-		Default:      nil,
+		SkillID:     skill.ID,
+		Name:        "text",
+		Description: "Text to process",
+		Type:        "string",
+		Required:    true,
+		Default:     nil,
 	}
 
 	err = skillService.CreateSkillParameter(param)

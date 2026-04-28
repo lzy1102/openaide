@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"openaide/backend/src/config"
 	"openaide/backend/src/handlers"
 	"openaide/backend/src/models"
 	"openaide/backend/src/services"
@@ -27,7 +28,6 @@ func setupTestDB(t *testing.T) *gorm.DB {
 
 	// 自动迁移所有模型
 	err = db.AutoMigrate(
-		&models.Model{},
 		&models.Dialogue{},
 		&models.Message{},
 		&models.ModelInstance{},
@@ -67,7 +67,8 @@ func setupTestRouter(t *testing.T) (*gin.Engine, *gorm.DB) {
 	logger, _ := services.NewLoggerService(services.LogLevelInfo, "")
 
 	// 创建服务
-	modelService := services.NewModelService(db, cache)
+	cfg := &config.Config{Models: []config.ModelConfig{}}
+	modelService := services.NewModelService(cfg, cache, db)
 	dialogueService := services.NewDialogueService(db, modelService, logger)
 	workflowService := services.NewWorkflowService(db, modelService.GetLLMClient())
 	toolService := services.NewToolService(db, cache, logger, nil)

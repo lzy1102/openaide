@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"gorm.io/gorm"
 
+	"openaide/backend/src/config"
 	"openaide/backend/src/models"
 )
 
@@ -60,7 +61,7 @@ func TestIntegration_SkillExecution(t *testing.T) {
 
 	// 初始化服务
 	cacheService := NewCacheService()
-	modelService := NewModelService(db, cacheService)
+	modelService := NewModelService(&config.Config{Models: []config.ModelConfig{}}, cacheService, db)
 	loggerService, _ := NewLoggerService(LogLevelInfo, "")
 	skillService := NewSkillService(db, modelService, loggerService)
 

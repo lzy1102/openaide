@@ -226,7 +226,7 @@ func (app *Application) initInfrastructure() error {
 		&models.Workflow{}, &models.WorkflowStep{}, &models.WorkflowInstance{}, &models.StepInstance{},
 		&models.Skill{}, &models.SkillParameter{}, &models.SkillExecution{},
 		&models.Plugin{}, &models.PluginInstance{}, &models.PluginExecution{},
-		&models.Model{}, &models.ModelInstance{}, &models.ModelExecution{},
+		&models.ModelInstance{}, &models.ModelExecution{},
 		&models.AutomationExecution{}, &models.CodeExecution{}, &models.Confirmation{},
 		&models.Thought{}, &models.Correction{}, &models.Feedback{}, &models.Memory{},
 		&models.LearningRecord{}, &models.UserPreference{}, &models.PromptOptimization{}, &models.WorkflowOptimization{},
@@ -267,7 +267,7 @@ func (app *Application) initCoreServices() error {
 	}
 	app.LoggerService = loggerService
 
-	app.ModelService = services.NewModelService(app.DB, app.CacheService)
+	app.ModelService = services.NewModelService(app.Config, app.CacheService, app.DB)
 	app.DialogueService = services.NewDialogueService(app.DB, app.ModelService, app.LoggerService)
 	app.WorkflowService = services.NewWorkflowService(app.DB, app.ModelService.GetLLMClient())
 	app.SkillService = services.NewSkillService(app.DB, app.ModelService, app.LoggerService)
@@ -321,7 +321,7 @@ func (app *Application) initAgentServices() error {
 	app.SlashRegistry.SetAgentRouter(app.AgentRouter)
 
 	app.AgentExecutor = services.NewAgentExecutor(app.ModelService, app.ToolService, app.LoggerService)
-	app.ModelRouter = services.NewModelRouter(app.DB, app.ModelService, app.LoggerService)
+	app.ModelRouter = services.NewModelRouter(app.ModelService, app.LoggerService)
 
 	return nil
 }
@@ -459,9 +459,6 @@ func (app *Application) initExternalServices() error {
 		log.Printf("[Hermes Agent] Context engine initialized with mode: %s", compressionMode)
 	}
 
-	// 同步配置文件中的模型到数据库
-	app.syncModelsFromConfig()
-
 	// 初始化记忆向量嵌入服务
 	app.initEmbeddingService(cfg)
 
@@ -469,41 +466,6 @@ func (app *Application) initExternalServices() error {
 	app.initFeishuService(cfg)
 
 	return nil
-}
-
-// syncModelsFromConfig 同步配置文件中的模型到数据库
-func (app *Application) syncModelsFromConfig() {
-	if len(app.Config.Models) == 0 {
-		return
-	}
-	existingModels, _ := app.ModelService.ListModels()
-	existingMap := make(map[string]bool)
-	for _, m := range existingModels {
-		existingMap[m.Name] = true
-	}
-
-	for _, modelConfig := range app.Config.Models {
-		if existingMap[modelConfig.Name] {
-			continue
-		}
-		model := &models.Model{
-			Name:        modelConfig.Name,
-			Description: modelConfig.Description,
-			Type:        modelConfig.Type,
-			Provider:    modelConfig.Provider,
-			Version:     modelConfig.Version,
-			APIKey:      modelConfig.APIKey,
-			BaseURL:     modelConfig.BaseURL,
-			Config:      modelConfig.Config,
-			Status:      modelConfig.Status,
-			Priority:    0,
-		}
-		if err := app.ModelService.CreateModel(model); err != nil {
-			log.Printf("Failed to create model %s: %v", modelConfig.Name, err)
-		} else {
-			log.Printf("Created model from config: %s", modelConfig.Name)
-		}
-	}
 }
 
 // initEmbeddingService 初始化向量嵌入服务
