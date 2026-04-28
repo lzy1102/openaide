@@ -449,7 +449,7 @@ func (r *Router) registerChatRoutes(api *gin.RouterGroup) {
 		})
 		chat.POST("", func(c *gin.Context) {
 			var req struct {
-				ModelID  string                 `json:"model_id" binding:"required"`
+				ModelID  string                 `json:"model_id"`
 				Messages []services.ChatMessage `json:"messages" binding:"required"`
 				Options  map[string]interface{} `json:"options"`
 			}
@@ -470,7 +470,7 @@ func (r *Router) registerChatRoutes(api *gin.RouterGroup) {
 		})
 		chat.POST("/stream", func(c *gin.Context) {
 			var req struct {
-				ModelID  string                 `json:"model_id" binding:"required"`
+				ModelID  string                 `json:"model_id"`
 				Messages []services.ChatMessage `json:"messages" binding:"required"`
 				Options  map[string]interface{} `json:"options"`
 			}

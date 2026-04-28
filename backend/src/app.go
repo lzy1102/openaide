@@ -211,6 +211,14 @@ func (app *Application) initInfrastructure() error {
 	}
 	log.Printf("Data directory: %s", config.DefaultPaths.HomeDir)
 
+	// 加载配置文件
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("Failed to load config: %v", err)
+	}
+	app.Config = cfg
+	log.Printf("Config loaded from: %s", config.GetConfigPath())
+
 	// 初始化数据库
 	dbPath := config.DefaultPaths.GetDBPath("openaide")
 	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
