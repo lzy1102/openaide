@@ -17,31 +17,34 @@ import (
 // ToolCallingService 工具调用循环服务
 // 将 ToolService 与 LLM 对话连接，实现完整的 tool calling 闭环
 type ToolCallingService struct {
-	toolSvc      *ToolService
-	modelSvc     *ModelService
-	dialogueSvc  *DialogueService
-	logger       *LoggerService
-	usageService *UsageService
-	eventBus     *EventBus
+	toolSvc      ToolProvider
+	modelSvc     ModelCaller
+	dialogueSvc  DialogueStore
+	logger       Logger
+	usageService UsageTracker
+	eventBus     EventPublisher
 	maxRounds    int
-	sessionRecorder *SessionRecorder // ReAct 会话记录器
+	sessionRecorder  *SessionRecorder  // ReAct 会话记录器
 	metricsCollector *ToolMetricsCollector // 工具指标收集器
 }
 
-func (s *ToolCallingService) SetEventBus(bus *EventBus) {
+// SetEventBus 设置事件发布器
+func (s *ToolCallingService) SetEventBus(bus EventPublisher) {
 	s.eventBus = bus
 }
 
-func (s *ToolCallingService) SetUsageService(usageService *UsageService) {
+// SetUsageService 设置用量追踪器
+func (s *ToolCallingService) SetUsageService(usageService UsageTracker) {
 	s.usageService = usageService
 }
 
-func (s *ToolCallingService) SetDialogueService(dialogueSvc *DialogueService) {
+// SetDialogueService 设置对话存储
+func (s *ToolCallingService) SetDialogueService(dialogueSvc DialogueStore) {
 	s.dialogueSvc = dialogueSvc
 }
 
-// NewToolCallingService 创建工具调用服务
-func NewToolCallingService(toolSvc *ToolService, modelSvc *ModelService, logger *LoggerService) *ToolCallingService {
+// NewToolCallingService 创建工具调用服务（使用接口，降低耦合）
+func NewToolCallingService(toolSvc ToolProvider, modelSvc ModelCaller, logger Logger) *ToolCallingService {
 	return &ToolCallingService{
 		toolSvc:          toolSvc,
 		modelSvc:         modelSvc,
@@ -351,18 +354,18 @@ func (s *ToolCallingService) saveToolCallingResult(dialogueID, sender, content s
 		msg.ReasoningContent = reasoningContent[0]
 	}
 
-	// 使用 toolSvc 的 db 连接保存
-	if s.toolSvc != nil {
-		db := s.toolSvc.db
-		if db != nil {
-			if err := db.Create(msg).Error; err != nil {
-				log.Printf("[ToolCalling] Failed to save message: %v", err)
-			}
-			return msg
+	// 使用 dialogueSvc 保存消息（通过接口，不直接访问 db）
+	if s.dialogueSvc != nil {
+		var rc string
+		if len(reasoningContent) > 0 {
+			rc = reasoningContent[0]
+		}
+		if savedMsg, err := s.dialogueSvc.AddMessage(dialogueID, sender, content, rc); err == nil {
+			return &savedMsg
 		}
 	}
 
-	log.Printf("[ToolCalling] Warning: could not save message, no database connection")
+	log.Printf("[ToolCalling] Warning: could not save message, no dialogue service")
 	return msg
 }
 
@@ -622,7 +625,7 @@ func (s *ToolCallingService) buildMessagesWithHistory(ctx context.Context, dialo
 	return messages
 }
 
-func (s *ToolCallingService) getDialogueService() *DialogueService {
+func (s *ToolCallingService) getDialogueService() DialogueStore {
 	if s.dialogueSvc != nil {
 		return s.dialogueSvc
 	}
