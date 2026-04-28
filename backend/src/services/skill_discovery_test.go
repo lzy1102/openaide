@@ -10,7 +10,7 @@ func TestSkillDiscovery_CountPatternOccurrences(t *testing.T) {
 	svc := &SkillDiscoveryService{minOccurrences: 3}
 
 	// 模拟对话数据
-	dialogues := []models.Dialogue{
+	_ = []models.Dialogue{
 		{ID: "d1"}, {ID: "d2"}, {ID: "d3"}, {ID: "d4"}, {ID: "d5"},
 	}
 

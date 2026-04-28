@@ -297,14 +297,14 @@ func (s *WorkflowService) applyVariablesToArray(arr []interface{}, variables map
 // GetWorkflow 获取工作流详情
 func (s *WorkflowService) GetWorkflow(id string) (models.Workflow, bool) {
 	var workflow models.Workflow
-	err := s.db.Preload("Steps").First(&workflow, id).Error
+	err := s.db.Preload("Steps").Where("id = ?", id).First(&workflow).Error
 	return workflow, err == nil
 }
 
 // UpdateWorkflow 更新工作流
 func (s *WorkflowService) UpdateWorkflow(id, name, description string, steps []models.WorkflowStep) (models.Workflow, bool) {
 	var workflow models.Workflow
-	err := s.db.First(&workflow, id).Error
+	err := s.db.Where("id = ?", id).First(&workflow).Error
 	if err != nil {
 		return models.Workflow{}, false
 	}

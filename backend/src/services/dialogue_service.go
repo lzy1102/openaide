@@ -62,14 +62,14 @@ func (s *DialogueService) CreateDialogue(userID, title string) models.Dialogue {
 // GetDialogue 获取对话详情
 func (s *DialogueService) GetDialogue(id string) (models.Dialogue, bool) {
 	var dialogue models.Dialogue
-	err := s.db.Preload("Messages").First(&dialogue, id).Error
+	err := s.db.Preload("Messages").Where("id = ?", id).First(&dialogue).Error
 	return dialogue, err == nil
 }
 
 // UpdateDialogue 更新对话
 func (s *DialogueService) UpdateDialogue(id, title string) (models.Dialogue, bool) {
 	var dialogue models.Dialogue
-	err := s.db.First(&dialogue, id).Error
+	err := s.db.Where("id = ?", id).First(&dialogue).Error
 	if err != nil {
 		return models.Dialogue{}, false
 	}
