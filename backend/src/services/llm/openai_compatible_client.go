@@ -277,6 +277,14 @@ func (c *OpenAICompatibleClient) sendRequest(ctx context.Context, method, path s
 		req.Header.Set("Authorization", "Bearer "+c.config.APIKey)
 	}
 
+	// 为 CuteCloud/hubapi.dev 添加必要的请求头以避免 403
+	if strings.Contains(c.config.BaseURL, "hubapi.dev") {
+		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+		req.Header.Set("Accept", "application/json")
+		req.Header.Set("Origin", "https://chat.cutecloud.net")
+		req.Header.Set("Referer", "https://chat.cutecloud.net/")
+	}
+
 	return c.httpClient.Do(req)
 }
 
