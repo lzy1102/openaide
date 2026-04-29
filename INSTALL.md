@@ -120,6 +120,39 @@ API Keys are configured in the backend `config.json`:
 | `ernie` | ✅ + secret_key | - |
 | `ollama` | ❌ | http://localhost:11434/v1 |
 
+##### CuteCloud / HubAPI (第三方聚合平台)
+
+CuteCloud 提供统一的 OpenAI 兼容 API，支持 1000+ 模型：
+
+```json
+{
+  "models": [
+    {
+      "name": "gpt-5-mini",
+      "provider": "openai",
+      "api_key": "your-cutecloud-api-key",
+      "base_url": "https://hubapi.dev/v1",
+      "status": "enabled",
+      "config": {
+        "model": "gpt-5-mini"
+      }
+    },
+    {
+      "name": "deepseek-chat",
+      "provider": "deepseek",
+      "api_key": "your-cutecloud-api-key",
+      "base_url": "https://hubapi.dev/v1",
+      "status": "enabled",
+      "config": {
+        "model": "deepseek-chat"
+      }
+    }
+  ]
+}
+```
+
+> 注意：CuteCloud 会自动处理请求头，无需额外配置。
+
 #### CLI Configuration (`~/.openaide/config.yaml`)
 
 ```bash
@@ -313,6 +346,39 @@ API Keys 在后端 `config.json` 中配置：
 | `glm` (智谱) | ✅ | https://open.bigmodel.cn/api/paas/v4 |
 | `ernie` (文心一言) | ✅ + secret_key | - |
 | `ollama` (本地) | ❌ | http://localhost:11434/v1 |
+
+##### CuteCloud / HubAPI (第三方聚合平台)
+
+CuteCloud 提供统一的 OpenAI 兼容 API，支持 1000+ 模型：
+
+```json
+{
+  "models": [
+    {
+      "name": "gpt-5-mini",
+      "provider": "openai",
+      "api_key": "your-cutecloud-api-key",
+      "base_url": "https://hubapi.dev/v1",
+      "status": "enabled",
+      "config": {
+        "model": "gpt-5-mini"
+      }
+    },
+    {
+      "name": "deepseek-chat",
+      "provider": "deepseek",
+      "api_key": "your-cutecloud-api-key",
+      "base_url": "https://hubapi.dev/v1",
+      "status": "enabled",
+      "config": {
+        "model": "deepseek-chat"
+      }
+    }
+  ]
+}
+```
+
+> 注意：CuteCloud 会自动处理请求头，无需额外配置。
 
 #### CLI 配置 (`~/.openaide/config.yaml`)
 
