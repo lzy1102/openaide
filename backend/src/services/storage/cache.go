@@ -1,10 +1,10 @@
 package storage
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
 	"time"
+
+	"openaide/backend/src/logger"
 
 	"github.com/patrickmn/go-cache"
 )
@@ -58,17 +58,19 @@ type RedisCache struct {
 }
 
 // NewRedisCache 创建 Redis 缓存
-func NewRedisCache(addr, password string, db int) CacheProvider {
+// 当前未实现，返回错误，调用方应使用 fallback 到 memory
+func NewRedisCache(addr, password string, db int) (CacheProvider, error) {
 	// TODO: 实现 Redis 连接
 	// 需要添加依赖: go get github.com/redis/go-redis/v9
-	panic("Redis cache not implemented yet. Please add go-redis dependency.")
+	return nil, fmt.Errorf("redis cache not implemented yet")
 }
 
 // CacheConfig 缓存配置
 type CacheConfig struct {
-	Type             string        `json:"type"`               // "memory" 或 "redis"
+	Type              string        `json:"type"`               // "memory", "ledis", "redis"
 	DefaultExpiration time.Duration `json:"default_expiration"` // 默认过期时间
 	CleanupInterval   time.Duration `json:"cleanup_interval"`   // 清理间隔
+	DataDir           string        `json:"data_dir,omitempty"` // LedisDB 数据目录
 	// Redis 配置
 	RedisAddr     string `json:"redis_addr,omitempty"`
 	RedisPassword string `json:"redis_password,omitempty"`
@@ -79,7 +81,21 @@ type CacheConfig struct {
 func NewCacheProvider(cfg CacheConfig) CacheProvider {
 	switch cfg.Type {
 	case "redis":
-		return NewRedisCache(cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB)
+		redisCache, err := NewRedisCache(cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB)
+		if err != nil {
+			logger.WithComponent("Cache").Error("failed to create redis cache, falling back to memory", "error", err)
+			return NewMemoryCache(5*time.Minute, 10*time.Minute)
+		}
+		logger.WithComponent("Cache").Info("using Redis cache", "addr", cfg.RedisAddr)
+		return redisCache
+	case "ledis":
+		cache, err := NewLedisCache(cfg.DataDir)
+		if err != nil {
+			logger.WithComponent("Cache").Error("failed to create ledis cache, falling back to memory", "error", err)
+			return NewMemoryCache(5*time.Minute, 10*time.Minute)
+		}
+		logger.WithComponent("Cache").Info("using LedisDB cache", "data_dir", cfg.DataDir)
+		return cache
 	case "memory", "":
 		defaultExp := cfg.DefaultExpiration
 		if defaultExp == 0 {
@@ -91,7 +107,8 @@ func NewCacheProvider(cfg CacheConfig) CacheProvider {
 		}
 		return NewMemoryCache(defaultExp, cleanup)
 	default:
-		panic(fmt.Sprintf("unsupported cache type: %s", cfg.Type))
+		logger.WithComponent("Cache").Warn("unsupported cache type, falling back to memory", "type", cfg.Type)
+		return NewMemoryCache(5*time.Minute, 10*time.Minute)
 	}
 }
 

@@ -9,18 +9,34 @@ import (
 
 // StorageConfig 存储配置
 type StorageConfig struct {
-	Cache CacheConfig `json:"cache"`
-	DB    DBConfig    `json:"db"`
+	Cache      CacheConfig       `json:"cache"`
+	DB         DBConfig          `json:"db"`
+	VectorStore VectorStoreConfig `json:"vector_store"` // 向量存储配置
+}
+
+// VectorStoreConfig 向量存储配置
+type VectorStoreConfig struct {
+	Type    string `json:"type"`     // "hnsw", "memory", "pinecone", "weaviate", "milvus", "qdrant", "chroma"
+	DataDir string `json:"data_dir"` // 数据目录（HNSW 使用）
+
+	// 外部向量数据库配置
+	Host      string `json:"host,omitempty"`
+	Port      int    `json:"port,omitempty"`
+	APIKey    string `json:"api_key,omitempty"`
+	Namespace string `json:"namespace,omitempty"`
+	Cloud     string `json:"cloud,omitempty"`  // Pinecone cloud
+	Region    string `json:"region,omitempty"` // Pinecone region
 }
 
 // CacheConfig 缓存配置
 type CacheConfig struct {
-	Type              string        `json:"type"`               // "memory" 或 "redis"
-	DefaultExpiration int           `json:"default_expiration"` // 默认过期时间（秒）
-	CleanupInterval   int           `json:"cleanup_interval"`   // 清理间隔（秒）
-	RedisAddr         string        `json:"redis_addr,omitempty"`
-	RedisPassword     string        `json:"redis_password,omitempty"`
-	RedisDB           int           `json:"redis_db,omitempty"`
+	Type              string `json:"type"`                // "memory", "ledis", "redis"
+	DefaultExpiration int    `json:"default_expiration"`  // 默认过期时间（秒）
+	CleanupInterval   int    `json:"cleanup_interval"`    // 清理间隔（秒）
+	DataDir           string `json:"data_dir,omitempty"`  // LedisDB 数据目录
+	RedisAddr         string `json:"redis_addr,omitempty"`
+	RedisPassword     string `json:"redis_password,omitempty"`
+	RedisDB           int    `json:"redis_db,omitempty"`
 }
 
 // DBConfig 数据库配置
@@ -38,6 +54,7 @@ type DBConfig struct {
 
 // Config 根配置结构
 type Config struct {
+	HomeDir         string          `json:"home_dir,omitempty"` // 数据主目录，默认 ~/.openaide
 	Models          []ModelConfig   `json:"models"`
 	Feishu          FeishuConfig    `json:"feishu"`
 	Voice           VoiceConfig     `json:"voice"`
@@ -252,9 +269,79 @@ func Save(cfg *Config) error {
 	return os.WriteFile(path, data, 0644)
 }
 
+// Validate 验证配置合法性
+func (c *Config) Validate() error {
+	if c.HomeDir == "" {
+		return fmt.Errorf("home_dir cannot be empty")
+	}
+
+	// 验证存储配置
+	if err := c.Storage.Validate(); err != nil {
+		return fmt.Errorf("storage config invalid: %w", err)
+	}
+
+	// 验证模型配置
+	if len(c.Models) == 0 {
+		return fmt.Errorf("at least one model must be configured")
+	}
+	for i, model := range c.Models {
+		if model.Name == "" {
+			return fmt.Errorf("model[%d].name cannot be empty", i)
+		}
+		if model.APIKey == "" {
+			return fmt.Errorf("model[%d].api_key cannot be empty", i)
+		}
+	}
+
+	return nil
+}
+
+// Validate 验证存储配置
+func (s *StorageConfig) Validate() error {
+	// 验证数据库配置
+	validDBTypes := map[string]bool{"sqlite": true, "postgres": true, "mysql": true}
+	if !validDBTypes[s.DB.Type] {
+		return fmt.Errorf("invalid db.type: %s, must be one of: sqlite, postgres, mysql", s.DB.Type)
+	}
+	if s.DB.Type == "sqlite" && s.DB.URI == "" {
+		return fmt.Errorf("db.uri cannot be empty when using sqlite")
+	}
+
+	// 验证缓存配置
+	validCacheTypes := map[string]bool{"memory": true, "ledis": true, "redis": true}
+	if !validCacheTypes[s.Cache.Type] {
+		return fmt.Errorf("invalid cache.type: %s, must be one of: memory, ledis, redis", s.Cache.Type)
+	}
+
+	// 验证向量存储配置
+	validVectorTypes := map[string]bool{"hnsw": true, "memory": true, "pinecone": true, "weaviate": true, "milvus": true, "qdrant": true, "chroma": true}
+	if !validVectorTypes[s.VectorStore.Type] {
+		return fmt.Errorf("invalid vector_store.type: %s", s.VectorStore.Type)
+	}
+
+	return nil
+}
+
 // GetExampleConfig 获取示例配置
 func GetExampleConfig() *Config {
 	return &Config{
+		HomeDir: "/opt/openaide", // 服务器部署默认使用 /opt/openaide
+		Storage: StorageConfig{
+			Cache: CacheConfig{
+			Type:              "ledis", // 使用 LedisDB 缓存（兼容 Redis 协议，可平滑迁移）
+			DefaultExpiration: 3600,
+			CleanupInterval:   600,
+			DataDir:           "/opt/openaide/data/ledis",
+		},
+			DB: DBConfig{
+				Type: "sqlite",
+				URI:  "/opt/openaide/data/db/openaide.db",
+			},
+			VectorStore: VectorStoreConfig{
+				Type:    "hnsw",
+				DataDir: "/opt/openaide/data/vectors",
+			},
+		},
 		Models: []ModelConfig{
 			{
 				Name:        "gpt-4",

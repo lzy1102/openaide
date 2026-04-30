@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"openaide/backend/src/config"
 	"openaide/backend/src/models"
 	"openaide/backend/src/services/mcp"
 
@@ -1589,7 +1590,7 @@ func (t *FileWriteTool) isPathAllowed(absPath string) bool {
 	t.once.Do(func() {
 		if len(t.AllowedBaseDirs) == 0 {
 			cwd, _ := os.Getwd()
-			t.AllowedBaseDirs = []string{cwd, "/tmp"}
+			t.AllowedBaseDirs = []string{cwd, config.DefaultPaths.HomeDir, "/tmp"}
 		}
 	})
 	for _, base := range t.AllowedBaseDirs {

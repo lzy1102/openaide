@@ -2,9 +2,11 @@ package storage
 
 import (
 	"fmt"
-	"log"
 	"net/url"
 	"strings"
+	"time"
+
+	"openaide/backend/src/logger"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
@@ -23,20 +25,81 @@ type DBConfig struct {
 	Password string `json:"password,omitempty"`
 	Database string `json:"database,omitempty"`
 	SSLMode  string `json:"ssl_mode,omitempty"` // postgres only
+
+	// 连接池配置
+	MaxOpenConns    int           `json:"max_open_conns,omitempty"`    // 最大打开连接数，默认 100
+	MaxIdleConns    int           `json:"max_idle_conns,omitempty"`    // 最大空闲连接数，默认 10
+	ConnMaxLifetime time.Duration `json:"conn_max_lifetime,omitempty"` // 连接最大生命周期，默认 1h
+	ConnMaxIdleTime time.Duration `json:"conn_max_idle_time,omitempty"` // 连接最大空闲时间，默认 10m
 }
 
 // NewDB 根据配置创建数据库连接
 func NewDB(cfg DBConfig) (*gorm.DB, error) {
+	var db *gorm.DB
+	var err error
+
 	switch cfg.Type {
 	case "sqlite", "":
-		return newSQLite(cfg)
+		db, err = newSQLite(cfg)
 	case "postgres":
-		return newPostgres(cfg)
+		db, err = newPostgres(cfg)
 	case "mysql":
-		return newMySQL(cfg)
+		db, err = newMySQL(cfg)
 	default:
 		return nil, fmt.Errorf("unsupported database type: %s", cfg.Type)
 	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	// 配置连接池
+	if err := configurePool(db, cfg); err != nil {
+		return nil, fmt.Errorf("failed to configure connection pool: %w", err)
+	}
+
+	return db, nil
+}
+
+// configurePool 配置数据库连接池
+func configurePool(db *gorm.DB, cfg DBConfig) error {
+	sqlDB, err := db.DB()
+	if err != nil {
+		return err
+	}
+
+	// 最大打开连接数
+	maxOpen := cfg.MaxOpenConns
+	if maxOpen <= 0 {
+		maxOpen = 100
+	}
+	sqlDB.SetMaxOpenConns(maxOpen)
+
+	// 最大空闲连接数
+	maxIdle := cfg.MaxIdleConns
+	if maxIdle <= 0 {
+		maxIdle = 10
+	}
+	sqlDB.SetMaxIdleConns(maxIdle)
+
+	// 连接最大生命周期
+	maxLifetime := cfg.ConnMaxLifetime
+	if maxLifetime <= 0 {
+		maxLifetime = time.Hour
+	}
+	sqlDB.SetConnMaxLifetime(maxLifetime)
+
+	// 连接最大空闲时间
+	maxIdleTime := cfg.ConnMaxIdleTime
+	if maxIdleTime <= 0 {
+		maxIdleTime = 10 * time.Minute
+	}
+	sqlDB.SetConnMaxIdleTime(maxIdleTime)
+
+	logger.WithComponent("DB").Info("connection pool configured",
+		"max_open", maxOpen, "max_idle", maxIdle, "max_lifetime", maxLifetime, "max_idle_time", maxIdleTime)
+
+	return nil
 }
 
 // newSQLite SQLite 连接
@@ -45,7 +108,7 @@ func newSQLite(cfg DBConfig) (*gorm.DB, error) {
 	if uri == "" {
 		uri = "openaide.db"
 	}
-	log.Printf("Connecting to SQLite: %s", uri)
+	logger.WithComponent("DB").Info("Connecting to SQLite", "uri", uri)
 	return gorm.Open(sqlite.Open(uri), &gorm.Config{})
 }
 
@@ -65,7 +128,7 @@ func newPostgres(cfg DBConfig) (*gorm.DB, error) {
 		uri = fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
 			cfg.User, cfg.Password, cfg.Host, port, cfg.Database, sslMode)
 	}
-	log.Printf("Connecting to PostgreSQL: %s", maskURI(uri))
+	logger.WithComponent("DB").Info("connecting to PostgreSQL", "uri", maskURI(uri))
 	return gorm.Open(postgres.Open(uri), &gorm.Config{})
 }
 
@@ -81,7 +144,7 @@ func newMySQL(cfg DBConfig) (*gorm.DB, error) {
 		uri = fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",
 			cfg.User, cfg.Password, cfg.Host, port, cfg.Database)
 	}
-	log.Printf("Connecting to MySQL: %s", maskURI(uri))
+	logger.WithComponent("DB").Info("connecting to MySQL", "uri", maskURI(uri))
 	return gorm.Open(mysql.Open(uri), &gorm.Config{})
 }
 

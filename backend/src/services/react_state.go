@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"openaide/backend/src/config"
 	"openaide/backend/src/services/llm"
 )
 
@@ -217,7 +218,7 @@ type SessionRecorder struct {
 // NewSessionRecorder 创建会话记录器
 func NewSessionRecorder(dataDir string) *SessionRecorder {
 	if dataDir == "" {
-		dataDir = "./sessions"
+		dataDir = filepath.Join(config.DefaultPaths.DataDir, "sessions")
 	}
 	os.MkdirAll(dataDir, 0755)
 	return &SessionRecorder{

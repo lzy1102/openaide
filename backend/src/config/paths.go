@@ -25,6 +25,13 @@ func init() {
 	DefaultPaths = NewPaths("")
 }
 
+// InitPathsWithConfig 根据配置初始化路径（在加载配置后调用）
+func InitPathsWithConfig(cfg *Config) {
+	if cfg != nil && cfg.HomeDir != "" {
+		DefaultPaths = NewPaths(cfg.HomeDir)
+	}
+}
+
 // NewPaths 创建路径配置
 func NewPaths(homeDir string) *Paths {
 	if homeDir == "" {

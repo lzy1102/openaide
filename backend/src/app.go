@@ -1,7 +1,11 @@
 package main
 
 import (
+	"context"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"openaide/backend/src/config"
@@ -205,13 +209,7 @@ func (app *Application) Close() {
 
 // initInfrastructure 初始化数据库和配置
 func (app *Application) initInfrastructure() error {
-	// 初始化数据目录
-	if err := config.DefaultPaths.EnsureDirs(); err != nil {
-		log.Fatalf("Failed to create data directories: %v", err)
-	}
-	log.Printf("Data directory: %s", config.DefaultPaths.HomeDir)
-
-	// 加载配置文件
+	// 先加载配置文件（不依赖路径）
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
@@ -219,13 +217,34 @@ func (app *Application) initInfrastructure() error {
 	app.Config = cfg
 	log.Printf("Config loaded from: %s", config.GetConfigPath())
 
+	// 如果配置中指定了 home_dir，重新初始化路径
+	if cfg.HomeDir != "" {
+		config.InitPathsWithConfig(cfg)
+		log.Printf("Data directory overridden by config: %s", config.DefaultPaths.HomeDir)
+	}
+
+	// 确保数据目录存在
+	if err := config.DefaultPaths.EnsureDirs(); err != nil {
+		log.Fatalf("Failed to create data directories: %v", err)
+	}
+	log.Printf("Data directory: %s", config.DefaultPaths.HomeDir)
+
 	// 初始化数据库（支持 SQLite/PostgreSQL/MySQL）
 	dbCfg := cfg.Storage.DB
 	if dbCfg.Type == "" {
 		dbCfg.Type = "sqlite"
 		dbCfg.URI = config.DefaultPaths.GetDBPath("openaide")
 	}
-	db, err := storage.NewDB(dbCfg)
+	db, err := storage.NewDB(storage.DBConfig{
+		Type:     dbCfg.Type,
+		URI:      dbCfg.URI,
+		Host:     dbCfg.Host,
+		Port:     dbCfg.Port,
+		User:     dbCfg.User,
+		Password: dbCfg.Password,
+		Database: dbCfg.Database,
+		SSLMode:  dbCfg.SSLMode,
+	})
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
@@ -271,15 +290,19 @@ func (app *Application) initInfrastructure() error {
 
 // initCoreServices 初始化核心服务
 func (app *Application) initCoreServices() error {
-	// 初始化缓存（支持 memory/redis）
+	// 初始化缓存（支持 memory/ledis/redis）
 	cacheCfg := app.Config.Storage.Cache
 	if cacheCfg.Type == "" {
 		cacheCfg.Type = "memory"
+	}
+	if cacheCfg.DataDir == "" {
+		cacheCfg.DataDir = config.DefaultPaths.LedisDir
 	}
 	cacheProvider := storage.NewCacheProvider(storage.CacheConfig{
 		Type:              cacheCfg.Type,
 		DefaultExpiration: time.Duration(cacheCfg.DefaultExpiration) * time.Second,
 		CleanupInterval:   time.Duration(cacheCfg.CleanupInterval) * time.Second,
+		DataDir:           cacheCfg.DataDir,
 		RedisAddr:         cacheCfg.RedisAddr,
 		RedisPassword:     cacheCfg.RedisPassword,
 		RedisDB:           cacheCfg.RedisDB,
@@ -391,12 +414,31 @@ func (app *Application) initAdvancedServices() error {
 func (app *Application) initKnowledgeServices() error {
 	app.EmbeddingService = services.NewOpenAIEmbeddingService("", "", "", app.CacheService)
 
-	vectorManager, err := services.NewVectorManager(config.DefaultPaths.VectorDir, app.EmbeddingService)
+	// 初始化向量存储（支持 HNSW / Memory / 外部向量数据库）
+	vectorStoreCfg := app.Config.Storage.VectorStore
+	if vectorStoreCfg.Type == "" {
+		vectorStoreCfg.Type = "hnsw" // 默认使用本地 HNSW
+	}
+	if vectorStoreCfg.DataDir == "" {
+		vectorStoreCfg.DataDir = config.DefaultPaths.VectorDir
+	}
+
+	vectorManager, err := services.NewVectorManagerWithConfig(storage.VectorStoreConfig{
+		Type:      storage.VectorStoreType(vectorStoreCfg.Type),
+		DataDir:   vectorStoreCfg.DataDir,
+		Host:      vectorStoreCfg.Host,
+		Port:      vectorStoreCfg.Port,
+		APIKey:    vectorStoreCfg.APIKey,
+		Namespace: vectorStoreCfg.Namespace,
+		Cloud:     vectorStoreCfg.Cloud,
+		Region:    vectorStoreCfg.Region,
+	}, app.EmbeddingService)
 	if err != nil {
 		log.Printf("Failed to initialize vector manager: %v", err)
 	}
 	if vectorManager != nil {
 		app.VectorService = vectorManager
+		log.Printf("[VectorStore] Initialized with type: %s", vectorStoreCfg.Type)
 	} else {
 		app.VectorService = services.NewNoopVectorService()
 	}
@@ -597,4 +639,70 @@ func (app *Application) wireDependencies() error {
 	app.DialogueService.SetCacheService(app.CacheService)
 
 	return nil
+}
+
+// Shutdown 优雅关闭应用
+func (app *Application) Shutdown(ctx context.Context) error {
+	log.Println("[Shutdown] Starting graceful shutdown...")
+
+	// 1. 停止接收新请求（HTTP 服务器应在调用 Shutdown 前停止监听）
+
+	// 2. 关闭后台服务
+	if app.ActivityTracker != nil {
+		app.ActivityTracker.Stop()
+	}
+
+	// 3. 关闭 Feishu 服务
+	if app.FeishuService != nil {
+		app.FeishuService.Stop()
+	}
+
+	// 4. 关闭向量存储
+	if app.VectorService != nil {
+		if closer, ok := app.VectorService.(interface{ Close() error }); ok {
+			if err := closer.Close(); err != nil {
+				log.Printf("[Shutdown] Failed to close vector service: %v", err)
+			}
+		}
+	}
+
+	// 5. 关闭缓存
+	if app.CacheService != nil {
+		// go-cache 无需显式关闭，LedisDB 需要关闭
+		// 这里可以扩展 CacheProvider 接口添加 Close 方法
+	}
+
+	// 6. 关闭数据库连接
+	if app.DB != nil {
+		sqlDB, err := app.DB.DB()
+		if err == nil {
+			if err := sqlDB.Close(); err != nil {
+				log.Printf("[Shutdown] Failed to close database: %v", err)
+			} else {
+				log.Println("[Shutdown] Database connection closed")
+			}
+		}
+	}
+
+	log.Println("[Shutdown] Graceful shutdown completed")
+	return nil
+}
+
+// WaitForShutdown 等待系统信号并执行优雅关闭
+func (app *Application) WaitForShutdown() {
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+	sig := <-sigChan
+	log.Printf("[Shutdown] Received signal: %v", sig)
+
+	// 创建带超时的 context
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := app.Shutdown(ctx); err != nil {
+		log.Printf("[Shutdown] Error during shutdown: %v", err)
+	}
+
+	os.Exit(0)
 }

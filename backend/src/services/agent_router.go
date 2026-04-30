@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"openaide/backend/src/config"
 )
 
 type AgentModelConfig struct {
@@ -40,11 +42,10 @@ func NewAgentRouter(svc *ModelService) *AgentRouter {
 }
 
 func (r *AgentRouter) loadConfig() {
-	home, _ := os.UserHomeDir()
 	configPaths := []string{}
-	if home != "" {
-		configPaths = append(configPaths, filepath.Join(home, ".openaide", "agent_routing.json"))
-	}
+	// 优先使用配置中的 home_dir
+	configPaths = append(configPaths, filepath.Join(config.DefaultPaths.HomeDir, "agent_routing.json"))
+	// 回退到当前目录
 	configPaths = append(configPaths, filepath.Join(".", "agent_routing.json"))
 
 	for _, path := range configPaths {
