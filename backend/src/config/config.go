@@ -25,8 +25,9 @@ type CacheConfig struct {
 
 // DBConfig 数据库配置
 type DBConfig struct {
-	Type     string `json:"type"`     // "sqlite", "postgres", "mysql"
-	DSN      string `json:"dsn"`      // 连接字符串（优先）
+	Type string `json:"type"` // "sqlite", "postgres", "mysql"
+	URI  string `json:"uri"`  // 连接 URI/DSN（优先使用）
+	// 以下为分开配置（当 URI 为空时使用）
 	Host     string `json:"host,omitempty"`
 	Port     int    `json:"port,omitempty"`
 	User     string `json:"user,omitempty"`

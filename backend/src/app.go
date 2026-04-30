@@ -223,7 +223,7 @@ func (app *Application) initInfrastructure() error {
 	dbCfg := cfg.Storage.DB
 	if dbCfg.Type == "" {
 		dbCfg.Type = "sqlite"
-		dbCfg.DSN = config.DefaultPaths.GetDBPath("openaide")
+		dbCfg.URI = config.DefaultPaths.GetDBPath("openaide")
 	}
 	db, err := storage.NewDB(dbCfg)
 	if err != nil {

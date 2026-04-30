@@ -3,6 +3,7 @@ package storage
 import (
 	"fmt"
 	"log"
+	"net/url"
 	"strings"
 
 	"gorm.io/driver/mysql"
@@ -13,8 +14,9 @@ import (
 
 // DBConfig 数据库配置
 type DBConfig struct {
-	Type     string `json:"type"`      // "sqlite", "postgres", "mysql"
-	DSN      string `json:"dsn"`       // 连接字符串
+	Type string `json:"type"` // "sqlite", "postgres", "mysql"
+	URI  string `json:"uri"`  // 连接 URI/DSN（优先使用）
+	// 以下为分开配置（当 URI 为空时使用）
 	Host     string `json:"host,omitempty"`
 	Port     int    `json:"port,omitempty"`
 	User     string `json:"user,omitempty"`
@@ -39,18 +41,19 @@ func NewDB(cfg DBConfig) (*gorm.DB, error) {
 
 // newSQLite SQLite 连接
 func newSQLite(cfg DBConfig) (*gorm.DB, error) {
-	dsn := cfg.DSN
-	if dsn == "" {
-		dsn = "openaide.db"
+	uri := cfg.URI
+	if uri == "" {
+		uri = "openaide.db"
 	}
-	log.Printf("Connecting to SQLite: %s", dsn)
-	return gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+	log.Printf("Connecting to SQLite: %s", uri)
+	return gorm.Open(sqlite.Open(uri), &gorm.Config{})
 }
 
 // newPostgres PostgreSQL 连接
 func newPostgres(cfg DBConfig) (*gorm.DB, error) {
-	dsn := cfg.DSN
-	if dsn == "" {
+	uri := cfg.URI
+	if uri == "" {
+		// 构建 PostgreSQL URI: postgres://user:password@host:port/db?sslmode=disable
 		sslMode := cfg.SSLMode
 		if sslMode == "" {
 			sslMode = "disable"
@@ -59,37 +62,46 @@ func newPostgres(cfg DBConfig) (*gorm.DB, error) {
 		if port == 0 {
 			port = 5432
 		}
-		dsn = fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-			cfg.Host, port, cfg.User, cfg.Password, cfg.Database, sslMode)
+		uri = fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
+			cfg.User, cfg.Password, cfg.Host, port, cfg.Database, sslMode)
 	}
-	log.Printf("Connecting to PostgreSQL: %s", maskDSN(dsn))
-	return gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	log.Printf("Connecting to PostgreSQL: %s", maskURI(uri))
+	return gorm.Open(postgres.Open(uri), &gorm.Config{})
 }
 
 // newMySQL MySQL 连接
 func newMySQL(cfg DBConfig) (*gorm.DB, error) {
-	dsn := cfg.DSN
-	if dsn == "" {
+	uri := cfg.URI
+	if uri == "" {
+		// 构建 MySQL URI: user:password@tcp(host:port)/db?charset=utf8mb4&parseTime=True&loc=Local
 		port := cfg.Port
 		if port == 0 {
 			port = 3306
 		}
-		dsn = fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",
+		uri = fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",
 			cfg.User, cfg.Password, cfg.Host, port, cfg.Database)
 	}
-	log.Printf("Connecting to MySQL: %s", maskDSN(dsn))
-	return gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	log.Printf("Connecting to MySQL: %s", maskURI(uri))
+	return gorm.Open(mysql.Open(uri), &gorm.Config{})
 }
 
-// maskDSN 隐藏密码
-func maskDSN(dsn string) string {
-	// 简单替换 password=xxx
-	if idx := strings.Index(dsn, "password="); idx != -1 {
+// maskURI 隐藏密码
+func maskURI(uri string) string {
+	// 尝试解析 URI
+	if u, err := url.Parse(uri); err == nil && u.User != nil {
+		if _, hasPassword := u.User.Password(); hasPassword {
+			u.User = url.UserPassword(u.User.Username(), "***")
+			return u.String()
+		}
+	}
+	// 简单替换 password=xxx 或 :password@
+	masked := uri
+	if idx := strings.Index(masked, "password="); idx != -1 {
 		end := idx + 9
-		for end < len(dsn) && dsn[end] != ' ' {
+		for end < len(masked) && masked[end] != ' ' && masked[end] != '&' {
 			end++
 		}
-		return dsn[:idx+9] + "***" + dsn[end:]
+		masked = masked[:idx+9] + "***" + masked[end:]
 	}
-	return dsn
+	return masked
 }
