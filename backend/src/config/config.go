@@ -7,6 +7,34 @@ import (
 	"sync"
 )
 
+// StorageConfig 存储配置
+type StorageConfig struct {
+	Cache CacheConfig `json:"cache"`
+	DB    DBConfig    `json:"db"`
+}
+
+// CacheConfig 缓存配置
+type CacheConfig struct {
+	Type              string        `json:"type"`               // "memory" 或 "redis"
+	DefaultExpiration int           `json:"default_expiration"` // 默认过期时间（秒）
+	CleanupInterval   int           `json:"cleanup_interval"`   // 清理间隔（秒）
+	RedisAddr         string        `json:"redis_addr,omitempty"`
+	RedisPassword     string        `json:"redis_password,omitempty"`
+	RedisDB           int           `json:"redis_db,omitempty"`
+}
+
+// DBConfig 数据库配置
+type DBConfig struct {
+	Type     string `json:"type"`     // "sqlite", "postgres", "mysql"
+	DSN      string `json:"dsn"`      // 连接字符串（优先）
+	Host     string `json:"host,omitempty"`
+	Port     int    `json:"port,omitempty"`
+	User     string `json:"user,omitempty"`
+	Password string `json:"password,omitempty"`
+	Database string `json:"database,omitempty"`
+	SSLMode  string `json:"ssl_mode,omitempty"` // postgres only
+}
+
 // Config 根配置结构
 type Config struct {
 	Models          []ModelConfig   `json:"models"`
@@ -17,6 +45,7 @@ type Config struct {
 	Embedding       EmbeddingConfig `json:"embedding"` // 嵌入服务配置（可选）
 	Context         ContextConfig   `json:"context"`   // 上下文引擎配置 (Hermes Agent)
 	ActivityTimeout string          `json:"activity_timeout"` // 基于活动超时时间 (Hermes Agent)
+	Storage         StorageConfig   `json:"storage"`          // 存储配置（缓存+数据库）
 }
 
 // ContextConfig 上下文引擎配置 (Hermes Agent)

@@ -9,8 +9,8 @@ import (
 	"openaide/backend/src/models"
 	"openaide/backend/src/services"
 	"openaide/backend/src/services/mcp"
+	"openaide/backend/src/services/storage"
 
-	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -219,9 +219,13 @@ func (app *Application) initInfrastructure() error {
 	app.Config = cfg
 	log.Printf("Config loaded from: %s", config.GetConfigPath())
 
-	// 初始化数据库
-	dbPath := config.DefaultPaths.GetDBPath("openaide")
-	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
+	// 初始化数据库（支持 SQLite/PostgreSQL/MySQL）
+	dbCfg := cfg.Storage.DB
+	if dbCfg.Type == "" {
+		dbCfg.Type = "sqlite"
+		dbCfg.DSN = config.DefaultPaths.GetDBPath("openaide")
+	}
+	db, err := storage.NewDB(dbCfg)
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
@@ -267,7 +271,20 @@ func (app *Application) initInfrastructure() error {
 
 // initCoreServices 初始化核心服务
 func (app *Application) initCoreServices() error {
-	app.CacheService = services.NewCacheService()
+	// 初始化缓存（支持 memory/redis）
+	cacheCfg := app.Config.Storage.Cache
+	if cacheCfg.Type == "" {
+		cacheCfg.Type = "memory"
+	}
+	cacheProvider := storage.NewCacheProvider(storage.CacheConfig{
+		Type:              cacheCfg.Type,
+		DefaultExpiration: time.Duration(cacheCfg.DefaultExpiration) * time.Second,
+		CleanupInterval:   time.Duration(cacheCfg.CleanupInterval) * time.Second,
+		RedisAddr:         cacheCfg.RedisAddr,
+		RedisPassword:     cacheCfg.RedisPassword,
+		RedisDB:           cacheCfg.RedisDB,
+	})
+	app.CacheService = services.NewCacheServiceWithProvider(cacheProvider)
 
 	loggerService, err := services.NewLoggerService(services.LogLevelInfo, "")
 	if err != nil {
