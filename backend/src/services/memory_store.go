@@ -228,10 +228,18 @@ func (p *GormMemoryProvider) CleanupExpiredShortTerm(_ context.Context) error {
 }
 
 func (p *GormMemoryProvider) AdjustPriority(_ context.Context) error {
-	if err := p.db.Exec(`UPDATE memories SET importance = MIN(5, importance + 1) WHERE last_accessed > datetime('now', '-7 days')`).Error; err != nil {
+	// 使用 GORM 跨数据库兼容写法
+	sevenDaysAgo := time.Now().AddDate(0, 0, -7)
+	thirtyDaysAgo := time.Now().AddDate(0, 0, -30)
+
+	if err := p.db.Model(&models.Memory{}).
+		Where("last_accessed > ?", sevenDaysAgo).
+		UpdateColumn("importance", gorm.Expr("LEAST(5, importance + 1)")).Error; err != nil {
 		return err
 	}
-	return p.db.Exec(`UPDATE memories SET importance = MAX(1, importance - 1) WHERE last_accessed < datetime('now', '-30 days')`).Error
+	return p.db.Model(&models.Memory{}).
+		Where("last_accessed < ?", thirtyDaysAgo).
+		UpdateColumn("importance", gorm.Expr("GREATEST(1, importance - 1)")).Error
 }
 
 func (p *GormMemoryProvider) FindDuplicates(_ context.Context, userID string) ([]models.Memory, error) {

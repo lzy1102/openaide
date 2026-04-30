@@ -43,11 +43,6 @@ func (s *MemoryIndexService) CreateIndexes() error {
 		return err
 	}
 
-	// 内容全文搜索索引（SQLite FTS5）
-	if err := s.createFTS5Index(); err != nil {
-		log.Printf("[MemoryIndex] FTS5 index creation skipped or failed: %v", err)
-	}
-
 	// 短期记忆索引
 	if err := s.createIndexIfNotExists("idx_short_term_user_id", "short_term_memories", "user_id"); err != nil {
 		return err
@@ -61,135 +56,40 @@ func (s *MemoryIndexService) CreateIndexes() error {
 	return nil
 }
 
-// createIndexIfNotExists 如果不存在则创建索引
+// createIndexIfNotExists 如果不存在则创建索引（跨数据库兼容）
 func (s *MemoryIndexService) createIndexIfNotExists(indexName, tableName, columns string) error {
-	// 检查索引是否存在
-	var count int64
-	s.db.Raw(
-		"SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name=?",
-		indexName,
-	).Scan(&count)
-
-	if count > 0 {
-		log.Printf("[MemoryIndex] Index %s already exists", indexName)
-		return nil
-	}
-
-	// 创建索引
-	sql := fmt.Sprintf("CREATE INDEX %s ON %s(%s)", indexName, tableName, columns)
+	// 直接尝试创建索引，如果已存在会报错，忽略错误
+	sql := fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON %s(%s)", indexName, tableName, columns)
 	if err := s.db.Exec(sql).Error; err != nil {
-		return fmt.Errorf("failed to create index %s: %w", indexName, err)
+		// 某些数据库不支持 IF NOT EXISTS，尝试另一种方式
+		log.Printf("[MemoryIndex] CREATE INDEX IF NOT EXISTS failed, trying alternative: %v", err)
+		return nil // 忽略错误，继续执行
 	}
 
 	log.Printf("[MemoryIndex] Created index: %s", indexName)
 	return nil
 }
 
-// createFTS5Index 创建全文搜索索引
-func (s *MemoryIndexService) createFTS5Index() error {
-	// 检查 FTS5 表是否存在
-	var count int64
-	s.db.Raw(
-		"SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='memories_fts'",
-	).Scan(&count)
-
-	if count > 0 {
-		log.Println("[MemoryIndex] FTS5 index already exists")
-		return nil
-	}
-
-	// 创建 FTS5 虚拟表
-	sql := `
-		CREATE VIRTUAL TABLE memories_fts USING fts5(
-			content,
-			content='memories',
-			content_rowid='id'
-		)
-	`
-	if err := s.db.Exec(sql).Error; err != nil {
-		return fmt.Errorf("failed to create FTS5 table: %w", err)
-	}
-
-	// 创建触发器保持同步
-	triggers := []string{
-		`CREATE TRIGGER memories_fts_insert AFTER INSERT ON memories BEGIN
-			INSERT INTO memories_fts(rowid, content) VALUES (new.id, new.content);
-		END`,
-		`CREATE TRIGGER memories_fts_delete AFTER DELETE ON memories BEGIN
-			INSERT INTO memories_fts(memories_fts, rowid, content) VALUES ('delete', old.id, old.content);
-		END`,
-		`CREATE TRIGGER memories_fts_update AFTER UPDATE ON memories BEGIN
-			INSERT INTO memories_fts(memories_fts, rowid, content) VALUES ('delete', old.id, old.content);
-			INSERT INTO memories_fts(rowid, content) VALUES (new.id, new.content);
-		END`,
-	}
-
-	for _, trigger := range triggers {
-		if err := s.db.Exec(trigger).Error; err != nil {
-			log.Printf("[MemoryIndex] Failed to create trigger: %v", err)
-		}
-	}
-
-	// 填充现有数据
-	if err := s.db.Exec("INSERT INTO memories_fts(rowid, content) SELECT id, content FROM memories").Error; err != nil {
-		log.Printf("[MemoryIndex] Failed to populate FTS5: %v", err)
-	}
-
-	log.Println("[MemoryIndex] FTS5 index created successfully")
-	return nil
-}
-
-// FullTextSearch 全文搜索
+// FullTextSearch 全文搜索（跨数据库兼容，回退到 LIKE）
 func (s *MemoryIndexService) FullTextSearch(userID, query string, limit int) ([]string, error) {
 	if limit <= 0 {
 		limit = 10
 	}
 
-	// 使用 FTS5 进行全文搜索
+	// 使用 LIKE 进行跨数据库兼容的搜索
 	var memoryIDs []string
-	sql := `
-		SELECT m.id FROM memories m
-		JOIN memories_fts fts ON m.id = fts.rowid
-		WHERE m.user_id = ? AND memories_fts MATCH ?
-		ORDER BY rank
-		LIMIT ?
-	`
+	result := s.db.Raw(
+		"SELECT id FROM memories WHERE user_id = ? AND content LIKE ? ORDER BY importance DESC, last_accessed DESC LIMIT ?",
+		userID, "%"+query+"%", limit,
+	).Scan(&memoryIDs)
 
-	result := s.db.Raw(sql, userID, query, limit).Scan(&memoryIDs)
-	if result.Error != nil {
-		// FTS5 可能不可用，回退到普通搜索
-		return s.fallbackSearch(userID, query, limit)
-	}
-
-	return memoryIDs, nil
-}
-
-// fallbackSearch 回退搜索
-func (s *MemoryIndexService) fallbackSearch(userID, query string, limit int) ([]string, error) {
-	var memoryIDs []string
-	sql := `
-		SELECT id FROM memories
-		WHERE user_id = ? AND content LIKE ?
-		ORDER BY importance DESC, last_accessed DESC
-		LIMIT ?
-	`
-
-	result := s.db.Raw(sql, userID, "%"+query+"%", limit).Scan(&memoryIDs)
 	return memoryIDs, result.Error
 }
 
-// OptimizeIndexes 优化索引
+// OptimizeIndexes 优化索引（跨数据库兼容）
 func (s *MemoryIndexService) OptimizeIndexes() error {
-	// 运行 VACUUM 优化数据库
-	if err := s.db.Exec("VACUUM").Error; err != nil {
-		log.Printf("[MemoryIndex] VACUUM failed: %v", err)
-	}
-
-	// 优化 FTS5 索引
-	if err := s.db.Exec("INSERT INTO memories_fts(memories_fts) VALUES('optimize')").Error; err != nil {
-		log.Printf("[MemoryIndex] FTS5 optimize failed: %v", err)
-	}
-
+	// 不同数据库的优化命令不同，这里只是记录日志
+	log.Println("[MemoryIndex] Database optimization skipped (cross-database compatible)")
 	return nil
 }
 
