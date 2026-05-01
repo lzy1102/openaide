@@ -61,7 +61,7 @@ A full-featured AI Agent development platform with multi-model support, multi-ag
                      └──────────────────────────────────────────────┘
 ```
 
-**Tech Stack:** Go 1.22+ / Gin / GORM / SQLite / HNSW / LedisDB / slog
+**Tech Stack:** Go 1.22+ / Gin / GORM / SQLite (pure Go, no CGO) / HNSW / LedisDB / slog
 
 #### Supported LLM Providers
 
@@ -279,7 +279,7 @@ CGO_ENABLED=1 go run ./src/main.go
 #### Build
 
 ```bash
-CGO_ENABLED=1 go build -o openaide-server ./src
+go build -o openaide-server ./src
 ./openaide-server
 ```
 
@@ -359,9 +359,8 @@ go run main.go
 ```
 
 #### Prerequisites
-- Go 1.22+ (with CGO for SQLite)
+- Go 1.22+ (no CGO required, pure Go SQLite)
 - Docker (optional, for sandbox or deployment)
-- gcc (required for CGO/SQLite)
 
 ---
 

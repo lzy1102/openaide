@@ -1,7 +1,7 @@
 # Build stage
 FROM golang:1.22-alpine AS builder
 
-RUN apk add --no-cache git ca-certificates tzdata gcc musl-dev
+RUN apk add --no-cache git ca-certificates tzdata
 
 WORKDIR /app
 
@@ -10,12 +10,12 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -ldflags '-w -s' -o /openaide-server ./src
+RUN CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-w -s' -o /openaide-server ./src
 
 # Runtime stage
 FROM alpine:3.19
 
-RUN apk add --no-cache ca-certificates tzdata sqlite
+RUN apk add --no-cache ca-certificates tzdata
 
 WORKDIR /app
 

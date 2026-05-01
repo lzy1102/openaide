@@ -25,15 +25,15 @@ go mod tidy
 cp config.example.json config.json
 # Edit config.json and add your API keys
 
-# Run backend server
-CGO_ENABLED=1 go run ./src/main.go
+# Run backend server (no CGO required)
+go run ./src/main.go
 # Server runs on http://localhost:19375
 ```
 
 #### 3. Build
 
 ```bash
-CGO_ENABLED=1 go build -o openaide-server ./src
+go build -o openaide-server ./src
 ./openaide-server
 ```
 
@@ -101,7 +101,7 @@ CGO_ENABLED=1 go build -o openaide-server ./src
 | **Cache** | `memory` | In-memory cache (default, no persistence) |
 | | `ledis` | LedisDB embedded KV store (recommended, Redis-compatible) |
 | | `redis` | External Redis server |
-| **DB** | `sqlite` | SQLite database (default, CGO required) |
+| **DB** | `sqlite` | SQLite database (default, pure Go, no CGO) |
 | | `postgres` | PostgreSQL database |
 | | `mysql` | MySQL database |
 | **VectorStore** | `hnsw` | HNSW vector index with JSON persistence (default) |
@@ -190,7 +190,7 @@ docker-compose down
 ```bash
 # 1. Build
 cd backend
-CGO_ENABLED=1 go build -o openaide-server ./src
+CGO_ENABLED=0 go build -o openaide-server ./src
 
 # 2. Create directories
 sudo mkdir -p /opt/openaide/data/{db,vectors,ledis,sessions}
@@ -280,8 +280,8 @@ go mod tidy
 cp config.example.json config.json
 # 编辑 config.json，添加你的 API Keys
 
-# 运行后端服务
-CGO_ENABLED=1 go run ./src/main.go
+# 运行后端服务（无需 CGO）
+go run ./src/main.go
 # 服务运行在 http://localhost:19375
 ```
 
@@ -356,7 +356,7 @@ CGO_ENABLED=1 go build -o openaide-server ./src
 | **缓存** | `memory` | 内存缓存（默认，无持久化） |
 | | `ledis` | LedisDB 嵌入式 KV 存储（推荐，兼容 Redis） |
 | | `redis` | 外部 Redis 服务器 |
-| **数据库** | `sqlite` | SQLite 数据库（默认，需要 CGO） |
+| **数据库** | `sqlite` | SQLite 数据库（默认，纯 Go，无需 CGO） |
 | | `postgres` | PostgreSQL 数据库 |
 | | `mysql` | MySQL 数据库 |
 | **向量存储** | `hnsw` | HNSW 向量索引 + JSON 持久化（默认） |
