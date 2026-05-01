@@ -151,7 +151,7 @@ func GetConfigPath() string {
 		return configPath
 	}
 
-	// 优先级: 环境变量 > 当前目录 > 可执行文件目录 > 用户主目录
+	// 优先级: 环境变量 > /app/config.json(Docker) > 当前目录 > 可执行文件目录 > 用户主目录
 	if p := os.Getenv("OPENAIDE_CONFIG"); p != "" {
 		configPath = p
 		return configPath
@@ -172,8 +172,26 @@ func GetConfigPath() string {
 		return p
 	}
 
+	// Docker 容器内默认路径
+	if p := resolveConfigPath("/app/config.json"); p != "" {
+		configPath = p
+		return configPath
+	}
+
+	// OPENAIDE_HOME 目录下
+	if home := os.Getenv("OPENAIDE_HOME"); home != "" {
+		if p := resolveConfigPath(filepath.Join(home, "config.json")); p != "" {
+			configPath = p
+			return configPath
+		}
+	}
+
 	// 当前目录
 	cwd, _ := os.Getwd()
+	if p := resolveConfigPath(filepath.Join(cwd, "config.json")); p != "" {
+		configPath = p
+		return configPath
+	}
 	if p := resolveConfigPath(filepath.Join(cwd, ".openaide")); p != "" {
 		configPath = p
 		return configPath
@@ -182,6 +200,10 @@ func GetConfigPath() string {
 	// 可执行文件目录
 	execPath, _ := os.Executable()
 	execDir := filepath.Dir(execPath)
+	if p := resolveConfigPath(filepath.Join(execDir, "config.json")); p != "" {
+		configPath = p
+		return configPath
+	}
 	if p := resolveConfigPath(filepath.Join(execDir, ".openaide")); p != "" {
 		configPath = p
 		return configPath
@@ -196,11 +218,13 @@ func GetConfigPath() string {
 		}
 	}
 
-	// 默认: 用户主目录下的配置
-	if homeDir != "" {
+	// 默认: OPENAIDE_HOME 或用户主目录下
+	if home := os.Getenv("OPENAIDE_HOME"); home != "" {
+		configPath = filepath.Join(home, "config.json")
+	} else if homeDir != "" {
 		configPath = filepath.Join(homeDir, ".openaide", "config.json")
 	} else {
-		configPath = filepath.Join(cwd, ".openaide")
+		configPath = filepath.Join(cwd, "config.json")
 	}
 	return configPath
 }

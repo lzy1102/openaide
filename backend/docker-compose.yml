@@ -1,79 +1,38 @@
-version: '3.8'
+version: "3.8"
 
 services:
-  # OpenAIDE 后端服务
   openaide:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: openaide
+    container_name: openaide-server
     restart: unless-stopped
     ports:
       - "${PORT:-19375}:19375"
     volumes:
-      # 持久化数据
-      - ./data:/app/data
-      # 配置文件
+      - openaide-data:/opt/openaide/data
+      - openaide-logs:/opt/openaide/logs
       - ./config.json:/app/config.json:ro
     environment:
+      - OPENAIDE_HOME=/opt/openaide
+      - OPENAIDE_JWT_SECRET=${JWT_SECRET:-}
       - PORT=19375
-      - GIN_MODE=release
       - TZ=Asia/Shanghai
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:19375/health"]
       interval: 30s
       timeout: 3s
+      start_period: 10s
       retries: 3
-      start_period: 5s
-    networks:
-      - openaide-network
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  # 可选: Ollama 本地模型服务
-  ollama:
-    image: ollama/ollama:latest
-    container_name: ollama
-    restart: unless-stopped
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama-data:/root/.ollama
-    environment:
-      - TZ=Asia/Shanghai
-    networks:
-      - openaide-network
-    profiles:
-      - ollama
     deploy:
       resources:
+        limits:
+          memory: 1G
         reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-
-  # 可选: 向量数据库 (如需更高性能)
-  # qdrant:
-  #   image: qdrant/qdrant:latest
-  #   container_name: qdrant
-  #   restart: unless-stopped
-  #   ports:
-  #     - "6333:6333"
-  #   volumes:
-  #     - qdrant-data:/qdrant/storage
-  #   networks:
-  #     - openaide-network
-  #   profiles:
-  #     - vector
-
-networks:
-  openaide-network:
-    driver: bridge
+          memory: 256M
 
 volumes:
-  ollama-data:
-  # qdrant-data:
+  openaide-data:
+    driver: local
+  openaide-logs:
+    driver: local
