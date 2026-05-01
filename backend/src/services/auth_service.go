@@ -470,6 +470,7 @@ func (s *AuthService) createSession(user *models.User, ipAddress, userAgent stri
 
 	session := &models.UserSession{
 		UserID:       user.ID,
+		Token:        uuid.New().String(),
 		RefreshToken: refreshToken,
 		DeviceType:   deviceType,
 		UserAgent:    userAgent,
