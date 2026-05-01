@@ -61,7 +61,7 @@ A full-featured AI Agent development platform with multi-model support, multi-ag
                      └──────────────────────────────────────────────┘
 ```
 
-**Tech Stack:** Go 1.20+ / Gin / GORM / SQLite (modernc, CGO_ENABLED=0)
+**Tech Stack:** Go 1.22+ / Gin / GORM / SQLite / HNSW / LedisDB / slog
 
 #### Supported LLM Providers
 
@@ -266,43 +266,90 @@ A full-featured AI Agent development platform with multi-model support, multi-ag
 ```bash
 cd openaide/backend
 go mod tidy
-go run ./src/main.go
+
+# Copy config template
+cp config.example.json config.json
+# Edit config.json and add your API keys
+
+# Run server
+CGO_ENABLED=1 go run ./src/main.go
 # Server runs on http://localhost:19375
 ```
 
-#### Build (no CGO required)
+#### Build
 
 ```bash
-CGO_ENABLED=0 go build -o bin/openaide-server ./src
-./bin/openaide-server
+CGO_ENABLED=1 go build -o openaide-server ./src
+./openaide-server
 ```
 
 #### Configuration
 
-Create `~/.openaide/config.json` with your API key:
+Config file lookup priority: `OPENAIDE_CONFIG` env → `/app/config.json` (Docker) → `OPENAIDE_HOME/config.json` → `./config.json` → executable directory → `~/.openaide/config.json`
+
+Create `config.json` with your API key:
 
 ```json
 {
+  "home_dir": "/opt/openaide",
+  "storage": {
+    "cache": { "type": "ledis", "data_dir": "/opt/openaide/data/ledis" },
+    "db": { "type": "sqlite", "uri": "/opt/openaide/data/db/openaide.db" },
+    "vector_store": { "type": "hnsw", "data_dir": "/opt/openaide/data/vectors" }
+  },
   "models": [{
-    "name": "my-model",
+    "name": "deepseek-chat",
     "type": "llm",
-    "provider": "openai",
+    "provider": "deepseek",
     "api_key": "your-api-key-here",
-    "base_url": "https://api.example.com/v1",
-    "config": {
-      "model": "gpt-4o-mini"
-    },
+    "base_url": "https://api.deepseek.com",
+    "config": { "model": "deepseek-chat", "timeout": 60 },
     "status": "enabled"
-  }],
-  "default_model": "my-model",
-  "feishu": {"enabled": false},
-  "voice": {"enabled": false},
-  "sandbox": {"enabled": false},
-  "embedding": {"enabled": false}
+  }]
 }
 ```
 
-> See `server_config.example.json` for a template.
+> See `config.example.json` for full template.
+
+#### Authentication
+
+All API routes (except `/health` and `/api/auth/*`) require JWT authentication:
+
+```bash
+# Register
+curl -X POST http://localhost:19375/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","email":"admin@example.com","password":"your-password"}'
+
+# Login
+curl -X POST http://localhost:19375/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"your-password"}'
+# Returns: {"access_token":"eyJ...","refresh_token":"...","expires_in":86400}
+
+# Use token
+curl http://localhost:19375/api/dialogues \
+  -H "Authorization: Bearer eyJ..."
+```
+
+Set `OPENAIDE_JWT_SECRET` env var for production (auto-generated if not set).
+
+#### API Response Format
+
+All API responses use a unified format:
+
+```json
+// Success
+{"code": 0, "message": "success", "data": {...}}
+
+// Error
+{"code": 400, "message": "error description"}
+
+// Paginated list
+{"code": 0, "message": "success", "data": {"items": [...], "total": 100, "page": 1, "page_size": 20, "total_pages": 5}}
+```
+
+Every response includes `X-Request-ID` header for tracing.
 
 #### Terminal CLI
 
@@ -311,23 +358,10 @@ cd openaide/terminal
 go run main.go
 ```
 
-Interactive mode:
-```
-  ╭─────────────────────────────╮
-  │  OpenAIDE CLI               │
-  ╰─────────────────────────────╯
-
-    API:   http://localhost:19375/api
-    Model: gpt-4o-mini
-    Mode:  Streaming
-
-  Type /help for commands, exit or /exit to quit
-```
-
 #### Prerequisites
-- Go 1.20+
-- Docker (optional, for sandbox)
-- Python/Node.js (optional, for code execution tools)
+- Go 1.22+ (with CGO for SQLite)
+- Docker (optional, for sandbox or deployment)
+- gcc (required for CGO/SQLite)
 
 ---
 
