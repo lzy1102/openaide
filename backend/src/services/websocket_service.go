@@ -916,6 +916,7 @@ type ActivityTracker struct {
 	lastActivity    map[string]time.Time // sessionID -> 最后活动时间
 	activityTimeout time.Duration
 	onTimeout       func(sessionID string)
+	stopCh          chan struct{}
 }
 
 // NewActivityTracker 创建活动跟踪器
@@ -924,9 +925,15 @@ func NewActivityTracker(activityTimeout time.Duration, onTimeout func(sessionID 
 		lastActivity:    make(map[string]time.Time),
 		activityTimeout: activityTimeout,
 		onTimeout:       onTimeout,
+		stopCh:          make(chan struct{}),
 	}
 	go tracker.startCleanupLoop(5 * time.Minute)
 	return tracker
+}
+
+// Stop 停止活动跟踪器
+func (t *ActivityTracker) Stop() {
+	close(t.stopCh)
 }
 
 // RecordActivity 记录活动 (工具调用/消息发送)
@@ -959,8 +966,13 @@ func (t *ActivityTracker) startCleanupLoop(interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		t.cleanupExpired()
+	for {
+		select {
+		case <-ticker.C:
+			t.cleanupExpired()
+		case <-t.stopCh:
+			return
+		}
 	}
 }
 

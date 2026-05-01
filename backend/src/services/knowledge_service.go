@@ -13,10 +13,10 @@ import (
 
 // VectorService 向量服务接口
 type VectorService interface {
-	CreateCollection(name string, dimension int) error
-	Insert(collectionName string, id string, content string, metadata map[string]interface{}) error
-	Search(collectionName string, query []float32, k int) ([]SearchResult, error)
-	SemanticSearch(collectionName string, queryText string, k int) ([]SearchResult, error)
+	CreateCollection(ctx context.Context, name string, dimension int) error
+	Insert(ctx context.Context, collectionName string, id string, content string, metadata map[string]interface{}) error
+	Search(ctx context.Context, collectionName string, query []float32, k int) ([]SearchResult, error)
+	SemanticSearch(ctx context.Context, collectionName string, queryText string, k int) ([]SearchResult, error)
 }
 
 // KnowledgeService 知识库服务接口

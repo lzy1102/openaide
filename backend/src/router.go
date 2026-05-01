@@ -3,11 +3,14 @@ package main
 import (
 	"net/http"
 	"strconv"
+	"time"
 
+	"openaide/backend/src/logger"
 	"openaide/backend/src/models"
 	"openaide/backend/src/services"
 	"openaide/backend/src/services/llm"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )
 
@@ -23,53 +26,69 @@ func NewRouter(app *Application) *Router {
 
 // Register 注册所有路由
 func (r *Router) Register(engine *gin.Engine) {
+	// CORS 中间件
+	engine.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"*"},
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "X-API-Key"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}))
+
 	// 全局限流中间件
 	engine.Use(r.app.RateLimitHandler.RateLimitMiddleware())
 
-	// 健康检查接口
+	// 健康检查接口（无需认证）
 	r.registerHealth(engine)
 
-	// API 路由组
-	api := engine.Group("/api")
+	// 公开路由（无需认证）
+	publicAPI := engine.Group("/api")
 	{
-		r.registerAuthRoutes(api)
-		r.registerDialogueRoutes(api)
-		r.registerWorkflowRoutes(api)
-		r.registerChatRoutes(api)
-		r.registerModelRoutes(api)
-		r.registerPlanRoutes(api)
-		r.registerFeedbackRoutes(api)
-		r.registerLearningRoutes(api)
-		r.registerEvolutionRoutes(api)
-		r.registerMemoryRoutes(api)
-		r.registerTaskRoutes(api)
-		r.registerKnowledgeRoutes(api)
-		r.registerContextRoutes(api)
-		r.registerExtractionRoutes(api)
-		r.registerPermissionRoutes(api)
-		r.registerAgentRoutingRoutes(api)
-		r.registerSlashCommandRoutes(api)
-		r.registerEventRoutes(api)
-		r.registerFeishuRoutes(api)
-		r.registerWebSocketRoutes(api, engine)
+		r.registerAuthRoutes(publicAPI)
+	}
+
+	// 受保护路由（需要认证）
+	protectedAPI := engine.Group("/api")
+	protectedAPI.Use(r.app.AuthHandler.AuthMiddleware())
+	{
+		r.registerDialogueRoutes(protectedAPI)
+		r.registerWorkflowRoutes(protectedAPI)
+		r.registerChatRoutes(protectedAPI)
+		r.registerModelRoutes(protectedAPI)
+		r.registerPlanRoutes(protectedAPI)
+		r.registerFeedbackRoutes(protectedAPI)
+		r.registerLearningRoutes(protectedAPI)
+		r.registerEvolutionRoutes(protectedAPI)
+		r.registerMemoryRoutes(protectedAPI)
+		r.registerTaskRoutes(protectedAPI)
+		r.registerKnowledgeRoutes(protectedAPI)
+		r.registerContextRoutes(protectedAPI)
+		r.registerExtractionRoutes(protectedAPI)
+		r.registerPermissionRoutes(protectedAPI)
+		r.registerAgentRoutingRoutes(protectedAPI)
+		r.registerSlashCommandRoutes(protectedAPI)
+		r.registerEventRoutes(protectedAPI)
+		r.registerFeishuRoutes(protectedAPI)
+		r.registerWebSocketRoutes(protectedAPI, engine)
 
 		// Handler 注册的路由
-		r.app.SkillHandler.RegisterRoutes(api)
-		r.app.PluginHandler.RegisterRoutes(api)
-		r.app.AutomationHandler.RegisterRoutes(api)
-		r.app.CodeHandler.RegisterRoutes(api)
-		r.app.ConfirmationHandler.RegisterRoutes(api)
-		r.app.ThinkingHandler.RegisterRoutes(api)
-		r.app.SandboxHandler.RegisterRoutes(api)
-		r.app.ChannelHandler.RegisterRoutes(api)
-		r.app.MultiAgentHandler.RegisterRoutes(api)
-		r.app.VoiceHandler.RegisterRoutes(api)
-		r.app.OrchestrationHandler.RegisterRoutes(api)
-		r.app.MCPHandler.RegisterRoutes(api)
-		r.app.ToolHandler.RegisterRoutes(api)
-		r.app.PromptTemplateHandler.RegisterRoutes(api)
-		r.app.UsageHandler.RegisterRoutes(api)
-		r.app.SchedulerHandler.RegisterRoutes(api)
+		r.app.SkillHandler.RegisterRoutes(protectedAPI)
+		r.app.PluginHandler.RegisterRoutes(protectedAPI)
+		r.app.AutomationHandler.RegisterRoutes(protectedAPI)
+		r.app.CodeHandler.RegisterRoutes(protectedAPI)
+		r.app.ConfirmationHandler.RegisterRoutes(protectedAPI)
+		r.app.ThinkingHandler.RegisterRoutes(protectedAPI)
+		r.app.SandboxHandler.RegisterRoutes(protectedAPI)
+		r.app.ChannelHandler.RegisterRoutes(protectedAPI)
+		r.app.MultiAgentHandler.RegisterRoutes(protectedAPI)
+		r.app.VoiceHandler.RegisterRoutes(protectedAPI)
+		r.app.OrchestrationHandler.RegisterRoutes(protectedAPI)
+		r.app.MCPHandler.RegisterRoutes(protectedAPI)
+		r.app.ToolHandler.RegisterRoutes(protectedAPI)
+		r.app.PromptTemplateHandler.RegisterRoutes(protectedAPI)
+		r.app.UsageHandler.RegisterRoutes(protectedAPI)
+		r.app.SchedulerHandler.RegisterRoutes(protectedAPI)
 	}
 }
 
@@ -914,7 +933,9 @@ func (r *Router) registerMemoryRoutes(api *gin.RouterGroup) {
 				return
 			}
 			if r.app.MemoryEmbeddingService != nil {
-				go r.app.MemoryEmbeddingService.AutoEmbedNewMemories(mem.ID)
+				logger.SafeGo(func() {
+					r.app.MemoryEmbeddingService.AutoEmbedNewMemories(mem.ID)
+				})
 			}
 			c.JSON(http.StatusOK, mem)
 		})
@@ -1017,7 +1038,9 @@ func (r *Router) registerMemoryRoutes(api *gin.RouterGroup) {
 				return
 			}
 			if r.app.MemoryEmbeddingService != nil {
-				go r.app.MemoryEmbeddingService.AutoEmbedNewMemories(id)
+				logger.SafeGo(func() {
+					r.app.MemoryEmbeddingService.AutoEmbedNewMemories(id)
+				})
 			}
 			c.JSON(http.StatusOK, mem)
 		})

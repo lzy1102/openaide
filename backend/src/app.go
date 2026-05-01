@@ -195,8 +195,8 @@ func (app *Application) Close() {
 		app.LoggerService.Close()
 	}
 	if app.VectorService != nil {
-		if vm, ok := app.VectorService.(*services.VectorManager); ok && vm != nil {
-			vm.Close()
+		if closer, ok := app.VectorService.(interface{ Close() error }); ok {
+			closer.Close()
 		}
 	}
 	if app.SchedulerService != nil {

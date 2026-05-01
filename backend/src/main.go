@@ -1,49 +1,71 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
 func main() {
-	// 设置默认端口
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "19375"
 	}
 
-	// 初始化应用
 	app, err := NewApplication()
 	if err != nil {
 		log.Fatalf("Failed to initialize application: %v", err)
 	}
-	defer app.Close()
 
-	// 启动后台任务
 	backgroundTasks := NewBackgroundTasks(app)
 	backgroundTasks.Start()
 
-	// 初始化 Gin 路由
 	r := gin.Default()
 	router := NewRouter(app)
 	router.Register(r)
 
-	// 静态文件服务
 	registerStaticFiles(r)
 
-	// 启动服务器
 	serverAddr := fmt.Sprintf(":%s", port)
-	log.Printf("Server starting on %s", serverAddr)
-	if err := r.Run(serverAddr); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+	srv := &http.Server{
+		Addr:    serverAddr,
+		Handler: r,
 	}
+
+	go func() {
+		log.Printf("Server starting on %s", serverAddr)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Failed to start server: %v", err)
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+	sig := <-quit
+	log.Printf("Received signal: %v, shutting down...", sig)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Printf("Server forced to shutdown: %v", err)
+	}
+
+	if err := app.Shutdown(ctx); err != nil {
+		log.Printf("Error during app shutdown: %v", err)
+	}
+
+	log.Println("Server exited gracefully")
 }
 
-// registerStaticFiles 注册静态文件服务
 func registerStaticFiles(r *gin.Engine) {
 	frontendDir := os.Getenv("OPENAIDE_FRONTEND_DIR")
 	if frontendDir == "" {

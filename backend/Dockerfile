@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.22-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 # 安装构建依赖
 RUN apk add --no-cache git ca-certificates tzdata
@@ -29,10 +29,11 @@ COPY --from=builder /openaide-server /app/
 COPY --from=builder /app/config.example.json /app/config.example.json
 
 # 创建数据目录
-RUN mkdir -p /app/data
+RUN mkdir -p /opt/openaide/data/db /opt/openaide/data/vectors /opt/openaide/data/ledis /opt/openaide/data/sessions /opt/openaide/logs
 
 # 设置时区
 ENV TZ=Asia/Shanghai
+ENV OPENAIDE_HOME=/opt/openaide
 
 # 暴露端口
 EXPOSE 19375

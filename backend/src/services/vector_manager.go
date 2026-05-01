@@ -250,18 +250,38 @@ func NewNoopVectorService() VectorService {
 	return &noopVectorService{}
 }
 
-func (n *noopVectorService) CreateCollection(name string, dimension int) error {
+func (n *noopVectorService) CreateCollection(ctx context.Context, name string, dimension int) error {
 	return fmt.Errorf("vector service not available")
 }
 
-func (n *noopVectorService) Insert(collectionName string, id string, content string, metadata map[string]interface{}) error {
+func (n *noopVectorService) Insert(ctx context.Context, collectionName string, id string, content string, metadata map[string]interface{}) error {
 	return fmt.Errorf("vector service not available")
 }
 
-func (n *noopVectorService) Search(collectionName string, query []float32, k int) ([]SearchResult, error) {
+func (n *noopVectorService) Search(ctx context.Context, collectionName string, query []float32, k int) ([]SearchResult, error) {
 	return nil, fmt.Errorf("vector service not available")
 }
 
-func (n *noopVectorService) SemanticSearch(collectionName string, queryText string, k int) ([]SearchResult, error) {
+func (n *noopVectorService) SemanticSearch(ctx context.Context, collectionName string, queryText string, k int) ([]SearchResult, error) {
 	return nil, fmt.Errorf("vector service not available")
+}
+
+func (n *noopVectorService) Delete(ctx context.Context, collectionName string, id string) error {
+	return fmt.Errorf("vector service not available")
+}
+
+func (n *noopVectorService) DeleteCollection(ctx context.Context, name string) error {
+	return fmt.Errorf("vector service not available")
+}
+
+func (n *noopVectorService) ListCollections(ctx context.Context) []map[string]interface{} {
+	return nil
+}
+
+func (n *noopVectorService) GetStats(ctx context.Context) map[string]interface{} {
+	return map[string]interface{}{"error": "vector service not available"}
+}
+
+func (n *noopVectorService) Close() error {
+	return nil
 }

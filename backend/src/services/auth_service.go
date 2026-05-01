@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
+	"os"
 	"time"
 
 	"openaide/backend/src/models"
@@ -56,17 +58,40 @@ type AuthService struct {
 func NewAuthService(db *gorm.DB, cache *CacheService, config *AuthConfig) *AuthService {
 	if config == nil {
 		config = &AuthConfig{
-			JWTSecret:          "your-secret-key-change-in-production",
+			JWTSecret:          "",
 			JWTExpiry:          24 * time.Hour,
 			RefreshTokenExpiry: 7 * 24 * time.Hour,
 			Issuer:             "openaide",
 		}
 	}
+
+	// JWT 密钥优先级：配置文件 > 环境变量 > 自动生成
+	if config.JWTSecret == "" {
+		config.JWTSecret = os.Getenv("OPENAIDE_JWT_SECRET")
+	}
+	if config.JWTSecret == "" {
+		secret, err := generateRandomSecret(32)
+		if err != nil {
+			secret = "openaide-default-secret-" + fmt.Sprintf("%d", time.Now().UnixNano())
+		}
+		config.JWTSecret = secret
+		log.Printf("[Auth] JWT secret auto-generated (set OPENAIDE_JWT_SECRET env var for production)")
+	}
+
 	return &AuthService{
 		db:     db,
-		config: config,
 		cache:  cache,
+		config: config,
 	}
+}
+
+// generateRandomSecret 生成随机密钥
+func generateRandomSecret(length int) (string, error) {
+	bytes := make([]byte, length)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes), nil
 }
 
 // Register 用户注册
