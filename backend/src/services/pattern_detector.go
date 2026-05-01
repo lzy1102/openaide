@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -180,7 +180,7 @@ func (s *PatternDetector) ConvertPatternToWorkflow(pattern WorkflowPattern, user
 		s.db.Create(workflowStep)
 	}
 
-	log.Printf("[PatternDetector] Created workflow '%s' with %d steps", workflow.Name, len(pattern.Steps))
+	slog.Info("Created workflow from pattern", "component", "PatternDetector", "name", workflow.Name, "steps", len(pattern.Steps))
 	return workflow, nil
 }
 
@@ -190,7 +190,7 @@ func (s *PatternDetector) RunPeriodicPatternDetection(ctx context.Context) {
 		return
 	}
 
-	log.Printf("[PatternDetector] Starting periodic pattern detection...")
+	slog.Info("Starting periodic pattern detection...", "component", "PatternDetector")
 
 	var users []models.User
 	s.db.Find(&users)
@@ -198,7 +198,7 @@ func (s *PatternDetector) RunPeriodicPatternDetection(ctx context.Context) {
 	for _, user := range users {
 		patterns, err := s.DetectWorkflowPatterns(ctx, user.ID)
 		if err != nil {
-			log.Printf("[PatternDetector] Failed for user %s: %v", user.ID, err)
+			slog.Error("Detection failed for user", "component", "PatternDetector", "user_id", user.ID, "error", err)
 			continue
 		}
 
@@ -206,11 +206,11 @@ func (s *PatternDetector) RunPeriodicPatternDetection(ctx context.Context) {
 			if p.Frequency >= 2 && p.Confidence >= 0.6 {
 				_, err := s.ConvertPatternToWorkflow(p, user.ID)
 				if err != nil {
-					log.Printf("[PatternDetector] Failed to create workflow '%s': %v", p.Name, err)
+					slog.Error("Failed to create workflow", "component", "PatternDetector", "name", p.Name, "error", err)
 				}
 			}
 		}
 	}
 
-	log.Printf("[PatternDetector] Periodic detection completed")
+	slog.Info("Periodic detection completed", "component", "PatternDetector")
 }

@@ -3,7 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -165,7 +165,7 @@ func (s *UserFeedbackCollector) RunPeriodicFeedbackAnalysis(ctx context.Context)
 		return
 	}
 
-	log.Printf("[FeedbackCollector] Starting periodic feedback analysis...")
+	slog.Info("Starting periodic feedback analysis...", "component", "FeedbackCollector")
 
 	// 分析最近 24 小时的技能执行
 	var recentExecutions []models.SkillExecution
@@ -174,7 +174,7 @@ func (s *UserFeedbackCollector) RunPeriodicFeedbackAnalysis(ctx context.Context)
 		Find(&recentExecutions)
 
 	if len(recentExecutions) == 0 {
-		log.Printf("[FeedbackCollector] No recent executions to analyze")
+		slog.Info("No recent executions to analyze", "component", "FeedbackCollector")
 		return
 	}
 
@@ -188,7 +188,7 @@ func (s *UserFeedbackCollector) RunPeriodicFeedbackAnalysis(ctx context.Context)
 	}
 
 	successRate := float64(successExecs) / float64(totalExecs)
-	log.Printf("[FeedbackCollector] 24h stats: %d executions, %.1f%% success rate", totalExecs, successRate*100)
+	slog.Info("24h stats:  executions, %% success rate", "component", "FeedbackCollector", "rate", totalExecs, "rate", successRate*100)
 
 	// 识别低满意度技能
 	var skills []models.Skill
@@ -209,13 +209,12 @@ func (s *UserFeedbackCollector) RunPeriodicFeedbackAnalysis(ctx context.Context)
 
 			rate := float64(successCount) / float64(len(execs))
 			if rate < 0.5 {
-				log.Printf("[FeedbackCollector] Low success rate skill: %s (%.1f%%, %d executions)",
-					skill.Name, rate*100, len(execs))
+				slog.Warn("Low success rate skill", "component", "FeedbackCollector", "skill", skill.Name, "success_rate", rate*100, "executions", len(execs))
 			}
 		}
 	}
 
-	log.Printf("[FeedbackCollector] Periodic feedback analysis completed")
+	slog.Info("Periodic feedback analysis completed", "component", "FeedbackCollector")
 }
 
 // AnalyzeDialogueSatisfaction 分析对话中的用户满意度

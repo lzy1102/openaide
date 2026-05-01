@@ -3,7 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 
 	"openaide/backend/src/logger"
 	"openaide/backend/src/services/storage"
@@ -87,7 +87,7 @@ func (vm *VectorManager) DeleteCollection(ctx context.Context, name string) erro
 func (vm *VectorManager) ListCollections(ctx context.Context) []map[string]interface{} {
 	collections, err := vm.store.ListCollections()
 	if err != nil {
-		log.Printf("[VectorManager] Failed to list collections: %v", err)
+		slog.Error("Failed to list collections", "component", "VectorManager", "error", err)
 		return nil
 	}
 

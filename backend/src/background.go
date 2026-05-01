@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"time"
 )
 
@@ -33,7 +33,7 @@ func (b *BackgroundTasks) Start() {
 	// 启动用户反馈收集器
 	b.startUserFeedbackCollection()
 
-	log.Printf("[Self-Evolution] Skill discovery, pattern detection, and feedback collection enabled")
+	slog.Info("Skill discovery, pattern detection, and feedback collection enabled", "component", "Self-Evolution")
 }
 
 // startMemoryExtraction 启动自动记忆提取
@@ -41,13 +41,13 @@ func (b *BackgroundTasks) startMemoryExtraction() {
 	go func() {
 		time.Sleep(5 * time.Second)
 		if err := b.app.MemoryExtractionService.BatchExtractPendingDialogues("", 5); err != nil {
-			log.Printf("[MemoryExtract] batch extraction failed: %v", err)
+			slog.Error("batch extraction failed", "component", "MemoryExtract", "error", err)
 		}
 		ticker := time.NewTicker(10 * time.Minute)
 		defer ticker.Stop()
 		for range ticker.C {
 			if err := b.app.MemoryExtractionService.BatchExtractPendingDialogues("", 10); err != nil {
-				log.Printf("[MemoryExtract] periodic extraction failed: %v", err)
+				slog.Error("periodic extraction failed", "component", "MemoryExtract", "error", err)
 			}
 		}
 	}()

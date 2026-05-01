@@ -2,7 +2,7 @@ package services
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -233,7 +233,7 @@ func (s *WebSocketService) RegisterClient(client WebSocketClient) {
 		s.userClients[userID][client.GetID()] = true
 	}
 
-	log.Printf("[WS] Client registered: %s (user: %s)", client.GetID(), userID)
+	slog.Info("Client registered", "component", "WS", "client_id", client.GetID(), "user_id", userID)
 
 	// 发送连接成功消息
 	s.sendToClient(client, WebSocketMessage{
@@ -275,7 +275,7 @@ func (s *WebSocketService) UnregisterClient(clientID string) {
 	}
 
 	delete(s.clients, clientID)
-	log.Printf("[WS] Client unregistered: %s", clientID)
+	slog.Info("Client unregistered", "component", "WS", "client_id", clientID)
 }
 
 // GetClient 获取客户端
@@ -766,7 +766,7 @@ func (s *WebSocketService) heartbeatChecker() {
 			if now.Sub(client.GetLastActivity()) > s.pongWait {
 				// 超时断开
 				go func(c WebSocketClient) {
-					log.Printf("[WS] Client timeout: %s", c.GetID())
+					slog.Info("Client timeout", "component", "WS", "duration", c.GetID())
 					c.CloseConn()
 				}(client)
 			} else {

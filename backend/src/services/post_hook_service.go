@@ -2,7 +2,7 @@ package services
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -75,14 +75,14 @@ func (s *PostHookService) OnResponseComplete(ctx context.Context, dialogueID, us
 		defer cancel()
 		extracted, err := s.extractionSvc.ExtractFromDialogue(extractCtx, dialogueID)
 		if err != nil {
-			log.Printf("[PostHook] knowledge extraction failed for %s: %v", dialogueID, err)
+			slog.Error("Knowledge extraction failed", "component", "PostHook", "dialogue_id", dialogueID, "error", err)
 			return
 		}
 		if len(extracted) > 0 && userID != "" {
 			if saveErr := s.extractionSvc.AutoSave(extractCtx, extracted, userID); saveErr != nil {
-				log.Printf("[PostHook] knowledge auto-save failed for %s: %v", dialogueID, saveErr)
+				slog.Error("Knowledge auto-save failed", "component", "PostHook", "dialogue_id", dialogueID, "error", saveErr)
 			} else {
-				log.Printf("[PostHook] knowledge extracted and saved: %d items from %s", len(extracted), dialogueID)
+				slog.Info("Knowledge extracted and saved", "component", "PostHook", "count", len(extracted), "dialogue_id", dialogueID)
 			}
 		}
 	}()
@@ -92,7 +92,7 @@ func (s *PostHookService) OnResponseComplete(ctx context.Context, dialogueID, us
 			optCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			if err := s.learningSvc.GenerateOptimizationFromDialogue(optCtx, dialogueID); err != nil {
-				log.Printf("[PostHook] optimization generation failed for %s: %v", dialogueID, err)
+				slog.Error("Optimization generation failed", "component", "PostHook", "dialogue_id", dialogueID, "error", err)
 			}
 		}()
 	}
@@ -102,7 +102,7 @@ func (s *PostHookService) OnResponseComplete(ctx context.Context, dialogueID, us
 			patCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			if err := s.learningSvc.AnalyzeInteractionPatterns(patCtx, userID); err != nil {
-				log.Printf("[PostHook] pattern analysis failed for %s: %v", userID, err)
+				slog.Error("Pattern analysis failed", "component", "PostHook", "user_id", userID, "error", err)
 			}
 		}()
 	}
@@ -112,7 +112,7 @@ func (s *PostHookService) OnResponseComplete(ctx context.Context, dialogueID, us
 			refCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			if _, err := s.reflectionSvc.ReflectOnResponse(refCtx, dialogueID, userID, userQuery, assistantResponse); err != nil {
-				log.Printf("[PostHook] self-reflection failed for %s: %v", dialogueID, err)
+				slog.Error("Self-reflection failed", "component", "PostHook", "dialogue_id", dialogueID, "error", err)
 			}
 		}()
 	}
@@ -122,7 +122,7 @@ func (s *PostHookService) OnResponseComplete(ctx context.Context, dialogueID, us
 			detCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
 			if _, err := s.patternSvc.DetectPatterns(detCtx, userID); err != nil {
-				log.Printf("[PostHook] pattern detection failed for %s: %v", userID, err)
+				slog.Error("Pattern detection failed", "component", "PostHook", "user_id", userID, "error", err)
 			}
 		}()
 	}

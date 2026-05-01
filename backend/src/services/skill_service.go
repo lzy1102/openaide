@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"math"
 	"strconv"
 	"strings"
@@ -668,7 +668,7 @@ func (s *SkillService) TrackSkillExecution(skillID, skillName string, parameters
 		EndedAt:    time.Now(),
 	}
 	if err := s.db.Create(execution).Error; err != nil {
-		log.Printf("[SkillService] failed to track execution: %v", err)
+		slog.Error("failed to track execution", "component", "SkillService", "error", err)
 	}
 	return execution
 }
@@ -834,9 +834,9 @@ func (s *SkillService) InitBuiltinSkills() {
 		err := s.db.Where("name = ? AND builtin = ?", skill.Name, true).First(&existing).Error
 		if err == gorm.ErrRecordNotFound {
 			if err := s.CreateSkill(&skill); err != nil {
-				log.Printf("[SkillService] failed to create builtin skill %s: %v", skill.Name, err)
+				slog.Error("Failed to create builtin skill", "component", "SkillService", "name", skill.Name, "error", err)
 			} else {
-				log.Printf("[SkillService] created builtin skill: %s", skill.Name)
+				slog.Info("created builtin skill", "component", "SkillService", "skill", skill.Name)
 			}
 		}
 	}

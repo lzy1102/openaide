@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -153,7 +153,7 @@ func (s *SelfReflectionService) triggerImprovementActions(reflection *models.Sel
 			CreatedAt:   now,
 		}
 		if err := s.db.Create(optimization).Error; err != nil {
-			log.Printf("[SelfReflection] failed to save optimization: %v", err)
+			slog.Error("failed to save optimization", "component", "SelfReflection", "error", err)
 		}
 	}
 
@@ -291,8 +291,7 @@ func (s *SelfReflectionService) performPeriodicReflection(ctx context.Context) {
 		}
 	}
 
-	log.Printf("[SelfReflection] Periodic: %d low-quality responses in 6h, avg score %.2f, top issue: %s",
-		lowScoreCount, avgScore, topIssue)
+	slog.Info("Periodic self-reflection", "component", "SelfReflection", "low_quality_count", lowScoreCount, "avg_score", avgScore, "top_issue", topIssue)
 
 	if topCount >= 3 && topIssue != "" {
 		s.generateSystemicImprovement(ctx, topIssue, lowScoreCount, avgScore)
@@ -302,7 +301,7 @@ func (s *SelfReflectionService) performPeriodicReflection(ctx context.Context) {
 func (s *SelfReflectionService) generateSystemicImprovement(ctx context.Context, issue string, count int, avgScore float64) {
 	llmClient, err := s.getLLMClient()
 	if err != nil {
-		log.Printf("[SelfReflection] no LLM client for systemic improvement: %v", err)
+		slog.Warn("No LLM client for systemic improvement", "component", "SelfReflection", "error", err)
 		return
 	}
 
@@ -323,7 +322,7 @@ func (s *SelfReflectionService) generateSystemicImprovement(ctx context.Context,
 
 	resp, err := llmClient.Chat(ctx, req)
 	if err != nil {
-		log.Printf("[SelfReflection] systemic improvement generation failed: %v", err)
+		slog.Error("systemic improvement generation failed", "component", "SelfReflection", "error", err)
 		return
 	}
 
@@ -339,7 +338,7 @@ func (s *SelfReflectionService) generateSystemicImprovement(ctx context.Context,
 			CreatedAt:   now,
 		}
 		s.db.Create(optimization)
-		log.Printf("[SelfReflection] Applied systemic improvement: %s", resp.Choices[0].Message.Content)
+		slog.Info("Applied systemic improvement", "component", "SelfReflection", "content", resp.Choices[0].Message.Content)
 	}
 }
 

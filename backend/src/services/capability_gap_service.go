@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -150,7 +150,7 @@ func (s *CapabilityGapService) DetectGaps(ctx context.Context, userID string) ([
 	}
 
 	if err := json.Unmarshal([]byte(content), &results); err != nil {
-		log.Printf("[CapabilityGap] failed to parse LLM response: %v", err)
+		slog.Error("failed to parse LLM response", "component", "CapabilityGap", "error", err)
 		return nil, nil
 	}
 
@@ -335,14 +335,13 @@ func (s *CapabilityGapService) performPeriodicDetection(ctx context.Context) {
 		}
 		gaps, err := s.DetectGaps(ctx, u.UserID)
 		if err != nil {
-			log.Printf("[CapabilityGap] detection failed for user %s: %v", u.UserID, err)
+			slog.Error("Detection failed for user", "component", "CapabilityGap", "user_id", u.UserID, "error", err)
 			continue
 		}
 
 		for _, g := range gaps {
 			if g.Severity == "high" && g.Frequency >= 3 {
-				log.Printf("[CapabilityGap] High-severity gap detected: %s (%d times) for user %s",
-					g.Description, g.Frequency, u.UserID)
+				slog.Warn("High-severity gap detected", "component", "CapabilityGap", "description", g.Description, "frequency", g.Frequency, "user_id", u.UserID)
 			}
 		}
 	}

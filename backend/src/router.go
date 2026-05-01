@@ -6,7 +6,9 @@ import (
 	"time"
 
 	"openaide/backend/src/logger"
+	"openaide/backend/src/middleware"
 	"openaide/backend/src/models"
+	"openaide/backend/src/response"
 	"openaide/backend/src/services"
 	"openaide/backend/src/services/llm"
 
@@ -26,12 +28,15 @@ func NewRouter(app *Application) *Router {
 
 // Register 注册所有路由
 func (r *Router) Register(engine *gin.Engine) {
+	// 请求ID中间件
+	engine.Use(middleware.RequestIDMiddleware())
+
 	// CORS 中间件
 	engine.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"*"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "X-API-Key"},
-		ExposeHeaders:    []string{"Content-Length"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "X-API-Key", "X-Request-ID"},
+		ExposeHeaders:    []string{"Content-Length", "X-Request-ID"},
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
 	}))
@@ -95,9 +100,25 @@ func (r *Router) Register(engine *gin.Engine) {
 // registerHealth 注册健康检查路由
 func (r *Router) registerHealth(engine *gin.Engine) {
 	engine.GET("/health", func(c *gin.Context) {
+		dbStatus := "ok"
+		dbErr := ""
+		if r.app.DB != nil {
+			sqlDB, err := r.app.DB.DB()
+			if err != nil {
+				dbStatus = "error"
+				dbErr = err.Error()
+			} else if err := sqlDB.Ping(); err != nil {
+				dbStatus = "error"
+				dbErr = err.Error()
+			}
+		} else {
+			dbStatus = "not_configured"
+		}
+
 		enabledModels, _ := r.app.ModelService.ListEnabledModels()
 		activeProvider := r.app.MemoryRegistry.GetActiveProvider()
 		services := map[string]interface{}{
+			"database":        dbStatus,
 			"models":          len(enabledModels),
 			"voice":           r.app.VoiceService.IsEnabled(),
 			"sandbox":         r.app.SandboxService.IsEnabled() && r.app.SandboxService.IsDockerAvailable(),
@@ -111,11 +132,22 @@ func (r *Router) registerHealth(engine *gin.Engine) {
 			"memory_provider": activeProvider.Name(),
 			"context_engine":  "default",
 		}
-		c.JSON(http.StatusOK, gin.H{
-			"status":   "ok",
-			"message":  "OpenAIDE backend is running",
-			"version":  "2.0",
-			"services": services,
+		if dbErr != "" {
+			services["database_error"] = dbErr
+		}
+
+		httpStatus := http.StatusOK
+		if dbStatus == "error" {
+			httpStatus = http.StatusServiceUnavailable
+		}
+
+		c.JSON(httpStatus, response.Response{
+			Code:    0,
+			Message: "health_check",
+			Data: gin.H{
+				"version":  "2.0",
+				"services": services,
+			},
 		})
 	})
 }
@@ -163,13 +195,33 @@ func (r *Router) registerDialogueRoutes(api *gin.RouterGroup) {
 	dialogues := api.Group("/dialogues")
 	{
 		dialogues.GET("", func(c *gin.Context) {
-			dialogues := r.app.DialogueService.ListDialogues()
-			c.JSON(http.StatusOK, dialogues)
+			pagination := middleware.GetPagination(c)
+			allDialogues := r.app.DialogueService.ListDialogues()
+			total := int64(len(allDialogues))
+			end := pagination.Offset + pagination.PageSize
+			if end > len(allDialogues) {
+				end = len(allDialogues)
+			}
+			if pagination.Offset >= len(allDialogues) {
+				response.OKPage(c, []interface{}{}, total, pagination.Page, pagination.PageSize)
+				return
+			}
+			response.OKPage(c, allDialogues[pagination.Offset:end], total, pagination.Page, pagination.PageSize)
 		})
 		dialogues.GET("/user/:userID", func(c *gin.Context) {
 			userID := c.Param("userID")
-			dialogues := r.app.DialogueService.ListDialoguesByUser(userID)
-			c.JSON(http.StatusOK, dialogues)
+			pagination := middleware.GetPagination(c)
+			allDialogues := r.app.DialogueService.ListDialoguesByUser(userID)
+			total := int64(len(allDialogues))
+			end := pagination.Offset + pagination.PageSize
+			if end > len(allDialogues) {
+				end = len(allDialogues)
+			}
+			if pagination.Offset >= len(allDialogues) {
+				response.OKPage(c, []interface{}{}, total, pagination.Page, pagination.PageSize)
+				return
+			}
+			response.OKPage(c, allDialogues[pagination.Offset:end], total, pagination.Page, pagination.PageSize)
 		})
 		dialogues.POST("", func(c *gin.Context) {
 			var req struct {
@@ -177,20 +229,20 @@ func (r *Router) registerDialogueRoutes(api *gin.RouterGroup) {
 				Title  string `json:"title"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				response.BadRequest(c, err.Error())
 				return
 			}
 			dialogue := r.app.DialogueService.CreateDialogue(req.UserID, req.Title)
-			c.JSON(http.StatusOK, dialogue)
+			response.OK(c, dialogue)
 		})
 		dialogues.GET("/:id", func(c *gin.Context) {
 			id := c.Param("id")
 			dialogue, found := r.app.DialogueService.GetDialogue(id)
 			if !found {
-				c.JSON(http.StatusNotFound, gin.H{"error": "Dialogue not found"})
+				response.NotFound(c, "Dialogue not found")
 				return
 			}
-			c.JSON(http.StatusOK, dialogue)
+			response.OK(c, dialogue)
 		})
 		dialogues.PUT("/:id", func(c *gin.Context) {
 			id := c.Param("id")
@@ -198,28 +250,28 @@ func (r *Router) registerDialogueRoutes(api *gin.RouterGroup) {
 				Title string `json:"title"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				response.BadRequest(c, err.Error())
 				return
 			}
 			dialogue, found := r.app.DialogueService.UpdateDialogue(id, req.Title)
 			if !found {
-				c.JSON(http.StatusNotFound, gin.H{"error": "Dialogue not found"})
+				response.NotFound(c, "Dialogue not found")
 				return
 			}
-			c.JSON(http.StatusOK, dialogue)
+			response.OK(c, dialogue)
 		})
 		dialogues.DELETE("/:id", func(c *gin.Context) {
 			id := c.Param("id")
 			if err := r.app.DialogueService.DeleteDialogue(id); err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, gin.H{"message": "Dialogue deleted successfully"})
+			response.OKWithMessage(c, "Dialogue deleted successfully", nil)
 		})
 		dialogues.GET("/:id/messages", func(c *gin.Context) {
 			id := c.Param("id")
 			messages := r.app.DialogueService.GetMessages(id)
-			c.JSON(http.StatusOK, messages)
+			response.OK(c, messages)
 		})
 		dialogues.POST("/:id/messages", func(c *gin.Context) {
 			id := c.Param("id")
@@ -230,16 +282,16 @@ func (r *Router) registerDialogueRoutes(api *gin.RouterGroup) {
 				Options map[string]interface{} `json:"options"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				response.BadRequest(c, err.Error())
 				return
 			}
 			ctx := c.Request.Context()
 			message, err := r.app.EnhancedDialogueService.SendMessage(ctx, id, req.UserID, req.Content, req.ModelID, req.Options)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, message)
+			response.OK(c, message)
 		})
 		dialogues.POST("/:id/stream", func(c *gin.Context) {
 			id := c.Param("id")
@@ -250,13 +302,13 @@ func (r *Router) registerDialogueRoutes(api *gin.RouterGroup) {
 				Options map[string]interface{} `json:"options"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				response.BadRequest(c, err.Error())
 				return
 			}
 			ctx := c.Request.Context()
 			chunkChan, err := r.app.EnhancedDialogueService.SendMessageStream(ctx, id, req.UserID, req.Content, req.ModelID, req.Options)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
 			r.writeSSEStream(c, chunkChan)
@@ -264,10 +316,10 @@ func (r *Router) registerDialogueRoutes(api *gin.RouterGroup) {
 		dialogues.DELETE("/:id/messages", func(c *gin.Context) {
 			id := c.Param("id")
 			if err := r.app.DialogueService.ClearMessages(id); err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, gin.H{"message": "Messages cleared successfully"})
+			response.OKWithMessage(c, "Messages cleared successfully", nil)
 		})
 		dialogues.POST("/:id/save-stream", func(c *gin.Context) {
 			id := c.Param("id")
@@ -276,15 +328,15 @@ func (r *Router) registerDialogueRoutes(api *gin.RouterGroup) {
 				ReasoningContent string `json:"reasoning_content"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				response.BadRequest(c, err.Error())
 				return
 			}
 			message, err := r.app.DialogueService.SaveStreamMessage(id, req.Content, req.ReasoningContent)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, message)
+			response.OK(c, message)
 		})
 	}
 
@@ -293,20 +345,20 @@ func (r *Router) registerDialogueRoutes(api *gin.RouterGroup) {
 	{
 		react.GET("/sessions", func(c *gin.Context) {
 			sessions := r.app.ToolCallingService.ListReActSessions()
-			c.JSON(http.StatusOK, gin.H{"sessions": sessions})
+			response.OK(c, gin.H{"sessions": sessions})
 		})
 		react.GET("/sessions/:id/export", func(c *gin.Context) {
 			id := c.Param("id")
 			data, err := r.app.ToolCallingService.GetSessionExport(id)
 			if err != nil {
-				c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+				response.NotFound(c, err.Error())
 				return
 			}
 			c.Data(http.StatusOK, "application/json", data)
 		})
 		react.GET("/metrics", func(c *gin.Context) {
 			metrics := r.app.ToolCallingService.GetSessionMetrics()
-			c.JSON(http.StatusOK, metrics)
+			response.OK(c, metrics)
 		})
 	}
 }
@@ -317,7 +369,7 @@ func (r *Router) registerWorkflowRoutes(api *gin.RouterGroup) {
 	{
 		workflows.GET("", func(c *gin.Context) {
 			workflows := r.app.WorkflowService.ListWorkflows()
-			c.JSON(http.StatusOK, workflows)
+			response.OK(c, workflows)
 		})
 		workflows.POST("", func(c *gin.Context) {
 			var req struct {
@@ -326,20 +378,20 @@ func (r *Router) registerWorkflowRoutes(api *gin.RouterGroup) {
 				Steps       []models.WorkflowStep `json:"steps"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				response.BadRequest(c, err.Error())
 				return
 			}
 			workflow := r.app.WorkflowService.CreateWorkflow(req.Name, req.Description, req.Steps)
-			c.JSON(http.StatusOK, workflow)
+			response.OK(c, workflow)
 		})
 		workflows.GET("/:id", func(c *gin.Context) {
 			id := c.Param("id")
 			workflow, found := r.app.WorkflowService.GetWorkflow(id)
 			if !found {
-				c.JSON(http.StatusNotFound, gin.H{"error": "Workflow not found"})
+				response.NotFound(c, "Workflow not found")
 				return
 			}
-			c.JSON(http.StatusOK, workflow)
+			response.OK(c, workflow)
 		})
 		workflows.PUT("/:id", func(c *gin.Context) {
 			id := c.Param("id")
@@ -349,22 +401,22 @@ func (r *Router) registerWorkflowRoutes(api *gin.RouterGroup) {
 				Steps       []models.WorkflowStep `json:"steps"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				response.BadRequest(c, err.Error())
 				return
 			}
 			workflow, found := r.app.WorkflowService.UpdateWorkflow(id, req.Name, req.Description, req.Steps)
 			if !found {
-				c.JSON(http.StatusNotFound, gin.H{"error": "Workflow not found"})
+				response.NotFound(c, "Workflow not found")
 				return
 			}
-			c.JSON(http.StatusOK, workflow)
+			response.OK(c, workflow)
 		})
 		workflows.DELETE("/:id", func(c *gin.Context) {
 			id := c.Param("id")
 			if r.app.WorkflowService.DeleteWorkflow(id) {
-				c.JSON(http.StatusOK, gin.H{"message": "Workflow deleted successfully"})
+				response.OKWithMessage(c, "Workflow deleted successfully", nil)
 			} else {
-				c.JSON(http.StatusNotFound, gin.H{"error": "Workflow not found"})
+				response.NotFound(c, "Workflow not found")
 			}
 		})
 		workflows.POST("/:id/instances", func(c *gin.Context) {
@@ -377,19 +429,19 @@ func (r *Router) registerWorkflowRoutes(api *gin.RouterGroup) {
 			}
 			instance, found := r.app.WorkflowService.CreateWorkflowInstance(id, req.InputVariables)
 			if !found {
-				c.JSON(http.StatusNotFound, gin.H{"error": "Workflow not found"})
+				response.NotFound(c, "Workflow not found")
 				return
 			}
-			c.JSON(http.StatusOK, instance)
+			response.OK(c, instance)
 		})
 		workflows.POST("/instances/:id/execute", func(c *gin.Context) {
 			id := c.Param("id")
 			instance, err := r.app.WorkflowService.ExecuteWorkflowInstance(id)
 			if err != nil {
-				c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+				response.NotFound(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, instance)
+			response.OK(c, instance)
 		})
 	}
 }
@@ -407,16 +459,16 @@ func (r *Router) registerChatRoutes(api *gin.RouterGroup) {
 				Options    map[string]interface{} `json:"options"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				response.BadRequest(c, err.Error())
 				return
 			}
 			ctx := c.Request.Context()
 			msg, err := r.app.EnhancedDialogueService.SendMessageWithTools(ctx, req.DialogueID, req.UserID, req.Content, req.ModelID, req.Options)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, msg)
+			response.OK(c, msg)
 		})
 		chat.POST("/route", func(c *gin.Context) {
 			var req struct {
@@ -426,13 +478,13 @@ func (r *Router) registerChatRoutes(api *gin.RouterGroup) {
 				Options    map[string]interface{} `json:"options"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				response.BadRequest(c, err.Error())
 				return
 			}
 			ctx := c.Request.Context()
 			chunkChan, err := r.app.EnhancedDialogueService.SendMessageStreamRouted(ctx, req.DialogueID, req.UserID, req.Content, "", req.Options)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
 			r.writeSSEStream(c, chunkChan)
@@ -440,11 +492,11 @@ func (r *Router) registerChatRoutes(api *gin.RouterGroup) {
 		chat.GET("/route-info", func(c *gin.Context) {
 			content := c.Query("content")
 			if content == "" {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "content parameter required"})
+				response.BadRequest(c, "content parameter required")
 				return
 			}
 			info := r.app.ModelRouter.GetRouteInfo(c.Request.Context(), content)
-			c.JSON(http.StatusOK, info)
+			response.OK(c, info)
 		})
 		chat.POST("/plan", func(c *gin.Context) {
 			var req struct {
@@ -455,16 +507,16 @@ func (r *Router) registerChatRoutes(api *gin.RouterGroup) {
 				Options    map[string]interface{} `json:"options"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				response.BadRequest(c, err.Error())
 				return
 			}
 			ctx := c.Request.Context()
 			result, err := r.app.EnhancedDialogueService.SendMessageWithPlan(ctx, req.DialogueID, req.UserID, req.Content, req.ModelID, req.Options)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, result)
+			response.OK(c, result)
 		})
 		chat.POST("", func(c *gin.Context) {
 			var req struct {
@@ -473,7 +525,7 @@ func (r *Router) registerChatRoutes(api *gin.RouterGroup) {
 				Options  map[string]interface{} `json:"options"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				response.BadRequest(c, err.Error())
 				return
 			}
 			llmMessages := make([]llm.Message, len(req.Messages))
@@ -482,10 +534,10 @@ func (r *Router) registerChatRoutes(api *gin.RouterGroup) {
 			}
 			resp, err := r.app.ModelService.Chat(req.ModelID, llmMessages, req.Options)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, resp)
+			response.OK(c, resp)
 		})
 		chat.POST("/stream", func(c *gin.Context) {
 			var req struct {
@@ -494,7 +546,7 @@ func (r *Router) registerChatRoutes(api *gin.RouterGroup) {
 				Options  map[string]interface{} `json:"options"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				response.BadRequest(c, err.Error())
 				return
 			}
 			llmMessages := make([]llm.Message, len(req.Messages))
@@ -503,7 +555,7 @@ func (r *Router) registerChatRoutes(api *gin.RouterGroup) {
 			}
 			chunkChan, err := r.app.ModelService.ChatStream(req.ModelID, llmMessages, req.Options)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
 			r.writeSSEStream(c, chunkChan)
@@ -518,74 +570,74 @@ func (r *Router) registerModelRoutes(api *gin.RouterGroup) {
 		modelGroup.GET("", func(c *gin.Context) {
 			models, err := r.app.ModelService.ListModels()
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, models)
+			response.OK(c, models)
 		})
 		modelGroup.POST("", func(c *gin.Context) {
 			var model models.Model
 			if err := c.ShouldBindJSON(&model); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				response.BadRequest(c, err.Error())
 				return
 			}
 			err := r.app.ModelService.CreateModel(&model)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, model)
+			response.OK(c, model)
 		})
 		modelGroup.GET("/:id", func(c *gin.Context) {
 			id := c.Param("id")
 			model, err := r.app.ModelService.GetModel(id)
 			if err != nil {
-				c.JSON(http.StatusNotFound, gin.H{"error": "Model not found"})
+				response.NotFound(c, "Model not found")
 				return
 			}
-			c.JSON(http.StatusOK, model)
+			response.OK(c, model)
 		})
 		modelGroup.PUT("/:id", func(c *gin.Context) {
 			id := c.Param("id")
 			var model models.Model
 			if err := c.ShouldBindJSON(&model); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				response.BadRequest(c, err.Error())
 				return
 			}
 			model.ID = id
 			err := r.app.ModelService.UpdateModel(&model)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, model)
+			response.OK(c, model)
 		})
 		modelGroup.DELETE("/:id", func(c *gin.Context) {
 			id := c.Param("id")
 			err := r.app.ModelService.DeleteModel(id)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, gin.H{"message": "Model deleted successfully"})
+			response.OKWithMessage(c, "Model deleted successfully", nil)
 		})
 		modelGroup.POST("/:id/enable", func(c *gin.Context) {
 			id := c.Param("id")
 			err := r.app.ModelService.EnableModel(id)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, gin.H{"message": "Model enabled successfully"})
+			response.OKWithMessage(c, "Model enabled successfully", nil)
 		})
 		modelGroup.POST("/:id/disable", func(c *gin.Context) {
 			id := c.Param("id")
 			err := r.app.ModelService.DisableModel(id)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, gin.H{"message": "Model disabled successfully"})
+			response.OKWithMessage(c, "Model disabled successfully", nil)
 		})
 		modelGroup.POST("/:id/instances", func(c *gin.Context) {
 			id := c.Param("id")
@@ -593,15 +645,15 @@ func (r *Router) registerModelRoutes(api *gin.RouterGroup) {
 				Config map[string]interface{} `json:"config"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				response.BadRequest(c, err.Error())
 				return
 			}
 			instance, err := r.app.ModelService.CreateModelInstance(id, req.Config)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, instance)
+			response.OK(c, instance)
 		})
 		modelGroup.POST("/instances/:id/execute", func(c *gin.Context) {
 			id := c.Param("id")
@@ -609,15 +661,15 @@ func (r *Router) registerModelRoutes(api *gin.RouterGroup) {
 				Parameters map[string]interface{} `json:"parameters"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				response.BadRequest(c, err.Error())
 				return
 			}
 			execution, err := r.app.ModelService.ExecuteModel(id, req.Parameters)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, execution)
+			response.OK(c, execution)
 		})
 	}
 }
@@ -631,39 +683,39 @@ func (r *Router) registerPlanRoutes(api *gin.RouterGroup) {
 				SessionID string `json:"session_id" binding:"required"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				response.BadRequest(c, err.Error())
 				return
 			}
 			result, err := r.app.PlanService.ExecutePlan(c.Request.Context(), req.SessionID)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, result)
+			response.OK(c, result)
 		})
 		planGroup.GET("/:sessionId", func(c *gin.Context) {
 			sessionID := c.Param("sessionId")
 			result, err := r.app.PlanService.GetPlanStatus(c.Request.Context(), sessionID)
 			if err != nil {
-				c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+				response.NotFound(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, result)
+			response.OK(c, result)
 		})
 		planGroup.POST("/cancel", func(c *gin.Context) {
 			var req struct {
 				SessionID string `json:"session_id" binding:"required"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				response.BadRequest(c, err.Error())
 				return
 			}
 			err := r.app.PlanService.CancelPlan(c.Request.Context(), req.SessionID)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, gin.H{"message": "plan cancelled"})
+			response.OKWithMessage(c, "plan cancelled", nil)
 		})
 	}
 }
@@ -675,33 +727,33 @@ func (r *Router) registerFeedbackRoutes(api *gin.RouterGroup) {
 		feedback.POST("", func(c *gin.Context) {
 			var fb models.Feedback
 			if err := c.ShouldBindJSON(&fb); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				response.BadRequest(c, err.Error())
 				return
 			}
 			err := r.app.FeedbackService.CreateFeedback(&fb)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, fb)
+			response.OK(c, fb)
 		})
 		feedback.GET("/task/:id", func(c *gin.Context) {
 			id := c.Param("id")
 			feedbacks, err := r.app.FeedbackService.GetFeedbackByTask(id)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, feedbacks)
+			response.OK(c, feedbacks)
 		})
 		feedback.GET("/average/:type", func(c *gin.Context) {
 			typeStr := c.Param("type")
 			average, err := r.app.FeedbackService.GetAverageRating(typeStr)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, gin.H{"average_rating": average})
+			response.OK(c, gin.H{"average_rating": average})
 		})
 	}
 }
@@ -744,18 +796,18 @@ func (r *Router) registerEvolutionRoutes(api *gin.RouterGroup) {
 			if dialogueID != "" {
 				reflections, err := r.app.SelfReflectionService.GetReflectionsByDialogue(dialogueID)
 				if err != nil {
-					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+					response.InternalError(c, err.Error())
 					return
 				}
-				c.JSON(http.StatusOK, reflections)
+				response.OK(c, reflections)
 				return
 			}
 			reflections, err := r.app.SelfReflectionService.GetRecentReflections(limit)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, reflections)
+			response.OK(c, reflections)
 		})
 		evolution.POST("/reflect", func(c *gin.Context) {
 			var req struct {
@@ -765,23 +817,23 @@ func (r *Router) registerEvolutionRoutes(api *gin.RouterGroup) {
 				Response   string `json:"response"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				response.BadRequest(c, err.Error())
 				return
 			}
 			reflection, err := r.app.SelfReflectionService.ReflectOnResponse(c.Request.Context(), req.DialogueID, req.UserID, req.Query, req.Response)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, reflection)
+			response.OK(c, reflection)
 		})
 		evolution.POST("/reflections/:id/apply", func(c *gin.Context) {
 			id := c.Param("id")
 			if err := r.app.SelfReflectionService.ApplyReflection(id); err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, gin.H{"message": "Reflection applied successfully"})
+			response.OKWithMessage(c, "Reflection applied successfully", nil)
 		})
 		evolution.GET("/quality-trend", func(c *gin.Context) {
 			days := 7
@@ -790,129 +842,129 @@ func (r *Router) registerEvolutionRoutes(api *gin.RouterGroup) {
 			}
 			trend, err := r.app.SelfReflectionService.GetQualityTrend(days)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, trend)
+			response.OK(c, trend)
 		})
 		evolution.GET("/patterns", func(c *gin.Context) {
 			userID := c.Query("user_id")
 			patternType := c.Query("type")
 			patterns, err := r.app.PatternDetectorService.GetPatterns(userID, patternType)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, patterns)
+			response.OK(c, patterns)
 		})
 		evolution.POST("/patterns/detect", func(c *gin.Context) {
 			userID := c.Query("user_id")
 			patterns, err := r.app.PatternDetectorService.DetectPatterns(c.Request.Context(), userID)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, patterns)
+			response.OK(c, patterns)
 		})
 		evolution.POST("/patterns/:id/create-skill", func(c *gin.Context) {
 			id := c.Param("id")
 			skill, err := r.app.PatternDetectorService.CreateSkillFromPattern(c.Request.Context(), id)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, gin.H{"message": "Skill created from pattern", "skill": skill})
+			response.OKWithMessage(c, "Skill created from pattern", gin.H{"skill": skill})
 		})
 		evolution.POST("/patterns/:id/ignore", func(c *gin.Context) {
 			id := c.Param("id")
 			if err := r.app.PatternDetectorService.IgnorePattern(id); err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, gin.H{"message": "Pattern ignored"})
+			response.OKWithMessage(c, "Pattern ignored", nil)
 		})
 		evolution.GET("/skill-evolutions", func(c *gin.Context) {
 			skillID := c.Query("skill_id")
 			if skillID != "" {
 				evolutions, err := r.app.SkillEvolutionService.GetEvolutionHistory(skillID)
 				if err != nil {
-					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+					response.InternalError(c, err.Error())
 					return
 				}
-				c.JSON(http.StatusOK, evolutions)
+				response.OK(c, evolutions)
 				return
 			}
 			evolutions, err := r.app.SkillEvolutionService.GetPendingEvolutions()
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, evolutions)
+			response.OK(c, evolutions)
 		})
 		evolution.POST("/skill-evolutions/:id/apply", func(c *gin.Context) {
 			id := c.Param("id")
 			if err := r.app.SkillEvolutionService.ApplyEvolution(id); err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, gin.H{"message": "Skill evolution applied successfully"})
+			response.OKWithMessage(c, "Skill evolution applied successfully", nil)
 		})
 		evolution.POST("/skill-evolutions/:id/rollback", func(c *gin.Context) {
 			id := c.Param("id")
 			if err := r.app.SkillEvolutionService.RollbackEvolution(id); err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, gin.H{"message": "Skill evolution rolled back successfully"})
+			response.OKWithMessage(c, "Skill evolution rolled back successfully", nil)
 		})
 		evolution.POST("/skills/:skill_id/evolve", func(c *gin.Context) {
 			skillID := c.Param("skill_id")
 			evolution, err := r.app.SkillEvolutionService.EvolveSkillFromFeedback(c.Request.Context(), skillID)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
 			if evolution == nil {
-				c.JSON(http.StatusOK, gin.H{"message": "No evolution needed"})
+				response.OKWithMessage(c, "No evolution needed", nil)
 				return
 			}
-			c.JSON(http.StatusOK, evolution)
+			response.OK(c, evolution)
 		})
 		evolution.GET("/gaps", func(c *gin.Context) {
 			gapType := c.Query("type")
 			severity := c.Query("severity")
 			gaps, err := r.app.CapabilityGapService.GetGaps(gapType, severity)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, gaps)
+			response.OK(c, gaps)
 		})
 		evolution.POST("/gaps/detect", func(c *gin.Context) {
 			userID := c.Query("user_id")
 			gaps, err := r.app.CapabilityGapService.DetectGaps(c.Request.Context(), userID)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, gaps)
+			response.OK(c, gaps)
 		})
 		evolution.POST("/gaps/:id/create-skill", func(c *gin.Context) {
 			id := c.Param("id")
 			skill, err := r.app.CapabilityGapService.CreateSkillFromGap(c.Request.Context(), id)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, gin.H{"message": "Skill created from capability gap", "skill": skill})
+			response.OKWithMessage(c, "Skill created from capability gap", gin.H{"skill": skill})
 		})
 		evolution.POST("/gaps/:id/ignore", func(c *gin.Context) {
 			id := c.Param("id")
 			if err := r.app.CapabilityGapService.IgnoreGap(id); err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, gin.H{"message": "Gap ignored"})
+			response.OKWithMessage(c, "Gap ignored", nil)
 		})
 	}
 }
@@ -924,12 +976,12 @@ func (r *Router) registerMemoryRoutes(api *gin.RouterGroup) {
 		memory.POST("", func(c *gin.Context) {
 			var mem models.Memory
 			if err := c.ShouldBindJSON(&mem); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				response.BadRequest(c, err.Error())
 				return
 			}
 			err := r.app.MemoryService.CreateMemory(&mem)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
 			if r.app.MemoryEmbeddingService != nil {
@@ -937,30 +989,30 @@ func (r *Router) registerMemoryRoutes(api *gin.RouterGroup) {
 					r.app.MemoryEmbeddingService.AutoEmbedNewMemories(mem.ID)
 				})
 			}
-			c.JSON(http.StatusOK, mem)
+			response.OK(c, mem)
 		})
 		memory.GET("/user/:id", func(c *gin.Context) {
 			userID := c.Param("id")
 			memories, err := r.app.MemoryService.GetMemoriesByUser(userID)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, memories)
+			response.OK(c, memories)
 		})
 		memory.GET("/search", func(c *gin.Context) {
 			userID := c.Query("user_id")
 			keyword := c.Query("keyword")
 			memories, err := r.app.MemoryService.SearchMemories(userID, keyword)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, memories)
+			response.OK(c, memories)
 		})
 		memory.POST("/semantic-search", func(c *gin.Context) {
 			if r.app.MemoryEmbeddingService == nil {
-				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "semantic search not available"})
+				response.ServiceUnavailable(c, "semantic search not available")
 				return
 			}
 			var req struct {
@@ -969,7 +1021,7 @@ func (r *Router) registerMemoryRoutes(api *gin.RouterGroup) {
 				Limit  int    `json:"limit"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				response.BadRequest(c, err.Error())
 				return
 			}
 			if req.Limit <= 0 {
@@ -977,14 +1029,14 @@ func (r *Router) registerMemoryRoutes(api *gin.RouterGroup) {
 			}
 			results, err := r.app.MemoryEmbeddingService.SemanticSearch(c.Request.Context(), req.UserID, req.Query, req.Limit)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, gin.H{"success": true, "data": results, "count": len(results)})
+			response.OK(c, gin.H{"data": results, "count": len(results)})
 		})
 		memory.POST("/hybrid-search", func(c *gin.Context) {
 			if r.app.MemoryEmbeddingService == nil {
-				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "hybrid search not available"})
+				response.ServiceUnavailable(c, "hybrid search not available")
 				return
 			}
 			var req struct {
@@ -994,7 +1046,7 @@ func (r *Router) registerMemoryRoutes(api *gin.RouterGroup) {
 				SemanticWeight float64 `json:"semantic_weight"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				response.BadRequest(c, err.Error())
 				return
 			}
 			if req.Limit <= 0 {
@@ -1002,39 +1054,39 @@ func (r *Router) registerMemoryRoutes(api *gin.RouterGroup) {
 			}
 			results, err := r.app.MemoryEmbeddingService.HybridSearch(c.Request.Context(), req.UserID, req.Query, req.Limit, req.SemanticWeight)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, gin.H{"success": true, "data": results, "count": len(results)})
+			response.OK(c, gin.H{"data": results, "count": len(results)})
 		})
 		memory.POST("/batch-embed", func(c *gin.Context) {
 			if r.app.MemoryEmbeddingService == nil {
-				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "embedding service not available"})
+				response.ServiceUnavailable(c, "embedding service not available")
 				return
 			}
 			userID := c.Query("user_id")
 			if userID == "" {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "user_id is required"})
+				response.BadRequest(c, "user_id is required")
 				return
 			}
 			count, err := r.app.MemoryEmbeddingService.BatchEmbedUserMemories(userID)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, gin.H{"success": true, "message": "Embedded " + strconv.Itoa(count) + " memories", "count": count})
+			response.OKWithMessage(c, "Embedded "+strconv.Itoa(count)+" memories", gin.H{"count": count})
 		})
 		memory.PUT("/:id", func(c *gin.Context) {
 			id := c.Param("id")
 			var mem models.Memory
 			if err := c.ShouldBindJSON(&mem); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				response.BadRequest(c, err.Error())
 				return
 			}
 			mem.ID = id
 			err := r.app.MemoryService.UpdateMemory(id, &mem)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
 			if r.app.MemoryEmbeddingService != nil {
@@ -1042,24 +1094,24 @@ func (r *Router) registerMemoryRoutes(api *gin.RouterGroup) {
 					r.app.MemoryEmbeddingService.AutoEmbedNewMemories(id)
 				})
 			}
-			c.JSON(http.StatusOK, mem)
+			response.OK(c, mem)
 		})
 		memory.DELETE("/:id", func(c *gin.Context) {
 			id := c.Param("id")
 			err := r.app.MemoryService.DeleteMemory(id)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, gin.H{"message": "Memory deleted successfully"})
+			response.OKWithMessage(c, "Memory deleted successfully", nil)
 		})
 		memory.POST("/adjust-priority", func(c *gin.Context) {
 			err := r.app.MemoryService.AdjustPriority()
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, gin.H{"message": "Memory priorities adjusted"})
+			response.OKWithMessage(c, "Memory priorities adjusted", nil)
 		})
 	}
 }
@@ -1167,16 +1219,16 @@ func (r *Router) registerPermissionRoutes(api *gin.RouterGroup) {
 	{
 		permGroup.GET("/profiles", func(c *gin.Context) {
 			profiles := r.app.PermissionService.ListProfiles()
-			c.JSON(http.StatusOK, profiles)
+			response.OK(c, profiles)
 		})
 		permGroup.GET("/profiles/:mode", func(c *gin.Context) {
 			mode := services.AgentMode(c.Param("mode"))
 			profile := r.app.PermissionService.GetProfile(mode)
 			if profile == nil {
-				c.JSON(http.StatusNotFound, gin.H{"error": "profile not found"})
+				response.NotFound(c, "profile not found")
 				return
 			}
-			c.JSON(http.StatusOK, profile)
+			response.OK(c, profile)
 		})
 		permGroup.POST("/respond", func(c *gin.Context) {
 			var req struct {
@@ -1184,28 +1236,28 @@ func (r *Router) registerPermissionRoutes(api *gin.RouterGroup) {
 				Action services.PermissionAction `json:"action" binding:"required"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				response.BadRequest(c, err.Error())
 				return
 			}
 			if err := r.app.PermissionService.RespondAsk(req.AskID, req.Action); err != nil {
-				c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+				response.NotFound(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, gin.H{"status": "ok"})
+			response.OKWithMessage(c, "ok", nil)
 		})
 		permGroup.POST("/rules", func(c *gin.Context) {
 			var rules []services.PermissionRule
 			if err := c.ShouldBindJSON(&rules); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				response.BadRequest(c, err.Error())
 				return
 			}
 			r.app.PermissionService.UpdateGlobalRules(rules)
-			c.JSON(http.StatusOK, gin.H{"status": "updated"})
+			response.OKWithMessage(c, "updated", nil)
 		})
 		permGroup.DELETE("/session/:sessionID", func(c *gin.Context) {
 			sessionID := c.Param("sessionID")
 			r.app.PermissionService.ClearSessionApprovals(sessionID)
-			c.JSON(http.StatusOK, gin.H{"status": "cleared"})
+			response.OKWithMessage(c, "cleared", nil)
 		})
 	}
 }
@@ -1216,25 +1268,25 @@ func (r *Router) registerAgentRoutingRoutes(api *gin.RouterGroup) {
 	{
 		routingGroup.GET("/config", func(c *gin.Context) {
 			config := r.app.AgentRouter.GetConfig()
-			c.JSON(http.StatusOK, config)
+			response.OK(c, config)
 		})
 		routingGroup.GET("/routes", func(c *gin.Context) {
 			routes := r.app.AgentRouter.ListRoutes()
-			c.JSON(http.StatusOK, routes)
+			response.OK(c, routes)
 		})
 		routingGroup.GET("/route/:agent", func(c *gin.Context) {
 			agentType := c.Param("agent")
 			modelID := r.app.AgentRouter.RouteModelID(agentType)
-			c.JSON(http.StatusOK, gin.H{"agent": agentType, "model": modelID})
+			response.OK(c, gin.H{"agent": agentType, "model": modelID})
 		})
 		routingGroup.POST("/config", func(c *gin.Context) {
 			var config services.AgentRoutingConfig
 			if err := c.ShouldBindJSON(&config); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				response.BadRequest(c, err.Error())
 				return
 			}
 			r.app.AgentRouter.UpdateConfig(config)
-			c.JSON(http.StatusOK, gin.H{"status": "updated"})
+			response.OKWithMessage(c, "updated", nil)
 		})
 	}
 }
@@ -1245,7 +1297,7 @@ func (r *Router) registerSlashCommandRoutes(api *gin.RouterGroup) {
 	{
 		slashGroup.GET("/commands", func(c *gin.Context) {
 			commands := r.app.SlashRegistry.ListCommands()
-			c.JSON(http.StatusOK, commands)
+			response.OK(c, commands)
 		})
 		slashGroup.POST("/execute", func(c *gin.Context) {
 			var req struct {
@@ -1254,15 +1306,15 @@ func (r *Router) registerSlashCommandRoutes(api *gin.RouterGroup) {
 				SessionID string `json:"session_id"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				response.BadRequest(c, err.Error())
 				return
 			}
 			result, err := r.app.SlashRegistry.Execute(c.Request.Context(), req.Command, req.Args, req.SessionID)
 			if err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				response.BadRequest(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, gin.H{"result": result})
+			response.OK(c, gin.H{"result": result})
 		})
 	}
 }
@@ -1275,27 +1327,27 @@ func (r *Router) registerEventRoutes(api *gin.RouterGroup) {
 			topic := c.Query("topic")
 			events, err := r.app.EventBus.GetEvents(topic, 50)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, events)
+			response.OK(c, events)
 		})
 		eventGroup.GET("/stats", func(c *gin.Context) {
 			stats, err := r.app.EventBus.GetStats()
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				response.InternalError(c, err.Error())
 				return
 			}
-			c.JSON(http.StatusOK, stats)
+			response.OK(c, stats)
 		})
 		eventGroup.GET("/:id", func(c *gin.Context) {
 			id := c.Param("id")
 			event, err := r.app.EventBus.GetEvent(id)
 			if err != nil {
-				c.JSON(http.StatusNotFound, gin.H{"error": "Event not found"})
+				response.NotFound(c, "Event not found")
 				return
 			}
-			c.JSON(http.StatusOK, event)
+			response.OK(c, event)
 		})
 		eventGroup.POST("/publish", func(c *gin.Context) {
 			var req struct {
@@ -1305,11 +1357,11 @@ func (r *Router) registerEventRoutes(api *gin.RouterGroup) {
 				Data   map[string]interface{} `json:"data"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				response.BadRequest(c, err.Error())
 				return
 			}
 			r.app.EventBus.Publish(c.Request.Context(), req.Topic, req.Type, req.Source, req.Data)
-			c.JSON(http.StatusOK, gin.H{"message": "event published"})
+			response.OKWithMessage(c, "event published", nil)
 		})
 	}
 }

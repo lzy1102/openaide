@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 )
@@ -144,7 +144,7 @@ func (s *VoiceService) SpeechToText(ctx context.Context, audioData []byte, forma
 		return nil, fmt.Errorf("failed to parse STT response: %w", err)
 	}
 
-	log.Printf("[Voice] STT completed in %v, language=%s", time.Since(startTime), result.Language)
+	slog.Info("STT completed", "component", "Voice", "duration", time.Since(startTime), "language", result.Language)
 
 	return &STTResult{
 		Text:      result.Text,
@@ -221,7 +221,7 @@ func (s *VoiceService) TextToSpeech(ctx context.Context, text string) (*TTSResul
 		}
 	}
 
-	log.Printf("[Voice] TTS completed in %v, format=%s, size=%d", time.Since(startTime), format, len(audioData))
+	slog.Info("TTS completed", "component", "Voice", "duration", time.Since(startTime), "format", format, "size", len(audioData))
 
 	return &TTSResult{
 		AudioData: audioData,

@@ -6,7 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"time"
 
@@ -75,7 +75,7 @@ func NewAuthService(db *gorm.DB, cache *CacheService, config *AuthConfig) *AuthS
 			secret = "openaide-default-secret-" + fmt.Sprintf("%d", time.Now().UnixNano())
 		}
 		config.JWTSecret = secret
-		log.Printf("[Auth] JWT secret auto-generated (set OPENAIDE_JWT_SECRET env var for production)")
+		slog.Info("JWT secret auto-generated (set OPENAIDE_JWT_SECRET env var for production)", "component", "Auth")
 	}
 
 	return &AuthService{

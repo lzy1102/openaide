@@ -3,7 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -39,7 +39,7 @@ func (h *WebSocketHandler) HandleWebSocket(c *gin.Context) {
 	// 升级 HTTP 连接为 WebSocket
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-		log.Printf("[WS] Upgrade error: %v", err)
+		slog.Error("Upgrade error", "component", "WS", "error", err)
 		return
 	}
 
@@ -92,7 +92,7 @@ func (h *WebSocketHandler) readMessages(client *services.WebSocketClientImpl, co
 		_, message, err := conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("[WS] Read error: %v", err)
+				slog.Error("Read error", "component", "WS", "error", err)
 			}
 			break
 		}
@@ -113,7 +113,7 @@ func (h *WebSocketHandler) sendHeartbeat(client *services.WebSocketClientImpl, c
 	for range ticker.C {
 		conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 		if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-			log.Printf("[WS] Ping error: %v", err)
+			slog.Error("Ping error", "component", "WS", "error", err)
 			break
 		}
 	}
@@ -207,7 +207,7 @@ func (h *WebSocketHandler) DialogueStreamHandler(dialogueService *services.Dialo
 		// 升级连接
 		conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 		if err != nil {
-			log.Printf("[WS] Upgrade error: %v", err)
+			slog.Error("Upgrade error", "component", "WS", "error", err)
 			return
 		}
 		defer conn.Close()

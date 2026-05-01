@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -103,7 +103,7 @@ func NewPlanReviewService(llmClient llm.LLMClient, model string) *PlanReviewServ
 
 // ReviewExecution 回顾执行状态
 func (prs *PlanReviewService) ReviewExecution(ctx context.Context, plan *StructuredPlan, checkpoints []ExecutionCheckpoint, currentSubtask string) (*PlanReviewResult, error) {
-	log.Printf("[PlanReview] Reviewing execution: plan has %d phases, %d checkpoints", len(plan.Phases), len(checkpoints))
+	slog.Info("Reviewing execution", "component", "PlanReview", "phases", len(plan.Phases), "checkpoints", len(checkpoints))
 
 	// 步骤 1: 分析当前执行状态
 	analysis := prs.analyzeProgress(plan, checkpoints, currentSubtask)
@@ -118,7 +118,7 @@ func (prs *PlanReviewService) ReviewExecution(ctx context.Context, plan *Structu
 			return llmResult, nil
 		}
 		// LLM 回顾失败，使用启发式分析
-		log.Printf("[PlanReview] LLM deep review failed, falling back to heuristic analysis: %v", err)
+		slog.Error("LLM deep review failed, falling back to heuristic analysis", "component", "PlanReview", "error", err)
 	}
 
 	// 步骤 4: 生成回顾结果

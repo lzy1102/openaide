@@ -3,7 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -156,7 +156,7 @@ func (s *MultiAgentService) CollaborativeProcess(ctx context.Context, userReques
 	for round := 0; round <= maxRevisionRounds; round++ {
 		reviewOutput, err := s.runAgent(ctx, configs[RoleReviewer], reviewerInput, nil)
 		if err != nil {
-			log.Printf("[MultiAgent] reviewer failed on round %d: %v", round, err)
+			slog.Error("Reviewer failed", "component", "MultiAgent", "round", round, "error", err)
 			break
 		}
 		result.Steps = append(result.Steps, reviewOutput)
@@ -244,7 +244,7 @@ func (s *MultiAgentService) runAgent(ctx context.Context, config AgentConfig, in
 		tokensUsed = resp.Usage.TotalTokens
 	}
 
-	log.Printf("[MultiAgent] %s completed in %v, tokens=%d", config.Name, time.Since(start), tokensUsed)
+	slog.Info("Agent completed", "component", "MultiAgent", "name", config.Name, "duration", time.Since(start), "tokens", tokensUsed)
 
 	return &AgentOutput{
 		Role:       config.Role,

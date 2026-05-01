@@ -3,7 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"sync"
 )
 
@@ -77,7 +77,7 @@ func (r *ChannelRegistry) Register(ch MessageChannel) error {
 		return fmt.Errorf("channel %s already registered", ch.Type())
 	}
 	r.channels[ch.Type()] = ch
-	log.Printf("[Channel] registered: %s (%s)", ch.Name(), ch.Type())
+	slog.Info("Channel registered", "component", "Channel", "name", ch.Name(), "type", ch.Type())
 	return nil
 }
 
@@ -136,7 +136,7 @@ func (r *ChannelRegistry) Broadcast(ctx context.Context, msg *ChannelResponse, e
 		}
 		go func(ct ChannelType, c MessageChannel) {
 			if err := c.Send(ctx, msg, ""); err != nil {
-				log.Printf("[Channel] broadcast to %s failed: %v", ct, err)
+				slog.Error("Broadcast failed", "component", "Channel", "channel_type", ct, "error", err)
 			}
 		}(channelType, ch)
 	}
@@ -163,7 +163,7 @@ func (r *ChannelRegistry) StartAll() {
 	defer r.mu.RUnlock()
 	for _, ch := range r.channels {
 		if err := ch.Start(); err != nil {
-			log.Printf("[Channel] failed to start %s: %v", ch.Name(), err)
+			slog.Error("Failed to start channel", "component", "Channel", "name", ch.Name(), "error", err)
 		}
 	}
 }
@@ -174,7 +174,7 @@ func (r *ChannelRegistry) StopAll() {
 	defer r.mu.RUnlock()
 	for _, ch := range r.channels {
 		if err := ch.Stop(); err != nil {
-			log.Printf("[Channel] failed to stop %s: %v", ch.Name(), err)
+			slog.Error("Failed to stop channel", "component", "Channel", "name", ch.Name(), "error", err)
 		}
 	}
 }
@@ -218,7 +218,7 @@ func (c *CLIChannel) Start() error        { return nil }
 func (c *CLIChannel) Stop() error         { return nil }
 
 func (c *CLIChannel) Send(ctx context.Context, msg *ChannelResponse, targetID string) error {
-	log.Printf("[CLI] %s", msg.Content)
+	slog.Info("CLI message", "component", "CLI", "content", msg.Content)
 	return nil
 }
 

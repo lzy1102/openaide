@@ -3,7 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -55,7 +55,7 @@ func (s *MemoryService) CreateMemory(memory *models.Memory) error {
 	if s.embeddingSvc != nil {
 		go func() {
 			if err := s.embeddingSvc.AutoEmbedNewMemories(memory.ID); err != nil {
-				log.Printf("[Memory] failed to embed memory %s: %v", memory.ID, err)
+				slog.Error("Failed to embed memory", "component", "Memory", "memory_id", memory.ID, "error", err)
 			}
 		}()
 	}
@@ -455,5 +455,5 @@ func (s *MemoryService) invalidateUserCache(userID string) {
 }
 
 func init() {
-	log.Println("[MemoryService] three-layer memory architecture initialized")
+	slog.Info("three-layer memory architecture initialized", "component", "MemoryService")
 }

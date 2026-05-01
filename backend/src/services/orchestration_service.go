@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -188,12 +188,11 @@ func (s *OrchestrationService) ReviewAndAdapt(ctx context.Context, plan *Structu
 	// 步骤 1: 回顾执行状态
 	review, err := s.planReview.ReviewExecution(ctx, plan, checkpoints, currentSubtask)
 	if err != nil {
-		log.Printf("[Orchestration] Plan review failed: %v", err)
+		slog.Error("Plan review failed", "component", "Orchestration", "error", err)
 		return nil, nil, err
 	}
 
-	log.Printf("[Orchestration] Review result: status=%s, recommendation=%s, replan=%v",
-		review.OverallStatus, review.Recommendation, review.ReplanRequired)
+	slog.Info("Review result", "component", "Orchestration", "status", review.OverallStatus, "recommendation", review.Recommendation, "replan", review.ReplanRequired)
 
 	// 步骤 2: 如果需要调整，调用调整引擎
 	var replanResult *ReplanResult
@@ -214,9 +213,9 @@ func (s *OrchestrationService) ReviewAndAdapt(ctx context.Context, plan *Structu
 
 		replanResult, err = s.replanningEngine.Replan(ctx, replanReq)
 		if err != nil {
-			log.Printf("[Orchestration] Replanning failed: %v", err)
+			slog.Error("Replanning failed", "component", "Orchestration", "error", err)
 		} else {
-			log.Printf("[Orchestration] Replan result: level=%s, changes=%d", replanResult.Level, len(replanResult.Changes))
+			slog.Info("Replan result", "component", "Orchestration", "level", replanResult.Level, "changes", len(replanResult.Changes))
 		}
 	}
 
@@ -265,12 +264,12 @@ func (s *OrchestrationService) ProcessUserMessage(ctx context.Context, req *Orch
 
 // processWithStructuredPlanner 使用结构化规划器处理（5步流程）
 func (s *OrchestrationService) processWithStructuredPlanner(ctx context.Context, session *OrchestrationSession, req *OrchestrationRequest) (*OrchestrationResponse, error) {
-	log.Printf("[Orchestration] Using structured planner for session %s", session.ID)
+	slog.Info("Using structured planner for session", "component", "Orchestration", "session_id", session.ID)
 
 	// 阶段 1-5: 深度理解 + 结构化规划 + 依赖分析 + 工具规划 + 风险评估
 	structuredPlan, err := s.structuredPlanner.Plan(ctx, req.UserMessage, req.UserID, nil)
 	if err != nil {
-		log.Printf("[Orchestration] Structured planning failed, falling back to legacy: %v", err)
+		slog.Error("Structured planning failed, falling back to legacy", "component", "Orchestration", "error", err)
 		return s.processWithLegacyFlow(ctx, session, req)
 	}
 
@@ -278,8 +277,7 @@ func (s *OrchestrationService) processWithStructuredPlanner(ctx context.Context,
 	session.Status = "planning"
 	session.UpdatedAt = time.Now()
 
-	log.Printf("[Orchestration] Structured plan created: %d phases, %d dependencies, %d tools assigned",
-		len(structuredPlan.Phases), len(structuredPlan.Dependencies), len(structuredPlan.ToolPlan))
+	slog.Info("Structured plan created", "component", "Orchestration", "phases", len(structuredPlan.Phases), "dependencies", len(structuredPlan.Dependencies), "tools", len(structuredPlan.ToolPlan))
 
 	// 构建确认提案
 	proposal := s.buildStructuredPlanProposal(session, structuredPlan)
@@ -396,7 +394,7 @@ func (s *OrchestrationService) buildStructuredPlanProposal(session *Orchestratio
 
 // autoExecuteStructuredPlan 自动执行结构化计划
 func (s *OrchestrationService) autoExecuteStructuredPlan(session *OrchestrationSession, plan *StructuredPlan) (*OrchestrationResponse, error) {
-	log.Printf("[Orchestration] Auto-executing structured plan for session %s", session.ID)
+	slog.Info("Auto-executing structured plan for session", "component", "Orchestration", "session_id", session.ID)
 
 	// 初始化检查点
 	session.Checkpoints = make([]ExecutionCheckpoint, 0)
@@ -421,11 +419,11 @@ func (s *OrchestrationService) autoExecuteStructuredPlan(session *OrchestrationS
 // executeStructuredPlan 执行结构化计划（带回顾和重规划）
 // 真正调用 AgentExecutor 或 ToolCallingService 执行每个子任务
 func (s *OrchestrationService) executeStructuredPlan(session *OrchestrationSession, plan *StructuredPlan) {
-	log.Printf("[Orchestration] Starting structured plan execution for session %s", session.ID)
+	slog.Info("Starting structured plan execution for session", "component", "Orchestration", "session_id", session.ID)
 
 	// 保存初始编排记录
 	if err := s.saveOrchestrationRecord(session, plan); err != nil {
-		log.Printf("[Orchestration] Failed to save initial record: %v", err)
+		slog.Error("Failed to save initial record", "component", "Orchestration", "error", err)
 	}
 
 	// 收集前置子任务的输出，作为后续子任务的上下文
@@ -440,7 +438,7 @@ func (s *OrchestrationService) executeStructuredPlan(session *OrchestrationSessi
 	}
 
 	for phaseIdx, phase := range plan.Phases {
-		log.Printf("[Orchestration] Executing phase %d: %s", phaseIdx+1, phase.Name)
+		slog.Info("Executing phase", "component", "Orchestration", "phase_num", phaseIdx+1, "phase_name", phase.Name)
 
 		// 判断阶段内子任务是否可以并行执行
 		parallelTasks := make([]*Subtask, 0)
@@ -457,7 +455,7 @@ func (s *OrchestrationService) executeStructuredPlan(session *OrchestrationSessi
 
 		// 先执行并行任务
 		if len(parallelTasks) > 0 {
-			log.Printf("[Orchestration] Phase %d: executing %d parallel subtasks", phaseIdx+1, len(parallelTasks))
+			slog.Info("Executing parallel subtasks", "component", "Orchestration", "phase_num", phaseIdx+1, "task_count", len(parallelTasks))
 			var wg sync.WaitGroup
 			var mu sync.Mutex
 
@@ -483,7 +481,7 @@ func (s *OrchestrationService) executeStructuredPlan(session *OrchestrationSessi
 		// 再执行串行任务
 		for _, subtask := range sequentialTasks {
 			if session.Context.Err() != nil {
-				log.Printf("[Orchestration] Session %s cancelled", session.ID)
+				slog.Info("Session cancelled", "component", "Orchestration", "session_id", session.ID)
 				session.Status = "cancelled"
 				s.updateOrchestrationRecord(session)
 				return
@@ -506,7 +504,7 @@ func (s *OrchestrationService) executeStructuredPlan(session *OrchestrationSessi
 	session.Status = "completed"
 	session.UpdatedAt = time.Now()
 	s.updateOrchestrationRecord(session)
-	log.Printf("[Orchestration] Structured plan execution completed for session %s", session.ID)
+	slog.Info("Structured plan execution completed for session", "component", "Orchestration", "session_id", session.ID)
 }
 
 // executeSubtaskWithMetrics 执行单个子任务，返回 (输出, 是否成功, 错误信息, 耗时)
@@ -523,7 +521,7 @@ func (s *OrchestrationService) executeSubtaskWithMetrics(
 	checkpoint := s.CreateCheckpoint(plan.ID, phaseIdx, subtask.ID, "in_progress", "", "")
 	session.Checkpoints = append(session.Checkpoints, checkpoint)
 
-	log.Printf("[Orchestration] Executing subtask: %s - %s (type=%s)", subtask.ID, subtask.Title, subtask.Type)
+	slog.Info("Executing subtask", "component", "Orchestration", "subtask_id", subtask.ID, "title", subtask.Title, "type", subtask.Type)
 
 	// 构建子任务的执行上下文（包含前置任务输出）
 	ctx := session.Context
@@ -555,21 +553,21 @@ func (s *OrchestrationService) executeSubtaskWithMetrics(
 	if success {
 		checkpoint.Status = "completed"
 		checkpoint.Output = output
-		log.Printf("[Orchestration] Subtask %s completed in %v (output=%d chars)", subtask.ID, duration, len(output))
+		slog.Info("Subtask completed", "component", "Orchestration", "subtask_id", subtask.ID, "duration", duration, "output_len", len(output))
 	} else {
 		checkpoint.Status = "failed"
 		checkpoint.Output = output
 		checkpoint.Error = errMsg
-		log.Printf("[Orchestration] Subtask %s failed after %v: %s", subtask.ID, duration, errMsg)
+		slog.Error("Subtask failed", "component", "Orchestration", "subtask_id", subtask.ID, "duration", duration, "error_msg", errMsg)
 
 		// 执行回顾和重规划
 		if s.planReview != nil && s.replanningEngine != nil {
-			log.Printf("[Orchestration] Reviewing after failure of subtask %s", subtask.ID)
+			slog.Info("Reviewing after subtask failure", "component", "Orchestration", "subtask_id", subtask.ID)
 			review, replan, err := s.ReviewAndAdapt(ctx, plan, session.Checkpoints, subtask.ID, session.UserMessage)
 			if err == nil && review != nil {
-				log.Printf("[Orchestration] Review: %s, replan: %v", review.Recommendation, replan != nil)
+				slog.Info("Review result", "component", "Orchestration", "recommendation", review.Recommendation, "needs_replan", replan != nil)
 				if replan != nil {
-					log.Printf("[Orchestration] Applying replan: %s with %d changes", replan.Level, len(replan.Changes))
+					slog.Info("Applying replan", "component", "Orchestration", "level", replan.Level, "changes", len(replan.Changes))
 					// TODO: 应用重规划变更到 plan（需要线程安全）
 				}
 			}
@@ -751,7 +749,7 @@ func (s *OrchestrationService) startStructuredExecution(session *OrchestrationSe
 		return nil, fmt.Errorf("no structured plan available")
 	}
 
-	log.Printf("[Orchestration] Starting structured execution for session %s", session.ID)
+	slog.Info("Starting structured execution for session", "component", "Orchestration", "session_id", session.ID)
 
 	// 初始化检查点
 	session.Checkpoints = make([]ExecutionCheckpoint, 0)

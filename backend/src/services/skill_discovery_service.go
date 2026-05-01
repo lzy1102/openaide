@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -232,8 +232,7 @@ func (s *SkillDiscoveryService) CreateSkillFromPattern(pattern SkillPattern, use
 	}
 
 	// 记录发现日志
-	log.Printf("[SkillDiscovery] Created new skill '%s' from pattern (occurrences: %d, confidence: %.2f)",
-		skill.Name, pattern.Occurrences, pattern.Confidence)
+	slog.Info("Created new skill from pattern", "component", "SkillDiscovery", "skill", skill.Name, "occurrences", pattern.Occurrences, "confidence", pattern.Confidence)
 
 	return skill, nil
 }
@@ -244,7 +243,7 @@ func (s *SkillDiscoveryService) RunPeriodicDiscovery(ctx context.Context) {
 		return
 	}
 
-	log.Printf("[SkillDiscovery] Starting periodic skill discovery...")
+	slog.Info("Starting periodic skill discovery...", "component", "SkillDiscovery")
 
 	// 获取所有用户
 	var users []models.User
@@ -253,7 +252,7 @@ func (s *SkillDiscoveryService) RunPeriodicDiscovery(ctx context.Context) {
 	for _, user := range users {
 		patterns, err := s.DiscoverNewSkills(ctx, user.ID)
 		if err != nil {
-			log.Printf("[SkillDiscovery] Failed for user %s: %v", user.ID, err)
+			slog.Error("Discovery failed for user", "component", "SkillDiscovery", "user_id", user.ID, "error", err)
 			continue
 		}
 
@@ -261,13 +260,13 @@ func (s *SkillDiscoveryService) RunPeriodicDiscovery(ctx context.Context) {
 			if p.Occurrences >= s.minOccurrences {
 				skill, err := s.CreateSkillFromPattern(p, user.ID)
 				if err != nil {
-					log.Printf("[SkillDiscovery] Failed to create skill '%s': %v", p.Name, err)
+					slog.Error("Failed to create skill", "component", "SkillDiscovery", "name", p.Name, "error", err)
 				} else {
-					log.Printf("[SkillDiscovery] Created skill '%s' with %d occurrences", skill.Name, p.Occurrences)
+					slog.Info("Created skill", "component", "SkillDiscovery", "skill", skill.Name, "occurrences", p.Occurrences)
 				}
 			}
 		}
 	}
 
-	log.Printf("[SkillDiscovery] Periodic discovery completed")
+	slog.Info("Periodic discovery completed", "component", "SkillDiscovery")
 }

@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -174,7 +174,7 @@ func (s *PatternDetectorService) detectTopicPatterns(ctx context.Context, messag
 
 	llmClient, err := s.getLLMClient()
 	if err != nil {
-		log.Printf("[PatternDetector] no LLM client: %v", err)
+		slog.Warn("No LLM client", "component", "PatternDetector", "error", err)
 		return nil
 	}
 
@@ -214,7 +214,7 @@ func (s *PatternDetectorService) detectTopicPatterns(ctx context.Context, messag
 
 	resp, err := llmClient.Chat(ctx, req)
 	if err != nil {
-		log.Printf("[PatternDetector] LLM analysis failed: %v", err)
+		slog.Error("LLM analysis failed", "component", "PatternDetector", "error", err)
 		return nil
 	}
 
@@ -235,7 +235,7 @@ func (s *PatternDetectorService) detectTopicPatterns(ctx context.Context, messag
 	}
 
 	if err := json.Unmarshal([]byte(content), &results); err != nil {
-		log.Printf("[PatternDetector] failed to parse LLM response: %v", err)
+		slog.Error("failed to parse LLM response", "component", "PatternDetector", "error", err)
 		return nil
 	}
 
@@ -447,14 +447,13 @@ func (s *PatternDetectorService) performPeriodicDetection(ctx context.Context) {
 		}
 		patterns, err := s.DetectPatterns(ctx, u.UserID)
 		if err != nil {
-			log.Printf("[PatternDetector] detection failed for user %s: %v", u.UserID, err)
+			slog.Error("Detection failed for user", "component", "PatternDetector", "user_id", u.UserID, "error", err)
 			continue
 		}
 
 		for _, p := range patterns {
 			if p.Frequency >= 5 && p.Status == "detected" {
-				log.Printf("[PatternDetector] High-frequency pattern detected: %s (%d times) for user %s",
-					p.Pattern, p.Frequency, u.UserID)
+				slog.Warn("High-frequency pattern detected", "component", "PatternDetector", "pattern", p.Pattern, "frequency", p.Frequency, "user_id", u.UserID)
 			}
 		}
 	}

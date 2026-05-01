@@ -3,7 +3,7 @@ package services
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -55,7 +55,7 @@ func (r *AgentRouter) loadConfig() {
 		}
 		var cfg AgentRoutingConfig
 		if err := json.Unmarshal(data, &cfg); err != nil {
-			log.Printf("[AgentRouter] Failed to parse config %s: %v", path, err)
+			slog.Error("Failed to parse config", "component", "AgentRouter", "path", path, "error", err)
 			continue
 		}
 		r.mu.Lock()

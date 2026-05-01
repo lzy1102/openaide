@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 
 	"openaide/backend/src/services/llm"
@@ -65,7 +65,7 @@ func NewReplanningEngine(llmClient llm.LLMClient, model string, structuredPlanne
 
 // Replan 根据执行情况调整计划
 func (re *ReplanningEngine) Replan(ctx context.Context, req *ReplanRequest) (*ReplanResult, error) {
-	log.Printf("[ReplanningEngine] Starting replan: level=%s, issues=%d", req.ReplanLevel, len(req.Issues))
+	slog.Info("Starting replan", "component", "ReplanningEngine", "level", req.ReplanLevel, "issues", len(req.Issues))
 
 	switch req.ReplanLevel {
 	case "adjust":
@@ -126,7 +126,7 @@ func (re *ReplanningEngine) partialAdjust(ctx context.Context, req *ReplanReques
 
 // fullReplan 全局重新规划
 func (re *ReplanningEngine) fullReplan(ctx context.Context, req *ReplanRequest) (*ReplanResult, error) {
-	log.Printf("[ReplanningEngine] Full replanning needed")
+	slog.Info("Full replanning needed", "component", "ReplanningEngine")
 
 	// 获取已完成的工作
 	completedTasks := re.getCompletedTasks(req.Checkpoints)
@@ -161,7 +161,7 @@ func (re *ReplanningEngine) fullReplan(ctx context.Context, req *ReplanRequest) 
 
 // fallbackPlan 降级方案：简化目标，保底完成
 func (re *ReplanningEngine) fallbackPlan(ctx context.Context, req *ReplanRequest) (*ReplanResult, error) {
-	log.Printf("[ReplanningEngine] Creating fallback/degraded plan")
+	slog.Info("Creating fallback/degraded plan", "component", "ReplanningEngine")
 
 	// 获取已完成的工作
 	completedTasks := re.getCompletedTasks(req.Checkpoints)

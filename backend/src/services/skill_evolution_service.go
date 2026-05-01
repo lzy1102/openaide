@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -207,7 +207,7 @@ func (s *SkillEvolutionService) generateSkillEvolution(ctx context.Context, skil
 
 	if result.Confidence > 0.8 {
 		if err := s.ApplyEvolution(evolution.ID); err != nil {
-			log.Printf("[SkillEvolution] auto-apply failed: %v", err)
+			slog.Error("auto-apply failed", "component", "SkillEvolution", "error", err)
 		}
 	}
 
@@ -336,12 +336,11 @@ func (s *SkillEvolutionService) performPeriodicEvolution(ctx context.Context) {
 
 		evolution, err := s.EvolveSkillFromFeedback(ctx, skill.ID)
 		if err != nil {
-			log.Printf("[SkillEvolution] evolution failed for skill %s: %v", skill.ID, err)
+			slog.Error("Evolution failed for skill", "component", "SkillEvolution", "skill_id", skill.ID, "error", err)
 			continue
 		}
 		if evolution != nil {
-			log.Printf("[SkillEvolution] evolution generated for skill %s: %s (%.2f confidence)",
-				skill.Name, evolution.ChangeDesc, evolution.Confidence)
+			slog.Info("evolution generated for skill", "component", "SkillEvolution", "skill", skill.Name, "change", evolution.ChangeDesc, "confidence", evolution.Confidence)
 		}
 	}
 }
@@ -384,7 +383,7 @@ func (s *SkillEvolutionService) evolveSkillFromSuccess(ctx context.Context, skil
 
 	resp, err := llmClient.Chat(ctx, req)
 	if err != nil {
-		log.Printf("[SkillEvolution] LLM call failed for skill %s: %v", skill.Name, err)
+		slog.Error("LLM call failed for skill", "component", "SkillEvolution", "skill", skill.Name, "error", err)
 		return
 	}
 
@@ -406,7 +405,7 @@ func (s *SkillEvolutionService) evolveSkillFromSuccess(ctx context.Context, skil
 	}
 
 	if err := json.Unmarshal([]byte(content), &result); err != nil {
-		log.Printf("[SkillEvolution] failed to parse evolution result for skill %s: %v", skill.Name, err)
+		slog.Error("Failed to parse evolution result", "component", "SkillEvolution", "skill", skill.Name, "error", err)
 		return
 	}
 
@@ -466,12 +465,11 @@ func (s *SkillEvolutionService) evolveSkillFromSuccess(ctx context.Context, skil
 	}
 
 	if err := s.db.Model(skill).Updates(updates).Error; err != nil {
-		log.Printf("[SkillEvolution] failed to update skill %s: %v", skill.Name, err)
+		slog.Error("Failed to update skill", "component", "SkillEvolution", "skill", skill.Name, "error", err)
 		return
 	}
 
-	log.Printf("[SkillEvolution] skill %s evolved successfully (usage: %d, success_rate: %.1f%%)",
-		skill.Name, skill.UsageCount, skill.SuccessRate*100)
+	slog.Info("skill evolved successfully", "component", "SkillEvolution", "skill", skill.Name, "usage", skill.UsageCount, "success_rate", skill.SuccessRate*100)
 }
 
 func incrementVersion(version string) string {

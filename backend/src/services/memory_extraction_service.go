@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -63,9 +63,9 @@ func (s *MemoryExtractionService) ExtractMemoriesFromDialogue(ctx context.Contex
 		mem.LastAccessed = time.Now()
 
 		if err := s.memoryService.CreateMemory(&mem); err != nil {
-			log.Printf("[MemoryExtract] failed to save memory: %v", err)
+			slog.Error("failed to save memory", "component", "MemoryExtract", "error", err)
 		} else {
-			log.Printf("[MemoryExtract] extracted %s memory: %s", mem.MemoryType, truncateStr(mem.Content, 50))
+			slog.Info("Extracted memory", "component", "MemoryExtract", "type", mem.MemoryType, "content", truncateStr(mem.Content, 50))
 		}
 	}
 
@@ -149,7 +149,7 @@ func (s *MemoryExtractionService) BatchExtractPendingDialogues(userID string, li
 	for _, dialogue := range dialogues {
 		ctx := context.Background()
 		if err := s.ExtractMemoriesFromDialogue(ctx, dialogue.ID, userID); err != nil {
-			log.Printf("[MemoryExtract] failed to extract from dialogue %s: %v", dialogue.ID, err)
+			slog.Error("Failed to extract from dialogue", "component", "MemoryExtract", "dialogue_id", dialogue.ID, "error", err)
 		} else {
 			s.db.Model(&dialogue).Update("messages_extracted", true)
 		}

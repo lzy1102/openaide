@@ -3,7 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 
 	"github.com/google/uuid"
@@ -88,7 +88,7 @@ func (s *EnhancedDialogueService) SendMessageStreamEnhanced(
 	if s.localKnowledge != nil && s.localKnowledge.ShouldTryLocal(content) {
 		localResult, err := s.localKnowledge.Query(ctx, content, 3)
 		if err == nil && localResult != nil && localResult.FromLocal {
-			log.Printf("[EnhancedDialogue] local knowledge hit: score=%.2f, saved_tokens=%d", localResult.Score, localResult.SavedTokens)
+			slog.Info("local knowledge hit: score=, saved_tokens=", "component", "EnhancedDialogue", "score", localResult.Score, "score", localResult.SavedTokens)
 			if s.eventBus != nil {
 				s.eventBus.Publish(ctx, "knowledge", "local_hit", "local_knowledge", map[string]interface{}{
 					"query":        content,
@@ -105,7 +105,7 @@ func (s *EnhancedDialogueService) SendMessageStreamEnhanced(
 				options = make(map[string]interface{})
 			}
 			options["local_knowledge_context"] = localResult.Answer
-			log.Printf("[EnhancedDialogue] local knowledge partial match: score=%.2f, injecting as context", localResult.Score)
+			slog.Info("local knowledge partial match: score=, injecting as context", "component", "EnhancedDialogue", "score", localResult.Score)
 		}
 	}
 
@@ -243,10 +243,10 @@ func (s *EnhancedDialogueService) SendMessageStreamRouted(
 	if (modelID == "") && s.router != nil {
 		routed, err := s.router.Route(ctx, content, nil)
 		if err != nil {
-			log.Printf("[EnhancedDialogue] auto route failed: %v", err)
+			slog.Error("auto route failed", "component", "EnhancedDialogue", "error", err)
 		} else {
 			modelID = routed.ID
-			log.Printf("[EnhancedDialogue] auto routed to model: %s (task matched)", routed.Name)
+			slog.Info("Auto routed to model", "component", "EnhancedDialogue", "model", routed.Name)
 			if s.eventBus != nil {
 				info := s.router.GetRouteInfo(ctx, content)
 				s.eventBus.Publish(ctx, models.EventTopicModel, models.EventTypeModelRouted, "model_router", map[string]interface{}{
@@ -262,7 +262,7 @@ func (s *EnhancedDialogueService) SendMessageStreamRouted(
 	if s.skillSvc != nil && s.skillSvc.NeedsSkillExecution(content) {
 		match := s.skillSvc.MatchSkill(content)
 		if match != nil {
-			log.Printf("[EnhancedDialogue] skill matched: %s (confidence=%.2f)", match.Skill.Name, match.Confidence)
+			slog.Info("skill matched:  (confidence=)", "component", "EnhancedDialogue", "confidence", match.Skill.Name, "confidence", match.Confidence)
 
 			if options == nil {
 				options = make(map[string]interface{})
@@ -273,7 +273,7 @@ func (s *EnhancedDialogueService) SendMessageStreamRouted(
 			}
 			if match.Skill.SystemPromptOverride != "" {
 				skillContext["system_prompt"] = match.Skill.SystemPromptOverride
-				log.Printf("[EnhancedDialogue] skill %s: system prompt injected", match.Skill.Name)
+				slog.Info("skill : system prompt injected", "component", "EnhancedDialogue", "skill", match.Skill.Name)
 			}
 
 			finalParams := map[string]interface{}{
@@ -285,11 +285,11 @@ func (s *EnhancedDialogueService) SendMessageStreamRouted(
 
 			defs, err := s.skillSvc.GetSkillParameters(match.Skill.ID)
 			if err != nil {
-				log.Printf("[EnhancedDialogue] load skill parameters failed: %v", err)
+				slog.Error("load skill parameters failed", "component", "EnhancedDialogue", "error", err)
 			} else if len(defs) > 0 {
 				extracted, err := s.skillSvc.ExtractParametersFromContent(ctx, match.Skill, defs, content)
 				if err != nil {
-					log.Printf("[EnhancedDialogue] parameter extraction failed, fallback to prompt-only skill: %v", err)
+					slog.Error("parameter extraction failed, fallback to prompt-only skill", "component", "EnhancedDialogue", "error", err)
 				} else {
 					for key, value := range extracted {
 						if _, exists := finalParams[key]; !exists {
@@ -298,7 +298,7 @@ func (s *EnhancedDialogueService) SendMessageStreamRouted(
 					}
 					normalized, err := normalizeParameters(defs, finalParams)
 					if err != nil {
-						log.Printf("[EnhancedDialogue] parameter normalization failed, fallback to prompt-only skill: %v", err)
+						slog.Error("parameter normalization failed, fallback to prompt-only skill", "component", "EnhancedDialogue", "error", err)
 					} else {
 						finalParams = normalized
 						skillContext["parameters"] = filterDeclaredParameters(defs, finalParams)
@@ -322,21 +322,21 @@ func (s *EnhancedDialogueService) SendMessageStreamRouted(
 			if match.Skill.ModelPreference != "" {
 				skillModelID, err := s.skillSvc.ResolveModelID(ctx, match.Skill.ModelPreference)
 				if err != nil {
-					log.Printf("[EnhancedDialogue] skill model resolution failed: %v, using routed model", err)
+					slog.Error("skill model resolution failed: , using routed model", "component", "EnhancedDialogue", "error", err)
 				} else {
 					modelID = skillModelID
-					log.Printf("[EnhancedDialogue] skill %s: model overridden to preference %s", match.Skill.Name, match.Skill.ModelPreference)
+					slog.Info("Skill model overridden", "component", "EnhancedDialogue", "skill", match.Skill.Name, "model", match.Skill.ModelPreference)
 				}
 			}
 
 			if len(match.Skill.Tools) > 0 {
 				options["skill_tools"] = []string(match.Skill.Tools)
-				log.Printf("[EnhancedDialogue] skill %s: %d tools bound", match.Skill.Name, len(match.Skill.Tools))
+				slog.Info("Skill tools bound", "component", "EnhancedDialogue", "skill", match.Skill.Name, "tool_count", len(match.Skill.Tools))
 			}
 
 			go func(skillID, skillName string, parameters map[string]interface{}) {
 				s.skillSvc.TrackSkillExecution(skillID, skillName, parameters, "completed")
-				log.Printf("[EnhancedDialogue] skill %s: execution tracked", skillName)
+				slog.Info("skill : execution tracked", "component", "EnhancedDialogue", "skill", skillName)
 			}(match.Skill.ID, match.Skill.Name, finalParams)
 
 			if s.eventBus != nil {
@@ -354,7 +354,7 @@ func (s *EnhancedDialogueService) SendMessageStreamRouted(
 	}
 
 	if s.toolCallingSvc != nil {
-		log.Printf("[EnhancedDialogue] using tool-calling path (LLM decides tool usage)")
+		slog.Info("using tool-calling path (LLM decides tool usage)", "component", "EnhancedDialogue")
 		return s.SendMessageWithToolsStream(ctx, dialogueID, userID, content, modelID, options)
 	}
 

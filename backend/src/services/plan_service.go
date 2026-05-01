@@ -3,7 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -352,7 +352,7 @@ func formatExecutionResult(execution interface{}) string {
 func NewOrchestrationServiceWithModel(db *gorm.DB, modelSvc *ModelService, coordinator *TeamCoordinatorService, executor *AgentExecutor) *OrchestrationService {
 	llmClient := modelSvc.GetLLMClient()
 	if llmClient == nil {
-		log.Println("[PlanService] WARNING: no LLM client available for orchestration, using nil client")
+		slog.Info("WARNING: no LLM client available for orchestration, using nil client", "component", "PlanService")
 		// OrchestrationService 会处理 nil client 的情况
 		llmClient = &noopLLMClient{}
 	}

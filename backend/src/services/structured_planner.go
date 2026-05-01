@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 
 	"openaide/backend/src/services/llm"
@@ -147,27 +147,26 @@ func NewStructuredPlanner(llmClient llm.LLMClient, model string, memoryService *
 
 // Plan 完整的结构化规划流程
 func (sp *StructuredPlanner) Plan(ctx context.Context, userMessage, userID string, context *PlanContext) (*StructuredPlan, error) {
-	log.Printf("[StructuredPlanner] Starting structured planning for user message: %s", truncatePlanStr(userMessage, 50))
+	slog.Info("Starting structured planning for user message", "component", "StructuredPlanner", "user_id", truncatePlanStr(userMessage, 50))
 
 	// 步骤 1: 深度理解用户意图
 	understanding, err := sp.understandTask(ctx, userMessage, userID, context)
 	if err != nil {
-		log.Printf("[StructuredPlanner] Task understanding failed, using fallback: %v", err)
+		slog.Error("Task understanding failed, using fallback", "component", "StructuredPlanner", "error", err)
 		understanding = sp.fallbackUnderstanding(userMessage)
 	}
-	log.Printf("[StructuredPlanner] Task understood (confidence: %.2f, intent: %s)", understanding.Confidence, truncateStr(understanding.UserIntent, 50))
+	slog.Info("Task understood (confidence: , intent: )", "component", "StructuredPlanner", "confidence", understanding.Confidence, "confidence", truncateStr(understanding.UserIntent, 50))
 
 	// 步骤 2: 结构化规划（分阶段、子任务）
 	plan, err := sp.createPlan(ctx, userMessage, understanding, context)
 	if err != nil {
-		log.Printf("[StructuredPlanner] Planning failed, using fallback: %v", err)
+		slog.Error("Planning failed, using fallback", "component", "StructuredPlanner", "error", err)
 		plan = sp.fallbackPlan(understanding, userMessage)
 	}
 
 	plan.Understanding = understanding
 
-	log.Printf("[StructuredPlanner] Plan created: %d phases, %d total subtasks, estimated %d minutes",
-		len(plan.Phases), sp.countSubtasks(plan.Phases), plan.EstimatedTime)
+	slog.Info("Plan created", "component", "StructuredPlanner", "phases", len(plan.Phases), "subtasks", sp.countSubtasks(plan.Phases), "estimated_minutes", plan.EstimatedTime)
 
 	return plan, nil
 }

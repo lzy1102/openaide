@@ -3,7 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -120,7 +120,7 @@ func (bus *EventBus) PublishWithMetadata(ctx context.Context, topic, eventType, 
 	if bus.persistEvents && bus.db != nil {
 		go func() {
 			if err := bus.db.Create(event).Error; err != nil {
-				log.Printf("[EventBus] failed to persist event %s: %v", event.ID, err)
+				slog.Error("Failed to persist event", "component", "EventBus", "event_id", event.ID, "error", err)
 			}
 		}()
 	}
@@ -162,7 +162,7 @@ func (bus *EventBus) invokeHandler(ctx context.Context, sub *EventSubscription, 
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
-					log.Printf("[EventBus] panic in async handler for %s: %v", event.Type, r)
+					slog.Error("Panic in async handler", "component", "EventBus", "event_type", event.Type, "recovered", r)
 				}
 			}()
 			// 使用带超时的 context 避免 handler 永久阻塞
@@ -174,7 +174,7 @@ func (bus *EventBus) invokeHandler(ctx context.Context, sub *EventSubscription, 
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					log.Printf("[EventBus] panic in handler for %s: %v", event.Type, r)
+					slog.Error("Panic in handler", "component", "EventBus", "event_type", event.Type, "recovered", r)
 				}
 			}()
 			sub.Handler(ctx, event)

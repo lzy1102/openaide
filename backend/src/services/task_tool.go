@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -423,5 +423,5 @@ func min(a, b int) int {
 }
 
 func init() {
-	log.Println("[TaskTool] Sub-agent delegation system initialized")
+	slog.Info("Sub-agent delegation system initialized", "component", "TaskTool")
 }

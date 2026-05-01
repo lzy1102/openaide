@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -41,7 +42,7 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("Server starting on %s", serverAddr)
+		slog.Info("Server starting", "addr", serverAddr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Failed to start server: %v", err)
 		}
@@ -50,20 +51,20 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
 	sig := <-quit
-	log.Printf("Received signal: %v, shutting down...", sig)
+	slog.Info("Received shutdown signal", "signal", sig.String())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Printf("Server forced to shutdown: %v", err)
+		slog.Error("Server forced to shutdown", "error", err)
 	}
 
 	if err := app.Shutdown(ctx); err != nil {
-		log.Printf("Error during app shutdown: %v", err)
+		slog.Error("Error during app shutdown", "error", err)
 	}
 
-	log.Println("Server exited gracefully")
+	slog.Info("Server exited gracefully")
 }
 
 func registerStaticFiles(r *gin.Engine) {
@@ -86,7 +87,7 @@ func registerStaticFiles(r *gin.Engine) {
 		return
 	}
 
-	log.Printf("Frontend directory: %s", frontendDir)
+	slog.Info("Frontend directory configured", "path", frontendDir)
 	r.Static("/src", filepath.Join(frontendDir, "src"))
 	r.Static("/public", filepath.Join(frontendDir, "public"))
 	faviconPath := filepath.Join(frontendDir, "favicon.ico")

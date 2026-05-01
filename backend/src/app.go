@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -215,19 +216,19 @@ func (app *Application) initInfrastructure() error {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 	app.Config = cfg
-	log.Printf("Config loaded from: %s", config.GetConfigPath())
+	slog.Info("Config loaded", "path", config.GetConfigPath())
 
 	// 如果配置中指定了 home_dir，重新初始化路径
 	if cfg.HomeDir != "" {
 		config.InitPathsWithConfig(cfg)
-		log.Printf("Data directory overridden by config: %s", config.DefaultPaths.HomeDir)
+		slog.Info("Data directory overridden by config", "dir", config.DefaultPaths.HomeDir)
 	}
 
 	// 确保数据目录存在
 	if err := config.DefaultPaths.EnsureDirs(); err != nil {
 		log.Fatalf("Failed to create data directories: %v", err)
 	}
-	log.Printf("Data directory: %s", config.DefaultPaths.HomeDir)
+	slog.Info("Data directory", "dir", config.DefaultPaths.HomeDir)
 
 	// 初始化数据库（支持 SQLite/PostgreSQL/MySQL）
 	dbCfg := cfg.Storage.DB
@@ -277,12 +278,12 @@ func (app *Application) initInfrastructure() error {
 		&models.CompressedContext{},
 		&models.OrchestrationRecord{}, &models.SubtaskExecutionRecord{},
 	); err != nil {
-		log.Printf("AutoMigrate warning: %v", err)
+		slog.Warn("AutoMigrate warning", "error", err)
 	}
 
 	memoryIndexService := services.NewMemoryIndexService(db)
 	if err := memoryIndexService.CreateIndexes(); err != nil {
-		log.Printf("Memory index creation warning: %v", err)
+		slog.Warn("Memory index creation warning", "error", err)
 	}
 
 	return nil
@@ -434,11 +435,11 @@ func (app *Application) initKnowledgeServices() error {
 		Region:    vectorStoreCfg.Region,
 	}, app.EmbeddingService)
 	if err != nil {
-		log.Printf("Failed to initialize vector manager: %v", err)
+		slog.Error("Failed to initialize vector manager", "error", err)
 	}
 	if vectorManager != nil {
 		app.VectorService = vectorManager
-		log.Printf("[VectorStore] Initialized with type: %s", vectorStoreCfg.Type)
+		slog.Info("VectorStore initialized", "component", "VectorStore", "type", vectorStoreCfg.Type)
 	} else {
 		app.VectorService = services.NewNoopVectorService()
 	}
@@ -494,7 +495,7 @@ func (app *Application) initCommunicationServices() error {
 func (app *Application) initExternalServices() error {
 	cfg, err := config.Load()
 	if err != nil {
-		log.Printf("Failed to load config, using defaults: %v", err)
+		slog.Warn("Failed to load config, using defaults", "error", err)
 		cfg = &config.Config{Models: []config.ModelConfig{}}
 	}
 	app.Config = cfg
@@ -523,7 +524,7 @@ func (app *Application) initExternalServices() error {
 			PreserveToolCalls: cfg.Context.PreserveToolCalls,
 			FallbackToSummary: cfg.Context.FallbackToSummary,
 		}, cfg.Context.CompressionEnabled)
-		log.Printf("[Hermes Agent] Context engine initialized with mode: %s", compressionMode)
+		slog.Info("Context engine initialized", "component", "Hermes Agent", "mode", compressionMode)
 	}
 
 	// 初始化记忆向量嵌入服务
@@ -549,7 +550,7 @@ func (app *Application) initEmbeddingService(cfg *config.Config) {
 	}
 	app.MemoryEmbeddingService = services.NewMemoryEmbeddingService(app.DB, embeddingSvc, app.CacheService)
 	app.MemoryService.SetEmbeddingService(app.MemoryEmbeddingService)
-	log.Printf("[Memory] Semantic search enabled with embedding provider: %s", cfg.Embedding.Provider)
+	slog.Info("Semantic search enabled", "component", "Memory", "provider", cfg.Embedding.Provider)
 }
 
 // initFeishuService 初始化飞书服务
@@ -568,7 +569,7 @@ func (app *Application) initFeishuService(cfg *config.Config) {
 	)
 	if feishuConfig.Enabled && feishuConfig.AppID != "" {
 		if err := app.FeishuService.Start(); err != nil {
-			log.Printf("Failed to start feishu service: %v", err)
+			slog.Error("Failed to start feishu service", "error", err)
 		}
 	}
 }
@@ -621,7 +622,7 @@ func (app *Application) initBackgroundServices() error {
 		}
 	}
 	app.ActivityTracker = services.NewActivityTracker(activityTimeout, func(sessionID string) {
-		log.Printf("[ActivityTracker] Session %s timed out due to inactivity", sessionID)
+		slog.Info("Session timed out due to inactivity", "component", "ActivityTracker", "session_id", sessionID)
 	})
 	app.WebSocketService.ActivityTracker = app.ActivityTracker
 
@@ -643,7 +644,7 @@ func (app *Application) wireDependencies() error {
 
 // Shutdown 优雅关闭应用
 func (app *Application) Shutdown(ctx context.Context) error {
-	log.Println("[Shutdown] Starting graceful shutdown...")
+	slog.Info("Starting graceful shutdown...", "component", "Shutdown")
 
 	// 1. 停止接收新请求（HTTP 服务器应在调用 Shutdown 前停止监听）
 
@@ -661,7 +662,7 @@ func (app *Application) Shutdown(ctx context.Context) error {
 	if app.VectorService != nil {
 		if closer, ok := app.VectorService.(interface{ Close() error }); ok {
 			if err := closer.Close(); err != nil {
-				log.Printf("[Shutdown] Failed to close vector service: %v", err)
+				slog.Error("Failed to close vector service", "component", "Shutdown", "error", err)
 			}
 		}
 	}
@@ -677,14 +678,14 @@ func (app *Application) Shutdown(ctx context.Context) error {
 		sqlDB, err := app.DB.DB()
 		if err == nil {
 			if err := sqlDB.Close(); err != nil {
-				log.Printf("[Shutdown] Failed to close database: %v", err)
+				slog.Error("Failed to close database", "component", "Shutdown", "error", err)
 			} else {
-				log.Println("[Shutdown] Database connection closed")
+				slog.Info("Database connection closed", "component", "Shutdown")
 			}
 		}
 	}
 
-	log.Println("[Shutdown] Graceful shutdown completed")
+	slog.Info("Graceful shutdown completed", "component", "Shutdown")
 	return nil
 }
 
@@ -694,14 +695,14 @@ func (app *Application) WaitForShutdown() {
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
 	sig := <-sigChan
-	log.Printf("[Shutdown] Received signal: %v", sig)
+	slog.Info("Received shutdown signal", "component", "Shutdown", "signal", sig)
 
 	// 创建带超时的 context
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	if err := app.Shutdown(ctx); err != nil {
-		log.Printf("[Shutdown] Error during shutdown: %v", err)
+		slog.Error("Error during shutdown", "component", "Shutdown", "error", err)
 	}
 
 	os.Exit(0)

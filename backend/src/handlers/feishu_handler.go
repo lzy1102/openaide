@@ -2,7 +2,7 @@ package handlers
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -95,7 +95,7 @@ func (h *FeishuHandler) HandleCardCallback(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Printf("[Feishu] card callback parse error: %v", err)
+		slog.Error("card callback parse error", "component", "Feishu", "error", err)
 		c.JSON(http.StatusOK, gin.H{})
 		return
 	}
@@ -121,7 +121,7 @@ func (h *FeishuHandler) HandleCardCallback(c *gin.Context) {
 		CreatedAt: time.Now(),
 	}
 	if err := h.feedbackSvc.CreateFeedback(feedback); err != nil {
-		log.Printf("[Feishu] failed to create feedback: %v", err)
+		slog.Error("failed to create feedback", "component", "Feishu", "error", err)
 	}
 
 	// 触发自动分析和应用
@@ -129,7 +129,7 @@ func (h *FeishuHandler) HandleCardCallback(c *gin.Context) {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		if err := h.learningSvc.AnalyzeAndAutoApply(ctx, dialogueID); err != nil {
-			log.Printf("[Feishu] auto-apply failed: %v", err)
+			slog.Error("auto-apply failed", "component", "Feishu", "error", err)
 		}
 	}()
 

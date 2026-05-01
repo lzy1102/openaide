@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -110,16 +110,16 @@ func (s *FeishuService) Start() error {
 			s.running = false
 			s.mu.Unlock()
 			if r := recover(); r != nil {
-				log.Printf("[Feishu] WebSocket goroutine panic: %v", r)
+				slog.Error("WebSocket goroutine panic", "component", "Feishu", "recovered", r)
 			}
 		}()
-		log.Println("[Feishu] WebSocket client starting...")
+		slog.Info("WebSocket client starting...", "component", "Feishu")
 		if err := s.client.Start(ctx); err != nil {
-			log.Printf("[Feishu] WebSocket client stopped: %v", err)
+			slog.Info("WebSocket client stopped", "component", "Feishu", "error", err)
 		}
 	}()
 
-	log.Println("[Feishu] WebSocket client started")
+	slog.Info("WebSocket client started", "component", "Feishu")
 	return nil
 }
 
@@ -136,7 +136,7 @@ func (s *FeishuService) Stop() {
 		s.cancelFunc = nil
 	}
 	s.running = false
-	log.Println("[Feishu] WebSocket client stopped")
+	slog.Info("WebSocket client stopped", "component", "Feishu")
 }
 
 // IsRunning 返回运行状态
@@ -281,7 +281,7 @@ func (s *FeishuService) handleMessage(ctx context.Context, event *larkim.P2Messa
 	// 获取或创建会话
 	session, err := s.resolveSession(ctx, chatType, openID, chatID)
 	if err != nil {
-		log.Printf("[Feishu] failed to resolve session: %v", err)
+		slog.Error("failed to resolve session", "component", "Feishu", "error", err)
 		s.sendCardMessage(ctx, chatID, buildErrorCard(fmt.Sprintf("会话创建失败: %v", err)))
 		return nil
 	}
@@ -292,7 +292,7 @@ func (s *FeishuService) handleMessage(ctx context.Context, event *larkim.P2Messa
 	// 发送初始"思考中"卡片
 	cardResp, err := s.sendCardMessage(ctx, chatID, buildThinkingCard())
 	if err != nil {
-		log.Printf("[Feishu] failed to send thinking card: %v", err)
+		slog.Error("failed to send thinking card", "component", "Feishu", "error", err)
 		return nil
 	}
 	cardMessageID := ""
@@ -315,7 +315,7 @@ func (s *FeishuService) handleMessage(ctx context.Context, event *larkim.P2Messa
 	chunkChan, err = s.enhancedDialogueSvc.SendMessageStreamEnhanced(ctx, session.DialogueID, openID, textContent, modelID, options)
 	if err != nil {
 		duration := time.Since(startTime)
-		log.Printf("[Feishu] LLM call failed: %v", err)
+		slog.Error("LLM call failed", "component", "Feishu", "error", err)
 		if cardMessageID != "" {
 			s.patchCardMessage(ctx, chatID, cardMessageID, buildErrorCard(fmt.Sprintf("AI 调用失败: %v", err)))
 		} else {
@@ -356,7 +356,7 @@ func (s *FeishuService) handleMessage(ctx context.Context, event *larkim.P2Messa
 			if pendingContent != "" && cardMessageID != "" {
 				currentContent := fullContent.String()
 				if err := s.patchCardMessage(ctx, chatID, cardMessageID, buildStreamCard(currentContent)); err != nil {
-					log.Printf("[Feishu] patch card failed: %v", err)
+					slog.Error("patch card failed", "component", "Feishu", "error", err)
 				}
 				pendingContent = ""
 			}
@@ -370,7 +370,7 @@ func (s *FeishuService) handleMessage(ctx context.Context, event *larkim.P2Messa
 
 	if cardMessageID != "" {
 		if err := s.patchCardMessage(ctx, chatID, cardMessageID, finalCard); err != nil {
-			log.Printf("[Feishu] patch final card failed, sending new message: %v", err)
+			slog.Error("patch final card failed, sending new message", "component", "Feishu", "error", err)
 			s.sendCardMessage(ctx, chatID, finalCard)
 		}
 	} else {
@@ -525,7 +525,7 @@ func (s *FeishuService) handleCommand(ctx context.Context, chatID, chatType, ope
 
 		cardMessageID := ""
 		if cardResp, err := s.sendCardMessage(ctx, chatID, buildThinkingCard()); err != nil {
-			log.Printf("[Feishu] failed to send skill thinking card: %v", err)
+			slog.Error("failed to send skill thinking card", "component", "Feishu", "error", err)
 		} else if cardResp != nil {
 			cardMessageID = cardResp.Data.MessageID
 		}
@@ -535,7 +535,7 @@ func (s *FeishuService) handleCommand(ctx context.Context, chatID, chatType, ope
 			finalCard := buildFinalCard("未找到匹配的技能，请调整描述后重试。\n输入 /help 查看可用命令。", "")
 			if cardMessageID != "" {
 				if err := s.patchCardMessage(ctx, chatID, cardMessageID, finalCard); err != nil {
-					log.Printf("[Feishu] patch skill no-match card failed: %v", err)
+					slog.Error("patch skill no-match card failed", "component", "Feishu", "error", err)
 					s.sendCardMessage(ctx, chatID, finalCard)
 				}
 			} else {
@@ -545,7 +545,7 @@ func (s *FeishuService) handleCommand(ctx context.Context, chatID, chatType, ope
 		}
 
 		if err := s.enhancedDialogueSvc.AddMessage(session.DialogueID, "user", skillContent); err != nil {
-			log.Printf("[Feishu] Failed to add user message: %v", err)
+			slog.Error("Failed to add user message", "component", "Feishu", "error", err)
 		}
 
 		execution, err := s.skillSvc.ExecuteSkillWithContent(ctx, match.Skill, skillContent, openID)
@@ -558,7 +558,7 @@ func (s *FeishuService) handleCommand(ctx context.Context, chatID, chatType, ope
 			finalCard := buildErrorCard(errMsg)
 			if cardMessageID != "" {
 				if patchErr := s.patchCardMessage(ctx, chatID, cardMessageID, finalCard); patchErr != nil {
-					log.Printf("[Feishu] patch skill error card failed: %v", patchErr)
+					slog.Error("patch skill error card failed", "component", "Feishu", "error", patchErr)
 					s.sendCardMessage(ctx, chatID, finalCard)
 				}
 			} else {
@@ -569,7 +569,7 @@ func (s *FeishuService) handleCommand(ctx context.Context, chatID, chatType, ope
 
 		finalContent := formatSkillExecutionCardContent(match, execution)
 		if err := s.enhancedDialogueSvc.AddMessage(session.DialogueID, "assistant", finalContent); err != nil {
-			log.Printf("[Feishu] Failed to add assistant message: %v", err)
+			slog.Error("Failed to add assistant message", "component", "Feishu", "error", err)
 		}
 		s.db.Model(&models.FeishuSession{}).Where("id = ?", session.ID).
 			Update("message_count", gorm.Expr("message_count + ?", 1))
@@ -577,7 +577,7 @@ func (s *FeishuService) handleCommand(ctx context.Context, chatID, chatType, ope
 		finalCard := buildFeedbackCard(finalContent, fmt.Sprintf("%dms", duration.Milliseconds()), session.DialogueID)
 		if cardMessageID != "" {
 			if err := s.patchCardMessage(ctx, chatID, cardMessageID, finalCard); err != nil {
-				log.Printf("[Feishu] patch skill final card failed: %v", err)
+				slog.Error("patch skill final card failed", "component", "Feishu", "error", err)
 				s.sendCardMessage(ctx, chatID, finalCard)
 			}
 		} else {

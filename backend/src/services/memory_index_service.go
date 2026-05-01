@@ -3,7 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	"gorm.io/gorm"
@@ -21,7 +21,7 @@ func NewMemoryIndexService(db *gorm.DB) *MemoryIndexService {
 
 // CreateIndexes 创建记忆表索引
 func (s *MemoryIndexService) CreateIndexes() error {
-	log.Println("[MemoryIndex] Creating memory indexes...")
+	slog.Info("Creating memory indexes...", "component", "MemoryIndex")
 
 	// 用户ID索引（最常用的查询条件）
 	if err := s.createIndexIfNotExists("idx_memories_user_id", "memories", "user_id"); err != nil {
@@ -52,7 +52,7 @@ func (s *MemoryIndexService) CreateIndexes() error {
 		return err
 	}
 
-	log.Println("[MemoryIndex] Memory indexes created successfully")
+	slog.Info("Memory indexes created successfully", "component", "MemoryIndex")
 	return nil
 }
 
@@ -62,11 +62,11 @@ func (s *MemoryIndexService) createIndexIfNotExists(indexName, tableName, column
 	sql := fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON %s(%s)", indexName, tableName, columns)
 	if err := s.db.Exec(sql).Error; err != nil {
 		// 某些数据库不支持 IF NOT EXISTS，尝试另一种方式
-		log.Printf("[MemoryIndex] CREATE INDEX IF NOT EXISTS failed, trying alternative: %v", err)
+		slog.Error("CREATE INDEX IF NOT EXISTS failed, trying alternative", "component", "MemoryIndex", "error", err)
 		return nil // 忽略错误，继续执行
 	}
 
-	log.Printf("[MemoryIndex] Created index: %s", indexName)
+	slog.Info("Created index", "component", "MemoryIndex", "index", indexName)
 	return nil
 }
 
@@ -89,7 +89,7 @@ func (s *MemoryIndexService) FullTextSearch(userID, query string, limit int) ([]
 // OptimizeIndexes 优化索引（跨数据库兼容）
 func (s *MemoryIndexService) OptimizeIndexes() error {
 	// 不同数据库的优化命令不同，这里只是记录日志
-	log.Println("[MemoryIndex] Database optimization skipped (cross-database compatible)")
+	slog.Info("Database optimization skipped (cross-database compatible)", "component", "MemoryIndex")
 	return nil
 }
 
@@ -103,9 +103,9 @@ func (s *MemoryIndexService) ScheduleMaintenance(ctx context.Context, interval t
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			log.Println("[MemoryIndex] Running scheduled maintenance...")
+			slog.Info("Running scheduled maintenance...", "component", "MemoryIndex")
 			if err := s.OptimizeIndexes(); err != nil {
-				log.Printf("[MemoryIndex] Maintenance failed: %v", err)
+				slog.Error("Maintenance failed", "component", "MemoryIndex", "error", err)
 			}
 		}
 	}

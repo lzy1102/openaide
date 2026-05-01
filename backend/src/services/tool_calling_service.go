@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -125,7 +125,7 @@ func (s *ToolCallingService) SendMessageWithTools(
 		messages = s.compressToolOutputs(messages)
 		// Phase 2: 当接近上下文窗口溢出时，使用 LLM 摘要
 		if s.isContextOverflow(messages, modelID) {
-			log.Printf("[ToolCalling] Context overflow detected, triggering LLM summarization")
+			slog.Info("Context overflow detected, triggering LLM summarization", "component", "ToolCalling")
 			messages = s.summarizeWithLLM(ctx, messages, modelID)
 		}
 
@@ -365,7 +365,7 @@ func (s *ToolCallingService) saveToolCallingResult(dialogueID, sender, content s
 		}
 	}
 
-	log.Printf("[ToolCalling] Warning: could not save message, no dialogue service")
+	slog.Warn("Warning: could not save message, no dialogue service", "component", "ToolCalling")
 	return msg
 }
 
@@ -422,7 +422,7 @@ func (s *ToolCallingService) compressToolOutputs(messages []llm.Message) []llm.M
 		}
 	}
 
-	log.Printf("[ToolCalling] Context compression: %d messages, %d old tool outputs pruned", len(messages), prunedCount)
+	slog.Info("Context compression", "component", "ToolCalling", "messages", len(messages), "pruned", prunedCount)
 	return compressed
 }
 
@@ -516,7 +516,7 @@ Provide a detailed summary for continuing the conversation:`, historyText.String
 	}, map[string]interface{}{"max_tokens": 2000})
 
 	if err != nil {
-		log.Printf("[ToolCalling] LLM summarization failed, falling back to simple compression: %v", err)
+		slog.Error("LLM summarization failed, falling back to simple compression", "component", "ToolCalling", "error", err)
 		return s.compressToolOutputs(messages)
 	}
 
@@ -551,7 +551,7 @@ Provide a detailed summary for continuing the conversation:`, historyText.String
 		result = append(result, msg)
 	}
 
-	log.Printf("[ToolCalling] LLM summarization: %d old messages -> summary + %d recent messages", len(oldMessages), len(recentMessages))
+	slog.Info("LLM summarization", "component", "ToolCalling", "old_messages", len(oldMessages), "recent_messages", len(recentMessages))
 	return result
 }
 
@@ -640,9 +640,9 @@ func (s *ToolCallingService) saveSessionAsync(sessionID string) {
 	go func() {
 		filename, err := s.sessionRecorder.SaveSessionToFile(sessionID)
 		if err != nil {
-			log.Printf("[ToolCalling] Failed to save session %s: %v", sessionID, err)
+			slog.Error("Failed to save session", "component", "ToolCalling", "session_id", sessionID, "error", err)
 		} else {
-			log.Printf("[ToolCalling] Session %s saved to %s", sessionID, filename)
+			slog.Info("Session saved", "component", "ToolCalling", "session_id", sessionID, "file", filename)
 		}
 	}()
 }
