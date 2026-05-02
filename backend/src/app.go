@@ -576,7 +576,7 @@ func (app *Application) initFeishuService(cfg *config.Config) {
 
 // initHandlers 初始化所有 Handler
 func (app *Application) initHandlers() error {
-	app.AuthHandler = handlers.NewAuthHandler(app.AuthService)
+	app.AuthHandler = handlers.NewAuthHandler(app.AuthService, app.Config)
 	app.WebSocketHandler = handlers.NewWebSocketHandler(app.WebSocketService)
 	app.RateLimitHandler = handlers.NewRateLimitHandler(app.RateLimitService)
 	app.LearningHandler = handlers.NewLearningHandler(app.LearningService)

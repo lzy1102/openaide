@@ -272,15 +272,36 @@ cp config.example.json config.json
 # Edit config.json and add your API keys
 
 # Run server
-CGO_ENABLED=1 go run ./src/main.go
+CGO_ENABLED=0 go run ./src/main.go
 # Server runs on http://localhost:19375
 ```
 
 #### Build
 
 ```bash
-go build -o openaide-server ./src
+CGO_ENABLED=0 go build -o openaide-server ./src
 ./openaide-server
+```
+
+#### Startup Banner
+
+When the server starts, it displays key configuration info:
+
+```
+  ╔═══════════════════════════════════════════╗
+  ║           OpenAIDE Server v2.0.0          ║
+  ╚═══════════════════════════════════════════╝
+
+  Version:      2.0.0
+  Port:         19375
+  Config:       /opt/openaide/config.json
+  Home Dir:     /opt/openaide
+  Database:     sqlite (/opt/openaide/data/db/openaide.db)
+  Cache:        memory
+  Vector Store: memory
+  Auth Mode:    LOCAL (no auth)
+
+  Listening on: http://0.0.0.0:19375
 ```
 
 #### Configuration
@@ -292,6 +313,10 @@ Create `config.json` with your API key:
 ```json
 {
   "home_dir": "/opt/openaide",
+  "server": {
+    "port": 19375,
+    "local_mode": false
+  },
   "storage": {
     "cache": { "type": "ledis", "data_dir": "/opt/openaide/data/ledis" },
     "db": { "type": "sqlite", "uri": "/opt/openaide/data/db/openaide.db" },
@@ -309,6 +334,10 @@ Create `config.json` with your API key:
 }
 ```
 
+> **`server.local_mode`**: When set to `true`, all API routes are accessible without authentication (auto-login as admin). Useful for local development or trusted internal networks. **Do not enable in production!**
+>
+> **`server.port`**: Server listen port. Can also be set via `PORT` env var (env var takes priority).
+>
 > See `config.example.json` for full template.
 
 #### Authentication
@@ -331,6 +360,8 @@ curl -X POST http://localhost:19375/api/auth/login \
 curl http://localhost:19375/api/dialogues \
   -H "Authorization: Bearer eyJ..."
 ```
+
+**Local Mode (No Auth):** Set `server.local_mode: true` in config.json or `OPENAIDE_LOCAL_MODE=true` env var to skip authentication. All requests auto-login as admin. **Only for development/trusted networks!**
 
 Set `OPENAIDE_JWT_SECRET` env var for production (auto-generated if not set).
 
@@ -357,6 +388,17 @@ Every response includes `X-Request-ID` header for tracing.
 cd openaide/terminal
 go run main.go
 ```
+
+Configure `~/.openaide/config.yaml`:
+
+```yaml
+api:
+  base_url: http://localhost:19375/api
+  token: ""          # JWT token (leave empty if server.local_mode=true)
+  timeout_sec: 180
+```
+
+> If the server has `local_mode: true`, no token is needed. Otherwise, login first and paste the access token.
 
 #### Prerequisites
 - Go 1.22+ (no CGO required, pure Go SQLite)
@@ -421,7 +463,7 @@ go run main.go
                      └──────────────────────────────────────────────┘
 ```
 
-**技术栈**：Go 1.20+ / Gin / GORM / SQLite (modernc, CGO_ENABLED=0)
+**技术栈**：Go 1.22+ / Gin / GORM / SQLite (纯 Go, 无需 CGO) / HNSW / LedisDB / slog
 
 ### 安装
 
@@ -430,7 +472,7 @@ go run main.go
 ```bash
 cd openaide/backend
 go mod tidy
-go run ./src/main.go
+CGO_ENABLED=0 go run ./src/main.go
 # 服务运行在 http://localhost:19375
 ```
 
@@ -441,12 +483,38 @@ CGO_ENABLED=0 go build -o bin/openaide-server ./src
 ./bin/openaide-server
 ```
 
+#### 启动信息
+
+服务启动时会显示关键配置：
+
+```
+  ╔═══════════════════════════════════════════╗
+  ║           OpenAIDE Server v2.0.0          ║
+  ╚═══════════════════════════════════════════╝
+
+  Version:      2.0.0
+  Port:         19375
+  Config:       /opt/openaide/config.json
+  Home Dir:     /opt/openaide
+  Database:     sqlite (/opt/openaide/data/db/openaide.db)
+  Cache:        memory
+  Vector Store: memory
+  Auth Mode:    LOCAL (no auth)
+
+  Listening on: http://0.0.0.0:19375
+```
+
 #### 配置文件
 
 在 `~/.openaide/config.json` 中创建配置：
 
 ```json
 {
+  "home_dir": "/opt/openaide",
+  "server": {
+    "port": 19375,
+    "local_mode": true
+  },
   "models": [{
     "name": "my-model",
     "type": "llm",
@@ -458,7 +526,9 @@ CGO_ENABLED=0 go build -o bin/openaide-server ./src
     },
     "status": "enabled"
   }],
-  "default_model": "my-model",
+  "storage": {
+    "db": { "type": "sqlite", "uri": "/opt/openaide/data/db/openaide.db" }
+  },
   "feishu": {"enabled": false},
   "voice": {"enabled": false},
   "sandbox": {"enabled": false},
@@ -466,7 +536,11 @@ CGO_ENABLED=0 go build -o bin/openaide-server ./src
 }
 ```
 
-> 参考 `server_config.example.json` 模板文件。
+> **`server.local_mode`**：设为 `true` 时免认证访问所有 API（自动以 admin 身份登录），适合本地开发或内网环境，**生产环境请勿开启！**
+>
+> **`server.port`**：服务监听端口，也可通过 `PORT` 环境变量设置（环境变量优先）。
+>
+> 参考 `config.example.json` 模板文件。
 
 #### 终端 CLI
 
@@ -474,6 +548,17 @@ CGO_ENABLED=0 go build -o bin/openaide-server ./src
 cd openaide/terminal
 go run main.go
 ```
+
+配置 `~/.openaide/config.yaml`：
+
+```yaml
+api:
+  base_url: http://localhost:19375/api
+  token: ""          # JWT Token（服务器开启 local_mode 时留空）
+  timeout_sec: 180
+```
+
+> 服务器开启 `local_mode` 时无需 Token，否则先登录获取 access_token 填入。
 
 交互式模式：
 ```

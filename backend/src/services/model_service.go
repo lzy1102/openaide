@@ -5,6 +5,7 @@ import (
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -560,7 +561,16 @@ func (s *ModelService) Chat(modelID string, messages []llm.Message, options map[
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	return client.Chat(ctx, req)
+	slog.Info("LLM request", "component", "Model", "provider", model.Provider, "model", model.Name, "messages", len(messages), "stream", false)
+	start := time.Now()
+	resp, err := client.Chat(ctx, req)
+	duration := time.Since(start)
+	if err != nil {
+		slog.Error("LLM response", "component", "Model", "provider", model.Provider, "model", model.Name, "duration", duration, "error", err)
+	} else {
+		slog.Info("LLM response", "component", "Model", "provider", model.Provider, "model", model.Name, "duration", duration, "tokens", resp.Usage)
+	}
+	return resp, err
 }
 
 // ChatWithTools 带工具定义的聊天请求 (用于 tool calling)
@@ -612,7 +622,16 @@ func (s *ModelService) ChatWithTools(modelID string, messages []llm.Message, too
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	return client.Chat(ctx, req)
+	slog.Info("LLM request", "component", "Model", "provider", model.Provider, "model", model.Name, "messages", len(messages), "tools", len(tools), "stream", false)
+	start := time.Now()
+	resp, err := client.Chat(ctx, req)
+	duration := time.Since(start)
+	if err != nil {
+		slog.Error("LLM response", "component", "Model", "provider", model.Provider, "model", model.Name, "duration", duration, "error", err)
+	} else {
+		slog.Info("LLM response", "component", "Model", "provider", model.Provider, "model", model.Name, "duration", duration, "tokens", resp.Usage)
+	}
+	return resp, err
 }
 
 // ChatStream 发送流式聊天请求
@@ -661,7 +680,31 @@ func (s *ModelService) ChatStream(modelID string, messages []llm.Message, option
 		cancel()
 	}()
 
-	return client.ChatStream(ctx, req)
+	slog.Info("LLM request", "component", "Model", "provider", model.Provider, "model", model.Name, "messages", len(messages), "stream", true)
+	start := time.Now()
+	chunkChan, err := client.ChatStream(ctx, req)
+	if err != nil {
+		slog.Error("LLM stream error", "component", "Model", "provider", model.Provider, "model", model.Name, "duration", time.Since(start), "error", err)
+		return nil, err
+	}
+
+	wrappedChan := make(chan llm.ChatStreamChunk, 10)
+	go func() {
+		defer close(wrappedChan)
+		var contentLen int
+		for chunk := range chunkChan {
+			if chunk.Error != nil {
+				slog.Error("LLM stream aborted", "component", "Model", "provider", model.Provider, "model", model.Name, "duration", time.Since(start), "error", chunk.Error)
+			}
+			for _, choice := range chunk.Choices {
+				contentLen += len(choice.Delta.Content)
+			}
+			wrappedChan <- chunk
+		}
+		slog.Info("LLM stream done", "component", "Model", "provider", model.Provider, "model", model.Name, "duration", time.Since(start), "content_len", contentLen)
+	}()
+
+	return wrappedChan, nil
 }
 
 // getLLMClient 获取或创建 LLM 客户端

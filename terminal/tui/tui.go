@@ -16,6 +16,7 @@ type Config struct {
 // APIConfig API 配置
 type APIConfig struct {
 	BaseURL    string `yaml:"base_url"`
+	Token      string `yaml:"token"`
 	TimeoutSec int    `yaml:"timeout_sec"`
 }
 
@@ -108,4 +109,20 @@ type DashboardAction struct {
 // GenerateID 生成唯一 ID
 func GenerateID() string {
 	return uuid.New().String()
+}
+
+// currentConfig 保存当前配置引用
+var currentConfig *Config
+
+// SetConfig 设置当前配置
+func SetConfig(cfg *Config) {
+	currentConfig = cfg
+}
+
+// GetAuthToken 获取认证 Token
+func GetAuthToken() string {
+	if currentConfig != nil && currentConfig.API.Token != "" {
+		return currentConfig.API.Token
+	}
+	return ""
 }

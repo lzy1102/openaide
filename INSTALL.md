@@ -11,8 +11,7 @@
 
 #### 1. Prerequisites
 
-- **Go 1.22+** (with CGO for SQLite)
-- **gcc** (required for CGO/SQLite compilation)
+- **Go 1.22+** (no CGO required, pure Go SQLite)
 - **Docker** (optional, for containerized deployment)
 
 #### 2. Install Backend
@@ -48,6 +47,10 @@ go build -o openaide-server ./src
 ```json
 {
   "home_dir": "/opt/openaide",
+  "server": {
+    "port": 19375,
+    "local_mode": false
+  },
   "storage": {
     "cache": {
       "type": "ledis",
@@ -143,6 +146,8 @@ curl http://localhost:19375/api/dialogues \
 
 **Production**: Set `OPENAIDE_JWT_SECRET` environment variable. If not set, a random secret is generated on each restart (existing sessions will be invalidated).
 
+**Local Mode (No Auth)**: Set `server.local_mode: true` in config.json or `OPENAIDE_LOCAL_MODE=true` env var to skip authentication. All requests auto-login as admin. **Only for development/trusted internal networks!**
+
 ### API Response Format
 
 All API responses use a unified format:
@@ -217,7 +222,7 @@ ExecStart=/opt/openaide/openaide-server
 Restart=always
 RestartSec=5
 StandardOutput=append:/var/log/openaide/server.log
-StandardError=append:/var/log/openaide/error.log
+StandardError=append:/var/log/openaide/server.log
 
 [Install]
 WantedBy=multi-user.target
@@ -228,19 +233,23 @@ sudo systemctl daemon-reload
 sudo systemctl enable openaide
 sudo systemctl start openaide
 
-# 6. Check status
+# 6. Check status and logs
 sudo systemctl status openaide
 curl http://localhost:19375/health
+
+# View logs
+tail -f /var/log/openaide/server.log
 ```
 
 #### Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PORT` | `19375` | Server listen port |
+| `PORT` | `19375` | Server listen port (overridden by `server.port` in config) |
 | `OPENAIDE_HOME` | `~/.openaide` | Data directory root |
 | `OPENAIDE_CONFIG` | auto-detect | Config file path |
 | `OPENAIDE_JWT_SECRET` | auto-generated | JWT signing secret |
+| `OPENAIDE_LOCAL_MODE` | `false` | Skip authentication, auto-login as admin |
 | `OPENAIDE_FRONTEND_DIR` | auto-detect | Frontend static files |
 | `TZ` | system | Timezone |
 
@@ -257,6 +266,17 @@ openaide models       # List models
 openaide --help       # Show help
 ```
 
+Configure `~/.openaide/config.yaml`:
+
+```yaml
+api:
+  base_url: http://localhost:19375/api
+  token: ""          # JWT token (leave empty if server.local_mode=true)
+  timeout_sec: 180
+```
+
+> If the server has `local_mode: true`, no token is needed. Otherwise, login first and paste the access token.
+
 ---
 
 <a name="中文"></a>
@@ -266,9 +286,8 @@ openaide --help       # Show help
 
 #### 1. 环境要求
 
-- **Go 1.22+** (需要 CGO 支持 SQLite)
-- **gcc** (CGO/SQLite 编译必需)
-- **Docker** (可选，用于容器化部署)
+- **Go 1.22+**（无需 CGO，纯 Go SQLite）
+- **Docker**（可选，用于容器化部署）
 
 #### 2. 安装后端
 
@@ -281,14 +300,14 @@ cp config.example.json config.json
 # 编辑 config.json，添加你的 API Keys
 
 # 运行后端服务（无需 CGO）
-go run ./src/main.go
+CGO_ENABLED=0 go run ./src/main.go
 # 服务运行在 http://localhost:19375
 ```
 
 #### 3. 编译
 
 ```bash
-CGO_ENABLED=1 go build -o openaide-server ./src
+CGO_ENABLED=0 go build -o openaide-server ./src
 ./openaide-server
 ```
 
@@ -303,6 +322,10 @@ CGO_ENABLED=1 go build -o openaide-server ./src
 ```json
 {
   "home_dir": "/opt/openaide",
+  "server": {
+    "port": 19375,
+    "local_mode": false
+  },
   "storage": {
     "cache": {
       "type": "ledis",
@@ -398,6 +421,8 @@ curl http://localhost:19375/api/dialogues \
 
 **生产环境**：务必设置 `OPENAIDE_JWT_SECRET` 环境变量。未设置时每次重启自动生成新密钥，已登录用户的会话将失效。
 
+**本地模式（免认证）**：在 config.json 中设置 `server.local_mode: true` 或设置 `OPENAIDE_LOCAL_MODE=true` 环境变量，可跳过认证，所有请求自动以 admin 身份访问。**仅限开发或内网环境使用！**
+
 ### API 响应格式
 
 所有 API 响应使用统一格式：
@@ -445,7 +470,7 @@ docker-compose down
 ```bash
 # 1. 编译
 cd backend
-CGO_ENABLED=1 go build -o openaide-server ./src
+CGO_ENABLED=0 go build -o openaide-server ./src
 
 # 2. 创建目录
 sudo mkdir -p /opt/openaide/data/{db,vectors,ledis,sessions}
@@ -472,7 +497,7 @@ ExecStart=/opt/openaide/openaide-server
 Restart=always
 RestartSec=5
 StandardOutput=append:/var/log/openaide/server.log
-StandardError=append:/var/log/openaide/error.log
+StandardError=append:/var/log/openaide/server.log
 
 [Install]
 WantedBy=multi-user.target
@@ -483,19 +508,23 @@ sudo systemctl daemon-reload
 sudo systemctl enable openaide
 sudo systemctl start openaide
 
-# 6. 检查状态
+# 6. 检查状态和日志
 sudo systemctl status openaide
 curl http://localhost:19375/health
+
+# 查看日志
+tail -f /var/log/openaide/server.log
 ```
 
 #### 环境变量
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `PORT` | `19375` | 服务监听端口 |
+| `PORT` | `19375` | 服务监听端口（config 中 `server.port` 优先） |
 | `OPENAIDE_HOME` | `~/.openaide` | 数据目录根路径 |
 | `OPENAIDE_CONFIG` | 自动检测 | 配置文件路径 |
 | `OPENAIDE_JWT_SECRET` | 自动生成 | JWT 签名密钥 |
+| `OPENAIDE_LOCAL_MODE` | `false` | 免认证模式，自动以 admin 登录 |
 | `OPENAIDE_FRONTEND_DIR` | 自动检测 | 前端静态文件目录 |
 | `TZ` | 系统时区 | 时区设置 |
 
@@ -511,6 +540,17 @@ openaide -m deepseek  # 指定模型
 openaide models       # 列出模型
 openaide --help       # 显示帮助
 ```
+
+配置 `~/.openaide/config.yaml`：
+
+```yaml
+api:
+  base_url: http://localhost:19375/api
+  token: ""          # JWT Token（服务器开启 local_mode 时留空）
+  timeout_sec: 180
+```
+
+> 服务器开启 `local_mode` 时无需 Token，否则先登录获取 access_token 填入。
 
 ---
 
@@ -540,7 +580,7 @@ openaide --help       # 显示帮助
 **Key Points:**
 - **API Keys** are stored in `config.json` (server-side only)
 - **Pluggable Storage**: DB (SQLite/PostgreSQL/MySQL), Cache (Memory/LedisDB/Redis), VectorStore (HNSW/Memory)
-- **JWT Authentication**: All routes protected by default, configurable secret via env var
-- **Structured Logging**: slog-based logging with component tags
+- **JWT Authentication**: All routes protected by default, configurable via `server.local_mode` in config or `OPENAIDE_LOCAL_MODE` env var
+- **Structured Logging**: slog-based logging with component tags, LLM request/response tracing
 - **Graceful Shutdown**: SIGINT/SIGTERM with 30s timeout
 - **Request Tracing**: X-Request-ID auto-generated and propagated

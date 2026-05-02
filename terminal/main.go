@@ -37,6 +37,7 @@ var rootCmd = &cobra.Command{
 		if err != nil && flagVerbose {
 			fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
 		}
+		tui.SetConfig(cfg)
 		apiURL := tui.GetAPIURL(cfg, flagAPI)
 		model := tui.GetModel(cfg, flagModel, apiURL)
 		stream := tui.GetStream(cfg, flagStream)

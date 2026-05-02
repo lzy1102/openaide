@@ -11,15 +11,21 @@ import (
 	"time"
 )
 
+type APIResponse struct {
+	Code    int             `json:"code"`
+	Message string          `json:"message"`
+	Data    json.RawMessage `json:"data"`
+}
+
 type StreamEvent struct {
-	Type    string `json:"type"`
-	Content string `json:"content"`
-	Tool    string `json:"tool"`
-	Params  string `json:"params"`
-	Result  string `json:"result"`
-	Model   string `json:"model"`
+	Type     string `json:"type"`
+	Content  string `json:"content"`
+	Tool     string `json:"tool"`
+	Params   string `json:"params"`
+	Result   string `json:"result"`
+	Model    string `json:"model"`
 	Thinking string `json:"thinking"`
-	Done    bool   `json:"done"`
+	Done     bool   `json:"done"`
 }
 
 func FetchModels(apiURL string) ([]Model, error) {
@@ -28,7 +34,7 @@ func FetchModels(apiURL string) ([]Model, error) {
 		return nil, err
 	}
 	var models []Model
-	if err := json.Unmarshal(data, &models); err != nil {
+	if err := unwrapResponse(data, &models); err != nil {
 		return nil, err
 	}
 	return models, nil
@@ -40,7 +46,7 @@ func FetchDialogues(apiURL string, userID string) ([]Dialogue, error) {
 		return nil, err
 	}
 	var dialogues []Dialogue
-	if err := json.Unmarshal(data, &dialogues); err != nil {
+	if err := unwrapResponse(data, &dialogues); err != nil {
 		return nil, err
 	}
 	return dialogues, nil
@@ -56,7 +62,7 @@ func CreateDialogue(apiURL string) (Dialogue, error) {
 		return Dialogue{}, err
 	}
 	var result Dialogue
-	if err := json.Unmarshal(data, &result); err != nil {
+	if err := unwrapResponse(data, &result); err != nil {
 		return Dialogue{}, err
 	}
 	return result, nil
@@ -74,7 +80,7 @@ func SendMessage(apiURL, dialogueID string, content, model string) (string, erro
 		return "", err
 	}
 	var resp ChatResponse
-	if err := json.Unmarshal(data, &resp); err != nil {
+	if err := unwrapResponse(data, &resp); err != nil {
 		return string(data), nil
 	}
 	return resp.Message.Content, nil
@@ -108,6 +114,7 @@ func SendMessageStream(ctx context.Context, apiURL, dialogueID string, content, 
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
+	addAuthHeader(req)
 
 	client := &http.Client{Timeout: time.Duration(timeoutSec) * time.Second}
 	resp, err := client.Do(req)
@@ -204,6 +211,20 @@ func SendMessageStream(ctx context.Context, apiURL, dialogueID string, content, 
 	return fullResponse.String(), nil
 }
 
+func unwrapResponse(data []byte, target interface{}) error {
+	var apiResp APIResponse
+	if err := json.Unmarshal(data, &apiResp); err != nil {
+		return json.Unmarshal(data, target)
+	}
+	if apiResp.Code != 0 {
+		return fmt.Errorf("API error: %s", apiResp.Message)
+	}
+	if apiResp.Data != nil {
+		return json.Unmarshal(apiResp.Data, target)
+	}
+	return nil
+}
+
 func makeRequest(method, endpoint string, body interface{}) ([]byte, error) {
 	var req *http.Request
 	var err error
@@ -222,6 +243,7 @@ func makeRequest(method, endpoint string, body interface{}) ([]byte, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+	addAuthHeader(req)
 
 	client := &http.Client{Timeout: 180 * time.Second}
 	resp, err := client.Do(req)
@@ -235,9 +257,19 @@ func makeRequest(method, endpoint string, body interface{}) ([]byte, error) {
 		return nil, err
 	}
 
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, fmt.Errorf("authentication required: set api.token in config or enable server.local_mode")
+	}
+
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("API error: %d - %s", resp.StatusCode, string(data))
 	}
 
 	return data, nil
+}
+
+func addAuthHeader(req *http.Request) {
+	if token := GetAuthToken(); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 }

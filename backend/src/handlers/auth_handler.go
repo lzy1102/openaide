@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"openaide/backend/src/config"
 	"openaide/backend/src/models"
 	"openaide/backend/src/services"
 	"github.com/gin-gonic/gin"
@@ -15,12 +16,14 @@ import (
 // AuthHandler 认证处理器
 type AuthHandler struct {
 	authService *services.AuthService
+	config      *config.Config
 }
 
 // NewAuthHandler 创建认证处理器
-func NewAuthHandler(authService *services.AuthService) *AuthHandler {
+func NewAuthHandler(authService *services.AuthService, cfg *config.Config) *AuthHandler {
 	return &AuthHandler{
 		authService: authService,
+		config:      cfg,
 	}
 }
 
@@ -473,8 +476,15 @@ func (h *AuthHandler) DeleteUser(c *gin.Context) {
 // AuthMiddleware 认证中间件
 func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 本地开发模式：检查环境变量
+		// 本地开发模式：配置文件 > 环境变量
+		localMode := false
+		if h.config != nil && h.config.Server.LocalMode {
+			localMode = true
+		}
 		if os.Getenv("OPENAIDE_LOCAL_MODE") == "true" {
+			localMode = true
+		}
+		if localMode {
 			c.Set("user_id", "local-user")
 			c.Set("username", "local-user")
 			c.Set("role", "admin")

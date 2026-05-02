@@ -1,5 +1,9 @@
 {
   "home_dir": "/opt/openaide",
+  "server": {
+    "port": 19375,
+    "local_mode": true
+  },
   "storage": {
     "cache": {
       "type": "ledis",

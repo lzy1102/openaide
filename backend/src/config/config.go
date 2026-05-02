@@ -53,9 +53,16 @@ type DBConfig struct {
 	SSLMode  string `json:"ssl_mode,omitempty"` // postgres only
 }
 
+// ServerConfig 服务配置
+type ServerConfig struct {
+	Port      int  `json:"port,omitempty"`       // 监听端口，默认 19375
+	LocalMode bool `json:"local_mode,omitempty"` // 本地模式，免认证
+}
+
 // Config 根配置结构
 type Config struct {
 	HomeDir         string          `json:"home_dir,omitempty"` // 数据主目录，默认 ~/.openaide
+	Server          ServerConfig    `json:"server"`             // 服务配置
 	Models          []ModelConfig   `json:"models"`
 	Feishu          FeishuConfig    `json:"feishu"`
 	Voice           VoiceConfig     `json:"voice"`
