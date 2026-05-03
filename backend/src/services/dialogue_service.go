@@ -3,6 +3,8 @@ package services
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -261,35 +263,30 @@ func (s *DialogueService) SendMessageStream(ctx context.Context, dialogueID, use
 		s.logger.Error(ctx, "Failed to save user message: %v", err)
 	}
 
-	// 构建对话历史（最多最近20条消息，控制token消耗）
 	messages := s.GetMessages(dialogueID)
-	if len(messages) > 20 {
-		messages = messages[len(messages)-20:]
-	}
 
-	// 转换为 LLM 消息格式
 	llmMessages := make([]llm.Message, 0, len(messages)+1)
 
-	// 注入系统提示词（增强版）
-	systemPrompt := `你是 OpenAIDE AI 助手。
+	if sysPrompt, ok := options["system"].(string); ok && sysPrompt != "" {
+		llmMessages = append(llmMessages, llm.Message{
+			Role:    "system",
+			Content: sysPrompt,
+		})
+		delete(options, "system")
+	}
 
-## 行为准则
-1. 先理解用户意图，再决定行动
-2. 复杂问题分解为小步骤，逐步解决
-3. 使用工具获取准确信息，不要凭记忆猜测
-4. 每次工具调用后检查结果是否正确
-5. 确保回答覆盖用户所有问题，不遗漏需求
-6. 不确定的信息要说明，不要编造事实
-
-## 输出格式
-- 使用 Markdown 格式，代码块标注语言
-- 长回答先给结论，再展开说明
-- 重要信息用加粗或代码块突出`
-
-	llmMessages = append(llmMessages, llm.Message{
-		Role:    "system",
-		Content: systemPrompt,
-	})
+	if len(messages) > 30 {
+		summary, err := s.summarizeOldMessages(ctx, messages[:len(messages)-20], modelID)
+		if err == nil && summary != "" {
+			llmMessages = append(llmMessages, llm.Message{
+				Role:    "system",
+				Content: "以下是之前对话的摘要：\n" + summary,
+			})
+		}
+		messages = messages[len(messages)-20:]
+	} else if len(messages) > 20 {
+		messages = messages[len(messages)-20:]
+	}
 
 	for _, msg := range messages {
 		role := "user"
@@ -385,6 +382,57 @@ func (s *DialogueService) smartTruncateMessages(ctx context.Context, messages []
 		dialogueID, len(messages), len(truncatedMessages), newEstimate)
 
 	return truncatedMessages
+}
+
+func (s *DialogueService) summarizeOldMessages(ctx context.Context, oldMessages []models.Message, modelID string) (string, error) {
+	if len(oldMessages) == 0 {
+		return "", nil
+	}
+
+	var sb strings.Builder
+	for _, msg := range oldMessages {
+		role := msg.Sender
+		if role == "user" || role == "assistant" {
+			content := msg.Content
+			if len(content) > 200 {
+				content = content[:200] + "..."
+			}
+			sb.WriteString(fmt.Sprintf("%s: %s\n", role, content))
+		}
+	}
+
+	if sb.Len() == 0 {
+		return "", nil
+	}
+
+	summarizePrompt := fmt.Sprintf(`请用中文简洁总结以下对话的关键信息，包括：
+1. 用户的核心需求和目标
+2. 已做出的关键决策和结论
+3. 重要的上下文信息（如技术栈、配置、约束等）
+4. 未解决的问题
+
+对话内容：
+%s
+
+请用要点格式总结，不超过300字：`, sb.String())
+
+	summaryMessages := []llm.Message{
+		{Role: "user", Content: summarizePrompt},
+	}
+
+	resp, err := s.modelService.Chat(modelID, summaryMessages, map[string]interface{}{
+		"temperature": 0.3,
+		"max_tokens":  500,
+	})
+	if err != nil {
+		slog.Error("Failed to summarize old messages", "component", "Dialogue", "error", err)
+		return "", err
+	}
+
+	if resp != nil && len(resp.Choices) > 0 {
+		return resp.Choices[0].Message.Content, nil
+	}
+	return "", nil
 }
 
 // wrapStreamWithUsage 包装流式通道，在最后统计token使用量

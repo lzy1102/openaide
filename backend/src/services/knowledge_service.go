@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -264,7 +265,20 @@ func (s *knowledgeService) SearchKnowledge(ctx context.Context, query string, li
 		return nil, fmt.Errorf("failed to generate query embedding: %w", err)
 	}
 
-	// 获取所有知识条目
+	// 优先使用向量数据库搜索
+	minScore := 0.5
+	if s.vector != nil {
+		queryVectorF32 := make([]float32, len(queryVector))
+		for i, v := range queryVector {
+			queryVectorF32[i] = float32(v)
+		}
+		results, err := s.searchWithVectorDB(ctx, query, queryVectorF32, limit, minScore)
+		if err == nil && len(results) > 0 {
+			return results, nil
+		}
+	}
+
+	// 回退到全表扫描
 	var knowledges []models.Knowledge
 	result := s.db.Find(&knowledges)
 	if result.Error != nil {
@@ -548,13 +562,42 @@ type scoredResult struct {
 
 // sortScoredResults 对结果进行排序
 func sortScoredResults(results []scoredResult) {
-	// 使用冒泡排序按分数降序
-	n := len(results)
-	for i := 0; i < n-1; i++ {
-		for j := 0; j < n-i-1; j++ {
-			if results[j].score < results[j+1].score {
-				results[j], results[j+1] = results[j+1], results[j]
-			}
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].score > results[j].score
+	})
+}
+
+func (s *knowledgeService) searchWithVectorDB(ctx context.Context, query string, queryVector []float32, limit int, minScore float64) ([]KnowledgeSearchResult, error) {
+	searchResults, err := s.vector.Search(ctx, "knowledge", queryVector, limit*2)
+	if err != nil {
+		return nil, err
+	}
+
+	results := make([]KnowledgeSearchResult, 0, limit)
+	for _, sr := range searchResults {
+		if sr.Score < minScore {
+			continue
+		}
+		var k models.Knowledge
+		if err := s.db.First(&k, "id = ?", sr.Document.ID).Error; err != nil {
+			continue
+		}
+		results = append(results, KnowledgeSearchResult{
+			ID:          k.ID,
+			Title:       k.Title,
+			Content:     k.Content,
+			Summary:     k.Summary,
+			CategoryID:  k.CategoryID,
+			Source:      k.Source,
+			SourceID:    k.SourceID,
+			Score:       sr.Score,
+			Confidence:  k.Confidence,
+			AccessCount: k.AccessCount,
+			CreatedAt:   k.CreatedAt,
+		})
+		if len(results) >= limit {
+			break
 		}
 	}
+	return results, nil
 }

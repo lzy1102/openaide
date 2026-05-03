@@ -403,6 +403,7 @@ func (s *SkillService) MatchSkill(content string) *SkillMatchResult {
 
 	var bestMatch *SkillMatchResult
 	bestScore := 0.0
+	minConfidence := 0.05
 
 	for i := range skills {
 		skill := &skills[i]
@@ -418,12 +419,14 @@ func (s *SkillService) MatchSkill(content string) *SkillMatchResult {
 				continue
 			}
 
-			// 计算置信度：触发词长度 / 内容长度，加权
+			if s.isNegated(contentLower, triggerLower) {
+				continue
+			}
+
 			score := float64(len(trigger)) / float64(len(content))
 			if score > 1.0 {
 				score = 1.0
 			}
-			// 长触发词匹配权重更高
 			score *= (1.0 + float64(len(trigger))/20.0)
 			if score > 1.0 {
 				score = 1.0
@@ -440,7 +443,25 @@ func (s *SkillService) MatchSkill(content string) *SkillMatchResult {
 		}
 	}
 
+	if bestMatch != nil && bestMatch.Confidence < minConfidence {
+		return nil
+	}
+
 	return bestMatch
+}
+
+func (s *SkillService) isNegated(content, trigger string) bool {
+	negationPrefixes := []string{"不", "不要", "别", "无需", "不用", "no ", "don't ", "not "}
+	for _, prefix := range negationPrefixes {
+		idx := strings.Index(content, trigger)
+		if idx > 0 {
+			before := content[:idx]
+			if strings.HasSuffix(before, prefix) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // NeedsSkillExecution 判断是否需要使用技能

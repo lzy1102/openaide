@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -221,18 +223,20 @@ func (s *MemoryService) GetRelevantMemories(userID, content string, limit int) (
 		score += float64(m.Importance) * 0.1
 		score += float64(m.AccessCount) * 0.01
 
+		if !m.UpdatedAt.IsZero() {
+			hoursSinceUpdate := time.Since(m.UpdatedAt).Hours()
+			decayFactor := math.Exp(-hoursSinceUpdate / (24 * 30))
+			score *= decayFactor
+		}
+
 		if score > 0 {
 			scoredList = append(scoredList, scored{memory: m, score: score})
 		}
 	}
 
-	for i := 0; i < len(scoredList)-1; i++ {
-		for j := i + 1; j < len(scoredList); j++ {
-			if scoredList[j].score > scoredList[i].score {
-				scoredList[i], scoredList[j] = scoredList[j], scoredList[i]
-			}
-		}
-	}
+	sort.Slice(scoredList, func(i, j int) bool {
+		return scoredList[i].score > scoredList[j].score
+	})
 
 	result := make([]models.Memory, 0, limit)
 	for i := 0; i < limit && i < len(scoredList); i++ {

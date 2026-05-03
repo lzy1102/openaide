@@ -233,8 +233,7 @@ func (s *ragService) BuildContext(results []KnowledgeSearchResult, maxTokens int
 
 		context.WriteString(fmt.Sprintf("相关度: %.2f\n\n", result.Score))
 
-		// 估算 token 数，如果超过限制则停止
-		estimatedTokens := context.Len() / 3 // 粗略估算：1 token ≈ 3 字符
+		estimatedTokens := EstimateTokens(context.String())
 		if estimatedTokens > maxTokens {
 			// 移除最后一个结果
 			contextStr := context.String()

@@ -224,7 +224,7 @@ func (r *ModelRouter) classifyTask(content string) string {
 // calculateConfidence 计算分类置信度
 func (r *ModelRouter) calculateConfidence(content, taskType string) float64 {
 	if taskType == "chat" {
-		return 0.3 // 默认类型，低置信度
+		return 0.3
 	}
 
 	contentLower := strings.ToLower(content)
@@ -236,12 +236,13 @@ func (r *ModelRouter) calculateConfidence(content, taskType string) float64 {
 		}
 	}
 
-	confidence := float64(hitCount) / float64(len(keywords))
+	if hitCount == 0 {
+		return 0.0
+	}
+
+	confidence := 0.3 + 0.15*float64(hitCount)
 	if confidence > 0.95 {
 		confidence = 0.95
-	}
-	if confidence < 0.1 && hitCount > 0 {
-		confidence = 0.1
 	}
 	return confidence
 }

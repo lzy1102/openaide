@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -71,6 +72,9 @@ func (s *ToolCallingService) SendMessageWithTools(
 	if len(toolDefs) == 0 {
 		toolDefs = s.toolSvc.GetToolDefinitionsWithMCP()
 	}
+	if len(toolDefs) > 15 {
+		toolDefs = s.filterRelevantTools(content, toolDefs)
+	}
 	if len(toolDefs) == 0 {
 		// 发布工具调用事件
 		if s.eventBus != nil {
@@ -118,6 +122,8 @@ func (s *ToolCallingService) SendMessageWithTools(
 	// 5. 工具调用循环（ReAct 模式，参考 Hermes Agent）
 	var totalUsage llm.Usage
 	startTime := time.Now()
+	var lastToolSignature string
+	var repeatCount int
 
 	for round := 0; round < s.maxRounds; round++ {
 		// 上下文压缩（参考 OpenCode 两阶段压缩）
@@ -182,6 +188,25 @@ func (s *ToolCallingService) SendMessageWithTools(
 		// === ReAct: Tool Call 阶段 ===
 		toolStep := stateMachine.StartToolCall(assistantMsg.ToolCalls)
 		toolStart := time.Now()
+
+		// 循环检测：检查是否重复调用同一工具
+		currentSignature := toolCallSignature(assistantMsg.ToolCalls)
+		if currentSignature == lastToolSignature {
+			repeatCount++
+			if repeatCount >= 3 {
+				slog.Warn("Tool calling loop detected, breaking", "component", "ToolCalling", "round", round, "signature", currentSignature)
+				messages = append(messages, llm.Message{
+					Role:    llm.RoleSystem,
+					Content: "检测到重复调用同一工具，请换一种方式回答用户问题，不要再调用相同工具。",
+				})
+				lastToolSignature = ""
+				repeatCount = 0
+				continue
+			}
+		} else {
+			lastToolSignature = currentSignature
+			repeatCount = 0
+		}
 
 		// 执行工具调用（并行执行多个工具，参考 Hermes Agent 的并发模式）
 		var toolRecords []ToolCallRecord
@@ -669,4 +694,72 @@ func (s *ToolCallingService) ListReActSessions() []string {
 		return []string{}
 	}
 	return s.sessionRecorder.ListSessions()
+}
+
+func toolCallSignature(toolCalls []llm.ToolCall) string {
+	var sb strings.Builder
+	for _, tc := range toolCalls {
+		sb.WriteString(tc.Function.Name)
+		sb.WriteString("(")
+		sb.WriteString(tc.Function.Arguments)
+		sb.WriteString(")")
+	}
+	return sb.String()
+}
+
+func (s *ToolCallingService) filterRelevantTools(content string, tools []map[string]interface{}) []map[string]interface{} {
+	contentLower := strings.ToLower(content)
+
+	alwaysInclude := map[string]bool{
+		"web_search": true, "search": true, "http_request": true, "read_file": true,
+		"write_file": true, "execute_code": true, "list_directory": true,
+	}
+
+	type scoredTool struct {
+		tool  map[string]interface{}
+		score float64
+	}
+	var scored []scoredTool
+
+	for _, t := range tools {
+		name, _ := t["name"].(string)
+		nameLower := strings.ToLower(name)
+
+		if alwaysInclude[nameLower] {
+			scored = append(scored, scoredTool{tool: t, score: 100})
+			continue
+		}
+
+		score := 0.0
+		if strings.Contains(contentLower, nameLower) {
+			score += 10
+		}
+
+		if desc, ok := t["description"].(string); ok {
+			descLower := strings.ToLower(desc)
+			words := strings.Fields(descLower)
+			for _, w := range words {
+				if strings.Contains(contentLower, w) && len(w) > 2 {
+					score += 1
+				}
+			}
+		}
+
+		scored = append(scored, scoredTool{tool: t, score: score})
+	}
+
+	sort.Slice(scored, func(i, j int) bool {
+		return scored[i].score > scored[j].score
+	})
+
+	limit := 15
+	if limit > len(scored) {
+		limit = len(scored)
+	}
+
+	result := make([]map[string]interface{}, 0, limit)
+	for i := 0; i < limit; i++ {
+		result = append(result, scored[i].tool)
+	}
+	return result
 }
