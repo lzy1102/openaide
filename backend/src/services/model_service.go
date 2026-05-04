@@ -26,7 +26,7 @@ type ModelService struct {
 	db          *gorm.DB
 	llmClients  map[string]llm.LLMClient
 	clientsMu   sync.RWMutex
-	embeddingSvc *EmbeddingService
+	embeddingSvc EmbeddingService
 }
 
 // NewModelService 创建模型服务实例
@@ -499,7 +499,7 @@ func (s *ModelService) executeLLM(model *models.Model, parameters map[string]int
 	return result, nil
 }
 
-func (s *ModelService) SetEmbeddingService(embSvc *EmbeddingService) {
+func (s *ModelService) SetEmbeddingService(embSvc EmbeddingService) {
 	s.embeddingSvc = embSvc
 }
 

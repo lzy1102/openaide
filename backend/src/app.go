@@ -555,9 +555,7 @@ func (app *Application) initEmbeddingService(cfg *config.Config) {
 	}
 	app.MemoryEmbeddingService = services.NewMemoryEmbeddingService(app.DB, embeddingSvc, app.CacheService)
 	app.MemoryService.SetEmbeddingService(app.MemoryEmbeddingService)
-	if embOpenAI, ok := embeddingSvc.(*services.OpenAIEmbeddingService); ok {
-		app.ModelService.SetEmbeddingService(embOpenAI)
-	}
+	app.ModelService.SetEmbeddingService(embeddingSvc)
 	slog.Info("Semantic search enabled", "component", "Memory", "provider", cfg.Embedding.Provider)
 }
 
