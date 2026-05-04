@@ -19,13 +19,14 @@ import (
 
 // ModelService 模型服务 - 模型配置从配置文件加载，不依赖数据库
 type ModelService struct {
-	models     []config.ModelConfig // 从配置文件加载的模型列表
-	modelsMu   sync.RWMutex
-	cfg        *config.Config       // 配置引用，用于回写
-	cache      *CacheService
-	db         *gorm.DB             // 仅用于 model_instances / model_executions
-	llmClients map[string]llm.LLMClient
-	clientsMu  sync.RWMutex
+	models      []config.ModelConfig
+	modelsMu    sync.RWMutex
+	cfg         *config.Config
+	cache       *CacheService
+	db          *gorm.DB
+	llmClients  map[string]llm.LLMClient
+	clientsMu   sync.RWMutex
+	embeddingSvc *EmbeddingService
 }
 
 // NewModelService 创建模型服务实例
@@ -498,23 +499,41 @@ func (s *ModelService) executeLLM(model *models.Model, parameters map[string]int
 	return result, nil
 }
 
-// executeEmbedding 执行Embedding模型
+func (s *ModelService) SetEmbeddingService(embSvc *EmbeddingService) {
+	s.embeddingSvc = embSvc
+}
+
 func (s *ModelService) executeEmbedding(model *models.Model, parameters map[string]interface{}) (interface{}, error) {
 	text, ok := parameters["text"].(string)
 	if !ok {
 		return nil, fmt.Errorf("parameter 'text' is required")
 	}
 
+	if s.embeddingSvc != nil {
+		embeddings, err := s.embeddingSvc.GenerateEmbeddings(context.Background(), []string{text})
+		if err != nil {
+			slog.Error("Embedding generation failed", "component", "Model", "model", model.Name, "error", err)
+		} else if len(embeddings) > 0 {
+			return map[string]interface{}{
+				"embedding": embeddings[0],
+				"text":      text,
+				"model":     model.Name,
+				"provider":  model.Provider,
+			}, nil
+		}
+	}
+
+	slog.Warn("Embedding service unavailable, returning stub", "component", "Model", "model", model.Name)
 	embedding := make([]float64, 10)
 	for i := range embedding {
 		embedding[i] = float64(i) * 0.1
 	}
-
 	return map[string]interface{}{
 		"embedding": embedding,
 		"text":      text,
 		"model":     model.Name,
 		"provider":  model.Provider,
+		"stub":      true,
 	}, nil
 }
 
@@ -675,15 +694,12 @@ func (s *ModelService) ChatStream(modelID string, messages []llm.Message, option
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
-	go func() {
-		<-ctx.Done()
-		cancel()
-	}()
 
 	slog.Info("LLM request", "component", "Model", "provider", model.Provider, "model", model.Name, "messages", len(messages), "stream", true)
 	start := time.Now()
 	chunkChan, err := client.ChatStream(ctx, req)
 	if err != nil {
+		cancel()
 		slog.Error("LLM stream error", "component", "Model", "provider", model.Provider, "model", model.Name, "duration", time.Since(start), "error", err)
 		return nil, err
 	}
@@ -691,6 +707,7 @@ func (s *ModelService) ChatStream(modelID string, messages []llm.Message, option
 	wrappedChan := make(chan llm.ChatStreamChunk, 10)
 	go func() {
 		defer close(wrappedChan)
+		defer cancel()
 		var contentLen int
 		for chunk := range chunkChan {
 			if chunk.Error != nil {

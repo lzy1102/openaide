@@ -187,35 +187,8 @@ func (s *DialogueService) SendMessage(ctx context.Context, dialogueID, userID, c
 
 // executeChat 执行聊天请求（不保存消息）
 func (s *DialogueService) executeChat(ctx context.Context, dialogueID, userID, content string, modelID string, options map[string]interface{}) (*llm.ChatResponse, error) {
-	// 构建对话历史
-	messages := s.GetMessages(dialogueID)
+	llmMessages := s.buildLLMMessages(ctx, dialogueID, modelID, options)
 
-	// 转换为 LLM 消息格式
-	llmMessages := make([]llm.Message, 0, len(messages))
-	for _, msg := range messages {
-		role := "user"
-		switch msg.Sender {
-		case "assistant":
-			role = "assistant"
-		case "system":
-			role = "system"
-		case "tool":
-			role = "tool"
-		}
-		llmMsg := llm.Message{
-			Role:    role,
-			Content: msg.Content,
-		}
-		if msg.ReasoningContent != "" {
-			llmMsg.ReasoningContent = msg.ReasoningContent
-		}
-		if msg.ToolCallID != "" {
-			llmMsg.ToolCallID = msg.ToolCallID
-		}
-		llmMessages = append(llmMessages, llmMsg)
-	}
-
-	// 调用 LLM 获取回复
 	resp, err := s.modelService.Chat(modelID, llmMessages, options)
 	if err != nil {
 		s.logger.Error(ctx, "Failed to get LLM response: %v", err)
@@ -225,44 +198,7 @@ func (s *DialogueService) executeChat(ctx context.Context, dialogueID, userID, c
 	return resp, nil
 }
 
-// executeChatAndSave 执行聊天并保存结果
-func (s *DialogueService) executeChatAndSave(ctx context.Context, dialogueID, userID, content string, modelID string, options map[string]interface{}) (*models.Message, error) {
-	startTime := time.Now()
-	resp, err := s.executeChat(ctx, dialogueID, userID, content, modelID, options)
-	duration := time.Since(startTime)
-
-	if err != nil {
-		return nil, err
-	}
-
-	// 保存助手回复（包含思考过程）
-	assistantMsg := resp.Choices[0].Message
-	assistantMessage, err := s.AddMessage(dialogueID, "assistant", assistantMsg.Content, assistantMsg.ReasoningContent)
-	if err != nil {
-		s.logger.Error(ctx, "Failed to save assistant message: %v", err)
-	}
-
-	// 记录响应
-	if resp.Usage != nil {
-		s.logger.Info(ctx, "LLM response received in %v, tokens: %d+%d=%d",
-			duration, resp.Usage.PromptTokens, resp.Usage.CompletionTokens, resp.Usage.TotalTokens)
-
-		// 记录Token使用量
-		if s.usageService != nil {
-			go s.recordUsage(ctx, userID, dialogueID, assistantMessage.ID, modelID, resp, duration, false)
-		}
-	}
-
-	return &assistantMessage, nil
-}
-
-// SendMessageStream 发送消息并获取流式 AI 回复
-func (s *DialogueService) SendMessageStream(ctx context.Context, dialogueID, userID, content string, modelID string, options map[string]interface{}) (<-chan llm.ChatStreamChunk, error) {
-	// 保存用户消息
-	if _, err := s.AddMessage(dialogueID, "user", content); err != nil {
-		s.logger.Error(ctx, "Failed to save user message: %v", err)
-	}
-
+func (s *DialogueService) buildLLMMessages(ctx context.Context, dialogueID, modelID string, options map[string]interface{}) []llm.Message {
 	messages := s.GetMessages(dialogueID)
 
 	llmMessages := make([]llm.Message, 0, len(messages)+1)
@@ -311,17 +247,56 @@ func (s *DialogueService) SendMessageStream(ctx context.Context, dialogueID, use
 		llmMessages = append(llmMessages, llmMsg)
 	}
 
-	// Token预估和智能截断
 	llmMessages = s.smartTruncateMessages(ctx, llmMessages, modelID, dialogueID)
 
-	// 调用 LLM 获取流式回复
+	return llmMessages
+}
+
+// executeChatAndSave 执行聊天并保存结果
+func (s *DialogueService) executeChatAndSave(ctx context.Context, dialogueID, userID, content string, modelID string, options map[string]interface{}) (*models.Message, error) {
+	startTime := time.Now()
+	resp, err := s.executeChat(ctx, dialogueID, userID, content, modelID, options)
+	duration := time.Since(startTime)
+
+	if err != nil {
+		return nil, err
+	}
+
+	// 保存助手回复（包含思考过程）
+	assistantMsg := resp.Choices[0].Message
+	assistantMessage, err := s.AddMessage(dialogueID, "assistant", assistantMsg.Content, assistantMsg.ReasoningContent)
+	if err != nil {
+		s.logger.Error(ctx, "Failed to save assistant message: %v", err)
+	}
+
+	// 记录响应
+	if resp.Usage != nil {
+		s.logger.Info(ctx, "LLM response received in %v, tokens: %d+%d=%d",
+			duration, resp.Usage.PromptTokens, resp.Usage.CompletionTokens, resp.Usage.TotalTokens)
+
+		// 记录Token使用量
+		if s.usageService != nil {
+			go s.recordUsage(ctx, userID, dialogueID, assistantMessage.ID, modelID, resp, duration, false)
+		}
+	}
+
+	return &assistantMessage, nil
+}
+
+// SendMessageStream 发送消息并获取流式 AI 回复
+func (s *DialogueService) SendMessageStream(ctx context.Context, dialogueID, userID, content string, modelID string, options map[string]interface{}) (<-chan llm.ChatStreamChunk, error) {
+	if _, err := s.AddMessage(dialogueID, "user", content); err != nil {
+		s.logger.Error(ctx, "Failed to save user message: %v", err)
+	}
+
+	llmMessages := s.buildLLMMessages(ctx, dialogueID, modelID, options)
+
 	startTime := time.Now()
 	chunkChan, err := s.modelService.ChatStream(modelID, llmMessages, options)
 	if err != nil {
 		return nil, err
 	}
 
-	// 包装流式通道，在最后统计token
 	if s.usageService != nil {
 		return s.wrapStreamWithUsage(chunkChan, userID, dialogueID, modelID, startTime), nil
 	}

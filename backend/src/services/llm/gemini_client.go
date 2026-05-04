@@ -202,10 +202,8 @@ func (c *GeminiClient) ChatStream(ctx context.Context, req *ChatRequest) (<-chan
 type geminiResponse struct {
 	Candidates []struct {
 		Content struct {
-			Parts []struct {
-				Text string `json:"text"`
-			} `json:"parts"`
-			Role string `json:"role"`
+			Parts []geminiPart `json:"parts"`
+			Role  string       `json:"role"`
 		} `json:"content"`
 		FinishReason string `json:"finishReason"`
 	} `json:"candidates"`
@@ -223,18 +221,46 @@ type geminiResponse struct {
 
 // buildChatRequest 构建聊天请求体
 func (c *GeminiClient) buildChatRequest(req *ChatRequest) ([]byte, error) {
-	// 转换消息格式
 	contents := make([]geminiContent, 0, len(req.Messages))
 	for _, msg := range req.Messages {
 		role := msg.Role
 		if role == "assistant" {
 			role = "model"
 		}
+
+		if role == "tool" {
+			contents = append(contents, geminiContent{
+				Role: "function",
+				Parts: []geminiPart{
+					{FunctionResponse: &geminiFuncResp{
+						Name:     msg.Name,
+						Response: msg.Content,
+					}},
+				},
+			})
+			continue
+		}
+
+		if role == "model" && len(msg.ToolCalls) > 0 {
+			parts := make([]geminiPart, 0)
+			if msg.Content != "" {
+				parts = append(parts, geminiPart{Text: msg.Content})
+			}
+			for _, tc := range msg.ToolCalls {
+				parts = append(parts, geminiPart{
+					FunctionCall: &geminiFuncCall{
+						Name: tc.Function.Name,
+						Args: json.RawMessage(tc.Function.Arguments),
+					},
+				})
+			}
+			contents = append(contents, geminiContent{Role: role, Parts: parts})
+			continue
+		}
+
 		contents = append(contents, geminiContent{
-			Role: role,
-			Parts: []geminiPart{
-				{Text: msg.Content},
-			},
+			Role:  role,
+			Parts: []geminiPart{{Text: msg.Content}},
 		})
 	}
 
@@ -249,6 +275,7 @@ func (c *GeminiClient) buildChatRequest(req *ChatRequest) ([]byte, error) {
 			Category  string `json:"category"`
 			Threshold string `json:"threshold"`
 		} `json:"safetySettings,omitempty"`
+		Tools []geminiToolDecl `json:"tools,omitempty"`
 	}{
 		Contents: contents,
 		GenerationConfig: struct {
@@ -262,6 +289,18 @@ func (c *GeminiClient) buildChatRequest(req *ChatRequest) ([]byte, error) {
 		},
 	}
 
+	if len(req.Tools) > 0 {
+		decls := make([]geminiFuncDecl, len(req.Tools))
+		for i, t := range req.Tools {
+			decls[i] = geminiFuncDecl{
+			Name:        t.Function.Name,
+			Description: t.Function.Description,
+			Parameters:  mustMarshal(t.Function.Parameters),
+		}
+		}
+		geminiReq.Tools = []geminiToolDecl{{FunctionDeclarations: decls}}
+	}
+
 	return json.Marshal(geminiReq)
 }
 
@@ -271,7 +310,29 @@ type geminiContent struct {
 }
 
 type geminiPart struct {
-	Text string `json:"text"`
+	Text             string          `json:"text,omitempty"`
+	FunctionCall     *geminiFuncCall `json:"functionCall,omitempty"`
+	FunctionResponse *geminiFuncResp `json:"functionResponse,omitempty"`
+}
+
+type geminiFuncCall struct {
+	Name string          `json:"name"`
+	Args json.RawMessage `json:"args,omitempty"`
+}
+
+type geminiFuncResp struct {
+	Name     string `json:"name"`
+	Response string `json:"response"`
+}
+
+type geminiToolDecl struct {
+	FunctionDeclarations []geminiFuncDecl `json:"functionDeclarations"`
+}
+
+type geminiFuncDecl struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	Parameters  json.RawMessage `json:"parameters,omitempty"`
 }
 
 // parseChatResponse 解析聊天响应
@@ -291,16 +352,34 @@ func (c *GeminiClient) parseChatResponse(resp *http.Response, model string) (*Ch
 	choices := make([]Choice, 0, len(geminiResp.Candidates))
 	for i, candidate := range geminiResp.Candidates {
 		content := ""
-		if len(candidate.Content.Parts) > 0 {
-			content = candidate.Content.Parts[0].Text
+		var toolCalls []ToolCall
+		for _, part := range candidate.Content.Parts {
+			if part.Text != "" {
+				content += part.Text
+			}
+			if part.FunctionCall != nil {
+				toolCalls = append(toolCalls, ToolCall{
+					ID:   fmt.Sprintf("call_%d", i),
+					Type: "function",
+					Function: FunctionCall{
+						Name:      part.FunctionCall.Name,
+						Arguments: string(part.FunctionCall.Args),
+					},
+				})
+			}
+		}
+		finishReason := candidate.FinishReason
+		if len(toolCalls) > 0 && finishReason == "STOP" {
+			finishReason = "tool_calls"
 		}
 		choices = append(choices, Choice{
 			Index: i,
 			Message: Message{
-				Role:    "assistant",
-				Content: content,
+				Role:      "assistant",
+				Content:   content,
+				ToolCalls: toolCalls,
 			},
-			FinishReason: candidate.FinishReason,
+			FinishReason: finishReason,
 		})
 	}
 
@@ -322,6 +401,14 @@ func (c *GeminiClient) parseChatResponse(resp *http.Response, model string) (*Ch
 }
 
 // sendRequest 发送 HTTP 请求
+func mustMarshal(v interface{}) json.RawMessage {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return json.RawMessage("{}")
+	}
+	return json.RawMessage(b)
+}
+
 func (c *GeminiClient) sendRequest(ctx context.Context, method, url string, body []byte) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(body))
 	if err != nil {

@@ -176,19 +176,36 @@ func (c *AnthropicClient) ChatStream(ctx context.Context, req *ChatRequest) (<-c
 
 // anthropicMessageRequest Anthropic 消息请求格式
 type anthropicMessageRequest struct {
-	Model     string                 `json:"model"`
-	MaxTokens int                    `json:"max_tokens"`
-	Messages  []anthropicMessage     `json:"messages"`
-	System    string                 `json:"system,omitempty"`
-	Temperature float64              `json:"temperature,omitempty"`
-	TopP      float64                `json:"top_p,omitempty"`
-	StopSequences []string           `json:"stop_sequences,omitempty"`
-	TopK      int                    `json:"top_k,omitempty"`
+	Model         string              `json:"model"`
+	MaxTokens     int                 `json:"max_tokens"`
+	Messages      []anthropicMessage  `json:"messages"`
+	System        string              `json:"system,omitempty"`
+	Temperature   float64             `json:"temperature,omitempty"`
+	TopP          float64             `json:"top_p,omitempty"`
+	StopSequences []string            `json:"stop_sequences,omitempty"`
+	TopK          int                 `json:"top_k,omitempty"`
+	Tools         []anthropicToolDef  `json:"tools,omitempty"`
+	ToolChoice    interface{}         `json:"tool_choice,omitempty"`
 }
 
 type anthropicMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role    string      `json:"role"`
+	Content interface{} `json:"content"`
+}
+
+type anthropicToolDef struct {
+	Name        string      `json:"name"`
+	Description string      `json:"description,omitempty"`
+	InputSchema interface{} `json:"input_schema"`
+}
+
+type anthropicContentBlock struct {
+	Type    string          `json:"type"`
+	Text    string          `json:"text,omitempty"`
+	Thinking string         `json:"thinking,omitempty"`
+	ID      string          `json:"id,omitempty"`
+	Name    string          `json:"name,omitempty"`
+	Input   json.RawMessage `json:"input,omitempty"`
 }
 
 // anthropicMessageResponse Anthropic 消息响应格式
@@ -200,12 +217,6 @@ type anthropicMessageResponse struct {
 	Model   string `json:"model"`
 	StopReason string `json:"stop_reason"`
 	Usage   anthropicUsage `json:"usage"`
-}
-
-type anthropicContentBlock struct {
-	Type string `json:"type"`
-	Text string `json:"text,omitempty"`
-	Thinking string `json:"thinking,omitempty"`
 }
 
 type anthropicUsage struct {
@@ -234,20 +245,57 @@ type anthropicStreamEvent struct {
 
 // buildChatRequest 构建聊天请求体
 func (c *AnthropicClient) buildChatRequest(req *ChatRequest) ([]byte, error) {
-	// 转换消息格式 (Anthropic 只支持 user 和 assistant 角色)
 	messages := make([]anthropicMessage, 0)
 	systemPrompt := req.System
 
 	for _, msg := range req.Messages {
 		switch msg.Role {
 		case "system":
-			// Anthropic 使用单独的 system 字段
 			if systemPrompt == "" {
 				systemPrompt = msg.Content
 			} else {
 				systemPrompt += "\n" + msg.Content
 			}
-		case "user", "assistant":
+		case "tool":
+			toolResult := []map[string]interface{}{
+				{
+					"type":       "tool_result",
+					"tool_use_id": msg.ToolCallID,
+					"content":     msg.Content,
+				},
+			}
+			messages = append(messages, anthropicMessage{
+				Role:    "user",
+				Content: toolResult,
+			})
+		case "assistant":
+			if len(msg.ToolCalls) > 0 {
+				content := make([]map[string]interface{}, 0)
+				if msg.Content != "" {
+					content = append(content, map[string]interface{}{
+						"type": "text",
+						"text": msg.Content,
+					})
+				}
+				for _, tc := range msg.ToolCalls {
+					content = append(content, map[string]interface{}{
+						"type":  "tool_use",
+						"id":    tc.ID,
+						"name":  tc.Function.Name,
+						"input": json.RawMessage(tc.Function.Arguments),
+					})
+				}
+				messages = append(messages, anthropicMessage{
+					Role:    "assistant",
+					Content: content,
+				})
+			} else {
+				messages = append(messages, anthropicMessage{
+					Role:    msg.Role,
+					Content: msg.Content,
+				})
+			}
+		default:
 			messages = append(messages, anthropicMessage{
 				Role:    msg.Role,
 				Content: msg.Content,
@@ -255,7 +303,6 @@ func (c *AnthropicClient) buildChatRequest(req *ChatRequest) ([]byte, error) {
 		}
 	}
 
-	// Anthropic 要求消息必须以 user 角色开始
 	if len(messages) == 0 || messages[0].Role != "user" {
 		return nil, &LLMError{Code: "invalid_messages", Message: "messages must start with user role"}
 	}
@@ -273,6 +320,22 @@ func (c *AnthropicClient) buildChatRequest(req *ChatRequest) ([]byte, error) {
 		Temperature:   req.Temperature,
 		TopP:          req.TopP,
 		StopSequences: req.Stop,
+	}
+
+	if len(req.Tools) > 0 {
+		anthropicReq.Tools = make([]anthropicToolDef, len(req.Tools))
+		for i, t := range req.Tools {
+			anthropicReq.Tools[i] = anthropicToolDef{
+				Name:        t.Function.Name,
+				Description: t.Function.Description,
+				InputSchema: t.Function.Parameters,
+			}
+		}
+		if req.ToolChoice != nil {
+			anthropicReq.ToolChoice = req.ToolChoice
+		} else {
+			anthropicReq.ToolChoice = map[string]string{"type": "auto"}
+		}
 	}
 
 	return json.Marshal(anthropicReq)
@@ -325,17 +388,31 @@ func (c *AnthropicClient) handleErrorResponse(resp *http.Response) *LLMError {
 func (c *AnthropicClient) convertResponse(resp *anthropicMessageResponse) *ChatResponse {
 	content := ""
 	reasoningContent := ""
+	var toolCalls []ToolCall
+
 	for _, block := range resp.Content {
 		if block.Type == "text" {
 			content += block.Text
 		} else if block.Type == "thinking" {
 			reasoningContent += block.Thinking
+		} else if block.Type == "tool_use" {
+			tc := ToolCall{
+				ID:   block.ID,
+				Type: "function",
+				Function: FunctionCall{
+					Name:      block.Name,
+					Arguments: string(block.Input),
+				},
+			}
+			toolCalls = append(toolCalls, tc)
 		}
 	}
 
 	finishReason := "stop"
 	if resp.StopReason == "max_tokens" {
 		finishReason = "length"
+	} else if resp.StopReason == "tool_use" {
+		finishReason = "tool_calls"
 	}
 
 	return &ChatResponse{
@@ -350,6 +427,7 @@ func (c *AnthropicClient) convertResponse(resp *anthropicMessageResponse) *ChatR
 					Role:             "assistant",
 					Content:          content,
 					ReasoningContent: reasoningContent,
+					ToolCalls:        toolCalls,
 				},
 				FinishReason: finishReason,
 			},

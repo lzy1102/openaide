@@ -190,10 +190,17 @@ func (c *GLMClient) ChatStream(ctx context.Context, req *ChatRequest) (<-chan Ch
 
 // buildChatRequest 构建聊天请求体
 func (c *GLMClient) buildChatRequest(req *ChatRequest) ([]byte, error) {
-	// GLM API 使用与 OpenAI 兼容的格式
 	type glmMessage struct {
-		Role    string `json:"role"`
-		Content string `json:"content"`
+		Role       string     `json:"role"`
+		Content    string     `json:"content"`
+		ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+		ToolCallID string     `json:"tool_call_id,omitempty"`
+		Name       string     `json:"name,omitempty"`
+	}
+
+	type glmToolDef struct {
+		Type     string      `json:"type"`
+		Function FunctionDef `json:"function"`
 	}
 
 	type glmRequest struct {
@@ -206,13 +213,18 @@ func (c *GLMClient) buildChatRequest(req *ChatRequest) ([]byte, error) {
 		Stop                []string     `json:"stop,omitempty"`
 		PresencePenalty     float64      `json:"presence_penalty,omitempty"`
 		FrequencyPenalty    float64      `json:"frequency_penalty,omitempty"`
+		Tools               []glmToolDef `json:"tools,omitempty"`
+		ToolChoice          interface{}  `json:"tool_choice,omitempty"`
 	}
 
 	messages := make([]glmMessage, len(req.Messages))
 	for i, msg := range req.Messages {
 		messages[i] = glmMessage{
-			Role:    msg.Role,
-			Content: msg.Content,
+			Role:       msg.Role,
+			Content:    msg.Content,
+			ToolCalls:  msg.ToolCalls,
+			ToolCallID: msg.ToolCallID,
+			Name:       msg.Name,
 		}
 	}
 
@@ -224,8 +236,19 @@ func (c *GLMClient) buildChatRequest(req *ChatRequest) ([]byte, error) {
 		MaxCompletionTokens: req.MaxTokens,
 		TopP:                req.TopP,
 		Stop:                req.Stop,
-		PresencePenalty:  req.PresencePenalty,
-		FrequencyPenalty: req.FrequencyPenalty,
+		PresencePenalty:     req.PresencePenalty,
+		FrequencyPenalty:    req.FrequencyPenalty,
+		ToolChoice:          req.ToolChoice,
+	}
+
+	if len(req.Tools) > 0 {
+		glmReq.Tools = make([]glmToolDef, len(req.Tools))
+		for i, t := range req.Tools {
+			glmReq.Tools[i] = glmToolDef{
+				Type:     t.Type,
+				Function: t.Function,
+			}
+		}
 	}
 
 	return json.Marshal(glmReq)

@@ -327,7 +327,10 @@ func (s *ToolCallingService) executeToolCall(ctx context.Context, tc llm.ToolCal
 
 	s.logger.Info(ctx, "Executing tool: %s", tc.Function.Name)
 
-	result, err := s.toolSvc.ExecuteTool(ctx, toolCall, dialogueID, "", "")
+	toolCtx, toolCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer toolCancel()
+
+	result, err := s.toolSvc.ExecuteTool(toolCtx, toolCall, dialogueID, "", "")
 	if err != nil {
 		var confirmErr *ConfirmationRequiredError
 		if errors.As(err, &confirmErr) {
