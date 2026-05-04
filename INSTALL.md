@@ -112,16 +112,17 @@ go build -o openaide-server ./src
 
 #### Supported LLM Providers
 
-| Provider | API Key Required | Base URL |
-|----------|------------------|----------|
-| `openai` | ✅ | https://api.openai.com/v1 |
-| `anthropic` | ✅ | https://api.anthropic.com |
-| `deepseek` | ✅ | https://api.deepseek.com |
-| `qwen` | ✅ | https://dashscope.aliyuncs.com/compatible-mode/v1 |
-| `moonshot` | ✅ | https://api.moonshot.cn/v1 |
-| `glm` (智谱) | ✅ | https://open.bigmodel.cn/api/paas/v4 |
-| `ernie` | ✅ + secret_key | - |
-| `ollama` | ❌ | http://localhost:11434/v1 |
+| Provider | API Key Required | Base URL | Tool Calling |
+|----------|------------------|----------|-------------|
+| `openai` | ✅ | https://api.openai.com/v1 | ✅ |
+| `anthropic` | ✅ | https://api.anthropic.com | ✅ |
+| `gemini` | ✅ | https://generativelanguage.googleapis.com | ✅ |
+| `deepseek` | ✅ | https://api.deepseek.com | ✅ |
+| `qwen` | ✅ | https://dashscope.aliyuncs.com/compatible-mode/v1 | ✅ |
+| `moonshot` | ✅ | https://api.moonshot.cn/v1 | ✅ |
+| `glm` (智谱) | ✅ | https://open.bigmodel.cn/api/paas/v4 | ✅ |
+| `ernie` | ✅ + secret_key | - | ❌ |
+| `ollama` (本地) | ❌ | http://localhost:11434/v1 | ✅ |
 
 ### Authentication
 
@@ -387,16 +388,17 @@ CGO_ENABLED=0 go build -o openaide-server ./src
 
 #### 支持的 LLM 提供商
 
-| 提供商 | 需要 API Key | Base URL |
-|--------|--------------|----------|
-| `openai` | ✅ | https://api.openai.com/v1 |
-| `anthropic` | ✅ | https://api.anthropic.com |
-| `deepseek` | ✅ | https://api.deepseek.com |
-| `qwen` (通义千问) | ✅ | https://dashscope.aliyuncs.com/compatible-mode/v1 |
-| `moonshot` (Kimi) | ✅ | https://api.moonshot.cn/v1 |
-| `glm` (智谱) | ✅ | https://open.bigmodel.cn/api/paas/v4 |
-| `ernie` (文心一言) | ✅ + secret_key | - |
-| `ollama` (本地) | ❌ | http://localhost:11434/v1 |
+| 提供商 | 需要 API Key | Base URL | Tool Calling |
+|--------|--------------|----------|-------------|
+| `openai` | ✅ | https://api.openai.com/v1 | ✅ |
+| `anthropic` | ✅ | https://api.anthropic.com | ✅ |
+| `gemini` | ✅ | https://generativelanguage.googleapis.com | ✅ |
+| `deepseek` | ✅ | https://api.deepseek.com | ✅ |
+| `qwen` (通义千问) | ✅ | https://dashscope.aliyuncs.com/compatible-mode/v1 | ✅ |
+| `moonshot` (Kimi) | ✅ | https://api.moonshot.cn/v1 | ✅ |
+| `glm` (智谱) | ✅ | https://open.bigmodel.cn/api/paas/v4 | ✅ |
+| `ernie` (文心一言) | ✅ + secret_key | - | ❌ |
+| `ollama` (本地) | ❌ | http://localhost:11434/v1 | ✅ |
 
 ### 认证
 

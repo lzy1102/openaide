@@ -43,6 +43,17 @@ A full-featured AI Agent development platform with multi-model support, multi-ag
 - **Task Tool (Sub-agent)**: Delegate sub-tasks to child agents with independent ReAct loops
 - **Smart Context Compaction**: Two-phase compression (simple pruning + LLM summarization) to prevent context overflow
 - **DuckDuckGo Dual-Engine Search**: Instant Answer API + HTML search fallback, no API key required
+- **Request Orchestrator**: Unified intent classification (skill/plan/tool/knowledge/chat) and intelligent routing — auto-detects whether to use skills, planning, tool calling, RAG, or plain chat
+- **RAG Query Rewriting**: LLM-based query expansion before retrieval — rewrites colloquial queries to structured search terms, generates multiple expansion queries for better recall
+- **Multi-Factor Knowledge Ranking**: Search results ranked by vectorScore + accessCount + confidence + recency — utilizes previously ignored metadata
+- **Auto Memory Extraction**: Automatically extracts facts, preferences, and procedures from dialogues after each conversation — the system learns more about you over time
+- **CJK-Aware Similarity**: Chinese text tokenization via bigram for Jaccard similarity — fixes near-zero similarity for Chinese memory search
+- **Feedback Learning Loop**: Creating feedback automatically triggers learning — closed-loop feedback → analysis → optimization
+- **Token Budget Management**: System prompt total token limit with priority-based truncation — ensures core context is never lost
+- **LLM Call Budget Control**: Hourly/daily LLM call limits for periodic services — prevents unbounded token consumption
+- **Full Tool Calling Support**: All LLM clients (OpenAI, Anthropic, Gemini, GLM, DeepSeek, Qwen, Moonshot, Ollama, etc.) support Function Calling / Tool Use
+- **Per-Tool Timeout**: Each tool execution has an independent 30-second timeout — prevents single slow tool from blocking the entire ReAct loop
+- **Unified Message Pipeline**: Non-streaming and streaming paths share the same message construction logic (system prompt, conversation summary, token truncation)
 
 #### Architecture
 
@@ -445,6 +456,17 @@ api:
 - **任务工具（Task Tool）**：子 Agent 委派，独立 ReAct 循环执行子任务
 - **智能上下文压缩**：两阶段压缩（简单修剪 + LLM 摘要），防止上下文窗口溢出
 - **DuckDuckGo 双引擎搜索**：Instant Answer API + HTML 搜索回退，无需 API Key
+- **请求编排器（RequestOrchestrator）**：统一意图分类（skill/plan/tool/knowledge/chat）和智能路由 — 自动判断走技能、规划、工具调用、RAG 还是普通对话
+- **RAG 查询改写**：检索前用 LLM 改写口语化查询为结构化检索词，生成扩展查询提升召回率
+- **知识搜索多因子排序**：向量得分 + 访问热度 + 置信度 + 时效性加权排序，充分利用已有元数据
+- **对话后自动记忆提取**：每次对话结束自动提取事实、偏好、流程存入长期记忆 — 越用越懂你
+- **中文相似度修复**：CJK bigram 分词替代空格分词，修复中文记忆检索相似度≈0的问题
+- **反馈学习闭环**：创建反馈自动触发学习分析 — 反馈→分析→优化全自动化
+- **Token 预算管理**：System prompt 总量限制 + 优先级截断 — 确保核心上下文永不丢失
+- **LLM 调用预算控制**：周期服务的小时/日调用限额 — 防止无限制 Token 消耗
+- **全客户端 Tool Calling 支持**：所有 LLM 客户端（OpenAI、Anthropic、Gemini、GLM、DeepSeek、Qwen、Moonshot、Ollama 等）均支持 Function Calling / Tool Use
+- **单工具超时控制**：每个工具执行独立 30 秒超时 — 防止单个慢工具阻塞整个 ReAct 循环
+- **统一消息管线**：非流式和流式路径共享消息构建逻辑（系统提示、对话摘要、Token截断）
 
 ### 系统架构
 
