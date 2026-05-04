@@ -441,15 +441,22 @@ func (s *PatternDetectorService) performPeriodicDetection(ctx context.Context) {
 		Where("created_at >= ?", time.Now().AddDate(0, 0, -7)).
 		Scan(&users)
 
+	maxUsers := 5
+	processed := 0
 	for _, u := range users {
 		if u.UserID == "" {
 			continue
+		}
+		if processed >= maxUsers {
+			slog.Info("Periodic detection budget reached, stopping", "component", "PatternDetector", "processed", processed)
+			break
 		}
 		patterns, err := s.DetectPatterns(ctx, u.UserID)
 		if err != nil {
 			slog.Error("Detection failed for user", "component", "PatternDetector", "user_id", u.UserID, "error", err)
 			continue
 		}
+		processed++
 
 		for _, p := range patterns {
 			if p.Frequency >= 5 && p.Status == "detected" {

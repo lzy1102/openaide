@@ -1,6 +1,8 @@
 package services
 
 import (
+	"context"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -9,31 +11,59 @@ import (
 	"openaide/backend/src/models"
 )
 
-// FeedbackService 反馈服务
 type FeedbackService struct {
-	db *gorm.DB
+	db            *gorm.DB
+	learningSvc   *LearningService
+	eventBus      *EventBus
 }
 
-// NewFeedbackService 创建反馈服务实例
 func NewFeedbackService(db *gorm.DB) *FeedbackService {
 	return &FeedbackService{db: db}
 }
 
-// CreateFeedback 创建反馈
+func (s *FeedbackService) SetLearningService(ls *LearningService) {
+	s.learningSvc = ls
+}
+
+func (s *FeedbackService) SetEventBus(eb *EventBus) {
+	s.eventBus = eb
+}
+
 func (s *FeedbackService) CreateFeedback(feedback *models.Feedback) error {
 	feedback.ID = uuid.New().String()
 	feedback.CreatedAt = time.Now()
-	return s.db.Create(feedback).Error
+
+	if err := s.db.Create(feedback).Error; err != nil {
+		return err
+	}
+
+	if s.learningSvc != nil && feedback.TaskID != "" {
+		go func() {
+			if err := s.learningSvc.LearnFromFeedback(context.Background(), feedback.TaskID); err != nil {
+				slog.Error("Auto learn from feedback failed", "component", "Feedback", "task_id", feedback.TaskID, "error", err)
+			} else {
+				slog.Info("Auto learned from feedback", "component", "Feedback", "task_id", feedback.TaskID)
+			}
+		}()
+	}
+
+	if s.eventBus != nil {
+		s.eventBus.Publish(context.Background(), models.EventTopicFeedback, "feedback_created", "feedback_service", map[string]interface{}{
+			"task_id":   feedback.TaskID,
+			"task_type": feedback.TaskType,
+			"rating":    feedback.Rating,
+		})
+	}
+
+	return nil
 }
 
-// GetFeedbackByTask 获取任务反馈
 func (s *FeedbackService) GetFeedbackByTask(taskID string) ([]models.Feedback, error) {
 	var feedbacks []models.Feedback
 	err := s.db.Where("task_id = ?", taskID).Find(&feedbacks).Error
 	return feedbacks, err
 }
 
-// GetAverageRating 获取平均评分
 func (s *FeedbackService) GetAverageRating(taskType string) (float64, error) {
 	var result struct {
 		AvgRating float64

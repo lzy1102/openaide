@@ -421,12 +421,27 @@ func (s *ToolCallingService) compressToolOutputs(messages []llm.Message) []llm.M
 		return messages
 	}
 
-	compressed := make([]llm.Message, 0, len(messages))
+	compressSet := make(map[int]bool)
+	skipSet := make(map[int]bool)
 	oldCount := len(messages) - keepRecent
-	prunedCount := 0
 
 	for i, msg := range messages {
 		if i < oldCount && msg.Role == llm.RoleTool && len(msg.Content) > 200 {
+			compressSet[i] = true
+			if i > 0 && messages[i-1].Role == llm.RoleAssistant && len(messages[i-1].ToolCalls) > 0 {
+				skipSet[i-1] = true
+			}
+		}
+	}
+
+	compressed := make([]llm.Message, 0, len(messages))
+	prunedCount := 0
+
+	for i, msg := range messages {
+		if skipSet[i] {
+			continue
+		}
+		if compressSet[i] {
 			compressed = append(compressed, llm.Message{
 				Role:       msg.Role,
 				Content:    "[Old tool output cleared for context compression]",
@@ -440,8 +455,6 @@ func (s *ToolCallingService) compressToolOutputs(messages []llm.Message) []llm.M
 				})
 			}
 			prunedCount++
-		} else if i > 0 && i-1 < oldCount && messages[i-1].Role == llm.RoleTool && len(messages[i-1].Content) > 200 {
-			continue
 		} else {
 			compressed = append(compressed, msg)
 		}

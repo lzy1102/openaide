@@ -213,52 +213,67 @@ func (c *OpenAICompatibleClient) ChatStream(ctx context.Context, req *ChatReques
 // buildChatRequest 构建聊天请求体
 func (c *OpenAICompatibleClient) buildChatRequest(req *ChatRequest) ([]byte, error) {
 	type openaiMessage struct {
-		Role    string `json:"role"`
-		Content string `json:"content"`
+		Role       string     `json:"role"`
+		Content    string     `json:"content"`
+		ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+		ToolCallID string     `json:"tool_call_id,omitempty"`
+		Name       string     `json:"name,omitempty"`
 	}
 
-	// 使用 map 而不是结构体，以便条件性添加字段
-	reqMap := map[string]interface{}{
-		"messages": make([]openaiMessage, len(req.Messages)),
+	type openaiToolDef struct {
+		Type     string      `json:"type"`
+		Function FunctionDef `json:"function"`
 	}
 
-	// 仅当模型非空时添加 model 字段
-	if req.Model != "" {
-		reqMap["model"] = req.Model
+	type openaiRequest struct {
+		Model               string          `json:"model,omitempty"`
+		Messages            []openaiMessage `json:"messages"`
+		Temperature         float64         `json:"temperature,omitempty"`
+		MaxTokens           int             `json:"max_tokens,omitempty"`
+		MaxCompletionTokens int             `json:"max_completion_tokens,omitempty"`
+		TopP                float64         `json:"top_p,omitempty"`
+		Stop                []string        `json:"stop,omitempty"`
+		PresencePenalty     float64         `json:"presence_penalty,omitempty"`
+		FrequencyPenalty    float64         `json:"frequency_penalty,omitempty"`
+		Tools               []openaiToolDef `json:"tools,omitempty"`
+		ToolChoice          interface{}     `json:"tool_choice,omitempty"`
 	}
 
-	// 添加其他参数
-	if req.Temperature > 0 {
-		reqMap["temperature"] = req.Temperature
-	}
-	if req.MaxTokens > 0 {
-		reqMap["max_tokens"] = req.MaxTokens
-		reqMap["max_completion_tokens"] = req.MaxTokens
-	}
-	if req.TopP > 0 {
-		reqMap["top_p"] = req.TopP
-	}
-	if len(req.Stop) > 0 {
-		reqMap["stop"] = req.Stop
-	}
-	if req.PresencePenalty != 0 {
-		reqMap["presence_penalty"] = req.PresencePenalty
-	}
-	if req.FrequencyPenalty != 0 {
-		reqMap["frequency_penalty"] = req.FrequencyPenalty
-	}
-
-	// 填充 messages
 	messages := make([]openaiMessage, len(req.Messages))
 	for i, msg := range req.Messages {
 		messages[i] = openaiMessage{
-			Role:    msg.Role,
-			Content: msg.Content,
+			Role:       msg.Role,
+			Content:    msg.Content,
+			ToolCalls:  msg.ToolCalls,
+			ToolCallID: msg.ToolCallID,
+			Name:       msg.Name,
 		}
 	}
-	reqMap["messages"] = messages
 
-	return json.Marshal(reqMap)
+	openaiReq := openaiRequest{
+		Model:               req.Model,
+		Messages:            messages,
+		Temperature:         req.Temperature,
+		MaxTokens:           req.MaxTokens,
+		MaxCompletionTokens: req.MaxTokens,
+		TopP:                req.TopP,
+		Stop:                req.Stop,
+		PresencePenalty:     req.PresencePenalty,
+		FrequencyPenalty:    req.FrequencyPenalty,
+		ToolChoice:          req.ToolChoice,
+	}
+
+	if len(req.Tools) > 0 {
+		openaiReq.Tools = make([]openaiToolDef, len(req.Tools))
+		for i, t := range req.Tools {
+			openaiReq.Tools[i] = openaiToolDef{
+				Type:     t.Type,
+				Function: t.Function,
+			}
+		}
+	}
+
+	return json.Marshal(openaiReq)
 }
 
 // sendRequest 发送 HTTP 请求

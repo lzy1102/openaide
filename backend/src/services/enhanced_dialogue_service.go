@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	"github.com/google/uuid"
 
@@ -19,18 +18,20 @@ func GenerateUUID() string {
 
 // EnhancedDialogueService 增强对话服务 - 在 DialogueService 之上添加 prompt 组装和后置钩子
 type EnhancedDialogueService struct {
-	dialogueSvc     *DialogueService
-	modelSvc        *ModelService
-	cacheSvc        *CacheService
-	loggerSvc       *LoggerService
-	toolCallingSvc  *ToolCallingService
-	router          *ModelRouter
-	planSvc         *PlanService
-	skillSvc        *SkillService
-	eventBus        *EventBus
-	promptSvc       *PromptService
-	postHookSvc     *PostHookService
-	localKnowledge  *LocalKnowledgeFirst
+	dialogueSvc      *DialogueService
+	modelSvc         *ModelService
+	cacheSvc         *CacheService
+	loggerSvc        *LoggerService
+	toolCallingSvc   *ToolCallingService
+	router           *ModelRouter
+	planSvc          *PlanService
+	skillSvc         *SkillService
+	eventBus         *EventBus
+	promptSvc        *PromptService
+	postHookSvc      *PostHookService
+	localKnowledge   *LocalKnowledgeFirst
+	orchestrator     *RequestOrchestrator
+	memoryExtractSvc *MemoryExtractionService
 }
 
 // NewEnhancedDialogueService 创建增强对话服务
@@ -59,11 +60,16 @@ func NewEnhancedDialogueService(
 		eventBus:       eventBus,
 		promptSvc:      promptSvc,
 		postHookSvc:    postHookSvc,
+		orchestrator:   NewRequestOrchestrator(router, skillSvc, planSvc, toolCallingSvc, eventBus),
 	}
 }
 
 func (s *EnhancedDialogueService) SetLocalKnowledge(lk *LocalKnowledgeFirst) {
 	s.localKnowledge = lk
+}
+
+func (s *EnhancedDialogueService) SetMemoryExtractionService(svc *MemoryExtractionService) {
+	s.memoryExtractSvc = svc
 }
 
 // ComposeSystemPrompt 组装 system prompt（委托给 PromptService）
@@ -126,6 +132,15 @@ func (s *EnhancedDialogueService) SendMessageStreamEnhanced(
 // OnResponseComplete 响应完成后的后置处理（委托给 PostHookService）
 func (s *EnhancedDialogueService) OnResponseComplete(ctx context.Context, dialogueID, userID, content string) {
 	s.postHookSvc.OnResponseCompleteLegacy(ctx, dialogueID, userID, content)
+
+	if s.memoryExtractSvc != nil && dialogueID != "" && userID != "" {
+		go func() {
+			extractCtx := context.Background()
+			if err := s.memoryExtractSvc.ExtractMemoriesFromDialogue(extractCtx, dialogueID, userID); err != nil {
+				slog.Error("Auto memory extraction failed", "component", "EnhancedDialogue", "error", err)
+			}
+		}()
+	}
 }
 
 // GetDialogue 获取对话（代理方法）
@@ -239,153 +254,131 @@ func (s *EnhancedDialogueService) SendMessageStreamRouted(
 	dialogueID, userID, content, modelID string,
 	options map[string]interface{},
 ) (<-chan llm.ChatStreamChunk, error) {
-	// modelID 为空时自动路由
-	if (modelID == "") && s.router != nil {
-		routed, err := s.router.Route(ctx, content, nil)
+	decision := s.orchestrator.Route(ctx, content, modelID, options)
+
+	if options == nil {
+		options = make(map[string]interface{})
+	}
+
+	if decision.SkillMatch != nil {
+		s.applySkillContext(ctx, decision.SkillMatch, content, userID, options)
+	}
+
+	modelID = decision.ModelID
+
+	if s.eventBus != nil && s.router != nil {
+		s.eventBus.Publish(ctx, models.EventTopicModel, models.EventTypeModelRouted, "orchestrator", map[string]interface{}{
+			"content":    content,
+			"intent":     string(decision.Intent),
+			"model_id":   modelID,
+			"confidence": decision.Confidence,
+			"reason":     decision.Reason,
+		})
+	}
+
+	if decision.NeedsPlan && s.planSvc != nil {
+		slog.Info("Using planning path", "component", "EnhancedDialogue", "reason", decision.Reason)
+		planResult, err := s.planSvc.ChatWithPlan(ctx, content, modelID, userID, dialogueID, options)
 		if err != nil {
-			slog.Error("auto route failed", "component", "EnhancedDialogue", "error", err)
-		} else {
-			modelID = routed.ID
-			slog.Info("Auto routed to model", "component", "EnhancedDialogue", "model", routed.Name)
-			if s.eventBus != nil {
-				info := s.router.GetRouteInfo(ctx, content)
-				s.eventBus.Publish(ctx, models.EventTopicModel, models.EventTypeModelRouted, "model_router", map[string]interface{}{
-					"content":    content,
-					"task_type":  info.TaskType,
-					"model_name": routed.Name,
-					"confidence": info.Confidence,
-				})
-			}
+			slog.Error("Planning failed, falling back to tool calling", "component", "EnhancedDialogue", "error", err)
+		} else if planResult != nil {
+			ch := make(chan llm.ChatStreamChunk, 1)
+			go func() {
+				defer close(ch)
+				ch <- llm.ChatStreamChunk{
+					Choices: []llm.StreamChoice{{
+						Delta: llm.MessageDelta{Content: planResult.Result},
+					}},
+				}
+			}()
+			go s.OnResponseComplete(context.Background(), dialogueID, userID, content)
+			return ch, nil
 		}
 	}
 
-	if s.skillSvc != nil && s.skillSvc.NeedsSkillExecution(content) {
-		match := s.skillSvc.MatchSkill(content)
-		if match != nil {
-			slog.Info("skill matched:  (confidence=)", "component", "EnhancedDialogue", "confidence", match.Skill.Name, "confidence", match.Confidence)
-
-			if options == nil {
-				options = make(map[string]interface{})
-			}
-
-			skillContext := map[string]interface{}{
-				"skill_name": match.Skill.Name,
-			}
-			if match.Skill.SystemPromptOverride != "" {
-				skillContext["system_prompt"] = match.Skill.SystemPromptOverride
-				slog.Info("skill : system prompt injected", "component", "EnhancedDialogue", "skill", match.Skill.Name)
-			}
-
-			finalParams := map[string]interface{}{
-				"content": content,
-			}
-			if userID != "" {
-				finalParams["user_id"] = userID
-			}
-
-			defs, err := s.skillSvc.GetSkillParameters(match.Skill.ID)
-			if err != nil {
-				slog.Error("load skill parameters failed", "component", "EnhancedDialogue", "error", err)
-			} else if len(defs) > 0 {
-				extracted, err := s.skillSvc.ExtractParametersFromContent(ctx, match.Skill, defs, content)
-				if err != nil {
-					slog.Error("parameter extraction failed, fallback to prompt-only skill", "component", "EnhancedDialogue", "error", err)
-				} else {
-					for key, value := range extracted {
-						if _, exists := finalParams[key]; !exists {
-							finalParams[key] = value
-						}
-					}
-					normalized, err := normalizeParameters(defs, finalParams)
-					if err != nil {
-						slog.Error("parameter normalization failed, fallback to prompt-only skill", "component", "EnhancedDialogue", "error", err)
-					} else {
-						finalParams = normalized
-						skillContext["parameters"] = filterDeclaredParameters(defs, finalParams)
-					}
-				}
-			}
-			options["skill_context"] = skillContext
-
-			if s.eventBus != nil {
-				matchedPayload := map[string]interface{}{
-					"skill_name": match.Skill.Name,
-					"trigger":    match.MatchedTrigger,
-					"confidence": match.Confidence,
-				}
-				if params, ok := skillContext["parameters"].(map[string]interface{}); ok && len(params) > 0 {
-					matchedPayload["parameters"] = params
-				}
-				s.eventBus.Publish(ctx, models.EventTopicSkill, models.EventTypeSkillMatched, "skill_service", matchedPayload)
-			}
-
-			if match.Skill.ModelPreference != "" {
-				skillModelID, err := s.skillSvc.ResolveModelID(ctx, match.Skill.ModelPreference)
-				if err != nil {
-					slog.Error("skill model resolution failed: , using routed model", "component", "EnhancedDialogue", "error", err)
-				} else {
-					modelID = skillModelID
-					slog.Info("Skill model overridden", "component", "EnhancedDialogue", "skill", match.Skill.Name, "model", match.Skill.ModelPreference)
-				}
-			}
-
-			if len(match.Skill.Tools) > 0 {
-				options["skill_tools"] = []string(match.Skill.Tools)
-				slog.Info("Skill tools bound", "component", "EnhancedDialogue", "skill", match.Skill.Name, "tool_count", len(match.Skill.Tools))
-			}
-
-			go func(skillID, skillName string, parameters map[string]interface{}) {
-				s.skillSvc.TrackSkillExecution(skillID, skillName, parameters, "completed")
-				slog.Info("skill : execution tracked", "component", "EnhancedDialogue", "skill", skillName)
-			}(match.Skill.ID, match.Skill.Name, finalParams)
-
-			if s.eventBus != nil {
-				executedPayload := map[string]interface{}{
-					"skill_id":   match.Skill.ID,
-					"skill_name": match.Skill.Name,
-					"trigger":    match.MatchedTrigger,
-				}
-				if params, ok := skillContext["parameters"].(map[string]interface{}); ok && len(params) > 0 {
-					executedPayload["parameters"] = params
-				}
-				s.eventBus.Publish(ctx, models.EventTopicSkill, models.EventTypeSkillExecuted, "skill_service", executedPayload)
-			}
-		}
-	}
-
-	if s.toolCallingSvc != nil {
-		slog.Info("using tool-calling path (LLM decides tool usage)", "component", "EnhancedDialogue")
+	if decision.NeedsTools && s.toolCallingSvc != nil {
+		slog.Info("Using tool-calling path", "component", "EnhancedDialogue", "reason", decision.Reason)
 		return s.SendMessageWithToolsStream(ctx, dialogueID, userID, content, modelID, options)
 	}
 
+	if decision.NeedsRAG {
+		options["force_rag"] = true
+	}
+
+	slog.Info("Using enhanced chat path", "component", "EnhancedDialogue", "reason", decision.Reason)
 	return s.SendMessageStreamEnhanced(ctx, dialogueID, userID, content, modelID, options)
 }
 
-func (s *EnhancedDialogueService) needsToolExecution(content string) bool {
-	lower := strings.ToLower(content)
-	toolIndicators := []string{
-		"执行", "运行", "跑一下", "跑个", "curl", "wget", "ping ",
-		"ls ", "cat ", "查看ip", "公网ip", "查ip", "ip地址",
-		"查一下ip", "我的ip", "本机ip", "ip是什么", "ip是多少",
-		"执行命令", "运行命令", "跑命令", "shell", "终端",
-		"docker", "git ", "npm ", "pip ", "go run",
-		"python ", "node ", "java ",
-		"读文件", "写文件", "创建文件", "删除文件",
-		"查一下", "查询", "调用", "请求", "api",
-		"format", "lint", "test", "build",
-		"天气", "气温", "温度多少", "天气预报",
-		"搜索", "搜索一下", "搜一下", "查搜索",
-		"帮我查", "帮我执行", "帮我运行", "帮我跑",
-		"安装", "卸载", "更新", "升级",
-		"启动", "停止", "重启", "部署",
-		"编译", "打包", "发布",
+func (s *EnhancedDialogueService) applySkillContext(ctx context.Context, match *SkillMatchResult, content, userID string, options map[string]interface{}) {
+	skillContext := map[string]interface{}{
+		"skill_name": match.Skill.Name,
 	}
-	for _, indicator := range toolIndicators {
-		if strings.Contains(lower, indicator) {
-			return true
+	if match.Skill.SystemPromptOverride != "" {
+		skillContext["system_prompt"] = match.Skill.SystemPromptOverride
+	}
+
+	finalParams := map[string]interface{}{
+		"content": content,
+	}
+	if userID != "" {
+		finalParams["user_id"] = userID
+	}
+
+	defs, err := s.skillSvc.GetSkillParameters(match.Skill.ID)
+	if err != nil {
+		slog.Error("load skill parameters failed", "component", "EnhancedDialogue", "error", err)
+	} else if len(defs) > 0 {
+		extracted, err := s.skillSvc.ExtractParametersFromContent(ctx, match.Skill, defs, content)
+		if err != nil {
+			slog.Error("parameter extraction failed, fallback to prompt-only skill", "component", "EnhancedDialogue", "error", err)
+		} else {
+			for key, value := range extracted {
+				if _, exists := finalParams[key]; !exists {
+					finalParams[key] = value
+				}
+			}
+			normalized, err := normalizeParameters(defs, finalParams)
+			if err != nil {
+				slog.Error("parameter normalization failed, fallback to prompt-only skill", "component", "EnhancedDialogue", "error", err)
+			} else {
+				finalParams = normalized
+				skillContext["parameters"] = filterDeclaredParameters(defs, finalParams)
+			}
 		}
 	}
-	return false
+	options["skill_context"] = skillContext
+
+	if s.eventBus != nil {
+		matchedPayload := map[string]interface{}{
+			"skill_name": match.Skill.Name,
+			"trigger":    match.MatchedTrigger,
+			"confidence": match.Confidence,
+		}
+		if params, ok := skillContext["parameters"].(map[string]interface{}); ok && len(params) > 0 {
+			matchedPayload["parameters"] = params
+		}
+		s.eventBus.Publish(ctx, models.EventTopicSkill, models.EventTypeSkillMatched, "skill_service", matchedPayload)
+	}
+
+	if len(match.Skill.Tools) > 0 {
+		options["skill_tools"] = []string(match.Skill.Tools)
+	}
+
+	go func(skillID, skillName string, parameters map[string]interface{}) {
+		s.skillSvc.TrackSkillExecution(skillID, skillName, parameters, "completed")
+	}(match.Skill.ID, match.Skill.Name, finalParams)
+
+	if s.eventBus != nil {
+		executedPayload := map[string]interface{}{
+			"skill_id":   match.Skill.ID,
+			"skill_name": match.Skill.Name,
+			"trigger":    match.MatchedTrigger,
+		}
+		if params, ok := skillContext["parameters"].(map[string]interface{}); ok && len(params) > 0 {
+			executedPayload["parameters"] = params
+		}
+		s.eventBus.Publish(ctx, models.EventTopicSkill, models.EventTypeSkillExecuted, "skill_service", executedPayload)
+	}
 }
 
 func (s *EnhancedDialogueService) SendMessageWithToolsStream(

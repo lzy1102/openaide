@@ -411,7 +411,33 @@ func calculateSimilarity(s1, s2 string) float64 {
 
 func splitWords(s string) []string {
 	s = strings.ToLower(s)
-	return strings.Fields(s)
+	words := strings.Fields(s)
+	var result []string
+	for _, w := range words {
+		runes := []rune(w)
+		if len(runes) <= 1 {
+			result = append(result, w)
+		} else {
+			hasCJK := false
+			for _, r := range runes {
+				if r >= 0x4e00 && r <= 0x9fff {
+					hasCJK = true
+					break
+				}
+			}
+			if hasCJK {
+				for i := 0; i < len(runes); i++ {
+					result = append(result, string(runes[i]))
+					if i < len(runes)-1 {
+						result = append(result, string(runes[i])+string(runes[i+1]))
+					}
+				}
+			} else {
+				result = append(result, w)
+			}
+		}
+	}
+	return result
 }
 
 // ==================== 组合记忆检索 ====================
@@ -440,8 +466,11 @@ func (s *MemoryService) BuildMemoryContext(userID, currentContent string, maxTok
 
 	result := strings.Join(parts, "\n\n")
 
-	if maxTokens > 0 && len(result) > maxTokens*2 {
-		result = result[:maxTokens*2] + "..."
+	if maxTokens > 0 {
+		estimated := EstimateTokens(result)
+		if estimated > maxTokens {
+			result = TruncateToTokenBudget(result, maxTokens)
+		}
 	}
 
 	return result

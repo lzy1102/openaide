@@ -141,7 +141,38 @@ func (s *PromptService) Compose(ctx context.Context, userID, dialogueID, query s
 		}
 	}
 
-	return strings.Join(parts, "\n\n")
+	return s.composeWithBudget(parts, 4000)
+}
+
+func (s *PromptService) composeWithBudget(parts []string, maxTokens int) string {
+	result := strings.Join(parts, "\n\n")
+	if maxTokens <= 0 {
+		return result
+	}
+	estimated := EstimateTokens(result)
+	if estimated <= maxTokens {
+		return result
+	}
+
+	priorities := []int{0, 1, 5, 4, 3, 2, 6}
+	if len(priorities) > len(parts) {
+		priorities = priorities[:len(parts)]
+	}
+
+	var kept []string
+	totalTokens := 0
+	for _, idx := range priorities {
+		if idx >= len(parts) {
+			continue
+		}
+		partTokens := EstimateTokens(parts[idx])
+		if totalTokens+partTokens <= maxTokens {
+			kept = append(kept, parts[idx])
+			totalTokens += partTokens
+		}
+	}
+
+	return strings.Join(kept, "\n\n")
 }
 
 // shouldSkipThinking 判断是否跳过思考过程

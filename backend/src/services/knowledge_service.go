@@ -389,10 +389,28 @@ func (s *knowledgeService) HybridSearchKnowledge(ctx context.Context, query stri
 		// 计算混合得分
 		combinedScore := vectorScore*vectorWeight + keywordScore*keywordWeight
 
-		if combinedScore > 0.1 { // 最低相似度阈值
+		accessBoost := 0.0
+		if k.AccessCount > 0 {
+			accessBoost = 0.1 * (1.0 - 1.0/float64(k.AccessCount+1))
+		}
+
+		confidenceBoost := 0.0
+		if k.Confidence > 0 {
+			confidenceBoost = 0.1 * k.Confidence
+		}
+
+		recencyBoost := 0.0
+		hoursSinceCreation := time.Since(k.CreatedAt).Hours()
+		if hoursSinceCreation < 720 {
+			recencyBoost = 0.05 * (1.0 - hoursSinceCreation/720.0)
+		}
+
+		finalScore := combinedScore + accessBoost + confidenceBoost + recencyBoost
+
+		if finalScore > 0.1 {
 			scoredResults = append(scoredResults, scoredResult{
 				knowledge: k,
-				score:     combinedScore,
+				score:     finalScore,
 			})
 		}
 	}

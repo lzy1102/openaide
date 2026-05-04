@@ -2,7 +2,9 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -179,18 +181,119 @@ func (s *ragService) Retrieve(ctx context.Context, query string, topK int) ([]Kn
 		topK = 5
 	}
 
-	// 使用混合搜索获取相关内容
-	results, err := s.knowledge.HybridSearchKnowledge(ctx, query, topK)
-	if err != nil {
-		return nil, fmt.Errorf("hybrid search failed: %w", err)
+	queries := s.rewriteQuery(ctx, query)
+
+	var allResults []KnowledgeSearchResult
+	seen := make(map[string]bool)
+
+	for _, q := range queries {
+		results, err := s.knowledge.HybridSearchKnowledge(ctx, q, topK)
+		if err != nil {
+			if q == query {
+				return nil, fmt.Errorf("hybrid search failed: %w", err)
+			}
+			continue
+		}
+		for _, r := range results {
+			if !seen[r.ID] {
+				seen[r.ID] = true
+				allResults = append(allResults, r)
+			}
+		}
 	}
 
-	// 增加访问计数
-	for _, result := range results {
+	sortKnowledgeResults(allResults)
+
+	if len(allResults) > topK*2 {
+		allResults = allResults[:topK*2]
+	}
+
+	for _, result := range allResults {
 		_ = s.knowledge.IncrementAccessCount(result.ID)
 	}
 
-	return results, nil
+	return allResults, nil
+}
+
+func (s *ragService) rewriteQuery(ctx context.Context, query string) []string {
+	queries := []string{query}
+
+	if s.llm == nil {
+		return queries
+	}
+
+	rewritePrompt := `你是一个查询改写专家。将用户的口语化查询改写为适合知识库检索的结构化查询。
+
+规则：
+1. 保留原始查询的核心意图
+2. 提取关键实体和术语
+3. 生成1-2个不同角度的扩展查询
+4. 去除口语化表达，使用正式术语
+
+输出JSON格式：
+{"rewritten": "改写后的查询", "expansions": ["扩展查询1", "扩展查询2"]}
+
+只输出JSON，不要其他内容。`
+
+	req := &llm.ChatRequest{
+		Messages: []llm.Message{
+			{Role: llm.RoleSystem, Content: rewritePrompt},
+			{Role: llm.RoleUser, Content: query},
+		},
+		Temperature: 0.3,
+		MaxTokens:   200,
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	resp, err := s.llm.Chat(ctx, req)
+	if err != nil {
+		slog.Warn("Query rewrite failed, using original", "component", "RAG", "error", err)
+		return queries
+	}
+
+	if len(resp.Choices) == 0 {
+		return queries
+	}
+
+	content := resp.Choices[0].Message.Content
+	content = strings.TrimSpace(content)
+	content = strings.TrimPrefix(content, "```json")
+	content = strings.TrimPrefix(content, "```")
+	content = strings.TrimSuffix(content, "```")
+	content = strings.TrimSpace(content)
+
+	var result struct {
+		Rewritten  string   `json:"rewritten"`
+		Expansions []string `json:"expansions"`
+	}
+	if err := json.Unmarshal([]byte(content), &result); err != nil {
+		slog.Warn("Query rewrite parse failed, using original", "component", "RAG", "error", err)
+		return queries
+	}
+
+	if result.Rewritten != "" && result.Rewritten != query {
+		queries = append(queries, result.Rewritten)
+	}
+	for _, exp := range result.Expansions {
+		if exp != "" && exp != query {
+			queries = append(queries, exp)
+		}
+	}
+
+	slog.Info("Query rewritten", "component", "RAG", "original", query, "queries", queries)
+	return queries
+}
+
+func sortKnowledgeResults(results []KnowledgeSearchResult) {
+	for i := 0; i < len(results); i++ {
+		for j := i + 1; j < len(results); j++ {
+			if results[j].Score > results[i].Score {
+				results[i], results[j] = results[j], results[i]
+			}
+		}
+	}
 }
 
 // BuildContext 构建上下文
@@ -235,11 +338,12 @@ func (s *ragService) BuildContext(results []KnowledgeSearchResult, maxTokens int
 
 		estimatedTokens := EstimateTokens(context.String())
 		if estimatedTokens > maxTokens {
-			// 移除最后一个结果
 			contextStr := context.String()
-			lastNewline := strings.LastIndex(contextStr[:len(contextStr)-100], "\n\n")
-			if lastNewline > 0 {
-				return contextStr[:lastNewline]
+			if len(contextStr) > 100 {
+				lastNewline := strings.LastIndex(contextStr[:len(contextStr)-100], "\n\n")
+				if lastNewline > 0 {
+					return contextStr[:lastNewline]
+				}
 			}
 			break
 		}

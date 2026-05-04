@@ -551,8 +551,8 @@ func (s *ModelService) Chat(modelID string, messages []llm.Message, options map[
 	if temp, ok := options["temperature"].(float64); ok {
 		req.Temperature = temp
 	}
-	if maxTokens, ok := options["max_tokens"].(int); ok {
-		req.MaxTokens = maxTokens
+	if maxTokens, ok := options["max_tokens"].(float64); ok {
+		req.MaxTokens = int(maxTokens)
 	}
 	if system, ok := options["system"].(string); ok {
 		req.System = system

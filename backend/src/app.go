@@ -327,6 +327,7 @@ func (app *Application) initCoreServices() error {
 	app.CodeService = services.NewCodeService(app.DB, app.ModelService.GetLLMClient(), app.ThinkingService)
 	app.ConfirmationService = services.NewConfirmationService(app.DB)
 	app.FeedbackService = services.NewFeedbackService(app.DB)
+	app.FeedbackService.SetEventBus(app.EventBus)
 
 	return nil
 }
@@ -465,6 +466,10 @@ func (app *Application) initEvolutionServices() error {
 
 	app.PostHookService = services.NewPostHookService(app.EventBus, app.ExtractionService, app.LearningService)
 	app.PostHookService.SetEvolutionServices(app.SelfReflectionService, app.PatternDetectorService, app.SkillEvolutionService, app.CapabilityGapService)
+
+	if app.LearningService != nil {
+		app.FeedbackService.SetLearningService(app.LearningService)
+	}
 
 	app.EnhancedDialogueService = services.NewEnhancedDialogueService(
 		app.DialogueService, app.ModelService, app.CacheService, app.LoggerService,
@@ -610,6 +615,7 @@ func (app *Application) initHandlers() error {
 // initBackgroundServices 初始化后台服务
 func (app *Application) initBackgroundServices() error {
 	app.MemoryExtractionService = services.NewMemoryExtractionService(app.DB, app.MemoryService, app.ModelService.GetLLMClient(), true)
+	app.EnhancedDialogueService.SetMemoryExtractionService(app.MemoryExtractionService)
 	app.SkillDiscoveryService = services.NewSkillDiscoveryService(app.DB, app.SkillService, app.ModelService, app.MemoryService, true)
 	app.PatternDetector = services.NewPatternDetector(app.DB, app.ModelService, true)
 	app.UserFeedbackCollector = services.NewUserFeedbackCollector(app.DB, app.ModelService, app.SkillService, app.MemoryService, app.WebSocketService, true)
