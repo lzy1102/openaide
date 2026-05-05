@@ -10,7 +10,7 @@ type Model struct {
 	Type        string    `json:"type"` // llm, embedding, etc.
 	Provider    string    `json:"provider"`
 	Version     string    `json:"version"`
-	APIKey      string    `json:"api_key,omitempty"`
+	APIKey      string    `json:"-" gorm:"column:api_key"`
 	BaseURL     string    `json:"base_url"`
 	Config      JSONMap   `json:"config" gorm:"type:json"`
 	Status      string    `json:"status"` // enabled, disabled

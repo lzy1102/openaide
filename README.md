@@ -54,6 +54,7 @@ A full-featured AI Agent development platform with multi-model support, multi-ag
 - **Full Tool Calling Support**: All LLM clients (OpenAI, Anthropic, Gemini, GLM, DeepSeek, Qwen, Moonshot, Ollama, etc.) support Function Calling / Tool Use
 - **Per-Tool Timeout**: Each tool execution has an independent 30-second timeout — prevents single slow tool from blocking the entire ReAct loop
 - **Unified Message Pipeline**: Non-streaming and streaming paths share the same message construction logic (system prompt, conversation summary, token truncation)
+- **API Key Protection**: Model API keys are never exposed in API responses (json:"-" tag), write-only via separate DTO — prevents accidental key leakage
 
 #### Architecture
 
@@ -467,6 +468,7 @@ api:
 - **全客户端 Tool Calling 支持**：所有 LLM 客户端（OpenAI、Anthropic、Gemini、GLM、DeepSeek、Qwen、Moonshot、Ollama 等）均支持 Function Calling / Tool Use
 - **单工具超时控制**：每个工具执行独立 30 秒超时 — 防止单个慢工具阻塞整个 ReAct 循环
 - **统一消息管线**：非流式和流式路径共享消息构建逻辑（系统提示、对话摘要、Token截断）
+- **API 密钥保护**：模型 API Key 永远不会在 API 响应中暴露（json:"-" 标签），通过独立 DTO 写入 — 防止密钥意外泄露
 
 ### 系统架构
 

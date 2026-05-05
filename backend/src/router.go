@@ -577,12 +577,33 @@ func (r *Router) registerModelRoutes(api *gin.RouterGroup) {
 			response.OK(c, models)
 		})
 		modelGroup.POST("", func(c *gin.Context) {
-			var model models.Model
-			if err := c.ShouldBindJSON(&model); err != nil {
+			var req struct {
+				Name        string                 `json:"name"`
+				Description string                 `json:"description"`
+				Type        string                 `json:"type"`
+				Provider    string                 `json:"provider"`
+				Version     string                 `json:"version"`
+				APIKey      string                 `json:"api_key"`
+				BaseURL     string                 `json:"base_url"`
+				Config      map[string]interface{} `json:"config"`
+				Status      string                 `json:"status"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
 				response.BadRequest(c, err.Error())
 				return
 			}
-			err := r.app.ModelService.CreateModel(&model)
+			model := &models.Model{
+				Name:        req.Name,
+				Description: req.Description,
+				Type:        req.Type,
+				Provider:    req.Provider,
+				Version:     req.Version,
+				APIKey:      req.APIKey,
+				BaseURL:     req.BaseURL,
+				Config:      models.JSONMap(req.Config),
+				Status:      req.Status,
+			}
+			err := r.app.ModelService.CreateModel(model)
 			if err != nil {
 				response.InternalError(c, err.Error())
 				return
@@ -600,13 +621,34 @@ func (r *Router) registerModelRoutes(api *gin.RouterGroup) {
 		})
 		modelGroup.PUT("/:id", func(c *gin.Context) {
 			id := c.Param("id")
-			var model models.Model
-			if err := c.ShouldBindJSON(&model); err != nil {
+			var req struct {
+				Name        string                 `json:"name"`
+				Description string                 `json:"description"`
+				Type        string                 `json:"type"`
+				Provider    string                 `json:"provider"`
+				Version     string                 `json:"version"`
+				APIKey      string                 `json:"api_key"`
+				BaseURL     string                 `json:"base_url"`
+				Config      map[string]interface{} `json:"config"`
+				Status      string                 `json:"status"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
 				response.BadRequest(c, err.Error())
 				return
 			}
+			model := &models.Model{
+				Name:        req.Name,
+				Description: req.Description,
+				Type:        req.Type,
+				Provider:    req.Provider,
+				Version:     req.Version,
+				APIKey:      req.APIKey,
+				BaseURL:     req.BaseURL,
+				Config:      models.JSONMap(req.Config),
+				Status:      req.Status,
+			}
 			model.ID = id
-			err := r.app.ModelService.UpdateModel(&model)
+			err := r.app.ModelService.UpdateModel(model)
 			if err != nil {
 				response.InternalError(c, err.Error())
 				return

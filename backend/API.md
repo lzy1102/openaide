@@ -544,11 +544,13 @@ MCP support currently covers server management, initialize handshake, tool disco
 
 ### Model Management
 
+> **Security Note:** The `api_key` field is write-only — it can be set via POST/PUT requests but is never returned in GET responses. This prevents accidental key leakage.
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/models` | List models |
+| GET | `/api/models` | List models (api_key excluded) |
 | POST | `/api/models` | Create model |
-| GET | `/api/models/:id` | Get model |
+| GET | `/api/models/:id` | Get model (api_key excluded) |
 | PUT | `/api/models/:id` | Update model |
 | DELETE | `/api/models/:id` | Delete model |
 | POST | `/api/models/:id/enable` | Enable model |
