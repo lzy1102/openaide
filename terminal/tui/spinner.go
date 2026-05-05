@@ -177,10 +177,25 @@ func ShowThinkingBlock(content string) {
 	if content == "" {
 		return
 	}
-	fmt.Printf("  %s %s\n",
-		StyleThinkingIcon.Render("💭"),
-		StyleThinking.Render(truncateStr(content, 100)),
-	)
+	lines := strings.Split(content, "\n")
+	maxLines := 8
+	for i, line := range lines {
+		if i >= maxLines {
+			remaining := len(lines) - maxLines
+			if remaining > 0 {
+				fmt.Printf("  %s %s\n",
+					StyleThinkingIcon.Render("💭"),
+					StyleMuted.Render(fmt.Sprintf("... (%d more lines)", remaining)),
+				)
+			}
+			break
+		}
+		truncated := truncateStr(line, 120)
+		fmt.Printf("  %s %s\n",
+			StyleThinkingIcon.Render("💭"),
+			StyleThinking.Render(truncated),
+		)
+	}
 }
 
 func ShowResponseHeader(model string, elapsed time.Duration, tokens int) {
@@ -203,7 +218,15 @@ func ShowResponseHeader(model string, elapsed time.Duration, tokens int) {
 }
 
 func ShowResponseSeparator() {
-	fmt.Printf("  %s\n", StyleMuted.Render("─"+strings.Repeat("─", 50)))
+	width := 60
+	fmt.Printf("  %s\n", StyleMuted.Render("┄"+strings.Repeat("┄", width-1)))
+}
+
+func ShowTurnDivider() {
+	width := 60
+	fmt.Printf("\n  %s\n\n",
+		StyleMuted.Render("━"+strings.Repeat("━", width-1)),
+	)
 }
 
 func ShowStreamingCursor() {

@@ -70,11 +70,12 @@ func CreateDialogue(apiURL string) (Dialogue, error) {
 
 func SendMessage(apiURL, dialogueID string, content, model string) (string, error) {
 	reqBody := map[string]interface{}{
-		"user_id":  "cli-user",
-		"content":  content,
-		"model_id": model,
+		"user_id":     "cli-user",
+		"content":     content,
+		"model_id":    model,
+		"dialogue_id": dialogueID,
 	}
-	endpoint := apiURL + "/dialogues/" + dialogueID + "/messages"
+	endpoint := apiURL + "/api/chat/route"
 	data, err := makeRequest("POST", endpoint, reqBody)
 	if err != nil {
 		return "", err
@@ -96,12 +97,13 @@ type StreamCallbacks struct {
 
 func SendMessageStream(ctx context.Context, apiURL, dialogueID string, content, model string, timeoutSec int, cb *StreamCallbacks) (string, error) {
 	reqBody := map[string]interface{}{
-		"user_id":  "cli-user",
-		"content":  content,
-		"model_id": model,
+		"user_id":    "cli-user",
+		"content":    content,
+		"model_id":   model,
+		"dialogue_id": dialogueID,
 	}
 
-	endpoint := apiURL + "/dialogues/" + dialogueID + "/stream"
+	endpoint := apiURL + "/api/chat/route"
 
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {

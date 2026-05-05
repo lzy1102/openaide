@@ -105,7 +105,7 @@ func RunChat(cfg *Config, apiURL, model string, stream bool) {
 			history = history[len(history)-limit*2:]
 		}
 
-		fmt.Println()
+		ShowTurnDivider()
 	}
 }
 
@@ -121,14 +121,7 @@ func runStreamChat(ctx context.Context, apiURL, dialogueID, input, model string,
 		OnThinking: func(content string) {
 			spinner.UpdateLabel("思考中...")
 			thinkingLineCount++
-			if thinkingLineCount <= 5 {
-				ShowThinkingBlock(content)
-			} else if thinkingLineCount == 6 {
-				fmt.Printf("  %s %s\n",
-					StyleThinkingIcon.Render("💭"),
-					StyleMuted.Render("... (思考过程省略)"),
-				)
-			}
+			ShowThinkingBlock(content)
 		},
 		OnToolCall: func(tool string, params string) {
 			spinner.UpdateLabel("调用工具: " + tool)
