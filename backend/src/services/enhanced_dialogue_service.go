@@ -390,28 +390,40 @@ func (s *EnhancedDialogueService) SendMessageWithToolsStream(
 		return s.SendMessageStreamEnhanced(ctx, dialogueID, userID, content, modelID, options)
 	}
 
-	msg, err := s.toolCallingSvc.SendMessageWithTools(ctx, dialogueID, userID, content, modelID, options)
+	if s.eventBus != nil {
+		s.eventBus.Publish(ctx, models.EventTopicMessage, models.EventTypeMessageReceived, "dialogue", map[string]interface{}{
+			"dialogue_id": dialogueID,
+			"user_id":     userID,
+			"content":     content,
+		})
+	}
+
+	if _, err := s.dialogueSvc.AddMessage(dialogueID, "user", content); err != nil {
+		if s.loggerSvc != nil {
+			s.loggerSvc.Error(ctx, "Failed to save user message: %v", err)
+		}
+	}
+
+	composedPrompt := s.ComposeSystemPrompt(ctx, userID, dialogueID, content, options)
+	if options == nil {
+		options = make(map[string]interface{})
+	}
+	options["system"] = composedPrompt
+
+	if toolsRaw, ok := options["skill_tools"]; ok {
+		if names := toStringSlice(toolsRaw); len(names) > 0 {
+			options["tool_filter"] = names
+		}
+	}
+
+	chunkChan, err := s.toolCallingSvc.SendMessageWithToolsStream(ctx, dialogueID, userID, content, modelID, options)
 	if err != nil {
 		return nil, err
 	}
 
 	go s.OnResponseComplete(context.Background(), dialogueID, userID, content)
 
-	ch := make(chan llm.ChatStreamChunk, 1)
-	go func() {
-		defer close(ch)
-		ch <- llm.ChatStreamChunk{
-			Choices: []llm.StreamChoice{
-				{
-					Delta: llm.MessageDelta{
-						Content: msg.Content,
-						Role:    "assistant",
-					},
-				},
-			},
-		}
-	}()
-	return ch, nil
+	return chunkChan, nil
 }
 
 // SendMessageWithPlan 带规划的聊天（自动判断是否需要规划）

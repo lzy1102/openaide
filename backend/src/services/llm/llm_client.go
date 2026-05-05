@@ -142,8 +142,14 @@ type ChatStreamChunk struct {
 	// Usage token 使用情况 (仅在最后一个数据块中)
 	Usage *Usage `json:"usage,omitempty"`
 
-	// Error 错误信息
 	Error error `json:"error,omitempty"`
+
+	ToolDone *ToolDoneInfo `json:"tool_done,omitempty"`
+}
+
+type ToolDoneInfo struct {
+	Tool   string `json:"tool"`
+	Result string `json:"result"`
 }
 
 // StreamChoice 流式响应选项

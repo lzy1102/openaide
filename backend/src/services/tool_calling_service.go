@@ -367,6 +367,223 @@ func (s *ToolCallingService) executeToolCall(ctx context.Context, tc llm.ToolCal
 	return string(resultJSON)
 }
 
+func (s *ToolCallingService) SendMessageWithToolsStream(
+	ctx context.Context,
+	dialogueID, userID, content, modelID string,
+	options map[string]interface{},
+) (<-chan llm.ChatStreamChunk, error) {
+	var toolDefs []map[string]interface{}
+	if filterRaw, ok := options["tool_filter"]; ok {
+		if filter := toStringSlice(filterRaw); len(filter) > 0 {
+			toolDefs = s.toolSvc.GetToolDefinitionsWithMCPByNames(filter)
+		}
+	}
+	if len(toolDefs) == 0 {
+		toolDefs = s.toolSvc.GetToolDefinitionsWithMCP()
+	}
+	if len(toolDefs) > 15 {
+		toolDefs = s.filterRelevantTools(content, toolDefs)
+	}
+	if len(toolDefs) == 0 {
+		return nil, fmt.Errorf("no tools available")
+	}
+
+	llmTools := make([]llm.ToolDefinition, 0, len(toolDefs))
+	for _, def := range toolDefs {
+		fnMap, _ := def["function"].(map[string]interface{})
+		if fnMap == nil {
+			continue
+		}
+		name, _ := fnMap["name"].(string)
+		desc, _ := fnMap["description"].(string)
+		params, _ := fnMap["parameters"].(map[string]interface{})
+
+		llmTools = append(llmTools, llm.ToolDefinition{
+			Type: "function",
+			Function: llm.FunctionDef{
+				Name:        name,
+				Description: desc,
+				Parameters:  params,
+			},
+		})
+	}
+
+	if len(llmTools) == 0 {
+		return nil, fmt.Errorf("no valid tool definitions")
+	}
+
+	messages := s.buildMessagesWithHistory(ctx, dialogueID, content)
+	sessionID := GenerateUUID()
+	stateMachine := s.sessionRecorder.StartSession(sessionID, dialogueID, userID, modelID)
+
+	ch := make(chan llm.ChatStreamChunk, 64)
+
+	go func() {
+		defer close(ch)
+
+		var totalUsage llm.Usage
+		startTime := time.Now()
+		var lastToolSignature string
+		var repeatCount int
+
+		for round := 0; round < s.maxRounds; round++ {
+			messages = s.compressToolOutputs(messages)
+			if s.isContextOverflow(messages, modelID) {
+				slog.Info("Context overflow detected, triggering LLM summarization", "component", "ToolCalling")
+				messages = s.summarizeWithLLM(ctx, messages, modelID)
+			}
+
+			thinkStep := stateMachine.StartThinking()
+
+			resp, err := s.modelSvc.ChatWithTools(modelID, messages, llmTools, options)
+			if err != nil {
+				stateMachine.Complete(StateError, totalUsage.TotalTokens)
+				ch <- llm.ChatStreamChunk{Error: fmt.Errorf("LLM call failed: %w", err)}
+				return
+			}
+
+			if resp.Usage != nil {
+				totalUsage.PromptTokens += resp.Usage.PromptTokens
+				totalUsage.CompletionTokens += resp.Usage.CompletionTokens
+				totalUsage.TotalTokens += resp.Usage.TotalTokens
+			}
+
+			if len(resp.Choices) == 0 {
+				stateMachine.Complete(StateError, totalUsage.TotalTokens)
+				ch <- llm.ChatStreamChunk{Error: fmt.Errorf("empty response from LLM")}
+				return
+			}
+
+			choice := resp.Choices[0]
+			assistantMsg := choice.Message
+			stateMachine.EndThinking(thinkStep, &assistantMsg)
+			messages = append(messages, assistantMsg)
+
+			if assistantMsg.ReasoningContent != "" {
+				ch <- llm.ChatStreamChunk{
+					Choices: []llm.StreamChoice{{
+						Delta: llm.MessageDelta{ReasoningContent: assistantMsg.ReasoningContent},
+					}},
+				}
+			}
+
+			if len(assistantMsg.ToolCalls) == 0 {
+				result := assistantMsg.Content
+				if result == "" {
+					result = "(无回复内容)"
+				}
+
+				if s.usageService != nil && totalUsage.TotalTokens > 0 {
+					go s.recordToolCallingUsage(ctx, userID, dialogueID, modelID, &totalUsage, time.Since(startTime))
+				}
+				stateMachine.Complete(StateCompleted, totalUsage.TotalTokens)
+				go s.saveSessionAsync(sessionID)
+				s.saveToolCallingResult(dialogueID, "assistant", result, assistantMsg.ReasoningContent)
+
+				ch <- llm.ChatStreamChunk{
+					Choices: []llm.StreamChoice{{
+						Delta:          llm.MessageDelta{Content: result, Role: "assistant"},
+						FinishReason:   "stop",
+					}},
+				}
+				return
+			}
+
+			toolStep := stateMachine.StartToolCall(assistantMsg.ToolCalls)
+			toolStart := time.Now()
+
+			currentSignature := toolCallSignature(assistantMsg.ToolCalls)
+			if currentSignature == lastToolSignature {
+				repeatCount++
+				if repeatCount >= 3 {
+					slog.Warn("Tool calling loop detected, breaking", "component", "ToolCalling", "round", round)
+					messages = append(messages, llm.Message{
+						Role:    llm.RoleSystem,
+						Content: "检测到重复调用同一工具，请换一种方式回答用户问题，不要再调用相同工具。",
+					})
+					lastToolSignature = ""
+					repeatCount = 0
+					continue
+				}
+			} else {
+				lastToolSignature = currentSignature
+				repeatCount = 0
+			}
+
+			for _, tc := range assistantMsg.ToolCalls {
+				toolName := tc.Function.Name
+				toolArgs := tc.Function.Arguments
+				ch <- llm.ChatStreamChunk{
+					Choices: []llm.StreamChoice{{
+						Delta: llm.MessageDelta{
+							ToolCalls: []llm.ToolCallDelta{{
+								ID:   tc.ID,
+								Type: "function",
+								Function: &llm.FunctionDelta{
+									Name:      toolName,
+									Arguments: toolArgs,
+								},
+							}},
+						},
+					}},
+				}
+
+				toolResult := s.executeToolCall(ctx, tc, dialogueID)
+
+				resultPreview := toolResult
+				if len(resultPreview) > 500 {
+					resultPreview = resultPreview[:500] + "..."
+				}
+				ch <- llm.ChatStreamChunk{
+					ToolDone: &llm.ToolDoneInfo{
+						Tool:   toolName,
+						Result: resultPreview,
+					},
+				}
+
+				messages = append(messages, llm.Message{
+					Role:       llm.RoleTool,
+					Content:    toolResult,
+					ToolCallID: tc.ID,
+				})
+			}
+
+			stateMachine.EndToolCall(toolStep, nil)
+			stateMachine.StartObservation(fmt.Sprintf("Completed %d tool calls in round %d", len(assistantMsg.ToolCalls), round+1))
+			s.metricsCollector.RecordCall("batch", true, false, time.Since(toolStart))
+		}
+
+		lastAssistantContent := ""
+		lastAssistantReasoning := ""
+		for i := len(messages) - 1; i >= 0; i-- {
+			if messages[i].Role == llm.RoleAssistant && messages[i].Content != "" {
+				lastAssistantContent = messages[i].Content
+				lastAssistantReasoning = messages[i].ReasoningContent
+				break
+			}
+		}
+		if lastAssistantContent == "" {
+			lastAssistantContent = "I reached the maximum number of tool-calling rounds."
+		}
+
+		if s.usageService != nil && totalUsage.TotalTokens > 0 {
+			go s.recordToolCallingUsage(ctx, userID, dialogueID, modelID, &totalUsage, time.Since(startTime))
+		}
+		stateMachine.Complete(StateMaxRounds, totalUsage.TotalTokens)
+		go s.saveSessionAsync(sessionID)
+		s.saveToolCallingResult(dialogueID, "assistant", lastAssistantContent, lastAssistantReasoning)
+
+		ch <- llm.ChatStreamChunk{
+			Choices: []llm.StreamChoice{{
+				Delta:        llm.MessageDelta{Content: lastAssistantContent, Role: "assistant"},
+				FinishReason: "stop",
+			}},
+		}
+	}()
+
+	return ch, nil
+}
+
 // saveToolCallingResult 保存工具调用的最终结果
 func (s *ToolCallingService) saveToolCallingResult(dialogueID, sender, content string, reasoningContent ...string) *models.Message {
 	// 通过数据库直接插入消息

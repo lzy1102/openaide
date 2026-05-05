@@ -1409,6 +1409,14 @@ func (r *Router) writeSSEStream(c *gin.Context, chunkChan <-chan llm.ChatStreamC
 		if chunk.Model != "" {
 			usedModel = chunk.Model
 		}
+		if chunk.ToolDone != nil {
+			c.SSEvent("message", map[string]interface{}{
+				"type":   "tool_done",
+				"tool":   chunk.ToolDone.Tool,
+				"result": chunk.ToolDone.Result,
+			})
+		}
+
 		if len(chunk.Choices) > 0 {
 			choice := chunk.Choices[0]
 			delta := choice.Delta
