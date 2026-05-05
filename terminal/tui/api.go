@@ -75,16 +75,24 @@ func SendMessage(apiURL, dialogueID string, content, model string) (string, erro
 		"model_id":    model,
 		"dialogue_id": dialogueID,
 	}
-	endpoint := apiURL + "/api/chat/route"
+	endpoint := apiURL + "/chat/tools"
 	data, err := makeRequest("POST", endpoint, reqBody)
 	if err != nil {
 		return "", err
 	}
-	var resp ChatResponse
+	var resp struct {
+		Content string `json:"content"`
+	}
 	if err := unwrapResponse(data, &resp); err != nil {
+		var rawResp map[string]interface{}
+		if json.Unmarshal(data, &rawResp) == nil {
+			if c, ok := rawResp["content"].(string); ok {
+				return c, nil
+			}
+		}
 		return string(data), nil
 	}
-	return resp.Message.Content, nil
+	return resp.Content, nil
 }
 
 type StreamCallbacks struct {
@@ -103,7 +111,7 @@ func SendMessageStream(ctx context.Context, apiURL, dialogueID string, content, 
 		"dialogue_id": dialogueID,
 	}
 
-	endpoint := apiURL + "/api/chat/route"
+	endpoint := apiURL + "/chat/route"
 
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {

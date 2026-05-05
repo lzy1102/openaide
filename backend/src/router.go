@@ -452,7 +452,7 @@ func (r *Router) registerChatRoutes(api *gin.RouterGroup) {
 	{
 		chat.POST("/tools", func(c *gin.Context) {
 			var req struct {
-				ModelID    string                 `json:"model_id" binding:"required"`
+				ModelID    string                 `json:"model_id"`
 				UserID     string                 `json:"user_id"`
 				DialogueID string                 `json:"dialogue_id"`
 				Content    string                 `json:"content" binding:"required"`
@@ -475,6 +475,7 @@ func (r *Router) registerChatRoutes(api *gin.RouterGroup) {
 				UserID     string                 `json:"user_id"`
 				DialogueID string                 `json:"dialogue_id"`
 				Content    string                 `json:"content" binding:"required"`
+				ModelID    string                 `json:"model_id"`
 				Options    map[string]interface{} `json:"options"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
@@ -482,7 +483,7 @@ func (r *Router) registerChatRoutes(api *gin.RouterGroup) {
 				return
 			}
 			ctx := c.Request.Context()
-			chunkChan, err := r.app.EnhancedDialogueService.SendMessageStreamRouted(ctx, req.DialogueID, req.UserID, req.Content, "", req.Options)
+			chunkChan, err := r.app.EnhancedDialogueService.SendMessageStreamRouted(ctx, req.DialogueID, req.UserID, req.Content, req.ModelID, req.Options)
 			if err != nil {
 				response.InternalError(c, err.Error())
 				return
