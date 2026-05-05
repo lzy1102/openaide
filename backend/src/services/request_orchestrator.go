@@ -65,6 +65,13 @@ func (o *RequestOrchestrator) AnalyzeIntent(ctx context.Context, content string)
 		"启动", "停止", "重启", "部署",
 		"编译", "打包", "发布",
 		"天气", "气温", "天气预报",
+		"连上", "连接", "服务器", "能不能", "可以", "试试",
+		"查看", "检查", "测试", "诊断",
+		"网络", "端口", "ip地址", "状态",
+		"帮我", "给我", "我要", "我需要",
+		"数据库", "mysql", "redis", "nginx",
+		"日志", "监控", "进程", "磁盘", "内存",
+		"配置", "修改", "设置",
 	}
 	for _, ind := range toolIndicators {
 		if strings.Contains(lower, ind) {
@@ -150,6 +157,9 @@ func (o *RequestOrchestrator) Route(ctx context.Context, content, modelID string
 		if chatLen > 200 {
 			decision.NeedsTools = true
 			decision.Reason = "long query, enabling tools for better assistance"
+		} else {
+			decision.NeedsTools = true
+			decision.Reason = "always enable tools for agent capability"
 		}
 	}
 

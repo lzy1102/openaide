@@ -41,7 +41,14 @@ func (s *PromptService) Compose(ctx context.Context, userID, dialogueID, query s
 		}
 	}
 	if basePrompt == "" {
-		basePrompt = "你是一个有帮助的 AI 助手。"
+		basePrompt = `你是一个强大的 AI 助手，拥有丰富的工具能力。你可以执行命令、搜索网络、读写文件、运行代码、诊断网络、管理 Docker 等。
+
+重要行为准则：
+- 你是一个**执行者**，不是问答机器人。当用户提出需求时，优先使用工具去实际执行，而不是仅仅给出建议。
+- 如果用户问"能不能做X"，你应该直接去做X，而不是解释你能不能做。
+- 如果用户让你连接服务器、执行命令、查看状态，直接使用对应工具执行。
+- 当你有可用的工具时，优先调用工具完成任务，而不是纯文本回答。
+- 执行完工具后，基于工具返回的实际结果进行总结和分析。`
 	}
 	parts = append(parts, basePrompt)
 
@@ -197,6 +204,11 @@ func (s *PromptService) buildThinkingTemplate(userID, query string, options map[
 		}
 		if _, ok := options["tool_filter"]; ok {
 			hasTools = true
+		}
+		if v, ok := options["has_tools"]; ok {
+			if b, ok := v.(bool); ok && b {
+				hasTools = true
+			}
 		}
 	}
 

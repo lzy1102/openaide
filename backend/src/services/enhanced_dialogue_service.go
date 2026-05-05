@@ -214,11 +214,12 @@ func (s *EnhancedDialogueService) SendMessageWithTools(
 		}
 	}
 
-	// 组装 system prompt
-	composedPrompt := s.ComposeSystemPrompt(ctx, userID, dialogueID, content, options)
 	if options == nil {
 		options = make(map[string]interface{})
 	}
+	options["has_tools"] = true
+
+	composedPrompt := s.ComposeSystemPrompt(ctx, userID, dialogueID, content, options)
 	options["system"] = composedPrompt
 
 	// 技能工具过滤：将 skill_tools 转为 tool_filter 传给 ToolCallingService
@@ -404,10 +405,12 @@ func (s *EnhancedDialogueService) SendMessageWithToolsStream(
 		}
 	}
 
-	composedPrompt := s.ComposeSystemPrompt(ctx, userID, dialogueID, content, options)
 	if options == nil {
 		options = make(map[string]interface{})
 	}
+	options["has_tools"] = true
+
+	composedPrompt := s.ComposeSystemPrompt(ctx, userID, dialogueID, content, options)
 	options["system"] = composedPrompt
 
 	if toolsRaw, ok := options["skill_tools"]; ok {
