@@ -47,9 +47,28 @@ func FetchDialogues(apiURL string, userID string) ([]Dialogue, error) {
 	}
 	var dialogues []Dialogue
 	if err := unwrapResponse(data, &dialogues); err != nil {
-		return nil, err
+		var pageResp struct {
+			Items []Dialogue `json:"items"`
+			Total int64      `json:"total"`
+		}
+		if err2 := unwrapResponse(data, &pageResp); err2 != nil {
+			return nil, err
+		}
+		dialogues = pageResp.Items
 	}
 	return dialogues, nil
+}
+
+func FetchMessages(apiURL, dialogueID string) ([]Message, error) {
+	data, err := makeRequest("GET", apiURL+"/dialogues/"+dialogueID+"/messages", nil)
+	if err != nil {
+		return nil, err
+	}
+	var messages []Message
+	if err := unwrapResponse(data, &messages); err != nil {
+		return nil, err
+	}
+	return messages, nil
 }
 
 func CreateDialogue(apiURL string) (Dialogue, error) {
@@ -64,6 +83,21 @@ func CreateDialogue(apiURL string) (Dialogue, error) {
 	var result Dialogue
 	if err := unwrapResponse(data, &result); err != nil {
 		return Dialogue{}, err
+	}
+	return result, nil
+}
+
+func CompactContext(apiURL, dialogueID string) (map[string]interface{}, error) {
+	reqBody := map[string]interface{}{
+		"dialogue_id": dialogueID,
+	}
+	data, err := makeRequest("POST", apiURL+"/context/compress", reqBody)
+	if err != nil {
+		return nil, err
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, err
 	}
 	return result, nil
 }
@@ -95,12 +129,19 @@ func SendMessage(apiURL, dialogueID string, content, model string) (string, erro
 	return resp.Content, nil
 }
 
+type StreamUsage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+}
+
 type StreamCallbacks struct {
 	OnThinking func(content string)
 	OnToolCall func(tool string, params string)
 	OnToolDone func(tool string, result string)
 	OnContent  func(chunk string)
-	OnDone     func(model string)
+	OnDone     func(model string, usage *StreamUsage)
+	OnCompact  func(reason string, beforeMsgs, afterMsgs, savedTokens int)
 }
 
 func SendMessageStream(ctx context.Context, apiURL, dialogueID string, content, model string, timeoutSec int, cb *StreamCallbacks) (string, error) {
@@ -156,7 +197,7 @@ func SendMessageStream(ctx context.Context, apiURL, dialogueID string, content, 
 			}
 			if data == "[DONE]" {
 				if cb != nil && cb.OnDone != nil {
-					cb.OnDone(model)
+					cb.OnDone(model, nil)
 				}
 				break
 			}
@@ -187,6 +228,23 @@ func SendMessageStream(ctx context.Context, apiURL, dialogueID string, content, 
 					result, _ := chunk["result"].(string)
 					cb.OnToolDone(tool, result)
 				}
+			case "context_compact":
+				if cb != nil && cb.OnCompact != nil {
+					reason, _ := chunk["reason"].(string)
+					beforeMsgs := 0
+					afterMsgs := 0
+					savedTokens := 0
+					if v, ok := chunk["before_msgs"].(float64); ok {
+						beforeMsgs = int(v)
+					}
+					if v, ok := chunk["after_msgs"].(float64); ok {
+						afterMsgs = int(v)
+					}
+					if v, ok := chunk["saved_tokens"].(float64); ok {
+						savedTokens = int(v)
+					}
+					cb.OnCompact(reason, beforeMsgs, afterMsgs, savedTokens)
+				}
 			case "content":
 				if content, ok := chunk["content"].(string); ok {
 					if cb != nil && cb.OnContent != nil {
@@ -197,7 +255,15 @@ func SendMessageStream(ctx context.Context, apiURL, dialogueID string, content, 
 			case "done":
 				if cb != nil && cb.OnDone != nil {
 					m, _ := chunk["model"].(string)
-					cb.OnDone(m)
+					var usage *StreamUsage
+					if usageRaw, ok := chunk["usage"]; ok {
+						usageBytes, _ := json.Marshal(usageRaw)
+						var u StreamUsage
+						if json.Unmarshal(usageBytes, &u) == nil {
+							usage = &u
+						}
+					}
+					cb.OnDone(m, usage)
 				}
 				return fullResponse.String(), nil
 			case "error":

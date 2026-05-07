@@ -126,13 +126,10 @@ func (s *ToolCallingService) SendMessageWithTools(
 	var repeatCount int
 
 	for round := 0; round < s.maxRounds; round++ {
-		// 上下文压缩（参考 OpenCode 两阶段压缩）
-		// Phase 1: 简单修剪旧工具输出
-		messages = s.compressToolOutputs(messages)
-		// Phase 2: 当接近上下文窗口溢出时，使用 LLM 摘要
+		messages, _ = s.compressToolOutputs(messages)
 		if s.isContextOverflow(messages, modelID) {
 			slog.Info("Context overflow detected, triggering LLM summarization", "component", "ToolCalling")
-			messages = s.summarizeWithLLM(ctx, messages, modelID)
+			messages, _ = s.summarizeWithLLM(ctx, messages, modelID)
 		}
 
 		// === ReAct: Thinking 阶段 ===
@@ -427,10 +424,18 @@ func (s *ToolCallingService) SendMessageWithToolsStream(
 		var repeatCount int
 
 		for round := 0; round < s.maxRounds; round++ {
-			messages = s.compressToolOutputs(messages)
+			var compactInfo *llm.CompactInfo
+			messages, compactInfo = s.compressToolOutputs(messages)
+			if compactInfo != nil {
+				ch <- llm.ChatStreamChunk{CompactInfo: compactInfo}
+			}
 			if s.isContextOverflow(messages, modelID) {
 				slog.Info("Context overflow detected, triggering LLM summarization", "component", "ToolCalling")
-				messages = s.summarizeWithLLM(ctx, messages, modelID)
+				var summaryInfo *llm.CompactInfo
+				messages, summaryInfo = s.summarizeWithLLM(ctx, messages, modelID)
+				if summaryInfo != nil {
+					ch <- llm.ChatStreamChunk{CompactInfo: summaryInfo}
+				}
 			}
 
 			thinkStep := stateMachine.StartThinking()
@@ -633,12 +638,12 @@ func toStringSlice(raw interface{}) []string {
 
 // compressToolOutputs 上下文压缩（参考 OpenCode Session Compaction）
 // 两阶段压缩：Phase 1 修剪旧工具输出，Phase 2 LLM 摘要（当接近上下文窗口时）
-func (s *ToolCallingService) compressToolOutputs(messages []llm.Message) []llm.Message {
+func (s *ToolCallingService) compressToolOutputs(messages []llm.Message) ([]llm.Message, *llm.CompactInfo) {
 	const maxMessages = 40
 	const keepRecent = 10
 
 	if len(messages) <= maxMessages {
-		return messages
+		return messages, nil
 	}
 
 	compressSet := make(map[int]bool)
@@ -662,9 +667,10 @@ func (s *ToolCallingService) compressToolOutputs(messages []llm.Message) []llm.M
 			continue
 		}
 		if compressSet[i] {
+			compressedContent := compressToolResult(msg.Content, 150)
 			compressed = append(compressed, llm.Message{
 				Role:       msg.Role,
-				Content:    "[Old tool output cleared for context compression]",
+				Content:    compressedContent,
 				ToolCallID: msg.ToolCallID,
 			})
 			if i > 0 && messages[i-1].Role == llm.RoleAssistant && len(messages[i-1].ToolCalls) > 0 {
@@ -681,7 +687,24 @@ func (s *ToolCallingService) compressToolOutputs(messages []llm.Message) []llm.M
 	}
 
 	slog.Info("Context compression", "component", "ToolCalling", "messages", len(messages), "pruned", prunedCount)
-	return compressed
+
+	estimator := NewTokenEstimator()
+	oldTokens := 0
+	newTokens := 0
+	for _, msg := range messages {
+		oldTokens += estimator.EstimateTokens(msg.Content, "")
+	}
+	for _, msg := range compressed {
+		newTokens += estimator.EstimateTokens(msg.Content, "")
+	}
+
+	info := &llm.CompactInfo{
+		Reason:         "tool_output_compression",
+		BeforeMessages: len(messages),
+		AfterMessages:  len(compressed),
+		SavedTokens:    oldTokens - newTokens,
+	}
+	return compressed, info
 }
 
 // isContextOverflow 检测是否接近上下文窗口溢出（参考 OpenCode isOverflow）
@@ -713,9 +736,9 @@ func (s *ToolCallingService) isContextOverflow(messages []llm.Message, modelID s
 }
 
 // summarizeWithLLM 使用 LLM 对旧消息进行摘要压缩（参考 OpenCode SessionCompaction.create）
-func (s *ToolCallingService) summarizeWithLLM(ctx context.Context, messages []llm.Message, modelID string) []llm.Message {
+func (s *ToolCallingService) summarizeWithLLM(ctx context.Context, messages []llm.Message, modelID string) ([]llm.Message, *llm.CompactInfo) {
 	if len(messages) <= 10 {
-		return messages
+		return messages, nil
 	}
 
 	var oldMessages []llm.Message
@@ -729,31 +752,30 @@ func (s *ToolCallingService) summarizeWithLLM(ctx context.Context, messages []ll
 	for _, msg := range oldMessages {
 		switch msg.Role {
 		case llm.RoleUser:
-			historyText.WriteString(fmt.Sprintf("User: %s\n", msg.Content))
+			historyText.WriteString(fmt.Sprintf("用户: %s\n", msg.Content))
 		case llm.RoleAssistant:
 			content := msg.Content
 			if len(content) > 500 {
 				content = content[:500] + "..."
 			}
-			historyText.WriteString(fmt.Sprintf("Assistant: %s\n", content))
+			historyText.WriteString(fmt.Sprintf("助手: %s\n", content))
 		case llm.RoleTool:
-			content := msg.Content
-			if len(content) > 200 {
-				content = content[:200] + "..."
-			}
-			historyText.WriteString(fmt.Sprintf("Tool(%s): %s\n", msg.ToolCallID, content))
+			content := compressToolResult(msg.Content, 200)
+			historyText.WriteString(fmt.Sprintf("工具(%s): %s\n", msg.ToolCallID, content))
 		}
 	}
 
-	summaryPrompt := fmt.Sprintf(`Summarize the following conversation history concisely. Preserve:
-1. Key decisions and conclusions
-2. Important tool results (IP addresses, file paths, error messages)
-3. User's original intent
+	summaryPrompt := fmt.Sprintf(`请用中文简洁总结以下对话历史，必须保留：
+1. 用户的核心需求和目标
+2. 已做出的关键决策和结论
+3. 重要的技术细节（IP地址、文件路径、端口号、配置值、错误信息）
+4. 工具执行的关键结果（成功/失败、输出摘要）
+5. 未解决的问题和待办事项
 
-Conversation history:
+对话历史：
 %s
 
-Provide a detailed summary for continuing the conversation:`, historyText.String())
+请用要点格式总结，不超过500字：`, historyText.String())
 
 	summaryModelID := modelID
 	models, err := s.modelSvc.ListModels()
@@ -774,8 +796,8 @@ Provide a detailed summary for continuing the conversation:`, historyText.String
 	}, map[string]interface{}{"max_tokens": 2000})
 
 	if err != nil {
-		slog.Error("LLM summarization failed, falling back to simple compression", "component", "ToolCalling", "error", err)
-		return s.compressToolOutputs(messages)
+		slog.Error("LLM summarization failed, using messages as-is", "component", "ToolCalling", "error", err)
+		return messages, nil
 	}
 
 	summary := ""
@@ -784,7 +806,7 @@ Provide a detailed summary for continuing the conversation:`, historyText.String
 	}
 
 	result := []llm.Message{
-		{Role: llm.RoleSystem, Content: fmt.Sprintf("[Conversation Summary]\n%s\n[End of Summary - Continue from here]", summary)},
+		{Role: llm.RoleSystem, Content: fmt.Sprintf("[对话历史摘要]\n%s\n[摘要结束 - 从此处继续对话]", summary)},
 	}
 
 	for i, msg := range recentMessages {
@@ -810,7 +832,24 @@ Provide a detailed summary for continuing the conversation:`, historyText.String
 	}
 
 	slog.Info("LLM summarization", "component", "ToolCalling", "old_messages", len(oldMessages), "recent_messages", len(recentMessages))
-	return result
+
+	estimator := NewTokenEstimator()
+	oldTokens := 0
+	newTokens := 0
+	for _, msg := range messages {
+		oldTokens += estimator.EstimateTokens(msg.Content, "")
+	}
+	for _, msg := range result {
+		newTokens += estimator.EstimateTokens(msg.Content, "")
+	}
+
+	info := &llm.CompactInfo{
+		Reason:         "llm_summarization",
+		BeforeMessages: len(messages),
+		AfterMessages:  len(result),
+		SavedTokens:    oldTokens - newTokens,
+	}
+	return result, info
 }
 
 // buildMessagesWithHistory 构建包含历史对话的消息列表，保持上下文记忆
@@ -824,6 +863,12 @@ func (s *ToolCallingService) buildMessagesWithHistory(ctx context.Context, dialo
 		startIdx := 0
 		if len(history) > maxHistoryMessages {
 			startIdx = len(history) - maxHistoryMessages
+		}
+
+		estimator := NewTokenEstimator()
+		modelID := ""
+		if m, err := s.modelSvc.ListModels(); err == nil && len(m) > 0 {
+			modelID = m[0].ID
 		}
 
 		for i := startIdx; i < len(history); i++ {
@@ -843,11 +888,24 @@ func (s *ToolCallingService) buildMessagesWithHistory(ctx context.Context, dialo
 			}
 
 			content := msg.Content
-			if role == llm.RoleAssistant && len(content) > 1000 {
-				content = content[:1000] + "..."
-			}
-			if role == llm.RoleTool && len(content) > 500 {
-				content = content[:500] + "..."
+			isRecent := i >= len(history)-8
+
+			if !isRecent {
+				if role == llm.RoleAssistant {
+					if len(content) > 800 {
+						keyPoints := extractKeyPoints(content)
+						if keyPoints != "" {
+							content = keyPoints
+						} else {
+							content = content[:600] + "\n...(回复已压缩)"
+						}
+					}
+				}
+				if role == llm.RoleTool {
+					if len(content) > 400 {
+						content = compressToolResult(content, 400)
+					}
+				}
 			}
 
 			llmMsg := llm.Message{
@@ -862,6 +920,14 @@ func (s *ToolCallingService) buildMessagesWithHistory(ctx context.Context, dialo
 			}
 			messages = append(messages, llmMsg)
 		}
+
+		totalTokens := 0
+		for _, msg := range messages {
+			totalTokens += estimator.EstimateTokens(msg.Content, modelID)
+		}
+		slog.Info("Built messages with history", "component", "ToolCalling",
+			"history_count", len(history), "messages", len(messages),
+			"estimated_tokens", totalTokens)
 	}
 
 	lastUserIdx := -1
@@ -927,6 +993,114 @@ func (s *ToolCallingService) ListReActSessions() []string {
 		return []string{}
 	}
 	return s.sessionRecorder.ListSessions()
+}
+
+func compressToolResult(content string, maxLen int) string {
+	if len(content) <= maxLen {
+		return content
+	}
+
+	lines := strings.Split(content, "\n")
+	if len(lines) <= 3 {
+		return content[:maxLen] + "..."
+	}
+
+	var important []string
+	var tail []string
+	tailCount := 5
+
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		isImportant := false
+		lower := strings.ToLower(trimmed)
+		keywords := []string{"error", "fail", "warn", "success", "ok", "running",
+			"active", "listen", "connect", "refused", "timeout", "denied",
+			"permission", "not found", "no such", "already exist",
+			"错误", "失败", "成功", "警告", "拒绝", "超时", "找不到"}
+		for _, kw := range keywords {
+			if strings.Contains(lower, kw) {
+				isImportant = true
+				break
+			}
+		}
+		if isImportant {
+			important = append(important, trimmed)
+		}
+		if i >= len(lines)-tailCount {
+			tail = append(tail, trimmed)
+		}
+	}
+
+	var result strings.Builder
+	if len(important) > 0 {
+		result.WriteString("[关键信息] ")
+		for idx, imp := range important {
+			if idx > 0 {
+				result.WriteString("; ")
+			}
+			result.WriteString(imp)
+			if result.Len() > maxLen/2 {
+				break
+			}
+		}
+		result.WriteString("\n")
+	}
+
+	result.WriteString(fmt.Sprintf("[共%d行输出，显示最后%d行]\n", len(lines), len(tail)))
+	for _, t := range tail {
+		if result.Len()+len(t) > maxLen {
+			break
+		}
+		result.WriteString(t)
+		result.WriteString("\n")
+	}
+
+	compressed := result.String()
+	if len(compressed) > maxLen+50 {
+		compressed = compressed[:maxLen] + "..."
+	}
+	return compressed
+}
+
+func extractKeyPoints(content string) string {
+	lines := strings.Split(content, "\n")
+	var points []string
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "* ") ||
+			strings.HasPrefix(trimmed, "1.") || strings.HasPrefix(trimmed, "2.") ||
+			strings.HasPrefix(trimmed, "3.") || strings.HasPrefix(trimmed, "①") ||
+			strings.HasPrefix(trimmed, "②") || strings.HasPrefix(trimmed, "③") {
+			points = append(points, trimmed)
+		}
+	}
+
+	if len(points) == 0 {
+		firstLine := ""
+		for _, line := range lines {
+			if strings.TrimSpace(line) != "" {
+				firstLine = strings.TrimSpace(line)
+				break
+			}
+		}
+		if firstLine != "" {
+			return firstLine + "\n...(回复已压缩)"
+		}
+		return ""
+	}
+
+	result := strings.Join(points, "\n")
+	if len(result) > 600 {
+		result = result[:600] + "\n..."
+	}
+	return result
 }
 
 func toolCallSignature(toolCalls []llm.ToolCall) string {

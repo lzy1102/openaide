@@ -1,6 +1,10 @@
 package tui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"fmt"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 var (
 	ColorPrimary   = lipgloss.Color("#61AFEF")
@@ -8,11 +12,31 @@ var (
 	ColorAccent    = lipgloss.Color("#C678DD")
 	ColorWarning   = lipgloss.Color("#E5C07B")
 	ColorError     = lipgloss.Color("#E06C75")
-	ColorMuted     = lipgloss.Color("#5C6370")
+	ColorMuted     = lipgloss.Color("#7F848E")
 	ColorDark      = lipgloss.Color("#282C34")
-	ColorThinking  = lipgloss.Color("#C678DD")
-	ColorTool      = lipgloss.Color("#E5C07B")
-	ColorDimText   = lipgloss.Color("#7F848E")
+	ColorThinking  = lipgloss.Color("#E8C4FF")
+	ColorTool      = lipgloss.Color("#FFB366")
+	ColorDimText   = lipgloss.Color("#ABB2BF")
+	ColorCyan      = lipgloss.Color("#56B6C2")
+	ColorOrange    = lipgloss.Color("#D19A66")
+	ColorPink      = lipgloss.Color("#FF7B72")
+	ColorTeal      = lipgloss.Color("#3DDBD9")
+	ColorLavender  = lipgloss.Color("#CDD6F4")
+	ColorSurface   = lipgloss.Color("#1E222A")
+	ColorSurfaceDim = lipgloss.Color("#171A22")
+	ColorOverlay   = lipgloss.Color("#545D6E")
+	ColorBrightWhite = lipgloss.Color("#FFFFFF")
+	ColorBrightText  = lipgloss.Color("#F0F0F0")
+
+	BgModel     = lipgloss.Color("#1A3A6B")
+	BgTime      = lipgloss.Color("#0D4A4A")
+	BgTokens    = lipgloss.Color("#5C4A1A")
+	BgThinking  = lipgloss.Color("#4A1A6B")
+	BgTool      = lipgloss.Color("#6B4A1A")
+	BgSuccess   = lipgloss.Color("#1A5A1A")
+	BgError     = lipgloss.Color("#6B1A1A")
+	BgStream    = lipgloss.Color("#0D4A5A")
+	BgKeyHint   = lipgloss.Color("#3A404A")
 )
 
 var (
@@ -36,13 +60,20 @@ var (
 	StyleDimText      = lipgloss.NewStyle().Foreground(ColorDimText)
 	StyleAssistant    = lipgloss.NewStyle().Foreground(ColorPrimary).Bold(true)
 	StyleUserLabel    = lipgloss.NewStyle().Foreground(ColorSecondary).Bold(true)
-	StyleTokenCount   = lipgloss.NewStyle().Foreground(ColorMuted).Faint(true)
+	StyleTokenCount   = lipgloss.NewStyle().Foreground(ColorDimText)
+	StyleCommand      = lipgloss.NewStyle().Foreground(ColorCyan).Bold(true)
+	StyleOutput       = lipgloss.NewStyle().Foreground(ColorDimText)
+	StyleFilePath     = lipgloss.NewStyle().Foreground(ColorOrange).Underline(true)
+	StyleCodeBlock    = lipgloss.NewStyle().
+				Foreground(ColorBrightText).
+				Background(ColorSurface).
+				Padding(0, 2)
 )
 
 var (
 	StyleBorder = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(ColorMuted)
+			BorderForeground(ColorOverlay)
 
 	StylePanel = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
@@ -58,7 +89,7 @@ var (
 			Foreground(ColorAccent)
 
 	StyleHelpDesc = lipgloss.NewStyle().
-			Foreground(ColorMuted)
+			Foreground(ColorDimText)
 
 	StyleStatusEnabled  = lipgloss.NewStyle().Foreground(ColorSecondary)
 	StyleStatusDisabled = lipgloss.NewStyle().Foreground(ColorMuted)
@@ -79,9 +110,138 @@ var (
 				Padding(0, 0, 0, 2)
 
 	StyleBannerInfo = lipgloss.NewStyle().
-				Foreground(ColorMuted).
+				Foreground(ColorDimText).
 				PaddingLeft(4)
 
 	StyleBannerValue = lipgloss.NewStyle().
 				Foreground(ColorSecondary)
 )
+
+var (
+	BadgeModel = lipgloss.NewStyle().
+			Foreground(ColorBrightWhite).
+			Background(BgModel).
+			Padding(0, 1).
+			Bold(true)
+
+	BadgeTime = lipgloss.NewStyle().
+			Foreground(ColorBrightWhite).
+			Background(BgTime).
+			Padding(0, 1).
+			Bold(true)
+
+	BadgeTokens = lipgloss.NewStyle().
+			Foreground(ColorBrightWhite).
+			Background(BgTokens).
+			Padding(0, 1).
+			Bold(true)
+
+	BadgeThinking = lipgloss.NewStyle().
+			Foreground(ColorBrightWhite).
+			Background(BgThinking).
+			Padding(0, 1).
+			Bold(true).
+			Italic(true)
+
+	BadgeTool = lipgloss.NewStyle().
+			Foreground(ColorBrightWhite).
+			Background(BgTool).
+			Padding(0, 1).
+			Bold(true)
+
+	BadgeSuccess = lipgloss.NewStyle().
+			Foreground(ColorBrightWhite).
+			Background(BgSuccess).
+			Padding(0, 1).
+			Bold(true)
+
+	BadgeError = lipgloss.NewStyle().
+			Foreground(ColorBrightWhite).
+			Background(BgError).
+			Padding(0, 1).
+			Bold(true)
+
+	BadgeStream = lipgloss.NewStyle().
+			Foreground(ColorBrightWhite).
+			Background(BgStream).
+			Padding(0, 1).
+			Bold(true)
+
+	BadgeWarning = lipgloss.NewStyle().
+			Foreground(ColorBrightWhite).
+			Background(BgTokens).
+			Padding(0, 1).
+			Bold(true)
+
+	BadgeKeyHint = lipgloss.NewStyle().
+			Foreground(ColorBrightWhite).
+			Background(BgKeyHint).
+			Padding(0, 1).
+			Bold(true)
+
+	BadgeUser = lipgloss.NewStyle().
+			Foreground(ColorBrightWhite).
+			Background(BgSuccess).
+			Padding(0, 1).
+			Bold(true)
+
+	BadgeAssistant = lipgloss.NewStyle().
+			Foreground(ColorBrightWhite).
+			Background(BgModel).
+			Padding(0, 1).
+			Bold(true)
+)
+
+var (
+	StyleThinkingBlock = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(ColorAccent).
+				Padding(0, 1).
+				Foreground(ColorLavender)
+
+	StyleToolBlock = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(ColorTool).
+			Padding(0, 1)
+
+	StyleErrorBlock = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(ColorError).
+			Padding(0, 1).
+			Foreground(ColorError)
+)
+
+var (
+	StyleSectionLabel = lipgloss.NewStyle().
+				Foreground(ColorDimText).
+				Bold(true)
+
+	StyleSectionValue = lipgloss.NewStyle().
+				Foreground(ColorSecondary)
+
+	StyleKeyHint = lipgloss.NewStyle().
+			Foreground(ColorBrightWhite).
+			Background(BgKeyHint).
+			Padding(0, 1)
+
+	StyleDescHint = lipgloss.NewStyle().
+			Foreground(ColorDimText)
+
+	StyleDivider = lipgloss.NewStyle().
+			Foreground(ColorOverlay)
+
+	StylePromptArrow = lipgloss.NewStyle().
+				Foreground(ColorSecondary).
+				Bold(true)
+
+	StylePromptText = lipgloss.NewStyle().
+				Foreground(ColorSecondary)
+)
+
+func Badge(label string, style lipgloss.Style) string {
+	return style.Render(" " + label + " ")
+}
+
+func LabeledLine(label, value string) string {
+	return fmt.Sprintf("  %s %s", StyleSectionLabel.Render(label), StyleSectionValue.Render(value))
+}

@@ -218,6 +218,30 @@ func (s *DialogueService) buildLLMMessages(ctx context.Context, dialogueID, mode
 				Role:    "system",
 				Content: "以下是之前对话的摘要：\n" + summary,
 			})
+		} else {
+			keyMsgs := s.extractKeyMessages(messages[:len(messages)-20])
+			for _, msg := range keyMsgs {
+				role := "user"
+				switch msg.Sender {
+				case "assistant":
+					role = "assistant"
+				case "system":
+					role = "system"
+				case "tool":
+					role = "tool"
+				}
+				content := msg.Content
+				if role == "assistant" && len(content) > 400 {
+					content = content[:400] + "..."
+				}
+				if role == "tool" && len(content) > 200 {
+					content = content[:200] + "..."
+				}
+				llmMessages = append(llmMessages, llm.Message{
+					Role:    role,
+					Content: content,
+				})
+			}
 		}
 		messages = messages[len(messages)-20:]
 	} else if len(messages) > 20 {
@@ -364,8 +388,10 @@ func (s *DialogueService) summarizeOldMessages(ctx context.Context, oldMessages 
 		return "", nil
 	}
 
+	keyMsgs := s.extractKeyMessages(oldMessages)
+
 	var sb strings.Builder
-	for _, msg := range oldMessages {
+	for _, msg := range keyMsgs {
 		role := msg.Sender
 		if role == "user" || role == "assistant" {
 			content := msg.Content
@@ -408,6 +434,27 @@ func (s *DialogueService) summarizeOldMessages(ctx context.Context, oldMessages 
 		return resp.Choices[0].Message.Content, nil
 	}
 	return "", nil
+}
+
+func (s *DialogueService) extractKeyMessages(messages []models.Message) []models.Message {
+	if len(messages) <= 6 {
+		return messages
+	}
+
+	var keyMsgs []models.Message
+	keyMsgs = append(keyMsgs, messages[0])
+
+	lastIdx := len(messages) - 1
+	keyMsgs = append(keyMsgs, messages[lastIdx])
+
+	for i := 1; i < lastIdx; i++ {
+		msg := messages[i]
+		if msg.Sender == "user" {
+			keyMsgs = append(keyMsgs, msg)
+		}
+	}
+
+	return keyMsgs
 }
 
 // wrapStreamWithUsage 包装流式通道，在最后统计token使用量

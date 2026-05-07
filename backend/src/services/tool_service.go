@@ -1614,11 +1614,12 @@ func (t *CommandTool) Definition() map[string]interface{} {
 		"type": "function",
 		"function": map[string]interface{}{
 			"name":        "execute_command",
-			"description": "在服务器上执行 shell 命令。危险命令需要用户确认。",
+			"description": "在服务器上执行 shell 命令并返回输出。支持任何 Linux/Unix 命令，包括管道、重定向等。用于：查看系统状态(df,free,top)、管理进程(ps,kill)、安装软件(apt,yum)、操作文件(ls,cat,grep,find)、网络诊断(ping,curl,netstat)、Git 操作、Docker 管理等。危险命令(rm,sudo,shutdown等)需要用户确认。",
 			"parameters": map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"command":  map[string]interface{}{"type": "string", "description": "要执行的命令"},
+					"command":  map[string]interface{}{"type": "string", "description": "要执行的完整 shell 命令，支持管道(|)和重定向(>)"},
+					"workdir":  map[string]interface{}{"type": "string", "description": "工作目录，默认为用户主目录"},
 					"approved": map[string]interface{}{"type": "boolean", "description": "是否已获用户批准（危险命令需要）"},
 				},
 				"required": []string{"command"},
@@ -1639,6 +1640,7 @@ func (t *CommandTool) AllowCommand(cmd string) {
 
 func (t *CommandTool) Execute(ctx context.Context, params map[string]interface{}) (interface{}, error) {
 	command, _ := params["command"].(string)
+	workdir, _ := params["workdir"].(string)
 	approved, _ := params["approved"].(bool)
 	if command == "" {
 		return nil, fmt.Errorf("command parameter is required")
@@ -1651,7 +1653,6 @@ func (t *CommandTool) Execute(ctx context.Context, params map[string]interface{}
 
 	baseCmd := filepath.Base(cmdParts[0])
 
-	// 危险命令需要确认
 	if isDangerousCommand(baseCmd) {
 		t.mu.RLock()
 		alreadyAllowed := t.allowedDangerous[command]
@@ -1666,7 +1667,6 @@ func (t *CommandTool) Execute(ctx context.Context, params map[string]interface{}
 		}
 	}
 
-	// 超时保护：60 秒
 	execCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
@@ -1674,15 +1674,16 @@ func (t *CommandTool) Execute(ctx context.Context, params map[string]interface{}
 	if isWindowsCmd(command) {
 		cmd = exec.CommandContext(execCtx, "cmd", "/C", command)
 	} else {
-		cmdParts := strings.Fields(command)
-		if len(cmdParts) == 0 {
-			return nil, fmt.Errorf("empty command")
-		}
-		cmd = exec.CommandContext(execCtx, cmdParts[0], cmdParts[1:]...)
+		cmd = exec.CommandContext(execCtx, "sh", "-c", command)
 	}
 
-	tmpDir := os.TempDir()
-	cmd.Dir = tmpDir
+	if workdir != "" {
+		cmd.Dir = workdir
+	} else {
+		if homeDir, err := os.UserHomeDir(); err == nil {
+			cmd.Dir = homeDir
+		}
+	}
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {

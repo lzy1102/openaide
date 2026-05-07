@@ -94,6 +94,12 @@ func (r *Router) Register(engine *gin.Engine) {
 		r.app.PromptTemplateHandler.RegisterRoutes(protectedAPI)
 		r.app.UsageHandler.RegisterRoutes(protectedAPI)
 		r.app.SchedulerHandler.RegisterRoutes(protectedAPI)
+		r.app.TestGenHandler.RegisterRoutes(protectedAPI)
+		r.app.DependencyHandler.RegisterRoutes(protectedAPI)
+		r.app.DeployHandler.RegisterRoutes(protectedAPI)
+		r.app.CodeSearchHandler.RegisterRoutes(protectedAPI)
+		r.app.DocGenHandler.RegisterRoutes(protectedAPI)
+		r.app.FormatHandler.RegisterRoutes(protectedAPI)
 	}
 }
 
@@ -1444,6 +1450,8 @@ func (r *Router) writeSSEStream(c *gin.Context, chunkChan <-chan llm.ChatStreamC
 	c.Header("X-Accel-Buffering", "no")
 
 	usedModel := ""
+	var totalUsage *llm.Usage
+	var compactInfo *llm.CompactInfo
 	for chunk := range chunkChan {
 		if chunk.Error != nil {
 			c.SSEvent("error", map[string]interface{}{"type": "error", "content": chunk.Error.Error()})
@@ -1451,6 +1459,19 @@ func (r *Router) writeSSEStream(c *gin.Context, chunkChan <-chan llm.ChatStreamC
 		}
 		if chunk.Model != "" {
 			usedModel = chunk.Model
+		}
+		if chunk.Usage != nil {
+			totalUsage = chunk.Usage
+		}
+		if chunk.CompactInfo != nil {
+			compactInfo = chunk.CompactInfo
+			c.SSEvent("message", map[string]interface{}{
+				"type":          "context_compact",
+				"reason":        compactInfo.Reason,
+				"before_msgs":   compactInfo.BeforeMessages,
+				"after_msgs":    compactInfo.AfterMessages,
+				"saved_tokens":  compactInfo.SavedTokens,
+			})
 		}
 		if chunk.ToolDone != nil {
 			c.SSEvent("message", map[string]interface{}{
@@ -1495,13 +1516,29 @@ func (r *Router) writeSSEStream(c *gin.Context, chunkChan <-chan llm.ChatStreamC
 			}
 
 			if choice.FinishReason != "" {
-				c.SSEvent("message", map[string]interface{}{
+				doneEvent := map[string]interface{}{
 					"type":  "done",
 					"model": usedModel,
 					"done":  true,
-				})
+				}
+				if totalUsage != nil {
+					doneEvent["usage"] = map[string]interface{}{
+						"prompt_tokens":     totalUsage.PromptTokens,
+						"completion_tokens": totalUsage.CompletionTokens,
+						"total_tokens":      totalUsage.TotalTokens,
+					}
+				}
+				c.SSEvent("message", doneEvent)
 			}
 		}
 	}
-	c.SSEvent("message", map[string]interface{}{"type": "done", "model": usedModel, "done": true})
+	doneEvent := map[string]interface{}{"type": "done", "model": usedModel, "done": true}
+	if totalUsage != nil {
+		doneEvent["usage"] = map[string]interface{}{
+			"prompt_tokens":     totalUsage.PromptTokens,
+			"completion_tokens": totalUsage.CompletionTokens,
+			"total_tokens":      totalUsage.TotalTokens,
+		}
+	}
+	c.SSEvent("message", doneEvent)
 }

@@ -298,7 +298,13 @@ func (e *AgentExecutor) executeToolCall(ctx context.Context, tc llm.ToolCall) st
 	// 检查结果内容长度，避免返回过大数据
 	contentStr := string(resultJSON)
 	if len(contentStr) > 8000 {
-		contentStr = contentStr[:8000] + "\n...(结果过长，已截断)"
+		headLen := 6000
+		tailLen := 1800
+		if len(contentStr) < headLen+tailLen {
+			contentStr = contentStr[:8000] + "\n...(结果过长，已截断)"
+		} else {
+			contentStr = contentStr[:headLen] + "\n\n... (中间部分省略) ...\n\n" + contentStr[len(contentStr)-tailLen:]
+		}
 	}
 
 	return contentStr

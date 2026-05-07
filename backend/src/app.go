@@ -39,6 +39,14 @@ type Application struct {
 	ConfirmationService *services.ConfirmationService
 	FeedbackService     *services.FeedbackService
 
+	// 代码工具服务
+	TestGenService    *services.TestGenService
+	DependencyService *services.DependencyService
+	DeployService     *services.DeployService
+	CodeSearchService *services.CodeSearchService
+	DocGenService     *services.DocGenService
+	FormatService     *services.FormatService
+
 	// 记忆服务
 	MemoryRegistry         *services.MemoryProviderRegistry
 	MemoryService          *services.MemoryService
@@ -131,6 +139,14 @@ type Application struct {
 	MCPHandler            *handlers.MCPHandler
 	SkillHandler          *handlers.SkillHandler
 	SkillImportService    *services.SkillImportService
+
+	// 代码工具 Handler
+	TestGenHandler    *handlers.TestGenHandler
+	DependencyHandler *handlers.DependencyHandler
+	DeployHandler     *handlers.DeployHandler
+	CodeSearchHandler *handlers.CodeSearchHandler
+	DocGenHandler     *handlers.DocGenHandler
+	FormatHandler     *handlers.FormatHandler
 
 	// 后台服务
 	MemoryExtractionService   *services.MemoryExtractionService
@@ -328,6 +344,13 @@ func (app *Application) initCoreServices() error {
 	app.ConfirmationService = services.NewConfirmationService(app.DB)
 	app.FeedbackService = services.NewFeedbackService(app.DB)
 	app.FeedbackService.SetEventBus(app.EventBus)
+
+	app.TestGenService = services.NewTestGenService(app.DB, app.LoggerService, app.CacheService, app.ModelService.GetLLMClient())
+	app.DependencyService = services.NewDependencyService(app.DB, app.LoggerService, app.CacheService, app.ModelService.GetLLMClient())
+	app.DeployService = services.NewDeployService(app.DB, app.LoggerService, app.CacheService, app.ModelService.GetLLMClient())
+	app.CodeSearchService = services.NewCodeSearchService(app.DB, app.LoggerService, app.CacheService, app.ModelService.GetLLMClient())
+	app.DocGenService = services.NewDocGenService(app.DB, app.LoggerService, app.CacheService, app.ModelService.GetLLMClient())
+	app.FormatService = services.NewFormatService(app.DB, app.LoggerService, app.CacheService, app.ModelService.GetLLMClient())
 
 	return nil
 }
@@ -609,6 +632,13 @@ func (app *Application) initHandlers() error {
 	app.SkillHandler = handlers.NewSkillHandler(app.SkillService)
 	app.SkillImportService = services.NewSkillImportService(app.DB, app.SkillService)
 	app.SkillHandler.SetImportService(app.SkillImportService)
+
+	app.TestGenHandler = handlers.NewTestGenHandler(app.TestGenService)
+	app.DependencyHandler = handlers.NewDependencyHandler(app.DependencyService)
+	app.DeployHandler = handlers.NewDeployHandler(app.DeployService)
+	app.CodeSearchHandler = handlers.NewCodeSearchHandler(app.CodeSearchService)
+	app.DocGenHandler = handlers.NewDocGenHandler(app.DocGenService)
+	app.FormatHandler = handlers.NewFormatHandler(app.FormatService)
 
 	return nil
 }

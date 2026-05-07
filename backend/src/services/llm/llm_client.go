@@ -145,6 +145,15 @@ type ChatStreamChunk struct {
 	Error error `json:"error,omitempty"`
 
 	ToolDone *ToolDoneInfo `json:"tool_done,omitempty"`
+
+	CompactInfo *CompactInfo `json:"compact_info,omitempty"`
+}
+
+type CompactInfo struct {
+	Reason         string `json:"reason"`
+	BeforeMessages int    `json:"before_msgs"`
+	AfterMessages  int    `json:"after_msgs"`
+	SavedTokens    int    `json:"saved_tokens"`
 }
 
 type ToolDoneInfo struct {
