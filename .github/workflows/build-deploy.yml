@@ -1,0 +1,96 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+env:
+  GO_VERSION: "1.25"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Build Backend
+        run: |
+          cd backend
+          CGO_ENABLED=0 go build -ldflags "-s -w" -o ../dist/bin/openaide-server ./src
+
+      - name: Build CLI
+        run: |
+          cd terminal
+          CGO_ENABLED=0 go build -ldflags "-s -w" -o ../dist/bin/openaide .
+
+      - name: Package
+        run: |
+          mkdir -p dist/data/{database,knowledge,uploads}
+          cp .openaide.example dist/ 2>/dev/null || true
+          cp -r frontend dist/frontend 2>/dev/null || true
+          cp scripts/install.sh dist/ 2>/dev/null || true
+          cp scripts/uninstall.sh dist/ 2>/dev/null || true
+          chmod +x dist/install.sh dist/uninstall.sh 2>/dev/null || true
+          tar -czvf openaide-linux-amd64.tar.gz -C dist .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openaide-linux-amd64
+          path: openaide-linux-amd64.tar.gz
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master'
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: openaide-linux-amd64
+
+      - name: Deploy to Server
+        env:
+          DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+          scp -i ~/.ssh/deploy_key openaide-linux-amd64.tar.gz "$DEPLOY_USER@$DEPLOY_HOST:/tmp/"
+
+          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" << 'DEPLOY_SCRIPT'
+            set -e
+            cd /tmp
+            tar -xzf openaide-linux-amd64.tar.gz
+
+            echo "Stopping old server..."
+            pkill -f openaide-server || true
+            sleep 2
+
+            echo "Replacing binaries..."
+            cp /tmp/bin/openaide-server /opt/openaide/openaide-server
+            cp /tmp/bin/openaide /opt/openaide/openaide-cli
+            chmod +x /opt/openaide/openaide-server /opt/openaide/openaide-cli
+
+            echo "Starting new server..."
+            cd /opt/openaide
+            nohup ./openaide-server > /opt/openaide/logs/server.log 2>&1 &
+            sleep 3
+
+            if pgrep -f openaide-server > /dev/null; then
+              echo "✅ Deployment successful!"
+            else
+              echo "❌ Server failed to start"
+              tail -20 /opt/openaide/logs/server.log
+              exit 1
+            fi
+
+            rm -f /tmp/openaide-linux-amd64.tar.gz /tmp/bin/openaide-server /tmp/bin/openaide
+          DEPLOY_SCRIPT
