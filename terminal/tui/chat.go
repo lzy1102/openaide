@@ -6,10 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"syscall"
@@ -28,7 +31,12 @@ func RunChat(cfg *Config, apiURL, model string, stream bool) {
 	initReadline()
 	defer closeReadline()
 
-	renderWelcome(apiURL, model, stream)
+	projectMemory := LoadProjectMemory()
+	if projectMemory != "" {
+		fmt.Printf("  %s\n", R.Info.Render("📖 Project memory loaded (OPENAIDE.md)"))
+	}
+
+	RenderWelcome(apiURL, model, stream)
 
 	dialogueID := ""
 	var history []Message
@@ -53,12 +61,7 @@ func RunChat(cfg *Config, apiURL, model string, stream bool) {
 			if title == "" || title == "CLI Chat" {
 				title = "Conversation"
 			}
-			fmt.Printf("  %s %s %s %s\n",
-				Badge("resume", BadgeStream),
-				StyleSectionValue.Render(title),
-				StyleMuted.Render("#"+shortID),
-				StyleDimText.Render(fmt.Sprintf("(%d messages)", len(messages))),
-			)
+			RenderSessionLine(0, title, shortID, "", dialogueID != "")
 			fmt.Println()
 		}
 	}
@@ -66,8 +69,7 @@ func RunChat(cfg *Config, apiURL, model string, stream bool) {
 	if dialogueID == "" {
 		dialogue, err := CreateDialogue(apiURL)
 		if err != nil {
-			errBlock := StyleErrorBlock.Render(fmt.Sprintf(" Failed to create dialogue: %v ", err))
-			fmt.Fprintf(os.Stderr, "  %s\n", errBlock)
+			RenderErrorBlock(fmt.Sprintf("Failed to create dialogue: %v", err))
 		} else {
 			dialogueID = dialogue.ID
 		}
@@ -90,11 +92,11 @@ func RunChat(cfg *Config, apiURL, model string, stream bool) {
 		if err != nil {
 			if err == io.EOF {
 				fmt.Println()
-				renderGoodbye()
+				RenderGoodbye()
 				return
 			}
 			if err == readline.ErrInterrupt {
-				fmt.Printf("\n  %s Interrupted\n", Badge("⏹", BadgeError))
+				fmt.Printf("\n  %s\n", R.Error.Render("✗ Interrupted"))
 				continue
 			}
 			continue
@@ -106,7 +108,7 @@ func RunChat(cfg *Config, apiURL, model string, stream bool) {
 		}
 
 		if input == "exit" || input == "quit" || input == "/exit" || input == "/quit" {
-			renderGoodbye()
+			RenderGoodbye()
 			return
 		}
 
@@ -129,6 +131,12 @@ func RunChat(cfg *Config, apiURL, model string, stream bool) {
 			continue
 		}
 
+		input = expandFileReferences(input)
+
+		if projectMemory != "" {
+			input = fmt.Sprintf("[Project Context]\n%s\n[/Project Context]\n\n%s", projectMemory, input)
+		}
+
 		userMsg := Message{
 			ID:         GenerateID(),
 			DialogueID: dialogueID,
@@ -142,17 +150,16 @@ func RunChat(cfg *Config, apiURL, model string, stream bool) {
 		timeout := GetTimeout(cfg)
 
 		if stream {
-			response, err = runStreamChat(ctx, apiURL, dialogueID, input, model, timeout)
+			response, err = runStreamChat(ctx, apiURL, dialogueID, input, model, timeout, cfg)
 		} else {
 			response, err = runSyncChat(apiURL, dialogueID, input, model)
 		}
 
 		if err != nil {
 			if ctx.Err() == context.Canceled {
-				fmt.Printf("\n  %s Response interrupted\n", Badge("⏹", BadgeWarning))
+				fmt.Printf("\n  %s\n", R.Warning.Render("⚠ Response interrupted"))
 			} else {
-				errBlock := StyleErrorBlock.Render(fmt.Sprintf(" %v ", err))
-				fmt.Printf("\n  %s\n", errBlock)
+				RenderErrorBlock(fmt.Sprintf("%v", err))
 			}
 			fmt.Println()
 			continue
@@ -176,11 +183,17 @@ func RunChat(cfg *Config, apiURL, model string, stream bool) {
 			history = history[len(history)-limit*2:]
 		}
 
-		ShowTurnDivider()
+		if compacted, didCompact := AutoCompactIfNeeded(apiURL, dialogueID, history, cfg.Chat.MaxContextTokens); didCompact {
+			if compacted != nil {
+				history = *compacted
+			}
+		}
+
+		RenderTurnDivider()
 	}
 }
 
-func runStreamChat(ctx context.Context, apiURL, dialogueID, input, model string, timeout int) (string, error) {
+func runStreamChat(ctx context.Context, apiURL, dialogueID, input, model string, timeout int, cfg *Config) (string, error) {
 	spinner := StartThinking("")
 	SetCurrentSpinner(spinner)
 	firstContent := true
@@ -192,12 +205,35 @@ func runStreamChat(ctx context.Context, apiURL, dialogueID, input, model string,
 
 	cb := &StreamCallbacks{
 		OnThinking: func(content string) {
-			spinner.UpdateLabel("思考中...")
+			spinner.UpdateLabel("thinking...")
 			thinkingLineCount++
 			ShowThinkingBlock(content)
 		},
+		OnGuardianReview: func(tool, verdict, riskLevel, reason string) {
+			if currentSpinner != nil {
+				currentSpinner.Pause()
+			}
+			ShowGuardianReview(tool, verdict, riskLevel, reason)
+			if currentSpinner != nil {
+				currentSpinner.Resume()
+			}
+		},
 		OnToolCall: func(tool string, params string) {
-			spinner.UpdateLabel("调用工具: " + tool)
+			allowed, needsConfirm := checkToolPermission(tool, cfg)
+			if !allowed {
+				if needsConfirm {
+					if promptToolConfirmation(tool, params) {
+						spinner.UpdateLabel("tool: " + tool)
+						ShowToolCall(tool, params)
+					} else {
+						fmt.Printf("  %s\n", R.Warning.Render("🔒 Tool call denied: "+tool))
+					}
+				} else {
+					fmt.Printf("  %s\n", R.Error.Render("🚫 Tool call blocked: "+tool))
+				}
+				return
+			}
+			spinner.UpdateLabel("tool: " + tool)
 			ShowToolCall(tool, params)
 		},
 		OnToolDone: func(tool string, result string) {
@@ -212,7 +248,6 @@ func runStreamChat(ctx context.Context, apiURL, dialogueID, input, model string,
 					fmt.Println()
 				}
 				ShowResponseHeader(usedModel, elapsed, 0)
-				ShowResponseSeparator()
 			}
 			fmt.Print(codeDetector.ProcessChunk(chunk))
 		},
@@ -223,19 +258,14 @@ func runStreamChat(ctx context.Context, apiURL, dialogueID, input, model string,
 			if usage != nil {
 				streamUsage = usage
 			}
+			go func() {
+				if err := TriggerMemoryExtraction(apiURL, dialogueID); err == nil {
+					slog.Debug("memory extraction triggered", "dialogue_id", dialogueID)
+				}
+			}()
 		},
 		OnCompact: func(reason string, beforeMsgs, afterMsgs, savedTokens int) {
-			reasonLabel := "压缩"
-			if reason == "llm_summarization" {
-				reasonLabel = "摘要压缩"
-			}
-			fmt.Printf("\n  %s %s %s → %s messages, %s tokens saved\n",
-				Badge("compact", BadgeWarning),
-				StyleDimText.Render(reasonLabel),
-				StyleDimText.Render(fmt.Sprintf("%d", beforeMsgs)),
-				StyleDimText.Render(fmt.Sprintf("%d", afterMsgs)),
-				StyleDimText.Render(fmt.Sprintf("~%d", savedTokens)),
-			)
+			fmt.Println(RenderCompactLine(reason, beforeMsgs, afterMsgs, savedTokens))
 		},
 	}
 
@@ -249,12 +279,12 @@ func runStreamChat(ctx context.Context, apiURL, dialogueID, input, model string,
 				fmt.Println()
 			}
 			ShowResponseHeader(usedModel, elapsed, 0)
-			ShowResponseSeparator()
 		}
 	}
 
 	if response != "" {
 		fmt.Println()
+		fmt.Println(RenderResponseBoxBottom())
 		var tokens int
 		if streamUsage != nil && streamUsage.CompletionTokens > 0 {
 			tokens = streamUsage.CompletionTokens
@@ -265,33 +295,12 @@ func runStreamChat(ctx context.Context, apiURL, dialogueID, input, model string,
 		if streamUsage != nil && streamUsage.PromptTokens > 0 {
 			totalTokens := streamUsage.PromptTokens + streamUsage.CompletionTokens
 			contextPercent := 0
-			if streamUsage.TotalTokens > 0 {
-				contextPercent = streamUsage.PromptTokens * 100 / (streamUsage.PromptTokens + streamUsage.CompletionTokens)
+			if totalTokens > 0 {
+				contextPercent = streamUsage.PromptTokens * 100 / totalTokens
 			}
-			contextBadge := BadgeTokens
-			if contextPercent > 80 {
-				contextBadge = BadgeError
-			} else if contextPercent > 60 {
-				contextBadge = BadgeWarning
-			}
-			fmt.Printf("  %s %s prompt + %s completion = %s total  %s\n",
-				Badge("ctx", contextBadge),
-				StyleDimText.Render(fmt.Sprintf("%d", streamUsage.PromptTokens)),
-				StyleDimText.Render(fmt.Sprintf("%d", streamUsage.CompletionTokens)),
-				StyleDimText.Render(fmt.Sprintf("%d", totalTokens)),
-				StyleDimText.Render(fmt.Sprintf("(%d%% context)", contextPercent)),
-			)
-			if contextPercent > 80 {
-				fmt.Printf("  %s Context near limit! Use %s to compress or %s to start fresh\n",
-					Badge("⚠", BadgeError),
-					Badge("/compact", BadgeKeyHint),
-					Badge("/new", BadgeKeyHint),
-				)
-			} else if contextPercent > 60 {
-				fmt.Printf("  %s Context getting large. Use %s to compress\n",
-					Badge("💡", BadgeWarning),
-					Badge("/compact", BadgeKeyHint),
-				)
+			fmt.Println(RenderContextUsage(streamUsage.PromptTokens, streamUsage.CompletionTokens, totalTokens, 0))
+			if warn := RenderContextWarning(contextPercent); warn != "" {
+				fmt.Println(warn)
 			}
 		}
 	}
@@ -312,7 +321,8 @@ func runSyncChat(apiURL, dialogueID, input, model string) (string, error) {
 
 	if response != "" {
 		ShowResponseHeader(model, elapsed, 0)
-		ShowResponseSeparator()
+		fmt.Println()
+		fmt.Println(RenderResponseBoxBottom())
 		ShowResponseFooter(model, elapsed, 0)
 	}
 
@@ -320,20 +330,7 @@ func runSyncChat(apiURL, dialogueID, input, model string) (string, error) {
 }
 
 func ShowResponseFooter(model string, elapsed time.Duration, tokens int) {
-	var parts []string
-	if tokens > 0 {
-		parts = append(parts, Badge(fmt.Sprintf("%d tok", tokens), BadgeTokens))
-	}
-	if elapsed > 0 {
-		parts = append(parts, Badge(fmt.Sprintf("%.1fs", elapsed.Seconds()), BadgeTime))
-	}
-	if model != "" {
-		parts = append(parts, Badge(model, BadgeModel))
-	}
-	if len(parts) > 0 {
-		footer := strings.Join(parts, " ")
-		fmt.Printf("  %s\n", footer)
-	}
+	fmt.Println(RenderResponseFooter(model, elapsed, tokens))
 }
 
 func handleSlashCommand(cmd, apiURL, dialogueID string, model string, stream bool, history *[]Message, cfg *Config, ctx context.Context) (string, string, bool) {
@@ -367,7 +364,7 @@ func handleSlashCommand(cmd, apiURL, dialogueID string, model string, stream boo
 		}
 		dialogue, err := CreateDialogue(apiURL)
 		if err != nil {
-			fmt.Printf("  %s Failed: %v\n", Badge("✗", BadgeError), err)
+			RenderErrorBlock(fmt.Sprintf("Failed: %v", err))
 		} else {
 			newDialogueID = dialogue.ID
 			*history = []Message{}
@@ -379,44 +376,166 @@ func handleSlashCommand(cmd, apiURL, dialogueID string, model string, stream boo
 					Sender:     "user",
 					Content:    carrySummary,
 				})
-				fmt.Printf("  %s New conversation started %s %s\n",
-					Badge("✓", BadgeSuccess),
-					StyleDimText.Render(dialogue.ID[:8]+"..."),
-					StyleDimText.Render("(carried context from previous chat)"),
-				)
+				fmt.Printf("  %s\n", RenderStatusLine("new conversation", dialogue.ID[:8]+"...", "carried context"))
 			} else {
-				fmt.Printf("  %s New conversation started %s\n", Badge("✓", BadgeSuccess), StyleDimText.Render(dialogue.ID[:8]+"..."))
+				fmt.Printf("  %s\n", RenderStatusLine("new conversation", dialogue.ID[:8]+"..."))
 			}
 		}
+	case "/compact":
+		if dialogueID == "" {
+			RenderErrorBlock("No active conversation")
+			break
+		}
+		fmt.Printf("  %s\n", RenderToolCallLine("compact", "compressing context..."))
+		result, err := RequestCompaction(apiURL, dialogueID, "full")
+		if err != nil {
+			trimmed := TrimToolResults(*history, 1000)
+			summarized := SummarizeOldMessages(trimmed, 4)
+			*history = summarized
+			oldTokens := estimateHistoryTokens(*history)
+			RenderInfoLine(fmt.Sprintf("Local compression applied (%d tokens)", oldTokens))
+		} else {
+			RenderCompactionResult(result)
+		}
+	case "/context":
+		chapters := SplitIntoChapters(*history)
+		tokens := estimateHistoryTokens(*history)
+		fmt.Println()
+		fmt.Printf("  %s\n\n", R.Bold.Render("Context Status"))
+		fmt.Printf("  %-14s %s\n", "Messages:", R.Accent.Render(fmt.Sprintf("%d", len(*history))))
+		fmt.Printf("  %-14s %s\n", "Chapters:", R.Accent.Render(fmt.Sprintf("%d", len(chapters))))
+		fmt.Printf("  %-14s %s\n", "Est. Tokens:", R.Accent.Render(FormatTokenCount(tokens)))
+		if cfg.Chat.MaxContextTokens > 0 {
+			pct := tokens * 100 / cfg.Chat.MaxContextTokens
+			fmt.Printf("  %-14s %s\n", "Context Window:", R.Dim.Render(FormatTokenCount(cfg.Chat.MaxContextTokens)))
+			fmt.Printf("  %-14s %s\n", "Usage:", R.Accent.Render(fmt.Sprintf("%d%%", pct)))
+		}
+		if len(chapters) > 0 {
+			fmt.Printf("\n  %s\n", R.Dim.Render("Chapter preview:"))
+			maxPreview := 5
+			if len(chapters) < maxPreview {
+				maxPreview = len(chapters)
+			}
+			for i := 0; i < maxPreview; i++ {
+				ch := chapters[i]
+				fmt.Printf("  %s %s %s\n",
+					R.Accent.Render(fmt.Sprintf("§%d", ch.ID)),
+					R.Bold.Render(truncateStr(ch.Title, 40)),
+					R.Dim.Render(fmt.Sprintf("(%d msgs)", ch.MsgCount)))
+			}
+			if len(chapters) > maxPreview {
+				fmt.Printf("  %s\n", R.Dim.Render(fmt.Sprintf("  ... +%d more chapters", len(chapters)-maxPreview)))
+			}
+		}
+		if dialogueID != "" {
+			budget, err := GetContextBudget(apiURL, dialogueID)
+			if err == nil && budget != nil {
+				RenderContextBudget(budget)
+			}
+		}
+	case "/chapters":
+		chapters := SplitIntoChapters(*history)
+		if len(chapters) == 0 {
+			RenderInfoLine("No conversation history to analyze")
+			break
+		}
+		totalTokens := 0
+		for _, ch := range chapters {
+			totalTokens += ch.Tokens
+		}
+		outline := &ChapterOutline{
+			Chapters:    chapters,
+			TotalTokens: totalTokens,
+			CreatedAt:   time.Now(),
+		}
+		RenderChapterOutline(outline)
 	case "/clear":
-		*history = []Message{}
-		fmt.Printf("  %s Context cleared\n", Badge("✓", BadgeSuccess))
+		if dialogueID == "" {
+			*history = []Message{}
+			RenderSuccessLine("Context cleared")
+		} else {
+			if err := ClearMessages(apiURL, dialogueID); err != nil {
+				RenderErrorBlock(fmt.Sprintf("Clear failed: %v", err))
+			} else {
+				*history = []Message{}
+				RenderSuccessLine("Context cleared")
+			}
+		}
 	case "/model":
 		if len(parts) > 1 {
 			model = parts[1]
-			fmt.Printf("  %s Model set to %s\n", Badge("✓", BadgeSuccess), Badge(model, BadgeModel))
+			fmt.Printf("  %s\n", RenderStatusLine("model", R.Accent.Render(model)))
 		} else {
 			result := RunModelSelect(apiURL, model)
 			if result.Changed {
 				model = result.Selected
-				fmt.Printf("  %s Model set to %s\n", Badge("✓", BadgeSuccess), Badge(model, BadgeModel))
+				fmt.Printf("  %s\n", RenderStatusLine("model", R.Accent.Render(model)))
 			}
 		}
 	case "/stream":
 		if len(parts) > 1 {
 			if parts[1] == "on" {
 				stream = true
-				fmt.Printf("  %s Streaming %s\n", Badge("✓", BadgeSuccess), Badge("streaming", BadgeStream))
+				fmt.Printf("  %s\n", RenderStatusLine("streaming", "on"))
 			} else if parts[1] == "off" {
 				stream = false
-				fmt.Printf("  %s Streaming %s\n", Badge("✓", BadgeSuccess), Badge("sync", BadgeTime))
+				fmt.Printf("  %s\n", RenderStatusLine("streaming", "off"))
 			}
 		} else {
 			stream = !stream
+			label := "off"
 			if stream {
-				fmt.Printf("  %s Streaming %s\n", Badge("✓", BadgeSuccess), Badge("streaming", BadgeStream))
+				label = "on"
+			}
+			fmt.Printf("  %s\n", RenderStatusLine("streaming", label))
+		}
+	case "/sessions":
+		dialogues, err := FetchDialogues(apiURL, "cli-user")
+		if err != nil || len(dialogues) == 0 {
+			RenderInfoLine("No sessions found")
+			break
+		}
+		fmt.Println()
+		fmt.Printf("  %s\n\n", R.Bold.Render("Sessions"))
+		maxShow := 15
+		if len(dialogues) > maxShow {
+			dialogues = dialogues[:maxShow]
+		}
+		for i, d := range dialogues {
+			shortID := d.ID
+			if len(shortID) > 8 {
+				shortID = shortID[:8]
+			}
+			title := d.Title
+			if title == "" || title == "CLI Chat" {
+				title = "Untitled"
+			}
+			updated := d.UpdatedAt
+			if len(updated) > 16 {
+				updated = updated[:16]
+			}
+			fmt.Println(RenderSessionLine(i+1, title, shortID, updated, d.ID == dialogueID))
+		}
+		fmt.Printf("\n  %s\n", R.Dim.Render("Use /sessions <number> to switch"))
+		if len(parts) > 1 {
+			idx := 0
+			if _, err := fmt.Sscanf(parts[1], "%d", &idx); err == nil && idx >= 1 && idx <= len(dialogues) {
+				target := dialogues[idx-1]
+				messages, err := FetchMessages(apiURL, target.ID)
+				if err != nil {
+					RenderErrorBlock(fmt.Sprintf("Failed to load session: %v", err))
+				} else {
+					dialogueID = target.ID
+					*history = messages
+					newDialogueID = target.ID
+					title := target.Title
+					if title == "" || title == "CLI Chat" {
+						title = "Untitled"
+					}
+					fmt.Printf("  %s\n", RenderStatusLine("switched to", title, fmt.Sprintf("%d messages", len(messages))))
+				}
 			} else {
-				fmt.Printf("  %s Streaming %s\n", Badge("✓", BadgeSuccess), Badge("sync", BadgeTime))
+				RenderErrorBlock(fmt.Sprintf("Invalid session number (1-%d)", len(dialogues)))
 			}
 		}
 	case "/history":
@@ -429,31 +548,26 @@ func handleSlashCommand(cmd, apiURL, dialogueID string, model string, stream boo
 				asstCount++
 			}
 		}
-		fmt.Printf("  %s %s messages (%s user · %s assistant)\n",
-			Badge("history", BadgeTime),
-			StyleBold.Render(fmt.Sprintf("%d", len(*history))),
-			StyleDimText.Render(fmt.Sprintf("%d", userCount)),
-			StyleDimText.Render(fmt.Sprintf("%d", asstCount)),
-		)
+		fmt.Printf("  %s\n", RenderStatusLine(
+			fmt.Sprintf("%d messages", len(*history)),
+			fmt.Sprintf("%d user", userCount),
+			fmt.Sprintf("%d assistant", asstCount),
+		))
 		showCount := 6
 		start := len(*history) - showCount
 		if start < 0 {
 			start = 0
 		}
 		if len(*history) > showCount {
-			fmt.Printf("  %s\n", StyleDimText.Render(fmt.Sprintf("... showing last %d messages", showCount)))
+			fmt.Printf("  %s\n", R.Dim.Render(fmt.Sprintf("  showing last %d messages", showCount)))
 		}
 		for i := start; i < len(*history); i++ {
 			m := (*history)[i]
 			summary := strings.ReplaceAll(m.Content, "\n", " ")
-			if len(summary) > 60 {
-				summary = summary[:57] + "..."
+			if len(summary) > 80 {
+				summary = summary[:77] + "..."
 			}
-			if m.Sender == "user" {
-				fmt.Printf("  %s %s\n", Badge("you", BadgeUser), StyleDimText.Render(summary))
-			} else {
-				fmt.Printf("  %s %s\n", Badge("ai", BadgeAssistant), StyleDimText.Render(summary))
-			}
+			RenderHistoryMessage(m.Sender, summary)
 		}
 	case "/copy":
 		lastAsst := ""
@@ -464,16 +578,16 @@ func handleSlashCommand(cmd, apiURL, dialogueID string, model string, stream boo
 			}
 		}
 		if lastAsst == "" {
-			fmt.Printf("  %s No assistant response to copy\n", Badge("✗", BadgeError))
+			RenderErrorBlock("No assistant response to copy")
 		} else {
 			if err := copyToClipboard(lastAsst); err != nil {
-				fmt.Printf("  %s Copy failed: %v\n", Badge("✗", BadgeError), err)
+				RenderErrorBlock(fmt.Sprintf("Copy failed: %v", err))
 			} else {
 				preview := strings.ReplaceAll(lastAsst, "\n", " ")
 				if len(preview) > 40 {
 					preview = preview[:37] + "..."
 				}
-				fmt.Printf("  %s Copied to clipboard: %s\n", Badge("✓", BadgeSuccess), StyleDimText.Render(preview))
+				RenderSuccessLine("Copied: " + preview)
 			}
 		}
 	case "/cd":
@@ -484,30 +598,59 @@ func handleSlashCommand(cmd, apiURL, dialogueID string, model string, stream boo
 				dir = homeDir
 			}
 			if err := os.Chdir(dir); err != nil {
-				fmt.Printf("  %s %v\n", Badge("✗", BadgeError), err)
+				RenderErrorBlock(fmt.Sprintf("%v", err))
 			} else {
 				wd, _ := os.Getwd()
-				fmt.Printf("  %s %s\n", Badge("✓", BadgeSuccess), StyleFilePath.Render(wd))
+				fmt.Printf("  %s\n", R.FilePath.Render(wd))
 			}
 		} else {
 			wd, _ := os.Getwd()
-			fmt.Printf("  %s\n", StyleFilePath.Render(wd))
+			fmt.Printf("  %s\n", R.FilePath.Render(wd))
 		}
-	case "/compact":
-		if dialogueID == "" {
-			fmt.Printf("  %s No active conversation\n", Badge("✗", BadgeError))
-		} else {
-			fmt.Printf("  %s Compressing context...\n", Badge("⏳", BadgeStream))
-			result, err := CompactContext(apiURL, dialogueID)
-			if err != nil {
-				fmt.Printf("  %s Compact failed: %v\n", Badge("✗", BadgeError), err)
-			} else {
-				if success, ok := result["success"].(bool); ok && success {
-					fmt.Printf("  %s Context compressed successfully\n", Badge("✓", BadgeSuccess))
-				} else {
-					fmt.Printf("  %s Compact completed\n", Badge("✓", BadgeSuccess))
+	case "/mode":
+		modes := []struct {
+			key   string
+			label string
+			desc  string
+		}{
+			{"build", "Build", "Full access: code editing, execution, all tools"},
+			{"explore", "Explore", "Read-only: search, read files, no writes"},
+			{"plan", "Plan", "Planning: analysis only, no code changes"},
+			{"general", "General", "Multi-step tasks with all tools"},
+		}
+		if len(parts) > 1 {
+			valid := false
+			for _, m := range modes {
+				if parts[1] == m.key {
+					_, err := SetToolMode(apiURL, m.key)
+					if err != nil {
+						RenderErrorBlock(fmt.Sprintf("Failed to set mode: %v", err))
+					} else {
+						fmt.Printf("  %s\n", RenderStatusLine("mode", R.Accent.Render(m.key), R.Dim.Render(m.desc)))
+					}
+					valid = true
+					break
 				}
 			}
+			if !valid {
+				RenderErrorBlock("Invalid mode. Use: build, explore, plan, general")
+			}
+		} else {
+			fmt.Println()
+			fmt.Printf("  %s\n\n", R.Bold.Render("Tool Mode"))
+			currentMode := GetCurrentToolMode(apiURL)
+			for _, m := range modes {
+				current := ""
+				if m.key == currentMode {
+					current = " " + R.Success.Render("✓")
+				}
+				fmt.Printf("  %s %s%s\n",
+					R.KeyHint.Render(m.key),
+					R.Dim.Render(m.desc),
+					current,
+				)
+			}
+			fmt.Printf("\n  %s\n", R.Dim.Render("Use /mode <name> to switch"))
 		}
 	case "/redo":
 		lastUser := ""
@@ -519,24 +662,23 @@ func handleSlashCommand(cmd, apiURL, dialogueID string, model string, stream boo
 			}
 		}
 		if lastUser == "" {
-			fmt.Printf("  %s No user message to redo\n", Badge("✗", BadgeError))
+			RenderErrorBlock("No user message to redo")
 		} else {
-			fmt.Printf("  %s Retrying: %s\n", Badge("↻", BadgeStream), StyleDimText.Render(truncateStr(lastUser, 60)))
+			fmt.Printf("  %s\n", RenderStatusLine("retry", truncateStr(lastUser, 60)))
 			fmt.Println()
 			var response string
 			timeout := GetTimeout(cfg)
 			var err error
 			if stream {
-				response, err = runStreamChat(ctx, apiURL, dialogueID, lastUser, model, timeout)
+				response, err = runStreamChat(ctx, apiURL, dialogueID, lastUser, model, timeout, cfg)
 			} else {
 				response, err = runSyncChat(apiURL, dialogueID, lastUser, model)
 			}
 			if err != nil {
 				if ctx.Err() == context.Canceled {
-					fmt.Printf("\n  %s Response interrupted\n", Badge("⏹", BadgeWarning))
+					fmt.Printf("\n  %s\n", R.Warning.Render("⚠ Response interrupted"))
 				} else {
-					errBlock := StyleErrorBlock.Render(fmt.Sprintf(" %v ", err))
-					fmt.Printf("\n  %s\n", errBlock)
+					RenderErrorBlock(fmt.Sprintf("%v", err))
 				}
 			} else if response != "" {
 				if !stream {
@@ -550,25 +692,574 @@ func handleSlashCommand(cmd, apiURL, dialogueID string, model string, stream boo
 				}
 				*history = append(*history, asstMsg)
 			}
-			ShowTurnDivider()
+			RenderTurnDivider()
 		}
 	case "/config":
 		result := RunSettings(cfg, getConfigPath(cfg))
 		if result.Saved && result.Config != nil {
 			cfg = result.Config
 			stream = cfg.Chat.Stream
-			fmt.Printf("  %s Configuration saved\n", Badge("✓", BadgeSuccess))
+			RenderSuccessLine("Configuration saved")
 		}
 	case "/dashboard":
 		action := RunDashboard(apiURL, "")
 		if action.Action == "select_model" && action.Model != "" {
 			model = action.Model
 		}
+	case "/plan":
+		if len(parts) < 2 {
+			RenderInfoLine("Usage: /plan <task description>")
+			break
+		}
+		planInput := strings.Join(parts[1:], " ")
+		planPrompt := fmt.Sprintf(
+			"[PLAN MODE - READ ONLY]\nYou are in plan mode. Analyze the task and create a detailed plan, but do NOT make any code changes.\n"+
+				"Only use read-only tools (read_file, search, list_directory, etc.). Do NOT use write_file, execute_command, or any modifying tools.\n"+
+				"Provide:\n1. Analysis of the current codebase\n2. Step-by-step implementation plan\n3. Files that need to be modified\n4. Potential risks and considerations\n\nTask: %s", planInput)
+		fmt.Printf("  %s\n", RenderToolCallLine("plan", truncateStr(planInput, 45)))
+		fmt.Println()
+		var response string
+		var planErr error
+		timeout := GetTimeout(cfg)
+		if stream {
+			response, planErr = runStreamChat(ctx, apiURL, dialogueID, planPrompt, model, timeout, cfg)
+		} else {
+			response, planErr = runSyncChat(apiURL, dialogueID, planPrompt, model)
+		}
+		if planErr != nil {
+			if ctx.Err() == context.Canceled {
+				fmt.Printf("\n  %s\n", R.Warning.Render("⚠ Plan interrupted"))
+			} else {
+				RenderErrorBlock(fmt.Sprintf("%v", planErr))
+			}
+		} else if response != "" {
+			if !stream {
+				fmt.Print(RenderMarkdown(response))
+			}
+			asstMsg := Message{
+				ID:         GenerateID(),
+				DialogueID: dialogueID,
+				Sender:     "assistant",
+				Content:    response,
+			}
+			*history = append(*history, asstMsg)
+		}
+		RenderTurnDivider()
+	case "/undo":
+		gitStatus, err := exec.Command("git", "status", "--porcelain").Output()
+		if err != nil {
+			RenderErrorBlock("Not a git repository or git not available")
+			break
+		}
+		lines := strings.Split(strings.TrimSpace(string(gitStatus)), "\n")
+		var modified, untracked []string
+		for _, line := range lines {
+			if line == "" {
+				continue
+			}
+			status := strings.TrimSpace(line)
+			path := strings.TrimSpace(status[3:])
+			if strings.HasPrefix(status, "M") || strings.HasPrefix(status, "A") {
+				modified = append(modified, path)
+			} else if strings.HasPrefix(status, "??") {
+				untracked = append(untracked, path)
+			}
+		}
+		if len(modified) == 0 && len(untracked) == 0 {
+			RenderInfoLine("No changes to undo")
+			break
+		}
+		fmt.Println()
+		fmt.Printf("  %s\n\n", R.Bold.Render("Git Changes"))
+		if len(modified) > 0 {
+			fmt.Printf("  %s\n", R.Warning.Render("Modified:"))
+			for _, f := range modified {
+				fmt.Printf("    %s %s\n", R.Dim.Render("│"), R.FilePath.Render(f))
+			}
+		}
+		if len(untracked) > 0 {
+			fmt.Printf("  %s\n", R.Info.Render("Untracked:"))
+			for _, f := range untracked {
+				fmt.Printf("    %s %s\n", R.Dim.Render("│"), R.FilePath.Render(f))
+			}
+		}
+		fmt.Printf("\n  %s\n", R.Dim.Render("/undo all  - revert all modified files"))
+		fmt.Printf("  %s\n", R.Dim.Render("/undo clean - also remove untracked files"))
+		if len(parts) > 1 {
+			switch parts[1] {
+			case "all":
+				for _, f := range modified {
+					if strings.HasPrefix(strings.TrimSpace(string(gitStatus)), "A ") {
+						exec.Command("git", "rm", "--cached", f).Run()
+					}
+					exec.Command("git", "checkout", "--", f).Run()
+				}
+				RenderSuccessLine(fmt.Sprintf("Reverted %d modified files", len(modified)))
+			case "clean":
+				for _, f := range modified {
+					exec.Command("git", "checkout", "--", f).Run()
+				}
+				if len(untracked) > 0 {
+					exec.Command("git", "clean", "-fd").Run()
+				}
+				RenderSuccessLine(fmt.Sprintf("Reverted %d files, cleaned %d untracked", len(modified), len(untracked)))
+			default:
+				RenderErrorBlock(fmt.Sprintf("Unknown option: %s (use 'all' or 'clean')", parts[1]))
+			}
+		}
 	case "/help":
-		printChatHelp()
+		RenderHelp()
+	case "/permissions":
+		fmt.Println()
+		fmt.Printf("  %s\n\n", R.Bold.Render("Permission Mode"))
+		modes := []struct {
+			key   string
+			label string
+			desc  string
+		}{
+			{"allow", "Allow All", "Auto-approve all tool calls"},
+			{"ask", "Ask", "Confirm before risky tool calls"},
+			{"deny", "Deny All", "Block all tool calls"},
+		}
+		for _, m := range modes {
+			current := ""
+			if m.key == cfg.Permissions.Mode {
+				current = " " + R.Success.Render("✓")
+			}
+			fmt.Printf("  %s %s%s\n",
+				R.KeyHint.Render(m.key),
+				R.Dim.Render(m.desc),
+				current,
+			)
+		}
+
+		if len(cfg.Permissions.AutoAllow) > 0 {
+			fmt.Printf("\n  %s\n", R.Bold.Render("Auto-Allow (config)"))
+			for _, t := range cfg.Permissions.AutoAllow {
+				fmt.Printf("  %s %s\n", R.Success.Render("✓"), R.Dim.Render(t))
+			}
+		}
+		if len(cfg.Permissions.AutoDeny) > 0 {
+			fmt.Printf("\n  %s\n", R.Bold.Render("Auto-Deny (config)"))
+			for _, t := range cfg.Permissions.AutoDeny {
+				fmt.Printf("  %s %s\n", R.Error.Render("✗"), R.Dim.Render(t))
+			}
+		}
+		if len(cfg.Permissions.SessionAllow) > 0 {
+			fmt.Printf("\n  %s\n", R.Bold.Render("Session Allow"))
+			for t := range cfg.Permissions.SessionAllow {
+				fmt.Printf("  %s %s\n", R.Success.Render("✓"), R.Dim.Render(t))
+			}
+		}
+		if len(cfg.Permissions.SessionDeny) > 0 {
+			fmt.Printf("\n  %s\n", R.Bold.Render("Session Deny"))
+			for t := range cfg.Permissions.SessionDeny {
+				fmt.Printf("  %s %s\n", R.Error.Render("✗"), R.Dim.Render(t))
+			}
+		}
+
+		fmt.Printf("\n  %s\n", R.Dim.Render("Usage:"))
+		fmt.Printf("  %s\n", R.Dim.Render("  /permissions <mode>      Set mode (allow/ask/deny)"))
+		fmt.Printf("  %s\n", R.Dim.Render("  /permissions allow <tool>  Auto-allow a tool"))
+		fmt.Printf("  %s\n", R.Dim.Render("  /permissions deny <tool>   Auto-deny a tool"))
+		fmt.Printf("  %s\n", R.Dim.Render("  /permissions reset        Clear session decisions"))
+
+		if len(parts) > 1 {
+			switch parts[1] {
+			case "allow":
+				if len(parts) > 2 {
+					tool := parts[2]
+					cfg.Permissions.AutoAllow = append(cfg.Permissions.AutoAllow, tool)
+					RenderSuccessLine(tool + " added to auto-allow")
+				} else {
+					cfg.Permissions.Mode = "allow"
+					fmt.Printf("  %s\n", RenderStatusLine("permission", R.Accent.Render("allow")))
+				}
+			case "ask":
+				cfg.Permissions.Mode = "ask"
+				fmt.Printf("  %s\n", RenderStatusLine("permission", R.Accent.Render("ask")))
+			case "deny":
+				if len(parts) > 2 {
+					tool := parts[2]
+					cfg.Permissions.AutoDeny = append(cfg.Permissions.AutoDeny, tool)
+					RenderSuccessLine(tool + " added to auto-deny")
+				} else {
+					cfg.Permissions.Mode = "deny"
+					fmt.Printf("  %s\n", RenderStatusLine("permission", R.Accent.Render("deny")))
+				}
+			case "reset":
+				cfg.Permissions.SessionAllow = make(map[string]bool)
+				cfg.Permissions.SessionDeny = make(map[string]bool)
+				RenderSuccessLine("Session permissions reset")
+			default:
+				RenderErrorBlock("Unknown option. Use: allow, ask, deny, reset")
+			}
+		}
+	case "/fork":
+		name := "branch"
+		if len(parts) > 1 {
+			name = parts[1]
+		}
+		branchPoint := len(*history)
+		result, err := ForkSession(apiURL, dialogueID, "cli-user", name, branchPoint)
+		if err != nil {
+			RenderErrorBlock(fmt.Sprintf("Failed to fork session: %v", err))
+		} else {
+			RenderSuccessLine(fmt.Sprintf("Forked session at message %d as %s", branchPoint, name))
+			if id, ok := result["id"]; ok {
+				fmt.Printf("  %s\n", RenderStatusLine("branch", fmt.Sprintf("%v", id)))
+			}
+		}
+	case "/branches":
+		branches, err := ListBranches(apiURL, dialogueID)
+		if err != nil || len(branches) == 0 {
+			RenderInfoLine("No branches found")
+			break
+		}
+		fmt.Println()
+		fmt.Printf("  %s\n\n", R.Bold.Render("Session Branches"))
+		for _, b := range branches {
+			name, _ := b["name"].(string)
+			isActive, _ := b["is_active"].(bool)
+			point, _ := b["branch_point"].(float64)
+			active := ""
+			if isActive {
+				active = " " + R.Success.Render("✓")
+			}
+			fmt.Printf("  %s point:%.0f%s\n",
+				R.Accent.Render(name),
+				point,
+				active,
+			)
+		}
+	case "/memories":
+		if len(parts) > 2 && parts[1] == "add" {
+			key := parts[2]
+			value := strings.Join(parts[3:], " ")
+			if value == "" {
+				RenderInfoLine("Usage: /memories add <key> <value>")
+				break
+			}
+			_, err := RememberPersistent(apiURL, "cli-user", "preference", key, value)
+			if err != nil {
+				RenderErrorBlock(fmt.Sprintf("Failed to save memory: %v", err))
+			} else {
+				RenderSuccessLine(fmt.Sprintf("Remembered: %s = %s", key, truncateStr(value, 50)))
+			}
+			break
+		}
+		memories, err := GetPersistentMemories(apiURL, "cli-user")
+		if err != nil || len(memories) == 0 {
+			RenderInfoLine("No memories stored")
+			break
+		}
+		fmt.Println()
+		fmt.Printf("  %s\n\n", R.Bold.Render("Persistent Memories"))
+		for _, m := range memories {
+			cat, _ := m["category"].(string)
+			key, _ := m["key"].(string)
+			value, _ := m["value"].(string)
+			fmt.Printf("  %s\n", RenderStatusLine(cat, key, truncateStr(value, 50)))
+		}
+	case "/memory":
+		if len(parts) > 1 {
+			switch parts[1] {
+			case "init":
+				if err := InitProjectMemory(); err != nil {
+					RenderErrorBlock(fmt.Sprintf("Failed: %v", err))
+				} else {
+					RenderSuccessLine("OPENAIDE.md created in project root")
+				}
+			case "save":
+				if len(parts) < 4 {
+					RenderInfoLine("Usage: /memory save <type> <content>")
+					RenderInfoLine("Types: user, feedback, project, reference")
+					break
+				}
+				memType := parts[2]
+				content := strings.Join(parts[3:], " ")
+				entry := MemoryEntry{
+					Name:        sanitizeName(content),
+					Description: truncateStr(content, 80),
+					Type:        MemoryType(memType),
+					Content:     content,
+					CreatedAt:   time.Now(),
+					UpdatedAt:   time.Now(),
+				}
+				if err := SaveMemoryEntry(entry); err != nil {
+					RenderErrorBlock(fmt.Sprintf("Failed: %v", err))
+				} else {
+					RenderSuccessLine("Memory saved: " + truncateStr(content, 50))
+				}
+			case "search":
+				if len(parts) < 3 {
+					RenderInfoLine("Usage: /memory search <query>")
+					break
+				}
+				query := strings.Join(parts[2:], " ")
+				memories, err := FetchRelevantMemories(apiURL, query, 5)
+				if err != nil || len(memories) == 0 {
+					RenderInfoLine("No relevant memories found")
+					break
+				}
+				fmt.Println()
+				fmt.Printf("  %s\n\n", R.Bold.Render("Relevant Memories"))
+				for _, m := range memories {
+					content, _ := m["content"].(string)
+					memType, _ := m["type"].(string)
+					fmt.Printf("  %s %s\n",
+						R.Dim.Render("["+memType+"]"),
+						R.Dim.Render(truncateStr(content, 80)))
+				}
+			case "extract":
+				if dialogueID == "" {
+					RenderErrorBlock("No active conversation")
+					break
+				}
+				fmt.Printf("  %s\n", RenderToolCallLine("memory", "extracting from conversation..."))
+				if err := TriggerMemoryExtraction(apiURL, dialogueID); err != nil {
+					RenderErrorBlock(fmt.Sprintf("Extraction failed: %v", err))
+				} else {
+					fmt.Println(RenderToolResultLine("memory", true, 0))
+				}
+			case "delete":
+				if len(parts) < 3 {
+					RenderInfoLine("Usage: /memory delete <name>")
+					break
+				}
+				if err := DeleteMemoryEntry(parts[2]); err != nil {
+					RenderErrorBlock(fmt.Sprintf("Failed: %v", err))
+				} else {
+					RenderSuccessLine("Memory deleted: " + parts[2])
+				}
+			default:
+				RenderInfoLine("Usage: /memory [init|save|search|extract|delete]")
+			}
+		} else {
+			fmt.Println()
+			fmt.Printf("  %s\n\n", R.Bold.Render("Memory"))
+
+			if content, err := os.ReadFile(claudeMDPath()); err == nil {
+				lines := strings.Count(string(content), "\n") + 1
+				fmt.Printf("  %s %s\n", R.Success.Render("✓"), R.Dim.Render(fmt.Sprintf("OPENAIDE.md (%d lines)", lines)))
+			} else {
+				fmt.Printf("  %s %s\n", R.Dim.Render("│"), R.Dim.Render("No OPENAIDE.md (use /memory init)"))
+			}
+
+			entries := LoadMemoryEntries()
+			if len(entries) > 0 {
+				fmt.Printf("\n  %s\n", R.Bold.Render("Local Memories"))
+				for _, e := range entries {
+					fmt.Printf("  %s %s %s\n",
+						R.Dim.Render("["+string(e.Type)+"]"),
+						R.Accent.Render(e.Name),
+						R.Dim.Render(truncateStr(e.Description, 50)))
+				}
+			}
+
+			memories, _ := GetPersistentMemories(apiURL, "cli-user")
+			if len(memories) > 0 {
+				fmt.Printf("\n  %s\n", R.Bold.Render("Server Memories"))
+				for _, m := range memories {
+					cat, _ := m["category"].(string)
+					key, _ := m["key"].(string)
+					value, _ := m["value"].(string)
+					fmt.Printf("  %s %s\n",
+						R.Dim.Render("["+cat+"]"),
+						R.Dim.Render(key+": "+truncateStr(value, 50)))
+				}
+			}
+
+			fmt.Printf("\n  %s\n", R.Dim.Render("Commands: init, save, search, extract, delete"))
+		}
+	case "/skill":
+		if len(parts) > 1 {
+			switch parts[1] {
+			case "create":
+				if len(parts) < 3 {
+					RenderInfoLine("Usage: /skill create <name> <description>")
+					break
+				}
+				name := parts[2]
+				desc := ""
+				if len(parts) > 3 {
+					desc = strings.Join(parts[3:], " ")
+				}
+				if err := CreateSkill(name, desc, "# "+name+"\n\nDescribe the workflow steps here."); err != nil {
+					RenderErrorBlock(fmt.Sprintf("Failed: %v", err))
+				} else {
+					RenderSuccessLine("Skill created: " + name)
+				}
+			default:
+				skill := LoadSkill(parts[1])
+				if skill == nil {
+					RenderErrorBlock("Skill not found: " + parts[1])
+					break
+				}
+				skillInput := skill.Content
+				if len(parts) > 2 {
+					args := strings.Join(parts[2:], " ")
+					skillInput = strings.ReplaceAll(skillInput, "{{args}}", args)
+					skillInput = strings.ReplaceAll(skillInput, "{{input}}", args)
+				}
+				wd, _ := os.Getwd()
+				skillInput = strings.ReplaceAll(skillInput, "{{cwd}}", wd)
+				fmt.Printf("  %s\n", RenderToolCallLine("skill:"+skill.Name, truncateStr(skill.Description, 45)))
+				fmt.Println()
+				var response string
+				var skillErr error
+				timeout := GetTimeout(cfg)
+				if stream {
+					response, skillErr = runStreamChat(ctx, apiURL, dialogueID, skillInput, model, timeout, cfg)
+				} else {
+					response, skillErr = runSyncChat(apiURL, dialogueID, skillInput, model)
+				}
+				if skillErr != nil {
+					if ctx.Err() == context.Canceled {
+						fmt.Printf("\n  %s\n", R.Warning.Render("⚠ Skill interrupted"))
+					} else {
+						RenderErrorBlock(fmt.Sprintf("%v", skillErr))
+					}
+				} else if response != "" {
+					if !stream {
+						fmt.Print(RenderMarkdown(response))
+					}
+					asstMsg := Message{
+						ID:         GenerateID(),
+						DialogueID: dialogueID,
+						Sender:     "assistant",
+						Content:    response,
+					}
+					*history = append(*history, asstMsg)
+				}
+				RenderTurnDivider()
+			}
+		} else {
+			skills := LoadSkills()
+			RenderSkillList(skills)
+		}
+	case "/feedback":
+		if len(parts) < 2 {
+			RenderInfoLine("Usage: /feedback <positive|negative> [comment]")
+			break
+		}
+		fbType := parts[1]
+		if fbType != "positive" && fbType != "negative" {
+			RenderInfoLine("Type must be: positive or negative")
+			break
+		}
+		comment := ""
+		if len(parts) > 2 {
+			comment = strings.Join(parts[2:], " ")
+		}
+		if err := SaveFeedback(apiURL, dialogueID, "", fbType, comment); err != nil {
+			RenderErrorBlock(fmt.Sprintf("Failed: %v", err))
+		} else {
+			icon := "👍"
+			if fbType == "negative" {
+				icon = "👎"
+			}
+			RenderSuccessLine(icon + " Feedback recorded (" + fbType + ")")
+		}
+	case "/cost":
+		days := 30
+		if len(parts) > 1 {
+			if d, err := fmt.Sscanf(parts[1], "%d", &days); err != nil || d != 1 {
+				days = 30
+			}
+		}
+		summary, err := GetCostSummary(apiURL, "cli-user", days)
+		if err != nil {
+			RenderErrorBlock(fmt.Sprintf("Failed to get cost summary: %v", err))
+			break
+		}
+		fmt.Println()
+		fmt.Printf("  %s\n\n", R.Bold.Render(fmt.Sprintf("Cost Summary (last %d days)", days)))
+		if totalCost, ok := summary["total_cost_usd"].(float64); ok {
+			fmt.Printf("  %s\n", RenderStatusLine("total", fmt.Sprintf("$%.4f", totalCost)))
+		}
+		if totalReqs, ok := summary["total_requests"].(int64); ok {
+			fmt.Printf("  %s\n", RenderStatusLine("requests", fmt.Sprintf("%d", totalReqs)))
+		} else if totalReqs, ok := summary["total_requests"].(float64); ok {
+			fmt.Printf("  %s\n", RenderStatusLine("requests", fmt.Sprintf("%.0f", totalReqs)))
+		}
+		if totalTokens, ok := summary["total_tokens"].(int64); ok {
+			fmt.Printf("  %s\n", RenderStatusLine("tokens", formatTokenCount(int(totalTokens))))
+		} else if totalTokens, ok := summary["total_tokens"].(float64); ok {
+			fmt.Printf("  %s\n", RenderStatusLine("tokens", formatTokenCount(int(totalTokens))))
+		}
+		if successRate, ok := summary["success_rate"].(float64); ok && successRate > 0 {
+			fmt.Printf("  %s\n", RenderStatusLine("success", fmt.Sprintf("%.1f%%", successRate)))
+		}
+		if byModel, ok := summary["by_model"].([]interface{}); ok && len(byModel) > 0 {
+			fmt.Printf("\n  %s\n", R.Bold.Render("By Model"))
+			for _, m := range byModel {
+				if mMap, ok := m.(map[string]interface{}); ok {
+					modelID, _ := mMap["model_id"].(string)
+					reqCount, _ := mMap["request_count"].(int64)
+					if reqCount == 0 {
+						if rc, ok := mMap["request_count"].(float64); ok {
+							reqCount = int64(rc)
+						}
+					}
+					cost, _ := mMap["total_cost"].(float64)
+					fmt.Printf("  %s\n", RenderStatusLine(modelID, fmt.Sprintf("%d reqs", reqCount), fmt.Sprintf("$%.4f", cost)))
+				}
+			}
+		}
 	default:
-		fmt.Printf("  %s Unknown command: %s\n", Badge("✗", BadgeError), parts[0])
-		fmt.Printf("  Type %s for available commands\n", StyleKeyHint.Render("/help"))
+		if strings.HasPrefix(parts[0], "/") && !strings.HasPrefix(parts[0], "/ ") {
+			cmdName := parts[0][1:]
+			customPrompt := loadCustomCommand(cmdName)
+			if customPrompt != "" {
+				args := ""
+				if len(parts) > 1 {
+					args = strings.Join(parts[1:], " ")
+				}
+				fullPrompt := customPrompt
+				if args != "" {
+					fullPrompt = strings.ReplaceAll(customPrompt, "{{args}}", args)
+					fullPrompt = strings.ReplaceAll(fullPrompt, "{{input}}", args)
+				}
+				wd, _ := os.Getwd()
+				fullPrompt = strings.ReplaceAll(fullPrompt, "{{cwd}}", wd)
+				fmt.Printf("  %s\n", RenderToolCallLine(cmdName, "running custom command..."))
+				fmt.Println()
+				var response string
+				var cmdErr error
+				timeout := GetTimeout(cfg)
+				if stream {
+					response, cmdErr = runStreamChat(ctx, apiURL, dialogueID, fullPrompt, model, timeout, cfg)
+				} else {
+					response, cmdErr = runSyncChat(apiURL, dialogueID, fullPrompt, model)
+				}
+				if cmdErr != nil {
+					if ctx.Err() == context.Canceled {
+						fmt.Printf("\n  %s\n", R.Warning.Render("✗ Interrupted"))
+					} else {
+						RenderErrorBlock(fmt.Sprintf("%v", cmdErr))
+					}
+				} else if response != "" {
+					if !stream {
+						fmt.Print(RenderMarkdown(response))
+					}
+					asstMsg := Message{
+						ID:         GenerateID(),
+						DialogueID: dialogueID,
+						Sender:     "assistant",
+						Content:    response,
+					}
+					*history = append(*history, asstMsg)
+				}
+				RenderTurnDivider()
+			} else {
+				RenderErrorBlock("Unknown command: " + parts[0])
+				fmt.Printf("  %s\n", R.Dim.Render("Type /help for available commands"))
+			}
+		} else {
+			RenderErrorBlock("Unknown command: " + parts[0])
+			fmt.Printf("  %s\n", R.Dim.Render("Type /help for available commands"))
+		}
 	}
 
 	return newDialogueID, model, stream
@@ -580,123 +1271,6 @@ func getConfigPath(cfg *Config) string {
 		return ""
 	}
 	return homeDir + "/.openaide/config.yaml"
-}
-
-func renderWelcome(apiURL, model string, stream bool) {
-	fmt.Println()
-
-	logoStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(ColorPrimary)
-
-	logo := `
-  ┌──────────────────────────┐
-  │   ▄▄▄▄ ▄▄   ▄▄ ▄▄▄▄▄   │
-  │  █    ██   ██   █       │
-  │  █    ██   ██   █▄▄▄    │
-  │  █    ██   ██   █       │
-  │  ▀▄▄▄█ ▀▀██▀▀  ▀▄▄▄▄▄  │
-  └──────────────────────────┘`
-	fmt.Println(logoStyle.Render(logo))
-
-	fmt.Println()
-
-	fmt.Printf("  %s %s\n", StyleSectionLabel.Render("API  "), StyleSectionValue.Render(apiURL))
-	if model != "" {
-		fmt.Printf("  %s %s\n", StyleSectionLabel.Render("Model"), Badge(model, BadgeModel))
-	} else {
-		fmt.Printf("  %s %s\n", StyleSectionLabel.Render("Model"), StyleWarning.Render("(auto - no enabled model found)"))
-	}
-	if stream {
-		fmt.Printf("  %s %s\n", StyleSectionLabel.Render("Mode "), Badge("streaming", BadgeStream))
-	} else {
-		fmt.Printf("  %s %s\n", StyleSectionLabel.Render("Mode "), Badge("sync", BadgeTime))
-	}
-
-	fmt.Println()
-	fmt.Println(StyleDimText.Render("  /help for commands · !cmd to execute · Tab to autocomplete · Enter empty line to send"))
-	fmt.Println()
-}
-
-func renderGoodbye() {
-	fmt.Printf("\n  %s %s\n", Badge("bye", BadgeModel), StyleMuted.Render("See you next time!"))
-}
-
-func printChatHelp() {
-	fmt.Println()
-
-	header := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(ColorPrimary).
-		MarginBottom(1)
-	fmt.Printf("  %s\n\n", header.Render("Commands"))
-
-	commands := []struct {
-		key  string
-		desc string
-	}{
-		{"/new", "Start a new conversation"},
-		{"/help", "Show this help"},
-		{"/model", "Interactive model selector"},
-		{"/model <name>", "Set model directly"},
-		{"/stream", "Toggle streaming (on/off)"},
-		{"/compact", "Compress conversation context"},
-		{"/clear", "Clear conversation context"},
-		{"/history", "Show message history"},
-		{"/copy", "Copy last response to clipboard"},
-		{"/redo", "Retry last user message"},
-		{"/cd <dir>", "Change working directory"},
-		{"/config", "Open settings wizard"},
-		{"/dashboard", "Open dashboard"},
-		{"!command", "Execute shell command directly"},
-		{"exit, /exit", "Exit chat session"},
-	}
-
-	for _, cmd := range commands {
-		fmt.Printf("  %s  %s\n",
-			Badge(cmd.key, BadgeKeyHint),
-			StyleDescHint.Render(cmd.desc))
-	}
-	fmt.Printf("\n  %s\n", StyleDimText.Render("Tip: Tab to autocomplete · !cmd to execute shell · Enter empty line to send · Paste multi-line code directly"))
-	fmt.Println()
-}
-
-func PrintModelList(apiURL string) {
-	models, err := FetchModels(apiURL)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to fetch models: %v\n", err)
-		return
-	}
-
-	fmt.Println()
-	fmt.Printf("  %s\n\n", StyleBold.Render("Available Models"))
-
-	for _, m := range models {
-		if m.Status != "enabled" {
-			continue
-		}
-		provider := StyleMuted.Render(fmt.Sprintf("[%s]", m.Provider))
-		fmt.Printf("  %s %s  %s\n",
-			Badge("●", BadgeSuccess),
-			StyleBold.Render(m.Name),
-			provider)
-	}
-	fmt.Println()
-}
-
-func ShowConfig(cfg *Config, path string) {
-	fmt.Println()
-	fmt.Printf("  %s %s\n\n", StyleSectionLabel.Render("Config"), StyleSectionValue.Render(path))
-
-	fmt.Printf("  %s\n", StyleBold.Render("API Configuration"))
-	fmt.Printf("  %s\n", LabeledLine("Base URL", cfg.API.BaseURL))
-	fmt.Printf("  %s\n", LabeledLine("Timeout", fmt.Sprintf("%d seconds", cfg.API.TimeoutSec)))
-
-	fmt.Println()
-	fmt.Printf("  %s\n", StyleBold.Render("Chat Configuration"))
-	fmt.Printf("  %s\n", LabeledLine("Default Model", cfg.Chat.DefaultModel))
-	fmt.Printf("  %s\n", LabeledLine("Streaming", fmt.Sprintf("%v", cfg.Chat.Stream)))
-	fmt.Printf("  %s\n", LabeledLine("Context Limit", fmt.Sprintf("%d", cfg.Chat.ContextLimit)))
 }
 
 func initReadline() {
@@ -728,11 +1302,51 @@ var slashCommandCompleter = readline.NewPrefixCompleter(
 		readline.PcItem("on"),
 		readline.PcItem("off"),
 	),
-	readline.PcItem("/clear"),
 	readline.PcItem("/compact"),
+	readline.PcItem("/context"),
+	readline.PcItem("/chapters"),
+	readline.PcItem("/clear"),
+	readline.PcItem("/mode",
+		readline.PcItem("build"),
+		readline.PcItem("explore"),
+		readline.PcItem("plan"),
+		readline.PcItem("general"),
+	),
+	readline.PcItem("/sessions"),
 	readline.PcItem("/history"),
 	readline.PcItem("/copy"),
 	readline.PcItem("/redo"),
+	readline.PcItem("/plan"),
+	readline.PcItem("/undo",
+		readline.PcItem("all"),
+		readline.PcItem("clean"),
+	),
+	readline.PcItem("/permissions",
+		readline.PcItem("allow"),
+		readline.PcItem("ask"),
+		readline.PcItem("deny"),
+		readline.PcItem("reset"),
+	),
+	readline.PcItem("/fork"),
+	readline.PcItem("/branches"),
+	readline.PcItem("/memories",
+		readline.PcItem("add"),
+	),
+	readline.PcItem("/memory",
+		readline.PcItem("init"),
+		readline.PcItem("save"),
+		readline.PcItem("search"),
+		readline.PcItem("extract"),
+		readline.PcItem("delete"),
+	),
+	readline.PcItem("/skill",
+		readline.PcItem("create"),
+	),
+	readline.PcItem("/feedback",
+		readline.PcItem("positive"),
+		readline.PcItem("negative"),
+	),
+	readline.PcItem("/cost"),
 	readline.PcItem("/cd"),
 	readline.PcItem("/config"),
 	readline.PcItem("/dashboard"),
@@ -742,7 +1356,7 @@ var slashCommandCompleter = readline.NewPrefixCompleter(
 
 func readLine() (string, error) {
 	if rl != nil {
-		rl.SetPrompt(StylePromptArrow.Render("❯ "))
+		rl.SetPrompt(R.PromptArrow.Render("▶"))
 		line, err := rl.Readline()
 		if err != nil {
 			return "", err
@@ -754,13 +1368,13 @@ func readLine() (string, error) {
 		if strings.HasPrefix(line, "/") || line == "exit" || line == "quit" {
 			return line, nil
 		}
-		if strings.Contains(line, "\n") {
+		if !strings.Contains(line, "\n") {
 			return line, nil
 		}
 		var lines []string
 		lines = append(lines, line)
 		for {
-			rl.SetPrompt(StyleDimText.Render("│ "))
+			rl.SetPrompt(R.Dim.Render("…"))
 			nextLine, err := rl.Readline()
 			if err != nil {
 				if err == readline.ErrInterrupt {
@@ -835,7 +1449,7 @@ func copyToClipboard(text string) error {
 }
 
 func executeShellCommand(ctx context.Context, apiURL, dialogueID, model, command string) {
-	fmt.Printf("  %s %s\n", Badge("exec", BadgeTool), StyleCommand.Render("$ "+command))
+	fmt.Println(RenderToolCallLine("shell", "$ "+command))
 	reqBody := map[string]interface{}{
 		"user_id":     "cli-user",
 		"content":     fmt.Sprintf("执行命令: %s", command),
@@ -843,19 +1457,19 @@ func executeShellCommand(ctx context.Context, apiURL, dialogueID, model, command
 		"dialogue_id": dialogueID,
 		"options": map[string]interface{}{
 			"tool_filter": []string{"execute_command"},
-			"system":      fmt.Sprintf("用户要求直接执行命令，请调用 execute_command 工具执行以下命令，不需要确认：\n%s\n执行后展示结果即可，不需要额外解释。", command),
+			"system":      fmt.Sprintf("用户要求直接执行命令，请调用 execute_command 工具执行以下命令，不需要确认：\n%s\n执行后展示结果即可，不需要额外解释…", command),
 		},
 	}
 
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
-		fmt.Printf("  %s Failed: %v\n", Badge("✗", BadgeError), err)
+		RenderErrorBlock(fmt.Sprintf("Failed: %v", err))
 		return
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", apiURL+"/chat/route", strings.NewReader(string(jsonData)))
 	if err != nil {
-		fmt.Printf("  %s Failed: %v\n", Badge("✗", BadgeError), err)
+		RenderErrorBlock(fmt.Sprintf("Failed: %v", err))
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -865,14 +1479,14 @@ func executeShellCommand(ctx context.Context, apiURL, dialogueID, model, command
 	client := &http.Client{Timeout: 120 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		fmt.Printf("  %s Failed: %v\n", Badge("✗", BadgeError), err)
+		RenderErrorBlock(fmt.Sprintf("Failed: %v", err))
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		fmt.Printf("  %s Error: %s\n", Badge("✗", BadgeError), string(body))
+		RenderErrorBlock(string(body))
 		return
 	}
 
@@ -900,22 +1514,13 @@ func executeShellCommand(ctx context.Context, apiURL, dialogueID, model, command
 				tool, _ := chunk["tool"].(string)
 				params, _ := chunk["params"].(string)
 				detail := parseToolDetail(tool, params)
-				fmt.Printf("  %s %s %s\n", Badge("tool", BadgeTool), StyleToolName.Render(tool), detail)
+				fmt.Println(RenderToolCallLine(tool, detail))
 			case "tool_done":
+				tool, _ := chunk["tool"].(string)
 				result, _ := chunk["result"].(string)
+				fmt.Println(RenderToolResultLine(tool, true, 0))
 				if result != "" {
-					lines := strings.Split(result, "\n")
-					maxLines := 20
-					for i, l := range lines {
-						if i >= maxLines {
-							fmt.Printf("  %s %s\n", StyleMuted.Render("│"), StyleDimText.Render(fmt.Sprintf("... +%d more lines", len(lines)-maxLines)))
-							break
-						}
-						if l == "" {
-							continue
-						}
-						fmt.Printf("  %s %s\n", StyleMuted.Render("│"), StyleOutput.Render(truncateStr(l, 120)))
-					}
+					RenderToolResultOutput(result, 20)
 				}
 			case "content":
 				if content, ok := chunk["content"].(string); ok {
@@ -933,3 +1538,283 @@ func RestoreReadline() {
 	closeReadline()
 	initReadline()
 }
+
+var fileRefPattern = regexp.MustCompile(`@([\w./\-]+\.[\w]+)`)
+
+func expandFileReferences(input string) string {
+	matches := fileRefPattern.FindAllStringSubmatchIndex(input, -1)
+	if len(matches) == 0 {
+		return input
+	}
+
+	var result strings.Builder
+	lastEnd := 0
+	for _, match := range matches {
+		result.WriteString(input[lastEnd:match[2]])
+		filePath := input[match[2]:match[3]]
+
+		absPath := filePath
+		if !filepath.IsAbs(filePath) {
+			absPath = filepath.Join(".", filePath)
+		}
+
+		content, err := os.ReadFile(absPath)
+		if err != nil {
+			result.WriteString(fmt.Sprintf("@%s", filePath))
+			fmt.Printf("  %s\n", R.Warning.Render("⚠ Cannot read @"+filePath+": "+err.Error()))
+		} else {
+			ext := filepath.Ext(filePath)
+			lang := strings.TrimPrefix(ext, ".")
+			result.WriteString(fmt.Sprintf("<file path=\"%s\">\n```%s\n%s\n```\n</file>", filePath, lang, string(content)))
+			lineCount := strings.Count(string(content), "\n") + 1
+			fmt.Println(RenderToolResultLine("read_file", true, 0))
+			fmt.Printf("  %s\n", RenderStatusLine("attached", filePath, fmt.Sprintf("%d lines", lineCount)))
+		}
+		lastEnd = match[3]
+	}
+	result.WriteString(input[lastEnd:])
+	return result.String()
+}
+
+func loadCustomCommand(name string) string {
+	searchPaths := []string{
+		".openaide/commands",
+	}
+	homeDir, _ := os.UserHomeDir()
+	if homeDir != "" {
+		searchPaths = append(searchPaths, homeDir+"/.openaide/commands")
+	}
+	for _, dir := range searchPaths {
+		for _, ext := range []string{".md", ".txt", ".prompt"} {
+			filePath := filepath.Join(dir, name+ext)
+			content, err := os.ReadFile(filePath)
+			if err == nil {
+				return strings.TrimSpace(string(content))
+			}
+		}
+	}
+	return ""
+}
+
+func checkToolPermission(tool string, cfg *Config) (bool, bool) {
+	if cfg.Permissions.SessionAllow == nil {
+		cfg.Permissions.SessionAllow = make(map[string]bool)
+	}
+	if cfg.Permissions.SessionDeny == nil {
+		cfg.Permissions.SessionDeny = make(map[string]bool)
+	}
+
+	if cfg.Permissions.SessionAllow[tool] {
+		return true, false
+	}
+	if cfg.Permissions.SessionDeny[tool] {
+		return false, false
+	}
+
+	for _, t := range cfg.Permissions.AutoAllow {
+		if t == tool {
+			return true, false
+		}
+	}
+	for _, t := range cfg.Permissions.AutoDeny {
+		if t == tool {
+			return false, false
+		}
+	}
+
+	mode := cfg.Permissions.Mode
+	if mode == "" || mode == "allow" {
+		return true, false
+	}
+	if mode == "deny" {
+		return false, true
+	}
+	if mode == "ask" {
+		readOnlyTools := map[string]bool{
+			"read_file": true, "search_files": true, "list_directory": true,
+			"get_file_info": true, "search_code": true, "grep": true,
+			"find": true, "cat": true, "ls": true, "head": true,
+			"web_search": true, "web_fetch": true,
+		}
+		if readOnlyTools[tool] {
+			return true, false
+		}
+		return false, true
+	}
+	return true, false
+}
+
+func riskLevelForTool(tool string) string {
+	highRisk := map[string]bool{
+		"execute_command": true, "run_command": true, "shell": true, "bash": true,
+		"delete_file": true, "rm": true,
+	}
+	mediumRisk := map[string]bool{
+		"write_file": true, "edit_file": true, "create_file": true,
+		"move_file": true, "apply_patch": true,
+	}
+	if highRisk[tool] {
+		return "high"
+	}
+	if mediumRisk[tool] {
+		return "medium"
+	}
+	return "low"
+}
+
+func promptToolConfirmation(tool, params string) bool {
+	risk := riskLevelForTool(tool)
+
+	prefix := R.Border.Render("│")
+	fmt.Printf("\n  %s %s\n", prefix, R.Warning.Render("⚠ Tool call requires confirmation"))
+
+	emoji := toolEmoji(tool)
+	verb := toolVerb(tool)
+	verbStr := padVerb(verb, verbWidth)
+
+	var riskLabel string
+	switch risk {
+	case "high":
+		riskLabel = R.Error.Render("▲ HIGH")
+	case "medium":
+		riskLabel = R.Warning.Render("● MEDIUM")
+	default:
+		riskLabel = R.Info.Render("◽ LOW")
+	}
+
+	fmt.Printf("  %s %s %s %s %s\n",
+		prefix, emoji, R.ToolTitle.Render(verbStr), riskLabel, R.Dim.Render(tool))
+
+	detail := parseToolDetail(tool, params)
+	if detail != "" {
+		fmt.Printf("  %s %s %s\n",
+			prefix, R.Dim.Render("│"), R.Dim.Render(truncateStr(detail, 80)))
+	}
+
+	switch tool {
+	case "execute_command", "run_command", "shell", "bash":
+		var p map[string]interface{}
+		if json.Unmarshal([]byte(params), &p) == nil {
+			if cmd, ok := p["command"].(string); ok {
+				fmt.Printf("  %s %s %s\n",
+					prefix, R.Dim.Render("│"), R.Command.Render(truncateStr(cmd, 100)))
+			}
+		}
+	case "write_file", "edit_file", "create_file":
+		var p map[string]interface{}
+		if json.Unmarshal([]byte(params), &p) == nil {
+			if path, ok := p["path"].(string); ok {
+				if path == "" {
+					path, _ = p["file_path"].(string)
+				}
+				if path != "" {
+					fmt.Printf("  %s %s %s\n",
+						prefix, R.Dim.Render("│"), R.FilePath.Render(path))
+				}
+			}
+			if content, ok := p["content"].(string); ok && content != "" {
+				lines := strings.Split(content, "\n")
+				preview := 3
+				if len(lines) < preview {
+					preview = len(lines)
+				}
+				for i := 0; i < preview; i++ {
+					fmt.Printf("  %s %s %s\n",
+						prefix, R.Dim.Render("│"), R.Dim.Render(truncateStr(lines[i], 80)))
+				}
+				if len(lines) > preview {
+					fmt.Printf("  %s %s %s\n",
+						prefix, R.Dim.Render("│"), R.Dim.Render(fmt.Sprintf("…+%d more lines", len(lines)-preview)))
+				}
+			}
+		}
+	}
+
+	fmt.Printf("  %s\n", prefix)
+	fmt.Printf("  %s %s %s %s\n",
+		prefix,
+		R.KeyHint.Render("[y]"),
+		R.Dim.Render("Yes"),
+		R.Dim.Render("· [n] No (default)"))
+	fmt.Printf("  %s %s %s %s\n",
+		prefix,
+		R.KeyHint.Render("[a]"),
+		R.Dim.Render("Always allow"),
+		R.Dim.Render("(session)"))
+	fmt.Printf("  %s %s %s %s\n",
+		prefix,
+		R.KeyHint.Render("[d]"),
+		R.Dim.Render("Always deny"),
+		R.Dim.Render("(session)"))
+
+	fmt.Printf("  %s ", R.Warning.Render("Allow?"))
+	var answer string
+	fmt.Scanln(&answer)
+	answer = strings.ToLower(strings.TrimSpace(answer))
+
+	switch answer {
+	case "y", "yes":
+		return true
+	case "a", "always":
+		if currentConfig != nil {
+			if currentConfig.Permissions.SessionAllow == nil {
+				currentConfig.Permissions.SessionAllow = make(map[string]bool)
+			}
+			currentConfig.Permissions.SessionAllow[tool] = true
+		}
+		RenderSuccessLine(tool + " allowed for this session")
+		return true
+	case "d", "deny":
+		if currentConfig != nil {
+			if currentConfig.Permissions.SessionDeny == nil {
+				currentConfig.Permissions.SessionDeny = make(map[string]bool)
+			}
+			currentConfig.Permissions.SessionDeny[tool] = true
+		}
+		fmt.Printf("  %s\n", R.Error.Render("🚫 "+tool+" denied for this session"))
+		return false
+	default:
+		return false
+	}
+}
+
+func PrintModelList(apiURL string) {
+	models, err := FetchModels(apiURL)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to fetch models: %v\n", err)
+		return
+	}
+
+	fmt.Println()
+	fmt.Printf("  %s\n\n", R.Bold.Render("Available Models"))
+
+	for _, m := range models {
+		if m.Status != "enabled" {
+			continue
+		}
+		provider := R.Dim.Render(fmt.Sprintf("[%s]", m.Provider))
+		fmt.Printf("  %s %s  %s\n",
+			R.Success.Render("✓"),
+			R.Bold.Render(m.Name),
+			provider)
+	}
+	fmt.Println()
+}
+
+func ShowConfig(cfg *Config, path string) {
+	fmt.Println()
+	fmt.Printf("  %s %s\n\n", R.Dim.Render("Config"), R.Dim.Render(path))
+
+	fmt.Printf("  %s\n", R.Bold.Render("API Configuration"))
+	fmt.Printf("  %s\n", RenderStatusLine("base URL", cfg.API.BaseURL))
+	fmt.Printf("  %s\n", RenderStatusLine("timeout", fmt.Sprintf("%d seconds", cfg.API.TimeoutSec)))
+
+	fmt.Println()
+	fmt.Printf("  %s\n", R.Bold.Render("Chat Configuration"))
+	fmt.Printf("  %s\n", RenderStatusLine("default model", cfg.Chat.DefaultModel))
+	fmt.Printf("  %s\n", RenderStatusLine("streaming", fmt.Sprintf("%v", cfg.Chat.Stream)))
+	fmt.Printf("  %s\n", RenderStatusLine("context limit", fmt.Sprintf("%d", cfg.Chat.ContextLimit)))
+}
+
+// unused but kept for compatibility
+var _ = lipgloss.Color("")

@@ -154,6 +154,27 @@ type Application struct {
 	PatternDetector           *services.PatternDetector
 	UserFeedbackCollector     *services.UserFeedbackCollector
 	ActivityTracker           *services.ActivityTracker
+
+	// 融合服务
+	ExecPolicySvc         *services.ExecPolicyService
+	HookEngine            *services.HookEngine
+	PersistentMemorySvc   *services.PersistentMemoryService
+	SessionBranchSvc      *services.SessionBranchService
+	WorkflowSvc2              *services.WorkflowService2
+	StructuredCompactionSvc   *services.StructuredCompactionService
+	SmartToolSelector         *services.SmartToolSelector
+	ConsensusPlanner          *services.ConsensusPlanner
+	GuardianSvc               *services.GuardianService
+	ProgressiveSkillLoader    *services.ProgressiveSkillLoader
+	DeepInterviewSvc          *services.DeepInterviewService
+	ToolCallGuardrail         *services.ToolCallGuardrail
+	KeyInfoExtractor          *services.KeyInfoExtractor
+	DelegationSvc             *services.DelegationService
+
+	// 融合 Handler
+	ExecPolicyHandler        *handlers.ExecPolicyHandler
+	PersistentMemoryHandler  *handlers.PersistentMemoryHandler
+	SessionBranchHandler     *handlers.SessionBranchHandler
 }
 
 // NewApplication 创建并初始化应用
@@ -432,6 +453,21 @@ func (app *Application) initAdvancedServices() error {
 	app.TokenLimitService = services.NewTokenLimitService(app.DB, app.UsageService, app.LoggerService)
 	app.CostOptimizer = services.NewCostOptimizer(app.ModelService, app.UsageService, app.LoggerService)
 
+	app.ExecPolicySvc = services.NewExecPolicyService(app.EventBus)
+	app.HookEngine = services.NewHookEngine(app.EventBus, app.ExecPolicySvc)
+	app.PersistentMemorySvc = services.NewPersistentMemoryService(app.DB, app.CacheService, app.EventBus)
+	app.SessionBranchSvc = services.NewSessionBranchService(app.DB, app.CacheService, app.EventBus)
+	app.WorkflowSvc2 = services.NewWorkflowService2(app.EventBus, app.DialogueService)
+	app.StructuredCompactionSvc = services.NewStructuredCompactionService(app.DB, app.ModelService, app.DialogueService)
+	app.SmartToolSelector = services.NewSmartToolSelector()
+	app.ConsensusPlanner = services.NewConsensusPlanner(app.ModelService)
+	app.GuardianSvc = services.NewGuardianService(app.ModelService)
+	app.ProgressiveSkillLoader = services.NewProgressiveSkillLoader(app.SkillService, app.ModelService)
+	app.DeepInterviewSvc = services.NewDeepInterviewService(app.ModelService)
+	app.ToolCallGuardrail = services.NewToolCallGuardrail(services.DefaultGuardrailConfig())
+	app.KeyInfoExtractor = services.NewKeyInfoExtractor(app.ModelService)
+	app.DelegationSvc = services.NewDelegationService(app.ModelService)
+
 	return nil
 }
 
@@ -640,6 +676,10 @@ func (app *Application) initHandlers() error {
 	app.DocGenHandler = handlers.NewDocGenHandler(app.DocGenService)
 	app.FormatHandler = handlers.NewFormatHandler(app.FormatService)
 
+	app.ExecPolicyHandler = handlers.NewExecPolicyHandler(app.ExecPolicySvc)
+	app.PersistentMemoryHandler = handlers.NewPersistentMemoryHandler(app.PersistentMemorySvc)
+	app.SessionBranchHandler = handlers.NewSessionBranchHandler(app.SessionBranchSvc)
+
 	return nil
 }
 
@@ -668,13 +708,18 @@ func (app *Application) initBackgroundServices() error {
 
 // wireDependencies 连接服务间的依赖关系
 func (app *Application) wireDependencies() error {
-	// 注入使用量统计服务
 	app.DialogueService.SetUsageService(app.UsageService)
 	app.ToolCallingService.SetUsageService(app.UsageService)
 	app.SlashRegistry.SetUsageService(app.UsageService)
 
-	// 注入缓存服务
 	app.DialogueService.SetCacheService(app.CacheService)
+
+	app.ToolCallingService.SetSmartToolSelector(app.SmartToolSelector)
+	app.ToolCallingService.SetStructuredCompactionSvc(app.StructuredCompactionSvc)
+	app.ToolCallingService.SetGuardianSvc(app.GuardianSvc)
+	app.ToolCallingService.SetGuardrail(app.ToolCallGuardrail)
+	app.ToolCallingService.SetKeyInfoExtractor(app.KeyInfoExtractor)
+	app.ToolCallingService.SetDelegationSvc(app.DelegationSvc)
 
 	return nil
 }

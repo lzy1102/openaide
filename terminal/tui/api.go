@@ -102,6 +102,71 @@ func CompactContext(apiURL, dialogueID string) (map[string]interface{}, error) {
 	return result, nil
 }
 
+func CompactContextStructured(apiURL, dialogueID string, customInstructions string) (map[string]interface{}, error) {
+	reqBody := map[string]interface{}{
+		"dialogue_id": dialogueID,
+	}
+	if customInstructions != "" {
+		reqBody["custom_instructions"] = customInstructions
+	}
+	data, err := makeRequest("POST", apiURL+"/compact/structured", reqBody)
+	if err != nil {
+		return nil, err
+	}
+	var apiResp APIResponse
+	if err := json.Unmarshal(data, &apiResp); err != nil {
+		return nil, err
+	}
+	if apiResp.Data != nil {
+		var result map[string]interface{}
+		if err := json.Unmarshal(apiResp.Data, &result); err != nil {
+			return nil, err
+		}
+		return result, nil
+	}
+	var result map[string]interface{}
+	json.Unmarshal(data, &result)
+	return result, nil
+}
+
+func SetToolMode(apiURL, mode string) (map[string]interface{}, error) {
+	reqBody := map[string]interface{}{
+		"mode": mode,
+	}
+	data, err := makeRequest("POST", apiURL+"/tool-mode/set", reqBody)
+	if err != nil {
+		return nil, err
+	}
+	var result map[string]interface{}
+	json.Unmarshal(data, &result)
+	return result, nil
+}
+
+func GetCurrentToolMode(apiURL string) string {
+	data, err := makeRequest("GET", apiURL+"/tool-mode/current", nil)
+	if err != nil {
+		return "build"
+	}
+	var apiResp APIResponse
+	if err := json.Unmarshal(data, &apiResp); err != nil {
+		return "build"
+	}
+	if apiResp.Data != nil {
+		var result map[string]interface{}
+		if err := json.Unmarshal(apiResp.Data, &result); err == nil {
+			if mode, ok := result["mode"].(string); ok {
+				return mode
+			}
+		}
+	}
+	return "build"
+}
+
+func ClearMessages(apiURL, dialogueID string) error {
+	_, err := makeRequest("DELETE", apiURL+"/dialogues/"+dialogueID+"/messages", nil)
+	return err
+}
+
 func SendMessage(apiURL, dialogueID string, content, model string) (string, error) {
 	reqBody := map[string]interface{}{
 		"user_id":     "cli-user",
@@ -136,12 +201,13 @@ type StreamUsage struct {
 }
 
 type StreamCallbacks struct {
-	OnThinking func(content string)
-	OnToolCall func(tool string, params string)
-	OnToolDone func(tool string, result string)
-	OnContent  func(chunk string)
-	OnDone     func(model string, usage *StreamUsage)
-	OnCompact  func(reason string, beforeMsgs, afterMsgs, savedTokens int)
+	OnThinking      func(content string)
+	OnToolCall      func(tool string, params string)
+	OnToolDone      func(tool string, result string)
+	OnContent       func(chunk string)
+	OnDone          func(model string, usage *StreamUsage)
+	OnCompact       func(reason string, beforeMsgs, afterMsgs, savedTokens int)
+	OnGuardianReview func(tool string, verdict string, riskLevel string, reason string)
 }
 
 func SendMessageStream(ctx context.Context, apiURL, dialogueID string, content, model string, timeoutSec int, cb *StreamCallbacks) (string, error) {
@@ -245,6 +311,14 @@ func SendMessageStream(ctx context.Context, apiURL, dialogueID string, content, 
 					}
 					cb.OnCompact(reason, beforeMsgs, afterMsgs, savedTokens)
 				}
+			case "guardian_review":
+				if cb != nil && cb.OnGuardianReview != nil {
+					tool, _ := chunk["tool"].(string)
+					verdict, _ := chunk["verdict"].(string)
+					riskLevel, _ := chunk["risk_level"].(string)
+					reason, _ := chunk["reason"].(string)
+					cb.OnGuardianReview(tool, verdict, riskLevel, reason)
+				}
 			case "content":
 				if content, ok := chunk["content"].(string); ok {
 					if cb != nil && cb.OnContent != nil {
@@ -299,6 +373,128 @@ func unwrapResponse(data []byte, target interface{}) error {
 		return json.Unmarshal(apiResp.Data, target)
 	}
 	return nil
+}
+
+func ForkSession(apiURL, dialogueID, userID, name string, branchPoint int) (map[string]interface{}, error) {
+	reqBody := map[string]interface{}{
+		"dialogue_id":  dialogueID,
+		"user_id":      userID,
+		"name":         name,
+		"branch_point": branchPoint,
+	}
+	data, err := makeRequest("POST", apiURL+"/session-branches/fork", reqBody)
+	if err != nil {
+		return nil, err
+	}
+	var resp struct {
+		Data map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+func ListBranches(apiURL, dialogueID string) ([]map[string]interface{}, error) {
+	data, err := makeRequest("GET", apiURL+"/session-branches/list/"+dialogueID, nil)
+	if err != nil {
+		return nil, err
+	}
+	var resp struct {
+		Data []map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+func GetPersistentMemories(apiURL, userID string) ([]map[string]interface{}, error) {
+	data, err := makeRequest("GET", apiURL+"/persistent-memories?user_id="+userID, nil)
+	if err != nil {
+		return nil, err
+	}
+	var resp struct {
+		Data []map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+func RememberPersistent(apiURL, userID, category, key, value string) (map[string]interface{}, error) {
+	reqBody := map[string]interface{}{
+		"user_id":  userID,
+		"category": category,
+		"key":      key,
+		"value":    value,
+		"source":   "cli",
+	}
+	data, err := makeRequest("POST", apiURL+"/persistent-memories", reqBody)
+	if err != nil {
+		return nil, err
+	}
+	var resp struct {
+		Data map[string]interface{} `json:"data"`
+	}
+	json.Unmarshal(data, &resp)
+	return resp.Data, nil
+}
+
+func GetCostSummary(apiURL, userID string, days int) (map[string]interface{}, error) {
+	data, err := makeRequest("GET", fmt.Sprintf("%s/cost/summary?user_id=%s&days=%d", apiURL, userID, days), nil)
+	if err != nil {
+		return nil, err
+	}
+	var resp struct {
+		Data map[string]interface{} `json:"data"`
+	}
+	json.Unmarshal(data, &resp)
+	return resp.Data, nil
+}
+
+func EvaluateExecPolicy(apiURL, command string) (map[string]interface{}, error) {
+	reqBody := map[string]interface{}{"command": command}
+	data, err := makeRequest("POST", apiURL+"/exec-policy/evaluate", reqBody)
+	if err != nil {
+		return nil, err
+	}
+	var resp struct {
+		Data map[string]interface{} `json:"data"`
+	}
+	json.Unmarshal(data, &resp)
+	return resp.Data, nil
+}
+
+type GuardianReviewResult struct {
+	Verdict   string `json:"verdict"`
+	RiskLevel string `json:"risk_level"`
+	Reason    string `json:"reason"`
+}
+
+func RequestGuardianReview(apiURL, toolName, arguments, contextStr string) (*GuardianReviewResult, error) {
+	reqBody := map[string]interface{}{
+		"tool":     toolName,
+		"args":     arguments,
+		"context":  contextStr,
+	}
+	data, err := makeRequest("POST", apiURL+"/guardian/review", reqBody)
+	if err != nil {
+		return nil, err
+	}
+	var apiResp APIResponse
+	if err := json.Unmarshal(data, &apiResp); err != nil {
+		return nil, err
+	}
+	if apiResp.Data != nil {
+		var result GuardianReviewResult
+		if err := json.Unmarshal(apiResp.Data, &result); err != nil {
+			return nil, err
+		}
+		return &result, nil
+	}
+	return nil, fmt.Errorf("no data in guardian response")
 }
 
 func makeRequest(method, endpoint string, body interface{}) ([]byte, error) {

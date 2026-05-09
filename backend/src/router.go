@@ -100,10 +100,430 @@ func (r *Router) Register(engine *gin.Engine) {
 		r.app.CodeSearchHandler.RegisterRoutes(protectedAPI)
 		r.app.DocGenHandler.RegisterRoutes(protectedAPI)
 		r.app.FormatHandler.RegisterRoutes(protectedAPI)
+
+		r.app.ExecPolicyHandler.RegisterRoutes(protectedAPI)
+		r.app.PersistentMemoryHandler.RegisterRoutes(protectedAPI)
+		r.app.SessionBranchHandler.RegisterRoutes(protectedAPI)
+
+		r.registerIntelligenceRoutes(protectedAPI)
 	}
 }
 
 // registerHealth 注册健康检查路由
+func (r *Router) registerIntelligenceRoutes(api *gin.RouterGroup) {
+	compact := api.Group("/compact")
+	{
+		compact.POST("/structured", func(c *gin.Context) {
+			var req struct {
+				DialogueID        string `json:"dialogue_id" binding:"required"`
+				CustomInstructions string `json:"custom_instructions"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				response.BadRequest(c, err.Error())
+				return
+			}
+			ctx := c.Request.Context()
+			result, err := r.app.StructuredCompactionSvc.Compact(ctx, req.DialogueID, req.CustomInstructions)
+			if err != nil {
+				response.InternalError(c, err.Error())
+				return
+			}
+			if result == nil {
+				response.OK(c, gin.H{"message": "no compaction needed", "compacted": false})
+				return
+			}
+			response.OK(c, gin.H{
+				"compacted":       true,
+				"compaction_id":   result.CompactionID,
+				"summary":         result.Summary,
+				"tokens_before":   result.TokensBefore,
+				"tokens_after":    result.TokensAfter,
+				"compacted_count": result.CompactedCount,
+				"read_files":      result.Details.ReadFiles,
+				"modified_files":  result.Details.ModifiedFiles,
+			})
+		})
+		compact.GET("/latest/:dialogueID", func(c *gin.Context) {
+			dialogueID := c.Param("dialogueID")
+			entry := r.app.StructuredCompactionSvc.GetLatestCompaction(dialogueID)
+			if entry == nil {
+				response.OK(c, gin.H{"compacted": false})
+				return
+			}
+			contextStr := r.app.StructuredCompactionSvc.BuildCompactionContext(dialogueID)
+			response.OK(c, gin.H{
+				"compacted":    true,
+				"summary":      entry.Summary,
+				"tokens_before": entry.TokensBefore,
+				"tokens_after":  entry.TokensAfter,
+				"read_files":   entry.Details.ReadFiles,
+				"modified_files": entry.Details.ModifiedFiles,
+				"context":      contextStr,
+			})
+		})
+	}
+
+	toolMode := api.Group("/tool-mode")
+	{
+		toolMode.GET("/current", func(c *gin.Context) {
+			profile := r.app.SmartToolSelector.DefaultProfile()
+			profiles := r.app.SmartToolSelector.ListProfiles()
+			response.OK(c, gin.H{
+				"mode":      profile,
+				"profiles":  profiles,
+			})
+		})
+		toolMode.POST("/set", func(c *gin.Context) {
+			var req struct {
+				Mode string `json:"mode" binding:"required"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				response.BadRequest(c, err.Error())
+				return
+			}
+			if err := r.app.SmartToolSelector.SetDefaultProfile(req.Mode); err != nil {
+				response.BadRequest(c, err.Error())
+				return
+			}
+			profile := r.app.SmartToolSelector.GetProfile(req.Mode)
+			response.OK(c, gin.H{
+				"mode":        req.Mode,
+				"description": profile.Description,
+				"allowed_tools": profile.AllowedTools,
+				"denied_tools":  profile.DeniedTools,
+			})
+		})
+		toolMode.GET("/profiles", func(c *gin.Context) {
+			profiles := r.app.SmartToolSelector.ListProfiles()
+			response.OK(c, profiles)
+		})
+		toolMode.POST("/analyze", func(c *gin.Context) {
+			var req struct {
+				RecentToolCalls []string `json:"recent_tool_calls"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				response.BadRequest(c, err.Error())
+				return
+			}
+			recommended := r.app.SmartToolSelector.AnalyzeContext(req.RecentToolCalls)
+			profile := r.app.SmartToolSelector.GetProfile(recommended)
+			response.OK(c, gin.H{
+				"recommended_mode": recommended,
+				"profile":          profile,
+			})
+		})
+	}
+
+	consensus := api.Group("/consensus")
+	{
+		consensus.POST("/plan", func(c *gin.Context) {
+			var req struct {
+				Task        string `json:"task" binding:"required"`
+				Context     string `json:"context"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				response.BadRequest(c, err.Error())
+				return
+			}
+			ctx := c.Request.Context()
+			result, err := r.app.ConsensusPlanner.Plan(ctx, req.Task, req.Context)
+			if err != nil {
+				response.InternalError(c, err.Error())
+				return
+			}
+			response.OK(c, result)
+		})
+	}
+
+	guardian := api.Group("/guardian")
+	{
+		guardian.POST("/review", func(c *gin.Context) {
+			var req struct {
+				Tool      string `json:"tool" binding:"required"`
+				Arguments string `json:"arguments"`
+				Context   string `json:"context"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				response.BadRequest(c, err.Error())
+				return
+			}
+			ctx := c.Request.Context()
+			review, err := r.app.GuardianSvc.Review(ctx, req.Tool, req.Arguments, req.Context)
+			if err != nil {
+				response.InternalError(c, err.Error())
+				return
+			}
+			response.OK(c, review)
+		})
+		guardian.GET("/status", func(c *gin.Context) {
+			response.OK(c, gin.H{
+				"enabled": r.app.GuardianSvc.IsEnabled(),
+			})
+		})
+		guardian.POST("/toggle", func(c *gin.Context) {
+			var req struct {
+				Enabled bool `json:"enabled"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				response.BadRequest(c, err.Error())
+				return
+			}
+			r.app.GuardianSvc.SetEnabled(req.Enabled)
+			response.OK(c, gin.H{"enabled": req.Enabled})
+		})
+	}
+
+	skillLoader := api.Group("/skill-loader")
+	{
+		skillLoader.POST("/match", func(c *gin.Context) {
+			var req struct {
+				Query string `json:"query" binding:"required"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				response.BadRequest(c, err.Error())
+				return
+			}
+			ctx := c.Request.Context()
+			skills, err := r.app.ProgressiveSkillLoader.MatchSkills(ctx, req.Query)
+			if err != nil {
+				response.InternalError(c, err.Error())
+				return
+			}
+			response.OK(c, skills)
+		})
+		skillLoader.POST("/load-full", func(c *gin.Context) {
+			var req struct {
+				SkillID string `json:"skill_id" binding:"required"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				response.BadRequest(c, err.Error())
+				return
+			}
+			skill, err := r.app.ProgressiveSkillLoader.LoadFullContent(req.SkillID)
+			if err != nil {
+				response.InternalError(c, err.Error())
+				return
+			}
+			response.OK(c, skill)
+		})
+		skillLoader.POST("/context", func(c *gin.Context) {
+			var req struct {
+				SkillIDs []string `json:"skill_ids"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				response.BadRequest(c, err.Error())
+				return
+			}
+			var loadedSkills []*services.LoadedSkill
+			for _, id := range req.SkillIDs {
+				skill, err := r.app.ProgressiveSkillLoader.LoadFullContent(id)
+				if err == nil {
+					loadedSkills = append(loadedSkills, skill)
+				}
+			}
+			contextStr := r.app.ProgressiveSkillLoader.BuildSkillContext(loadedSkills)
+			response.OK(c, gin.H{"context": contextStr, "loaded_count": len(loadedSkills)})
+		})
+	}
+
+	interview := api.Group("/interview")
+	{
+		interview.POST("/analyze", func(c *gin.Context) {
+			var req struct {
+				Request string `json:"request" binding:"required"`
+				Context string `json:"context"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				response.BadRequest(c, err.Error())
+				return
+			}
+			ctx := c.Request.Context()
+			analysis, err := r.app.DeepInterviewSvc.AnalyzeGaps(ctx, req.Request, req.Context)
+			if err != nil {
+				response.InternalError(c, err.Error())
+				return
+			}
+			response.OK(c, analysis)
+		})
+		interview.POST("/questions", func(c *gin.Context) {
+			var req struct {
+				Request string `json:"request" binding:"required"`
+				Context string `json:"context"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				response.BadRequest(c, err.Error())
+				return
+			}
+			ctx := c.Request.Context()
+			questions, err := r.app.DeepInterviewSvc.GenerateFollowUpQuestions(ctx, req.Request, req.Context)
+			if err != nil {
+				response.InternalError(c, err.Error())
+				return
+			}
+			response.OK(c, gin.H{"questions": questions, "count": len(questions)})
+		})
+		interview.POST("/synthesize", func(c *gin.Context) {
+			var req struct {
+				Request string                       `json:"request" binding:"required"`
+				QAPairs []services.InformationGap    `json:"qa_pairs" binding:"required"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				response.BadRequest(c, err.Error())
+				return
+			}
+			ctx := c.Request.Context()
+			synthesis, err := r.app.DeepInterviewSvc.SynthesizeAnswers(ctx, req.Request, req.QAPairs)
+			if err != nil {
+				response.InternalError(c, err.Error())
+				return
+			}
+			response.OK(c, synthesis)
+		})
+		interview.POST("/should-interview", func(c *gin.Context) {
+			var req struct {
+				Request string `json:"request" binding:"required"`
+				Context string `json:"context"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				response.BadRequest(c, err.Error())
+				return
+			}
+			should := r.app.DeepInterviewSvc.ShouldInterview(req.Request, req.Context)
+			response.OK(c, gin.H{"should_interview": should})
+		})
+	}
+
+	guardrail := api.Group("/guardrail")
+	{
+		guardrail.GET("/status", func(c *gin.Context) {
+			g := r.app.ToolCallGuardrail
+			response.OK(c, gin.H{
+				"warnings_enabled":  g != nil && g.GetWarningsEnabled(),
+				"hard_stop_enabled": g != nil && g.GetHardStopEnabled(),
+				"warnings":          g.GetWarnings(),
+				"has_halted":        g.HasHalted(),
+			})
+		})
+		guardrail.POST("/reset", func(c *gin.Context) {
+			if r.app.ToolCallGuardrail != nil {
+				r.app.ToolCallGuardrail.ResetForRound()
+			}
+			response.OK(c, gin.H{"reset": true})
+		})
+		guardrail.POST("/configure", func(c *gin.Context) {
+			var req struct {
+				WarningsEnabled  *bool `json:"warnings_enabled"`
+				HardStopEnabled  *bool `json:"hard_stop_enabled"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				response.BadRequest(c, err.Error())
+				return
+			}
+			g := r.app.ToolCallGuardrail
+			if g != nil {
+				if req.WarningsEnabled != nil {
+					g.SetWarningsEnabled(*req.WarningsEnabled)
+				}
+				if req.HardStopEnabled != nil {
+					g.SetHardStopEnabled(*req.HardStopEnabled)
+				}
+			}
+			response.OK(c, gin.H{
+				"warnings_enabled":  g.GetWarningsEnabled(),
+				"hard_stop_enabled": g.GetHardStopEnabled(),
+			})
+		})
+	}
+
+	delegation := api.Group("/delegation")
+	{
+		delegation.POST("/analyze", func(c *gin.Context) {
+			var req struct {
+				Subject     string `json:"subject" binding:"required"`
+				Description string `json:"description"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				response.BadRequest(c, err.Error())
+				return
+			}
+			plan := r.app.DelegationSvc.AnalyzeTask(req.Subject, req.Description)
+			response.OK(c, plan)
+		})
+		delegation.POST("/execute", func(c *gin.Context) {
+			var req struct {
+				TaskName string `json:"task_name" binding:"required"`
+				Prompt   string `json:"prompt" binding:"required"`
+				ModelID  string `json:"model_id"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				response.BadRequest(c, err.Error())
+				return
+			}
+			ctx := c.Request.Context()
+			result, err := r.app.DelegationSvc.ExecuteSubtask(ctx, req.TaskName, req.Prompt, req.ModelID)
+			if err != nil {
+				response.InternalError(c, err.Error())
+				return
+			}
+			response.OK(c, result)
+		})
+		delegation.POST("/execute-parallel", func(c *gin.Context) {
+			var req struct {
+				Candidates []string `json:"candidates" binding:"required"`
+				Context    string   `json:"context"`
+				ModelID    string   `json:"model_id"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				response.BadRequest(c, err.Error())
+				return
+			}
+			ctx := c.Request.Context()
+			results := r.app.DelegationSvc.ExecuteParallelSubtasks(ctx, req.Candidates, req.Context, req.ModelID)
+			response.OK(c, results)
+		})
+	}
+
+	extraction := api.Group("/extraction")
+	{
+		extraction.POST("/tool-output", func(c *gin.Context) {
+			var req struct {
+				ToolName  string `json:"tool_name" binding:"required"`
+				ToolArgs  string `json:"tool_args"`
+				ToolResult string `json:"tool_result" binding:"required"`
+				ModelID   string `json:"model_id"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				response.BadRequest(c, err.Error())
+				return
+			}
+			ctx := c.Request.Context()
+			result, err := r.app.KeyInfoExtractor.ExtractFromToolOutput(ctx, req.ToolName, req.ToolArgs, req.ToolResult, req.ModelID)
+			if err != nil {
+				response.InternalError(c, err.Error())
+				return
+			}
+			response.OK(c, result)
+		})
+		extraction.POST("/conversation", func(c *gin.Context) {
+			var req struct {
+				Messages []map[string]interface{} `json:"messages" binding:"required"`
+				ModelID  string                   `json:"model_id"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				response.BadRequest(c, err.Error())
+				return
+			}
+			ctx := c.Request.Context()
+			result, err := r.app.KeyInfoExtractor.ExtractFromConversation(ctx, req.Messages, req.ModelID)
+			if err != nil {
+				response.InternalError(c, err.Error())
+				return
+			}
+			response.OK(c, result)
+		})
+	}
+}
+
 func (r *Router) registerHealth(engine *gin.Engine) {
 	engine.GET("/health", func(c *gin.Context) {
 		dbStatus := "ok"
@@ -137,6 +557,17 @@ func (r *Router) registerHealth(engine *gin.Engine) {
 			"tool_calling":    true,
 			"memory_provider": activeProvider.Name(),
 			"context_engine":  "default",
+			"exec_policy":     true,
+			"hook_engine":     true,
+			"persistent_memory": true,
+			"session_branch":  true,
+			"workflow":        true,
+			"structured_compaction": true,
+			"smart_tool_selector":  true,
+			"consensus_planner":    true,
+			"guardian":             true,
+			"progressive_skill_loader": true,
+			"deep_interview":       true,
 		}
 		if dbErr != "" {
 			services["database_error"] = dbErr

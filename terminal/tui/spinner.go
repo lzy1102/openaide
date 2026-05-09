@@ -24,31 +24,28 @@ func isTerminal() bool {
 	return (si.Mode() & os.ModeCharDevice) != 0
 }
 
-type ThinkingPhase struct {
+var thinkingPhases = []struct {
 	Label string
 	Icon  string
-	Color string
-}
-
-var thinkingPhases = []ThinkingPhase{
-	{Label: "理解问题", Icon: "🔍", Color: "#61AFEF"},
-	{Label: "分析上下文", Icon: "🧠", Color: "#C678DD"},
-	{Label: "检索知识", Icon: "📚", Color: "#E5C07B"},
-	{Label: "组织回复", Icon: "✨", Color: "#98C379"},
+}{
+	{Label: "understand", Icon: "🔍"},
+	{Label: "analyze", Icon: "🧠"},
+	{Label: "retrieve", Icon: "📚"},
+	{Label: "compose", Icon: "✨"},
 }
 
 type ThinkingSpinner struct {
-	mu       sync.Mutex
-	stopped  bool
-	phase    int
-	label    string
-	started  time.Time
-	frame    int
-	frames   []string
-	done     chan struct{}
-	elapsed  time.Duration
-	isTTY    bool
-	paused   bool
+	mu      sync.Mutex
+	stopped bool
+	phase   int
+	label   string
+	started time.Time
+	frame   int
+	frames  []string
+	done    chan struct{}
+	elapsed time.Duration
+	isTTY   bool
+	paused  bool
 }
 
 func NewThinkingSpinner() *ThinkingSpinner {
@@ -75,7 +72,7 @@ func (s *ThinkingSpinner) Start(initialLabel string) {
 		if label == "" {
 			label = phase.Label
 		}
-		fmt.Fprintf(os.Stderr, "  %s %s...\n", Badge("thinking", BadgeThinking), label)
+		fmt.Fprintf(os.Stderr, "%s\n", RenderThinkingLine(label, 0))
 		s.mu.Unlock()
 		return
 	}
@@ -89,13 +86,13 @@ func (s *ThinkingSpinner) Start(initialLabel string) {
 		for {
 			select {
 			case <-s.done:
-				fmt.Fprintf(os.Stderr, "\r%s\r", strings.Repeat(" ", 80))
+				fmt.Fprintf(os.Stderr, "\r%s\r", strings.Repeat(" ", 120))
 				return
 			case <-ticker.C:
 				s.mu.Lock()
 				if s.stopped {
 					s.mu.Unlock()
-					fmt.Fprintf(os.Stderr, "\r%s\r", strings.Repeat(" ", 80))
+					fmt.Fprintf(os.Stderr, "\r%s\r", strings.Repeat(" ", 120))
 					return
 				}
 				if s.paused {
@@ -111,11 +108,14 @@ func (s *ThinkingSpinner) Start(initialLabel string) {
 				if label == "" {
 					label = phase.Label
 				}
-				fmt.Fprintf(os.Stderr, "\r  %s %s %s %s ",
-					Badge("thinking", BadgeThinking),
-					StyleMuted.Render(frame),
-					StyleThinking.Render(label),
-					StyleMuted.Render(elapsed),
+				prefix := R.Border.Render("┊")
+				phaseStr := R.Thinking.Render(padVerb(label, verbWidth))
+				dur := R.Dim.Render(elapsed)
+				fmt.Fprintf(os.Stderr, "\r  %s 🧠 %s %s %s ",
+					prefix,
+					R.Dim.Render(frame),
+					phaseStr,
+					dur,
 				)
 				s.mu.Unlock()
 			case <-phaseTicker.C:
@@ -140,7 +140,7 @@ func (s *ThinkingSpinner) Pause() {
 	s.paused = true
 	s.mu.Unlock()
 	if s.isTTY {
-		fmt.Fprintf(os.Stderr, "\r%s\r", strings.Repeat(" ", 80))
+		fmt.Fprintf(os.Stderr, "\r%s\r", strings.Repeat(" ", 120))
 	}
 }
 
@@ -161,7 +161,7 @@ func (s *ThinkingSpinner) Stop() time.Duration {
 		case s.done <- struct{}{}:
 		default:
 		}
-		fmt.Fprintf(os.Stderr, "\r%s\r", strings.Repeat(" ", 80))
+		fmt.Fprintf(os.Stderr, "\r%s\r", strings.Repeat(" ", 120))
 	}
 	return elapsed
 }
@@ -178,24 +178,27 @@ func SetCurrentSpinner(s *ThinkingSpinner) {
 	currentSpinner = s
 }
 
+var toolCallTimers = struct {
+	mu     sync.Mutex
+	timers map[string]time.Time
+}{
+	timers: make(map[string]time.Time),
+}
+
 func ShowToolCall(toolName string, params string) {
 	if currentSpinner != nil {
 		currentSpinner.Pause()
 		defer currentSpinner.Resume()
 	} else if isTerminal() {
-		fmt.Fprintf(os.Stderr, "\r%s\r", strings.Repeat(" ", 80))
+		fmt.Fprintf(os.Stderr, "\r%s\r", strings.Repeat(" ", 120))
 	}
 
-	fmt.Printf("  %s %s",
-		Badge("tool", BadgeTool),
-		StyleToolName.Render(toolName),
-	)
+	toolCallTimers.mu.Lock()
+	toolCallTimers.timers[toolName] = time.Now()
+	toolCallTimers.mu.Unlock()
 
 	detail := parseToolDetail(toolName, params)
-	if detail != "" {
-		fmt.Printf(" %s", detail)
-	}
-	fmt.Println()
+	fmt.Println(RenderToolCallLine(toolName, detail))
 }
 
 func ShowToolResult(toolName string, success bool, result string) {
@@ -203,83 +206,62 @@ func ShowToolResult(toolName string, success bool, result string) {
 		currentSpinner.Pause()
 		defer currentSpinner.Resume()
 	} else if isTerminal() {
-		fmt.Fprintf(os.Stderr, "\r%s\r", strings.Repeat(" ", 80))
+		fmt.Fprintf(os.Stderr, "\r%s\r", strings.Repeat(" ", 120))
 	}
 
-	var badge string
-	if success {
-		badge = Badge("done", BadgeSuccess)
-	} else {
-		badge = Badge("fail", BadgeError)
+	toolCallTimers.mu.Lock()
+	startTime, exists := toolCallTimers.timers[toolName]
+	if exists {
+		delete(toolCallTimers.timers, toolName)
+	}
+	toolCallTimers.mu.Unlock()
+
+	var duration time.Duration
+	if exists {
+		duration = time.Since(startTime)
 	}
 
-	fmt.Printf("  %s %s", badge, StyleToolName.Render(toolName))
+	fmt.Println(RenderToolResultLine(toolName, success, duration))
 
 	if result != "" {
-		resultLines := strings.Split(result, "\n")
-		maxPreviewLines := 6
-		if len(resultLines) <= maxPreviewLines {
-			fmt.Println()
-			for _, line := range resultLines {
-				if line == "" {
-					continue
-				}
-				fmt.Printf("  %s %s\n",
-					StyleMuted.Render("│"),
-					StyleOutput.Render(truncateStr(line, 120)),
-				)
-			}
-			return
-		}
-		fmt.Println()
-		for i := 0; i < maxPreviewLines; i++ {
-			if resultLines[i] == "" {
-				continue
-			}
-			fmt.Printf("  %s %s\n",
-				StyleMuted.Render("│"),
-				StyleOutput.Render(truncateStr(resultLines[i], 120)),
-			)
-		}
-		remaining := len(resultLines) - maxPreviewLines
-		if remaining > 0 {
-			fmt.Printf("  %s %s\n",
-				StyleMuted.Render("│"),
-				StyleDimText.Render(fmt.Sprintf("... +%d more lines", remaining)),
-			)
-		}
-		return
+		RenderToolResultOutput(result, 8)
 	}
-	fmt.Println()
 }
 
 func parseToolDetail(toolName string, params string) string {
 	var p map[string]interface{}
 	if err := json.Unmarshal([]byte(params), &p); err != nil {
-		return StyleDimText.Render(truncateStr(params, 60))
+		return truncateStr(params, 45)
 	}
 
 	switch toolName {
 	case "execute_command", "run_command", "shell", "bash":
 		if cmd, ok := p["command"].(string); ok {
-			return StyleCommand.Render("$ " + cmd)
+			return "$ " + cmd
 		}
 	case "read_file", "write_file", "edit_file", "create_file":
 		if path, ok := p["path"].(string); ok {
-			return StyleFilePath.Render(path)
+			return path
 		}
 		if path, ok := p["file_path"].(string); ok {
-			return StyleFilePath.Render(path)
+			return path
 		}
 		if path, ok := p["filename"].(string); ok {
-			return StyleFilePath.Render(path)
+			return path
 		}
 	case "search_code", "code_search", "grep":
 		if query, ok := p["query"].(string); ok {
-			return StyleCommand.Render(query)
+			return query
 		}
 		if pattern, ok := p["pattern"].(string); ok {
-			return StyleCommand.Render(pattern)
+			return pattern
+		}
+	case "get_weather", "weather":
+		if city, ok := p["city"].(string); ok {
+			return city
+		}
+		if location, ok := p["location"].(string); ok {
+			return location
 		}
 	}
 
@@ -287,7 +269,7 @@ func parseToolDetail(toolName string, params string) string {
 	for k := range p {
 		keys = append(keys, k)
 	}
-	return StyleDimText.Render(truncateStr(strings.Join(keys, ", "), 60))
+	return truncateStr(strings.Join(keys, ", "), 45)
 }
 
 func ShowThinkingBlock(content string) {
@@ -298,19 +280,17 @@ func ShowThinkingBlock(content string) {
 		currentSpinner.Pause()
 		defer currentSpinner.Resume()
 	} else if isTerminal() {
-		fmt.Fprintf(os.Stderr, "\r%s\r", strings.Repeat(" ", 80))
+		fmt.Fprintf(os.Stderr, "\r%s\r", strings.Repeat(" ", 120))
 	}
 
+	prefix := R.Border.Render("┊")
 	lines := strings.Split(content, "\n")
-	maxLines := 8
+	maxLines := 6
 	for i, line := range lines {
 		if i >= maxLines {
 			remaining := len(lines) - maxLines
 			if remaining > 0 {
-				fmt.Printf("  %s %s\n",
-					StyleMuted.Render("│"),
-					StyleDimText.Render(fmt.Sprintf("... +%d more lines", remaining)),
-				)
+				fmt.Printf("  %s %s\n", prefix, R.Dim.Render(fmt.Sprintf("… +%d more", remaining)))
 			}
 			break
 		}
@@ -318,20 +298,17 @@ func ShowThinkingBlock(content string) {
 		if truncated == "" {
 			continue
 		}
-		fmt.Printf("  %s %s\n",
-			StyleMuted.Render("│"),
-			StyleThinking.Render(truncated),
-		)
+		fmt.Printf("  %s %s\n", prefix, R.Thinking.Render(truncated))
 	}
 }
 
 type StreamCodeBlockDetector struct {
-	inCodeBlock    bool
-	codeBlockLang  string
-	backtickCount  int
-	backtickBuf    string
-	lineBuf        string
-	blockWidth     int
+	inCodeBlock   bool
+	codeBlockLang string
+	backtickCount int
+	backtickBuf   string
+	lineBuf       string
+	blockWidth    int
 }
 
 func NewStreamCodeBlockDetector() *StreamCodeBlockDetector {
@@ -364,14 +341,14 @@ func (d *StreamCodeBlockDetector) ProcessChunk(chunk string) string {
 					if borderLen < 4 {
 						borderLen = 4
 					}
-					result.WriteString(StyleDimText.Render("┌" + langLabel + strings.Repeat("─", borderLen) + "┐"))
+					result.WriteString(R.Border.Render("┌" + langLabel + strings.Repeat("─", borderLen) + "┐"))
 					result.WriteString("\n")
 					d.lineBuf = ""
 					d.backtickBuf = ""
 					d.backtickCount = 0
 				} else {
 					d.inCodeBlock = false
-					result.WriteString(StyleDimText.Render("└" + strings.Repeat("─", d.blockWidth-2) + "┘"))
+					result.WriteString(R.Border.Render("└" + strings.Repeat("─", d.blockWidth-2) + "┘"))
 					result.WriteString("\n")
 					d.lineBuf = ""
 					d.backtickBuf = ""
@@ -391,9 +368,9 @@ func (d *StreamCodeBlockDetector) ProcessChunk(chunk string) string {
 
 		if d.inCodeBlock {
 			if ch == '\n' {
-				prefix := StyleDimText.Render("│ ")
+				prefix := R.Border.Render("│ ")
 				result.WriteString(prefix)
-				result.WriteString(d.lineBuf)
+				result.WriteString(R.Code.Render(d.lineBuf))
 				result.WriteString("\n")
 				d.lineBuf = ""
 			} else {
@@ -423,9 +400,9 @@ func (d *StreamCodeBlockDetector) Flush() string {
 	var result strings.Builder
 	if d.lineBuf != "" {
 		if d.inCodeBlock {
-			prefix := StyleDimText.Render("│ ")
+			prefix := R.Border.Render("│ ")
 			result.WriteString(prefix)
-			result.WriteString(d.lineBuf)
+			result.WriteString(R.Code.Render(d.lineBuf))
 			result.WriteString("\n")
 		} else {
 			result.WriteString(d.lineBuf)
@@ -433,7 +410,7 @@ func (d *StreamCodeBlockDetector) Flush() string {
 		d.lineBuf = ""
 	}
 	if d.inCodeBlock {
-		result.WriteString(StyleDimText.Render("└" + strings.Repeat("─", d.blockWidth-2) + "┘"))
+		result.WriteString(R.Border.Render("└" + strings.Repeat("─", d.blockWidth-2) + "┘"))
 		result.WriteString("\n")
 		d.inCodeBlock = false
 	}
@@ -441,42 +418,24 @@ func (d *StreamCodeBlockDetector) Flush() string {
 }
 
 func ShowResponseHeader(model string, elapsed time.Duration, tokens int) {
-	var parts []string
-	if model != "" {
-		parts = append(parts, Badge(model, BadgeModel))
+	fmt.Println(RenderResponseHeader(model, elapsed, tokens))
+}
+
+func ShowGuardianReview(tool, verdict, riskLevel, reason string) {
+	if currentSpinner != nil {
+		currentSpinner.Pause()
+		defer currentSpinner.Resume()
+	} else if isTerminal() {
+		fmt.Fprintf(os.Stderr, "\r%s\r", strings.Repeat(" ", 120))
 	}
-	parts = append(parts, Badge(fmt.Sprintf("%.1fs", elapsed.Seconds()), BadgeTime))
-	if tokens > 0 {
-		parts = append(parts, Badge(fmt.Sprintf("%d tok", tokens), BadgeTokens))
-	}
-	header := strings.Join(parts, " ")
-	fmt.Printf("  %s\n", header)
+	fmt.Println(RenderGuardianReviewLine(tool, verdict, riskLevel, reason))
 }
 
 func ShowResponseSeparator() {
-	w := getTerminalWidth()
-	if w <= 0 {
-		w = 80
-	}
-	lineW := w - 4
-	if lineW < 20 {
-		lineW = 20
-	}
-	fmt.Printf("  %s\n", StyleDivider.Render("╶"+strings.Repeat("╌", lineW-2)+"╶"))
 }
 
 func ShowTurnDivider() {
-	w := getTerminalWidth()
-	if w <= 0 {
-		w = 80
-	}
-	lineW := w - 4
-	if lineW < 20 {
-		lineW = 20
-	}
-	fmt.Printf("\n  %s\n\n",
-		StyleDivider.Render("╶"+strings.Repeat("╌", lineW-2)+"╶"),
-	)
+	RenderTurnDivider()
 }
 
 func ShowStreamingCursor() {
@@ -493,5 +452,5 @@ func truncateStr(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
 	}
-	return s[:maxLen] + "..."
+	return s[:maxLen] + "…"
 }

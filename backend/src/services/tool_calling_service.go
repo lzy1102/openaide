@@ -25,8 +25,14 @@ type ToolCallingService struct {
 	usageService UsageTracker
 	eventBus     EventPublisher
 	maxRounds    int
-	sessionRecorder  *SessionRecorder  // ReAct 会话记录器
-	metricsCollector *ToolMetricsCollector // 工具指标收集器
+	sessionRecorder  *SessionRecorder
+	metricsCollector *ToolMetricsCollector
+	smartToolSelector         *SmartToolSelector
+	structuredCompactionSvc   *StructuredCompactionService
+	guardianSvc               *GuardianService
+	guardrail                 *ToolCallGuardrail
+	keyInfoExtractor          *KeyInfoExtractor
+	delegationSvc             *DelegationService
 }
 
 // SetEventBus 设置事件发布器
@@ -42,6 +48,30 @@ func (s *ToolCallingService) SetUsageService(usageService UsageTracker) {
 // SetDialogueService 设置对话存储
 func (s *ToolCallingService) SetDialogueService(dialogueSvc DialogueStore) {
 	s.dialogueSvc = dialogueSvc
+}
+
+func (s *ToolCallingService) SetSmartToolSelector(selector *SmartToolSelector) {
+	s.smartToolSelector = selector
+}
+
+func (s *ToolCallingService) SetStructuredCompactionSvc(svc *StructuredCompactionService) {
+	s.structuredCompactionSvc = svc
+}
+
+func (s *ToolCallingService) SetGuardianSvc(svc *GuardianService) {
+	s.guardianSvc = svc
+}
+
+func (s *ToolCallingService) SetGuardrail(g *ToolCallGuardrail) {
+	s.guardrail = g
+}
+
+func (s *ToolCallingService) SetKeyInfoExtractor(e *KeyInfoExtractor) {
+	s.keyInfoExtractor = e
+}
+
+func (s *ToolCallingService) SetDelegationSvc(d *DelegationService) {
+	s.delegationSvc = d
 }
 
 // NewToolCallingService 创建工具调用服务（使用接口，降低耦合）
@@ -65,7 +95,7 @@ func (s *ToolCallingService) SendMessageWithTools(
 	// 1. 获取工具定义（支持技能工具过滤）
 	var toolDefs []map[string]interface{}
 	if filterRaw, ok := options["tool_filter"]; ok {
-		if filter := toStringSlice(filterRaw); len(filter) > 0 {
+		if filter := interfaceToStringSlice(filterRaw); len(filter) > 0 {
 			toolDefs = s.toolSvc.GetToolDefinitionsWithMCPByNames(filter)
 		}
 	}
@@ -73,19 +103,23 @@ func (s *ToolCallingService) SendMessageWithTools(
 		toolDefs = s.toolSvc.GetToolDefinitionsWithMCP()
 	}
 	if len(toolDefs) > 15 {
-		toolDefs = s.filterRelevantTools(content, toolDefs)
+		if s.smartToolSelector != nil {
+			toolDefs = s.smartToolSelector.SelectTools(content, toolDefs)
+		} else {
+			toolDefs = s.filterRelevantTools(content, toolDefs)
+		}
 	}
 	if len(toolDefs) == 0 {
-		// 发布工具调用事件
 		if s.eventBus != nil {
 			s.eventBus.Publish(ctx, models.EventTopicTool, models.EventTypeToolCalled, "tool_calling", map[string]interface{}{
 				"tool_name": "unknown",
 				"params":    map[string]interface{}{"content": content},
 			})
 		}
-		// 无可用工具，退化为普通对话
 		return nil, fmt.Errorf("no tools available")
 	}
+
+	slog.Info("Tool selection", "component", "ToolCalling", "total_tools", len(s.toolSvc.GetToolDefinitionsWithMCP()), "selected_tools", len(toolDefs))
 
 	// 2. 转换为 LLM ToolDefinition 格式
 	llmTools := make([]llm.ToolDefinition, 0, len(toolDefs))
@@ -128,8 +162,12 @@ func (s *ToolCallingService) SendMessageWithTools(
 	for round := 0; round < s.maxRounds; round++ {
 		messages, _ = s.compressToolOutputs(messages)
 		if s.isContextOverflow(messages, modelID) {
-			slog.Info("Context overflow detected, triggering LLM summarization", "component", "ToolCalling")
-			messages, _ = s.summarizeWithLLM(ctx, messages, modelID)
+			slog.Info("Context overflow detected, triggering compaction", "component", "ToolCalling")
+			if s.structuredCompactionSvc != nil {
+				messages, _ = s.structuredCompactionSvc.CompactMessages(ctx, messages, modelID)
+			} else {
+				messages, _ = s.summarizeWithLLM(ctx, messages, modelID)
+			}
 		}
 
 		// === ReAct: Thinking 阶段 ===
@@ -324,6 +362,42 @@ func (s *ToolCallingService) executeToolCall(ctx context.Context, tc llm.ToolCal
 
 	s.logger.Info(ctx, "Executing tool: %s", tc.Function.Name)
 
+	var toolArgs map[string]interface{}
+	if tc.Function.Arguments != "" {
+		json.Unmarshal([]byte(tc.Function.Arguments), &toolArgs)
+	}
+
+	if s.guardrail != nil {
+		beforeDecision := s.guardrail.BeforeCall(tc.Function.Name, toolArgs)
+		if !beforeDecision.AllowsExecution() {
+			slog.Warn("Guardrail blocked tool call", "component", "Guardrail", "tool", tc.Function.Name, "code", beforeDecision.Code, "count", beforeDecision.Count)
+			return s.guardrail.SyntheticResult(beforeDecision)
+		}
+		if beforeDecision.Action == GuardrailWarn {
+			slog.Warn("Guardrail warning for tool call", "component", "Guardrail", "tool", tc.Function.Name, "message", beforeDecision.Message)
+		}
+	}
+
+	if s.guardianSvc != nil && s.guardianSvc.IsEnabled() {
+		writeTools := map[string]bool{
+			"write_file": true, "delete_file": true, "execute_code": true,
+			"execute_command": true, "shell": true, "bash": true,
+		}
+		if writeTools[tc.Function.Name] {
+			review, err := s.guardianSvc.Review(ctx, tc.Function.Name, tc.Function.Arguments, "")
+			if err == nil {
+				switch review.Verdict {
+				case VerdictDeny:
+					slog.Warn("Guardian denied tool execution", "component", "Guardian", "tool", tc.Function.Name, "reason", review.Reason)
+					return fmt.Sprintf("⛔ Guardian安全审查拒绝执行: %s\n风险等级: %s\n原因: %s", tc.Function.Name, review.RiskLevel, review.Reason)
+				case VerdictConfirm:
+					slog.Warn("Guardian requires confirmation for tool execution", "component", "Guardian", "tool", tc.Function.Name, "reason", review.Reason)
+					return fmt.Sprintf("⚠️ Guardian安全审查需要确认: %s\n风险等级: %s\n原因: %s\n建议: %v\n请使用 approved=true 参数重新调用。", tc.Function.Name, review.RiskLevel, review.Reason, review.Suggestions)
+				}
+			}
+		}
+	}
+
 	toolCtx, toolCancel := context.WithTimeout(ctx, 30*time.Second)
 	defer toolCancel()
 
@@ -338,6 +412,15 @@ func (s *ToolCallingService) executeToolCall(ctx context.Context, tc llm.ToolCal
 
 		errMsg := fmt.Sprintf("Tool execution error: %v", err)
 		s.logger.Error(ctx, "Tool %s failed: %v", tc.Function.Name, err)
+
+		if s.guardrail != nil {
+			failed := true
+			afterDecision := s.guardrail.AfterCall(tc.Function.Name, toolArgs, errMsg, failed)
+			if afterDecision.Action == GuardrailWarn || afterDecision.Action == GuardrailHalt {
+				errMsg = AppendGuardrailGuidance(errMsg, afterDecision)
+			}
+		}
+
 		if s.eventBus != nil {
 			s.eventBus.Publish(ctx, models.EventTopicTool, models.EventTypeToolFailed, "tool_calling", map[string]interface{}{
 				"tool_name":    tc.Function.Name,
@@ -348,17 +431,27 @@ func (s *ToolCallingService) executeToolCall(ctx context.Context, tc llm.ToolCal
 		return errMsg
 	}
 
+	resultContent := fmt.Sprintf("%v", result.Content)
+
+	if s.guardrail != nil {
+		failed := ClassifyToolFailure(tc.Function.Name, resultContent)
+		afterDecision := s.guardrail.AfterCall(tc.Function.Name, toolArgs, resultContent, failed)
+		if afterDecision.Action == GuardrailWarn || afterDecision.Action == GuardrailHalt {
+			resultContent = AppendGuardrailGuidance(resultContent, afterDecision)
+		}
+	}
+
 	if s.eventBus != nil {
 		s.eventBus.Publish(ctx, models.EventTopicTool, models.EventTypeToolCompleted, "tool_calling", map[string]interface{}{
 			"tool_name":    tc.Function.Name,
 			"tool_call_id": tc.ID,
-			"result":       result.Content,
+			"result":       resultContent,
 		})
 	}
 
-	resultJSON, err := json.Marshal(result.Content)
+	resultJSON, err := json.Marshal(resultContent)
 	if err != nil {
-		return fmt.Sprintf("%v", result.Content)
+		return resultContent
 	}
 
 	return string(resultJSON)
@@ -371,7 +464,7 @@ func (s *ToolCallingService) SendMessageWithToolsStream(
 ) (<-chan llm.ChatStreamChunk, error) {
 	var toolDefs []map[string]interface{}
 	if filterRaw, ok := options["tool_filter"]; ok {
-		if filter := toStringSlice(filterRaw); len(filter) > 0 {
+		if filter := interfaceToStringSlice(filterRaw); len(filter) > 0 {
 			toolDefs = s.toolSvc.GetToolDefinitionsWithMCPByNames(filter)
 		}
 	}
@@ -379,7 +472,11 @@ func (s *ToolCallingService) SendMessageWithToolsStream(
 		toolDefs = s.toolSvc.GetToolDefinitionsWithMCP()
 	}
 	if len(toolDefs) > 15 {
-		toolDefs = s.filterRelevantTools(content, toolDefs)
+		if s.smartToolSelector != nil {
+			toolDefs = s.smartToolSelector.SelectTools(content, toolDefs)
+		} else {
+			toolDefs = s.filterRelevantTools(content, toolDefs)
+		}
 	}
 	if len(toolDefs) == 0 {
 		return nil, fmt.Errorf("no tools available")
@@ -430,9 +527,13 @@ func (s *ToolCallingService) SendMessageWithToolsStream(
 				ch <- llm.ChatStreamChunk{CompactInfo: compactInfo}
 			}
 			if s.isContextOverflow(messages, modelID) {
-				slog.Info("Context overflow detected, triggering LLM summarization", "component", "ToolCalling")
+				slog.Info("Context overflow detected, triggering compaction", "component", "ToolCalling")
 				var summaryInfo *llm.CompactInfo
-				messages, summaryInfo = s.summarizeWithLLM(ctx, messages, modelID)
+				if s.structuredCompactionSvc != nil {
+					messages, summaryInfo = s.structuredCompactionSvc.CompactMessages(ctx, messages, modelID)
+				} else {
+					messages, summaryInfo = s.summarizeWithLLM(ctx, messages, modelID)
+				}
 				if summaryInfo != nil {
 					ch <- llm.ChatStreamChunk{CompactInfo: summaryInfo}
 				}
@@ -619,8 +720,8 @@ func (s *ToolCallingService) saveToolCallingResult(dialogueID, sender, content s
 	return msg
 }
 
-// toStringSlice 将 interface{} 转为 []string（处理 JSON 反序列化后的 []interface{} 类型）
-func toStringSlice(raw interface{}) []string {
+// interfaceToStringSlice 将 interface{} 转为 []string
+func interfaceToStringSlice(raw interface{}) []string {
 	switch v := raw.(type) {
 	case []string:
 		return v

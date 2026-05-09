@@ -1,11 +1,13 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
 	"openaide/backend/src/models"
+	"openaide/backend/src/response"
 	"openaide/backend/src/services"
 
 	"github.com/gin-gonic/gin"
@@ -235,12 +237,85 @@ func (h *UsageHandler) RegisterRoutes(r *gin.RouterGroup) {
 		usage.GET("/monthly", h.GetMonthlyUsage)
 		usage.GET("/history", h.GetHistory)
 
-		// 预算管理
 		usage.GET("/budget", h.GetBudget)
 		usage.POST("/budget", h.SetBudget)
 
-		// 定价管理 (管理员)
 		usage.GET("/pricing", h.GetPricing)
 		usage.POST("/pricing", h.UpdatePricing)
 	}
+
+	cost := r.Group("/cost")
+	{
+		cost.GET("/summary", h.GetCostSummary)
+	}
+}
+
+func (h *UsageHandler) GetCostSummary(c *gin.Context) {
+	userID := c.Query("user_id")
+	if userID == "" {
+		if uid, exists := c.Get("user_id"); exists {
+			userID = uid.(string)
+		}
+	}
+	if userID == "" {
+		userID = "cli-user"
+	}
+
+	daysStr := c.DefaultQuery("days", "30")
+	days, err := strconv.Atoi(daysStr)
+	if err != nil || days <= 0 {
+		days = 30
+	}
+
+	period := "month"
+	if days <= 1 {
+		period = "day"
+	} else if days <= 7 {
+		period = "week"
+	}
+
+	stats, err := h.usageService.GetUsageStats(userID, period)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, response.Response{Code: 1, Message: err.Error()})
+		return
+	}
+
+	totalCost, _ := stats["total_cost"].(float64)
+	totalTokens, _ := stats["total_tokens"].(int64)
+	totalRequests, _ := stats["total_requests"].(int64)
+	successRate, _ := stats["success_rate"].(float64)
+
+	summary := map[string]interface{}{
+		"total_cost_usd":     totalCost,
+		"total_cost_display": formatCostDisplay(totalCost),
+		"total_tokens":       totalTokens,
+		"total_requests":     totalRequests,
+		"success_rate":       successRate,
+		"period_days":        days,
+	}
+
+	if byModel, ok := stats["by_model"]; ok {
+		summary["by_model"] = byModel
+	}
+	if byProvider, ok := stats["by_provider"]; ok {
+		summary["by_provider"] = byProvider
+	}
+
+	budget, budgetErr := h.usageService.GetUserBudget(userID)
+	if budgetErr == nil && budget != nil {
+		summary["monthly_budget"] = budget.MonthlyBudget
+		summary["daily_budget"] = budget.DailyBudget
+		if budget.MonthlyBudget > 0 {
+			summary["budget_used_percent"] = fmt.Sprintf("%.1f%%", (totalCost/budget.MonthlyBudget)*100)
+		}
+	}
+
+	c.JSON(http.StatusOK, response.Response{Code: 0, Message: "ok", Data: summary})
+}
+
+func formatCostDisplay(costUSD float64) string {
+	if costUSD < 0.01 {
+		return fmt.Sprintf("$%.4f", costUSD)
+	}
+	return fmt.Sprintf("$%.2f", costUSD)
 }

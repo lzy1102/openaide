@@ -8,9 +8,19 @@ import (
 
 // Config 配置结构
 type Config struct {
-	API    APIConfig     `yaml:"api"`
-	Chat   ChatSettings  `yaml:"chat"`
-	Models []ModelConfig `yaml:"models"`
+	API         APIConfig         `yaml:"api"`
+	Chat        ChatSettings      `yaml:"chat"`
+	Models      []ModelConfig     `yaml:"models"`
+	Permissions PermissionsConfig `yaml:"permissions"`
+}
+
+// PermissionsConfig 权限配置
+type PermissionsConfig struct {
+	Mode        string            `yaml:"mode"`
+	AutoAllow   []string          `yaml:"auto_allow,omitempty"`
+	AutoDeny    []string          `yaml:"auto_deny,omitempty"`
+	SessionAllow map[string]bool  `yaml:"-"`
+	SessionDeny  map[string]bool  `yaml:"-"`
 }
 
 // APIConfig API 配置
@@ -22,9 +32,10 @@ type APIConfig struct {
 
 // ChatSettings 聊天配置
 type ChatSettings struct {
-	DefaultModel string `yaml:"default_model"`
-	Stream       bool   `yaml:"stream"`
-	ContextLimit int    `yaml:"context_limit"`
+	DefaultModel    string `yaml:"default_model"`
+	Stream          bool   `yaml:"stream"`
+	ContextLimit    int    `yaml:"context_limit"`
+	MaxContextTokens int   `yaml:"max_context_tokens"`
 }
 
 // ModelConfig 模型配置

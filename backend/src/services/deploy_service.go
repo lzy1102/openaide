@@ -404,6 +404,7 @@ func (s *DeployService) GenerateK8sManifest(ctx context.Context, req *K8sManifes
 %s
 %s
 %s
+%s
 
 请生成完整的 Kubernetes 清单，包含:
 1. Namespace（如需要）

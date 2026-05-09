@@ -224,7 +224,7 @@ func (s *EnhancedDialogueService) SendMessageWithTools(
 
 	// 技能工具过滤：将 skill_tools 转为 tool_filter 传给 ToolCallingService
 	if toolsRaw, ok := options["skill_tools"]; ok {
-		if names := toStringSlice(toolsRaw); len(names) > 0 {
+		if names := interfaceToStringSlice(toolsRaw); len(names) > 0 {
 			options["tool_filter"] = names
 		}
 	}
@@ -414,7 +414,7 @@ func (s *EnhancedDialogueService) SendMessageWithToolsStream(
 	options["system"] = composedPrompt
 
 	if toolsRaw, ok := options["skill_tools"]; ok {
-		if names := toStringSlice(toolsRaw); len(names) > 0 {
+		if names := interfaceToStringSlice(toolsRaw); len(names) > 0 {
 			options["tool_filter"] = names
 		}
 	}

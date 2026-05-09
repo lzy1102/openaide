@@ -39,9 +39,10 @@ A full-featured AI Agent development platform with multi-model support, multi-ag
 - **Reasoning Content Support**: Save and pass model reasoning/thinking content (DeepSeek, etc.), supports both streaming and non-streaming
 - **Fine-grained Permission System**: Agent-level permission control (build/plan/general/explore), command execution risk grading (allow/ask/deny)
 - **Agent Smart Routing**: Auto-route tasks to different models (fast/code/reasoning) for cost/performance optimization
-- **Slash Command System**: Built-in /compact, /model, /clear, /agent, /tools, /help shortcuts
+- **Slash Command System**: Built-in /compact, /model, /clear, /chapters, /context, /memory, /skill, /help shortcuts
 - **Task Tool (Sub-agent)**: Delegate sub-tasks to child agents with independent ReAct loops
-- **Smart Context Compaction**: Two-phase compression (simple pruning + LLM summarization) to prevent context overflow
+- **Smart Context Compaction**: 5-level progressive strategy — tool trimming → chapter outline → summarization → LLM compaction → emergency compression
+- **Chapter-based Context**: Novel-style chapter extraction with titles, summaries, keywords, and topic boundary detection
 - **DuckDuckGo Dual-Engine Search**: Instant Answer API + HTML search fallback, no API key required
 - **Request Orchestrator**: Unified intent classification (skill/plan/tool/knowledge/chat) and intelligent routing — auto-detects whether to use skills, planning, tool calling, RAG, or plain chat
 - **RAG Query Rewriting**: LLM-based query expansion before retrieval — rewrites colloquial queries to structured search terms, generates multiple expansion queries for better recall
@@ -453,9 +454,10 @@ api:
 - **Reasoning Content 支持**：保存并传递模型的推理/思考过程（DeepSeek 等），支持流式与非流式场景
 - **细粒度权限系统**：Agent 级别权限控制（build/plan/general/explore），命令执行风险分级（allow/ask/deny）
 - **Agent 智能路由**：根据任务类型自动路由到不同模型（fast/code/reasoning），优化成本与性能
-- **Slash 命令系统**：内置 /compact、/model、/clear、/agent、/tools、/help 等快捷命令
+- **Slash 命令系统**：内置 /compact、/model、/clear、/chapters、/context、/memory、/skill、/help 等快捷命令
 - **任务工具（Task Tool）**：子 Agent 委派，独立 ReAct 循环执行子任务
-- **智能上下文压缩**：两阶段压缩（简单修剪 + LLM 摘要），防止上下文窗口溢出
+- **智能上下文压缩**：5 级渐进式策略 — 工具截断 → 章节目录 → 摘要压缩 → LLM 压缩 → 紧急压缩，防止上下文窗口溢出
+- **章节式上下文管理**：像小说一样自动提取对话章节名、摘要、关键词，话题边界检测，保留叙事脉络
 - **DuckDuckGo 双引擎搜索**：Instant Answer API + HTML 搜索回退，无需 API Key
 - **请求编排器（RequestOrchestrator）**：统一意图分类（skill/plan/tool/knowledge/chat）和智能路由 — 自动判断走技能、规划、工具调用、RAG 还是普通对话
 - **RAG 查询改写**：检索前用 LLM 改写口语化查询为结构化检索词，生成扩展查询提升召回率
