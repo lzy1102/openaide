@@ -160,8 +160,7 @@ type Application struct {
 	ExecPolicySvc         *services.ExecPolicyService
 	HookEngine            *services.HookEngine
 	PersistentMemorySvc   *services.PersistentMemoryService
-	SessionBranchSvc      *services.SessionBranchService
-	WorkflowSvc2              *services.WorkflowService2
+	SessionBranchSvc          *services.SessionBranchService
 	StructuredCompactionSvc   *services.StructuredCompactionService
 	SmartToolSelector         *services.SmartToolSelector
 	ConsensusPlanner          *services.ConsensusPlanner
@@ -465,7 +464,6 @@ func (app *Application) initAdvancedServices() error {
 	app.HookEngine = services.NewHookEngine(app.EventBus, app.ExecPolicySvc)
 	app.PersistentMemorySvc = services.NewPersistentMemoryService(app.DB, app.CacheService, app.EventBus)
 	app.SessionBranchSvc = services.NewSessionBranchService(app.DB, app.CacheService, app.EventBus)
-	app.WorkflowSvc2 = services.NewWorkflowService2(app.EventBus, app.DialogueService)
 	app.StructuredCompactionSvc = services.NewStructuredCompactionService(app.DB, app.ModelService, app.DialogueService)
 	app.SmartToolSelector = services.NewSmartToolSelector()
 	app.ConsensusPlanner = services.NewConsensusPlanner(app.ModelService)
