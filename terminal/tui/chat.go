@@ -40,9 +40,65 @@ func RunChat(cfg *Config, apiURL, model string, stream bool) {
 
 	dialogueID := ""
 	var history []Message
+	currentProjectID := ""
+	workspaceLoaded := false
 
-	dialogues, _ := FetchDialogues(apiURL, "cli-user")
-	if len(dialogues) > 0 {
+	// 1. 优先从 .openaide 工作区恢复（同步，因为需要 dialogueID）
+	if HasWorkspace() {
+		ws, err := LoadWorkspaceState()
+		if err == nil && ws.ProjectID != "" {
+			currentProjectID = ws.ProjectID
+			projects, _ := FetchProjects(apiURL)
+			for _, p := range projects {
+				if p.ID == currentProjectID {
+					fmt.Printf("  %s\n", R.Info.Render("📂 Workspace restored: "+p.Name))
+					workspaceLoaded = true
+					break
+				}
+			}
+			// 恢复对话
+			if ws.DialogueID != "" {
+				messages, err := FetchMessages(apiURL, ws.DialogueID)
+				if err == nil && len(messages) > 0 {
+					dialogueID = ws.DialogueID
+					history = messages
+					shortID := dialogueID
+					if len(shortID) > 8 {
+						shortID = shortID[:8]
+					}
+					RenderSessionLine(0, "Workspace Session", shortID, "", true)
+					fmt.Println()
+				}
+			}
+		}
+	}
+
+	// 2. 如果没有工作区，尝试自动检测项目（同步）
+	if currentProjectID == "" {
+		detectedProject := AutoDetectProject(apiURL)
+		if detectedProject != "" {
+			currentProjectID = detectedProject
+			projects, _ := FetchProjects(apiURL)
+			for _, p := range projects {
+				if p.ID == detectedProject {
+					fmt.Printf("  %s\n", R.Info.Render("📂 Auto-detected project: "+p.Name))
+					break
+				}
+			}
+		}
+	}
+
+	// 3. 异步加载项目历史对话，不阻塞启动
+	historyLoaded := make(chan struct{})
+	go func() {
+		defer close(historyLoaded)
+		if dialogueID != "" {
+			return // 已有工作区对话
+		}
+		dialogues, _ := FetchDialoguesByProject(apiURL, "cli-user", currentProjectID)
+		if len(dialogues) == 0 {
+			return
+		}
 		latest := dialogues[0]
 		for _, d := range dialogues {
 			if d.UpdatedAt > latest.UpdatedAt {
@@ -51,28 +107,40 @@ func RunChat(cfg *Config, apiURL, model string, stream bool) {
 		}
 		messages, err := FetchMessages(apiURL, latest.ID)
 		if err == nil && len(messages) > 0 {
-			dialogueID = latest.ID
-			history = messages
-			shortID := latest.ID
-			if len(shortID) > 8 {
-				shortID = shortID[:8]
-			}
-			title := latest.Title
-			if title == "" || title == "CLI Chat" {
-				title = "Conversation"
-			}
-			RenderSessionLine(0, title, shortID, "", dialogueID != "")
-			fmt.Println()
+			// 注意：这里不能直接修改 dialogueID/history，因为主循环可能已开始
+			// 使用回调方式通知
+			onHistoryLoaded(latest.ID, messages)
 		}
-	}
+	}()
 
+	// 4. 如果没有恢复对话，立即创建新对话（不等待历史加载）
 	if dialogueID == "" {
-		dialogue, err := CreateDialogue(apiURL)
+		dialogue, err := CreateDialogueWithProject(apiURL, currentProjectID)
 		if err != nil {
 			RenderErrorBlock(fmt.Sprintf("Failed to create dialogue: %v", err))
 		} else {
 			dialogueID = dialogue.ID
 		}
+	}
+
+	// 5. 如果是新进入的项目且没有工作区，创建 .openaide 标记
+	if currentProjectID != "" && !workspaceLoaded && !HasWorkspace() {
+		if err := InitWorkspace(currentProjectID); err == nil {
+			slog.Debug("workspace initialized", "project_id", currentProjectID)
+		}
+	}
+
+	// 6. 保存对话 ID 到工作区
+	if HasWorkspace() && dialogueID != "" {
+		_ = UpdateWorkspaceDialogue(dialogueID)
+	}
+
+	// 等待历史加载完成（短暂等待，不阻塞用户输入）
+	select {
+	case <-historyLoaded:
+		// 历史加载完成，如果异步加载找到了更早的对话，可以选择切换
+	case <-time.After(500 * time.Millisecond):
+		// 超时，继续启动，历史在后台加载
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -114,7 +182,7 @@ func RunChat(cfg *Config, apiURL, model string, stream bool) {
 
 		if strings.HasPrefix(input, "/") {
 			var newDialogueID string
-			newDialogueID, model, stream = handleSlashCommand(input, apiURL, dialogueID, model, stream, &history, cfg, ctx)
+			newDialogueID, model, stream, currentProjectID = handleSlashCommand(input, apiURL, dialogueID, model, stream, &history, cfg, ctx, currentProjectID)
 			if newDialogueID != "" {
 				dialogueID = newDialogueID
 			}
@@ -217,6 +285,9 @@ func runStreamChat(ctx context.Context, apiURL, dialogueID, input, model string,
 			if currentSpinner != nil {
 				currentSpinner.Resume()
 			}
+		},
+		OnProgress: func(content string) {
+			spinner.UpdateLabel(content)
 		},
 		OnToolCall: func(tool string, params string) {
 			allowed, needsConfirm := checkToolPermission(tool, cfg)
@@ -333,10 +404,10 @@ func ShowResponseFooter(model string, elapsed time.Duration, tokens int) {
 	fmt.Println(RenderResponseFooter(model, elapsed, tokens))
 }
 
-func handleSlashCommand(cmd, apiURL, dialogueID string, model string, stream bool, history *[]Message, cfg *Config, ctx context.Context) (string, string, bool) {
+func handleSlashCommand(cmd, apiURL, dialogueID string, model string, stream bool, history *[]Message, cfg *Config, ctx context.Context, currentProjectID string) (string, string, bool, string) {
 	parts := strings.Fields(cmd)
 	if len(parts) == 0 {
-		return "", model, stream
+		return "", model, stream, currentProjectID
 	}
 
 	newDialogueID := ""
@@ -362,12 +433,15 @@ func handleSlashCommand(cmd, apiURL, dialogueID string, model string, stream boo
 				carrySummary = "[上一对话摘要] " + strings.Join(summaryParts, "; ") + " [请基于此上下文继续]"
 			}
 		}
-		dialogue, err := CreateDialogue(apiURL)
+		dialogue, err := CreateDialogueWithProject(apiURL, currentProjectID)
 		if err != nil {
 			RenderErrorBlock(fmt.Sprintf("Failed: %v", err))
 		} else {
 			newDialogueID = dialogue.ID
 			*history = []Message{}
+			if HasWorkspace() {
+				_ = UpdateWorkspaceDialogue(newDialogueID)
+			}
 			if carrySummary != "" {
 				_, _ = SendMessage(apiURL, dialogue.ID, carrySummary, model)
 				*history = append(*history, Message{
@@ -490,9 +564,13 @@ func handleSlashCommand(cmd, apiURL, dialogueID string, model string, stream boo
 			fmt.Printf("  %s\n", RenderStatusLine("streaming", label))
 		}
 	case "/sessions":
-		dialogues, err := FetchDialogues(apiURL, "cli-user")
+		dialogues, err := FetchDialoguesByProject(apiURL, "cli-user", currentProjectID)
 		if err != nil || len(dialogues) == 0 {
-			RenderInfoLine("No sessions found")
+			projectLabel := ""
+			if currentProjectID != "" {
+				projectLabel = " in current project"
+			}
+			RenderInfoLine("No sessions found" + projectLabel)
 			break
 		}
 		fmt.Println()
@@ -1161,6 +1239,229 @@ func handleSlashCommand(cmd, apiURL, dialogueID string, model string, stream boo
 			}
 			RenderSuccessLine(icon + " Feedback recorded (" + fbType + ")")
 		}
+	case "/project":
+		if len(parts) > 1 {
+			switch parts[1] {
+			case "list", "ls":
+				projects, err := FetchProjects(apiURL)
+				if err != nil || len(projects) == 0 {
+					RenderInfoLine("No projects found")
+					break
+				}
+				fmt.Println()
+				fmt.Printf("  %s\n\n", R.Bold.Render("Projects"))
+				for i, p := range projects {
+					active := ""
+					if p.ID == currentProjectID {
+						active = " " + R.Success.Render("✓")
+					}
+					defaultLabel := ""
+					if p.IsDefault {
+						defaultLabel = " " + R.Dim.Render("(default)")
+					}
+					fmt.Printf("  %s %s%s%s\n",
+						R.Accent.Render(fmt.Sprintf("%d.", i+1)),
+						R.Bold.Render(p.Name),
+						defaultLabel,
+						active,
+					)
+					if p.Description != "" {
+						fmt.Printf("  %s %s\n", R.Dim.Render("│"), R.Dim.Render(truncateStr(p.Description, 60)))
+					}
+				}
+				fmt.Printf("\n  %s\n", R.Dim.Render("Use /project switch <number> to switch"))
+			case "switch", "use":
+				if len(parts) >= 3 {
+					projects, err := FetchProjects(apiURL)
+					if err != nil || len(projects) == 0 {
+						RenderInfoLine("No projects found")
+						break
+					}
+					var target *Project
+					idx := 0
+					if _, err := fmt.Sscanf(parts[2], "%d", &idx); err == nil && idx >= 1 && idx <= len(projects) {
+						target = &projects[idx-1]
+					} else {
+						for i := range projects {
+							if strings.EqualFold(projects[i].Name, parts[2]) {
+								target = &projects[i]
+								break
+							}
+						}
+					}
+					if target == nil {
+					RenderErrorBlock(fmt.Sprintf("Project not found: %s (use /project list)", parts[2]))
+					break
+				}
+				currentProjectID = target.ID
+				_ = InitWorkspace(currentProjectID)
+				fmt.Printf("  %s\n", RenderStatusLine("project", R.Accent.Render(target.Name)))
+					if target.SystemPrompt != "" {
+						fmt.Printf("  %s\n", R.Dim.Render("  system prompt: "+truncateStr(target.SystemPrompt, 60)))
+					}
+					if target.ModelID != "" {
+						fmt.Printf("  %s\n", R.Dim.Render("  model: "+target.ModelID))
+					}
+				} else {
+					RestoreReadline()
+				result := RunProjectSelect(apiURL, currentProjectID)
+				if result.Changed && result.Selected != nil {
+					currentProjectID = result.Selected.ID
+					_ = InitWorkspace(currentProjectID)
+					fmt.Printf("  %s\n", RenderStatusLine("project", R.Accent.Render(result.Selected.Name)))
+						if result.Selected.SystemPrompt != "" {
+							fmt.Printf("  %s\n", R.Dim.Render("  system prompt: "+truncateStr(result.Selected.SystemPrompt, 60)))
+						}
+						if result.Selected.ModelID != "" {
+							fmt.Printf("  %s\n", R.Dim.Render("  model: "+result.Selected.ModelID))
+						}
+					}
+				}
+			case "create", "new":
+				name := ""
+				if len(parts) > 2 {
+					name = parts[2]
+				} else {
+					fmt.Printf("  %s ", R.Dim.Render("Project name:"))
+					fmt.Scanln(&name)
+				}
+				name = strings.TrimSpace(name)
+				if name == "" {
+					RenderInfoLine("Project name cannot be empty")
+					break
+				}
+				desc := ""
+				if len(parts) > 3 {
+					desc = strings.Join(parts[3:], " ")
+				}
+				project, err := CreateProject(apiURL, name, desc, "")
+				if err != nil {
+					RenderErrorBlock(fmt.Sprintf("Failed to create project: %v", err))
+					break
+				}
+				currentProjectID = project.ID
+				_ = InitWorkspace(currentProjectID)
+				fmt.Printf("  %s\n", RenderStatusLine("created project", R.Accent.Render(project.Name), project.ID[:8]+"..."))
+				fmt.Printf("  %s\n", RenderStatusLine("switched to", R.Accent.Render(project.Name)))
+			case "delete", "rm":
+				if len(parts) < 3 {
+					RenderInfoLine("Usage: /project delete <number|name>")
+					break
+				}
+				projects, err := FetchProjects(apiURL)
+				if err != nil || len(projects) == 0 {
+					RenderInfoLine("No projects found")
+					break
+				}
+				var target *Project
+				idx := 0
+				if _, err := fmt.Sscanf(parts[2], "%d", &idx); err == nil && idx >= 1 && idx <= len(projects) {
+					target = &projects[idx-1]
+				} else {
+					for i := range projects {
+						if strings.EqualFold(projects[i].Name, parts[2]) {
+							target = &projects[i]
+							break
+						}
+					}
+				}
+				if target == nil {
+					RenderErrorBlock(fmt.Sprintf("Project not found: %s", parts[2]))
+					break
+				}
+				if target.IsDefault {
+					RenderErrorBlock("Cannot delete the default project")
+					break
+				}
+				if err := DeleteProject(apiURL, target.ID); err != nil {
+					RenderErrorBlock(fmt.Sprintf("Failed to delete project: %v", err))
+					break
+				}
+				if currentProjectID == target.ID {
+					currentProjectID = ""
+				}
+				fmt.Printf("  %s\n", RenderStatusLine("deleted project", R.Accent.Render(target.Name)))
+			default:
+				RenderInfoLine("Usage: /project [list|switch|create|delete]")
+			}
+		} else {
+			if currentProjectID != "" {
+				projects, err := FetchProjects(apiURL)
+				if err == nil {
+					for _, p := range projects {
+						if p.ID == currentProjectID {
+							fmt.Println()
+							fmt.Printf("  %s\n\n", R.Bold.Render("Current Project"))
+							fmt.Printf("  %s\n", RenderStatusLine("name", R.Accent.Render(p.Name)))
+							if p.Description != "" {
+								fmt.Printf("  %s\n", RenderStatusLine("description", truncateStr(p.Description, 60)))
+							}
+							if p.SystemPrompt != "" {
+								fmt.Printf("  %s\n", RenderStatusLine("system prompt", truncateStr(p.SystemPrompt, 60)))
+							}
+							if p.ModelID != "" {
+								fmt.Printf("  %s\n", RenderStatusLine("model", p.ModelID))
+							}
+							if p.WorkingDir != "" {
+								fmt.Printf("  %s\n", RenderStatusLine("working dir", p.WorkingDir))
+							}
+							fmt.Printf("\n  %s\n", R.Dim.Render("Commands: list, switch, create, delete"))
+							break
+						}
+					}
+				} else {
+					fmt.Printf("  %s\n", RenderStatusLine("project", currentProjectID[:8]+"..."))
+				}
+			} else {
+				fmt.Println()
+				fmt.Printf("  %s\n\n", R.Bold.Render("Project"))
+				fmt.Printf("  %s\n", R.Dim.Render("No project selected (using default)"))
+				fmt.Printf("\n  %s\n", R.Dim.Render("Commands: list, switch, create, delete"))
+			}
+		}
+	case "/workspace":
+		if len(parts) > 1 {
+			switch parts[1] {
+			case "init", "bind":
+				if currentProjectID == "" {
+					RenderErrorBlock("No project selected. Use /project switch first")
+					break
+				}
+				if err := InitWorkspace(currentProjectID); err != nil {
+					RenderErrorBlock(fmt.Sprintf("Failed to init workspace: %v", err))
+				} else {
+					_ = UpdateWorkspaceDialogue(dialogueID)
+					RenderSuccessLine("Workspace bound to current directory")
+				}
+			case "clear", "rm":
+				if err := ClearWorkspace(); err != nil {
+					RenderErrorBlock(fmt.Sprintf("Failed to clear workspace: %v", err))
+				} else {
+					RenderSuccessLine("Workspace marker removed")
+				}
+			default:
+				RenderInfoLine("Usage: /workspace [init|clear]")
+			}
+		} else {
+			if HasWorkspace() {
+				ws, err := LoadWorkspaceState()
+				if err == nil {
+					fmt.Println()
+					fmt.Printf("  %s\n\n", R.Bold.Render("Workspace"))
+					fmt.Printf("  %s\n", RenderStatusLine("project", ws.ProjectID[:8]+"..."))
+					fmt.Printf("  %s\n", RenderStatusLine("dialogue", ws.DialogueID[:8]+"..."))
+					fmt.Printf("  %s\n", RenderStatusLine("directory", ws.WorkingDir))
+					fmt.Printf("\n  %s\n", R.Dim.Render("Commands: init, clear"))
+				} else {
+					RenderErrorBlock("Failed to load workspace state")
+				}
+			} else {
+				fmt.Println()
+				fmt.Printf("  %s\n\n", R.Bold.Render("Workspace"))
+				fmt.Printf("  %s\n", R.Dim.Render("No workspace marker in current directory"))
+				fmt.Printf("\n  %s\n", R.Dim.Render("Use /workspace init to bind current project"))
+			}
+		}
 	case "/cost":
 		days := 30
 		if len(parts) > 1 {
@@ -1262,7 +1563,15 @@ func handleSlashCommand(cmd, apiURL, dialogueID string, model string, stream boo
 		}
 	}
 
-	return newDialogueID, model, stream
+	return newDialogueID, model, stream, currentProjectID
+}
+
+// onHistoryLoaded 异步历史加载回调
+func onHistoryLoaded(loadedDialogueID string, messages []Message) {
+	// 目前仅打印提示，不自动切换对话（避免打断用户输入）
+	if len(messages) > 0 {
+		slog.Debug("history loaded async", "dialogue_id", loadedDialogueID, "messages", len(messages))
+	}
 }
 
 func getConfigPath(cfg *Config) string {
@@ -1345,6 +1654,16 @@ var slashCommandCompleter = readline.NewPrefixCompleter(
 	readline.PcItem("/feedback",
 		readline.PcItem("positive"),
 		readline.PcItem("negative"),
+	),
+	readline.PcItem("/project",
+		readline.PcItem("list"),
+		readline.PcItem("switch"),
+		readline.PcItem("create"),
+		readline.PcItem("delete"),
+	),
+	readline.PcItem("/workspace",
+		readline.PcItem("init"),
+		readline.PcItem("clear"),
 	),
 	readline.PcItem("/cost"),
 	readline.PcItem("/cd"),

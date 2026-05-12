@@ -6,6 +6,7 @@ Complete API reference for the OpenAIDE backend service.
 
 - [Authentication](#authentication)
 - [Chat & Dialogue](#chat--dialogue)
+- [Projects](#projects)
 - [Orchestration](#orchestration)
 - [Multi-Agent & Teams](#multi-agent--teams)
 - [Knowledge Base & RAG](#knowledge-base--rag)
@@ -171,9 +172,9 @@ Automatically selects the best model based on content.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/dialogues` | List all dialogues |
-| GET | `/api/dialogues/user/:userID` | List user's dialogues |
-| POST | `/api/dialogues` | Create dialogue |
+| GET | `/api/dialogues` | List all dialogues (paginated, supports `?project_id=` filter) |
+| GET | `/api/dialogues/user/:userID` | List user's dialogues (paginated) |
+| POST | `/api/dialogues` | Create dialogue (supports `project_id` field) |
 | GET | `/api/dialogues/:id` | Get dialogue |
 | PUT | `/api/dialogues/:id` | Update dialogue |
 | DELETE | `/api/dialogues/:id` | Delete dialogue |
@@ -182,6 +183,63 @@ Automatically selects the best model based on content.
 | POST | `/api/dialogues/:id/stream` | Streaming message (SSE) |
 | POST | `/api/dialogues/:id/save-stream` | Save streaming message with `reasoning_content` |
 | DELETE | `/api/dialogues/:id/messages` | Clear messages |
+
+---
+
+## Projects
+
+Projects provide isolated workspaces with separate dialogues, system prompts, models, and working directories.
+
+### Project Management
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/projects` | List all projects |
+| POST | `/api/projects` | Create project |
+| GET | `/api/projects/:id` | Get project |
+| PUT | `/api/projects/:id` | Update project |
+| DELETE | `/api/projects/:id` | Delete project |
+
+### Create Project
+
+**Endpoint:** `POST /api/projects`
+
+```json
+{
+  "name": "My Project",
+  "description": "Project description",
+  "color": "#3b82f6",
+  "icon": "📁",
+  "system_prompt": "You are a helpful coding assistant...",
+  "model_id": "deepseek-chat",
+  "working_dir": "/home/user/my-project"
+}
+```
+
+### Project Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Auto-generated UUID |
+| `user_id` | string | Owner user ID |
+| `name` | string | Project name (required) |
+| `description` | string | Project description |
+| `color` | string | Theme color (hex) |
+| `icon` | string | Emoji or icon identifier |
+| `system_prompt` | string | Default system prompt for dialogues in this project |
+| `model_id` | string | Default model for dialogues in this project |
+| `working_dir` | string | Associated working directory (used for auto-detection in TUI) |
+| `sort_order` | int | Sort order |
+| `is_default` | bool | Whether this is the default project (cannot be deleted) |
+
+### Notes
+
+- A default project is auto-created on first server start
+- Deleting a project moves its dialogues to no-project state (project_id cleared)
+- The default project cannot be deleted (returns `400 Bad Request` with `"cannot delete default project"`)
+- Dialogues can be filtered by project via `GET /api/dialogues?project_id=<id>`
+- Creating a dialogue with `project_id` associates it with that project
+- Dialogue list endpoints use database-level pagination (`page`, `page_size` query params)
 
 ---
 
@@ -851,7 +909,78 @@ All endpoints may return error responses:
 ```
 
 Common HTTP status codes:
-- `400` Bad Request - Invalid request parameters
+- `400` Bad Request - Invalid request parameters or business rule violation (e.g., deleting default project)
 - `401` Unauthorized - Missing or invalid authentication
 - `404` Not Found - Resource not found
 - `500` Internal Server Error - Server error
+
+### SSE Stream Events
+
+Streaming endpoints (`/stream`, `/chat/stream`) return Server-Sent Events with the following event types:
+
+| Event Type | Description |
+|------------|-------------|
+| `content` | Text content chunk |
+| `thinking` | Model reasoning/thinking content |
+| `tool_call` | Tool invocation with parameters |
+| `tool_done` | Tool execution completed with result |
+| `context_compact` | Context was compacted (with before/after message counts) |
+| `progress` | ReAct loop progress indicator (e.g., "Round 2/20: thinking...") |
+| `done` | Stream completed (includes model name and token usage) |
+| `error` | Error occurred during streaming |
+
+Note: The `done` event is sent exactly once per stream — either when the model signals `FinishReason`, or as a fallback when the stream channel closes without a finish signal.
+
+### Guardian Security Review
+
+When a tool call involves write operations (`write_file`, `delete_file`, `execute_command`, `shell`, `bash`), the Guardian service performs a security review before execution:
+
+| Verdict | Risk Level | Behavior |
+|---------|------------|----------|
+| `allow` | any | Tool executes normally |
+| `confirm` | `none`/`low` | Tool executes with warning; session auto-approved for this tool type |
+| `confirm` | `medium`/`high` | Tool is blocked with message; session auto-approved for subsequent calls |
+| `deny` | any | Tool is permanently blocked (dangerous operations like `rm -rf`) |
+
+**Session-Level Approval**: Once a tool type (e.g., `write_file`) is confirmed or approved, all subsequent calls of the same type within the session are automatically approved without requiring Guardian review again.
+
+**Approved Parameter**: When `approved=true` is passed in the tool call parameters (supported by `write_file` and `execute_command`), the Guardian review is bypassed and the tool executes directly.
+
+**Security Levels**: The Guardian security level can be configured via `config.json` or API:
+
+| Level | Behavior |
+|-------|----------|
+| `strict` | All non-read operations require explicit confirmation; any `confirm` verdict becomes `deny` |
+| `standard` | Development operations (`write_file`, `execute_command` without system-level commands) are auto-approved; others require confirmation |
+| `permissive` | Almost all operations are auto-approved; only extreme danger (e.g., `rm -rf /`) is blocked |
+| `off` | Guardian is completely disabled (except `rm -rf` is still blocked) |
+
+Default level is `standard`.
+
+**API Endpoints**:
+
+```bash
+# Get current security level
+GET /api/v1/security/level
+# Response: {"level": "standard", "enabled": true, "levels": ["strict", "standard", "permissive", "off"]}
+
+# Change security level
+POST /api/v1/security/level
+Content-Type: application/json
+{"level": "permissive"}
+```
+
+**File Path Allowlist**: The `write_file` and `read_file` tools restrict file access to allowed directories. Default allowed directories include:
+- Current working directory
+- User home directory
+- OpenAIDE home directory (`/opt/openaide` by default)
+- `/tmp`, `/root`, `/home`, `/opt`, `/srv`, `/var/www`, `/usr/local/src` (if they exist)
+- Additional directories can be configured via `server.allowed_dirs` in `config.json`
+
+```json
+{
+  "server": {
+    "allowed_dirs": ["/root", "/opt", "/home", "/srv", "/var/www"]
+  }
+}
+```

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -111,7 +112,8 @@ func (s *IntegrationTestService) initServices() {
 	var err error
 	s.loggerService, err = NewLoggerService(LogLevelInfo, "")
 	if err != nil {
-		panic(fmt.Sprintf("failed to create logger service: %v", err))
+		log.Printf("Warning: failed to create logger service: %v, using default", err)
+		s.loggerService = &LoggerService{level: LogLevelInfo}
 	}
 
 	// 创建模型服务

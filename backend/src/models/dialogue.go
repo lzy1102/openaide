@@ -8,9 +8,10 @@ import (
 type Dialogue struct {
 	ID                string    `json:"id" gorm:"primaryKey"`
 	UserID            string    `json:"user_id"`
+	ProjectID         string    `json:"project_id" gorm:"index"`
 	Title             string    `json:"title"`
-	Status            string    `json:"status" gorm:"default:active"`       // active, completed
-	MessagesExtracted bool      `json:"messages_extracted" gorm:"default:false"` // 是否已提取记忆
+	Status            string    `json:"status" gorm:"default:active"`
+	MessagesExtracted bool      `json:"messages_extracted" gorm:"default:false"`
 	CreatedAt         time.Time `json:"created_at"`
 	UpdatedAt         time.Time `json:"updated_at"`
 	Messages          []Message `json:"messages"`

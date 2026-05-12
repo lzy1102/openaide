@@ -357,11 +357,10 @@ func (r *SlashCommandRegistry) handleStatus(ctx context.Context, sessionID strin
 	}
 
 	if r.usageSvc != nil {
-		data, err := json.Marshal(map[string]interface{}{"session_id": sessionID})
+		_, err := json.Marshal(map[string]interface{}{"session_id": sessionID})
 		if err == nil {
-			_ = data
+			sb.WriteString("  Usage tracking: enabled\n")
 		}
-		sb.WriteString("  Usage tracking: enabled\n")
 	}
 
 	if r.agentRouter != nil {

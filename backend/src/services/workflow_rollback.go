@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 )
 
@@ -136,11 +137,11 @@ func (h *RollbackHandler) rollbackDatabaseUpdate(ctx context.Context, action *Ro
 	table, _ := action.Data["table"].(string)
 	recordID, _ := action.Data["record_id"].(string)
 
-	// 执行回滚更新
-	// 这里需要实际的数据库操作
-	_ = originalData
-	_ = table
-	_ = recordID
+	slog.Warn("rollbackDatabaseUpdate not fully implemented",
+		"table", table,
+		"record_id", recordID,
+		"original_data", originalData,
+	)
 
 	return nil
 }
@@ -152,19 +153,21 @@ func (h *RollbackHandler) rollbackFileOperation(ctx context.Context, action *Rol
 
 	switch operation {
 	case "create":
-		// 删除创建的文件
-		// 实际实现中需要调用文件系统操作
-		_ = filePath
+		slog.Warn("rollbackFileOperation: delete created file not implemented", "file_path", filePath)
 
 	case "update":
-		// 恢复原始文件内容
 		backupPath, _ := action.Data["backup_path"].(string)
-		_ = backupPath
+		slog.Warn("rollbackFileOperation: restore file from backup not implemented",
+			"file_path", filePath,
+			"backup_path", backupPath,
+		)
 
 	case "delete":
-		// 从备份恢复文件
 		backupPath, _ := action.Data["backup_path"].(string)
-		_ = backupPath
+		slog.Warn("rollbackFileOperation: restore deleted file from backup not implemented",
+			"file_path", filePath,
+			"backup_path", backupPath,
+		)
 	}
 
 	return nil
@@ -178,8 +181,7 @@ func (h *RollbackHandler) compensateAPICall(ctx context.Context, action *Rollbac
 		return nil // 没有补偿端点，跳过
 	}
 
-	// 执行补偿调用
-	_ = compensateEndpoint
+	slog.Warn("compensateAPICall not implemented", "endpoint", compensateEndpoint)
 
 	return nil
 }
@@ -189,9 +191,10 @@ func (h *RollbackHandler) rollbackPlugin(ctx context.Context, action *RollbackAc
 	pluginName, _ := action.Data["plugin_name"].(string)
 	rollbackAction, _ := action.Data["rollback_action"].(string)
 
-	// 调用插件的回滚方法
-	_ = pluginName
-	_ = rollbackAction
+	slog.Warn("rollbackPlugin not implemented",
+		"plugin_name", pluginName,
+		"rollback_action", rollbackAction,
+	)
 
 	return nil
 }

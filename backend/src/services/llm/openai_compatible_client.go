@@ -255,7 +255,6 @@ func (c *OpenAICompatibleClient) buildChatRequest(req *ChatRequest) ([]byte, err
 		Messages:            messages,
 		Temperature:         req.Temperature,
 		MaxTokens:           req.MaxTokens,
-		MaxCompletionTokens: req.MaxTokens,
 		TopP:                req.TopP,
 		Stop:                req.Stop,
 		PresencePenalty:     req.PresencePenalty,

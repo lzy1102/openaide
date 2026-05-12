@@ -214,7 +214,6 @@ func (c *OpenAIClient) buildChatRequest(req *ChatRequest) ([]byte, error) {
 		Model:               req.Model,
 		Messages:            messages,
 		Temperature:         req.Temperature,
-		MaxTokens:           req.MaxTokens,
 		MaxCompletionTokens: req.MaxTokens,
 		TopP:                req.TopP,
 		Stop:                req.Stop,

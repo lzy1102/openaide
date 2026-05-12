@@ -89,6 +89,9 @@ func (s *knowledgeExtractionService) ExtractFromMessage(ctx context.Context, mes
 
 // extractKnowledgeWithLLM 使用 LLM 提取知识
 func (s *knowledgeExtractionService) extractKnowledgeWithLLM(ctx context.Context, text, source string) ([]ExtractedKnowledge, error) {
+	if s.llmClient == nil {
+		return nil, fmt.Errorf("LLM client not available")
+	}
 	prompt := s.buildExtractionPrompt(text)
 
 	req := &llm.ChatRequest{

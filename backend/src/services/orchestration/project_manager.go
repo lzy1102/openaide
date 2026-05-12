@@ -3,6 +3,7 @@ package orchestration
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -604,7 +605,7 @@ func (pm *ProjectManagerAgent) handleProgressUpdate(update ProgressUpdate) {
 	}
 
 	// 使用 UpdateTaskStatus 更新任务状态
-	_ = pm.coordinator.UpdateTaskStatus(update.TaskID, update.Status, "")
+	pm.coordinator.UpdateTaskStatus(update.TaskID, update.Status, "")
 }
 
 // handleUserMessage 处理用户消息
@@ -700,8 +701,8 @@ func (pm *ProjectManagerAgent) resolveIssueWithLLM(issue Issue) error {
 		return err
 	}
 
-	// 处理响应
-	_ = resp
+	// 处理响应 - TODO: 解析响应并应用解决方案
+	slog.Info("LLM response for issue resolution", "response", resp)
 	return nil
 }
 

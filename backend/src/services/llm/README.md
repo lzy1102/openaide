@@ -161,7 +161,7 @@ curl -X POST http://localhost:19375/api/models \
 ### 2. 使用 Go 代码创建客户端
 
 ```go
-import "assistant/backend/src/services/llm"
+import "openaide/backend/src/services/llm"
 
 config := &llm.ClientConfig{
     Provider:   llm.ProviderDeepSeek,

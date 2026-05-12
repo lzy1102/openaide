@@ -48,9 +48,14 @@ func (s *DialogueService) SetUsageService(usageService *UsageService) {
 
 // CreateDialogue 创建新对话
 func (s *DialogueService) CreateDialogue(userID, title string) models.Dialogue {
+	return s.CreateDialogueWithProject(userID, title, "")
+}
+
+func (s *DialogueService) CreateDialogueWithProject(userID, title, projectID string) models.Dialogue {
 	dialogue := models.Dialogue{
 		ID:        uuid.New().String(),
 		UserID:    userID,
+		ProjectID: projectID,
 		Title:     title,
 		Messages:  []models.Message{},
 		CreatedAt: time.Now(),
@@ -94,6 +99,42 @@ func (s *DialogueService) ListDialoguesByUser(userID string) []models.Dialogue {
 	var dialogues []models.Dialogue
 	s.db.Where("user_id = ?", userID).Order("updated_at DESC").Find(&dialogues)
 	return dialogues
+}
+
+// ListDialoguesByProject 列出项目的所有对话
+func (s *DialogueService) ListDialoguesByProject(projectID string) []models.Dialogue {
+	var dialogues []models.Dialogue
+	s.db.Where("project_id = ?", projectID).Order("updated_at DESC").Find(&dialogues)
+	return dialogues
+}
+
+type DialoguePageResult struct {
+	Items []models.Dialogue `json:"items"`
+	Total int64             `json:"total"`
+}
+
+func (s *DialogueService) ListDialoguesPaginated(page, pageSize int) DialoguePageResult {
+	var dialogues []models.Dialogue
+	var total int64
+	s.db.Model(&models.Dialogue{}).Count(&total)
+	s.db.Order("updated_at DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&dialogues)
+	return DialoguePageResult{Items: dialogues, Total: total}
+}
+
+func (s *DialogueService) ListDialoguesByUserPaginated(userID string, page, pageSize int) DialoguePageResult {
+	var dialogues []models.Dialogue
+	var total int64
+	s.db.Model(&models.Dialogue{}).Where("user_id = ?", userID).Count(&total)
+	s.db.Where("user_id = ?", userID).Order("updated_at DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&dialogues)
+	return DialoguePageResult{Items: dialogues, Total: total}
+}
+
+func (s *DialogueService) ListDialoguesByProjectPaginated(projectID string, page, pageSize int) DialoguePageResult {
+	var dialogues []models.Dialogue
+	var total int64
+	s.db.Model(&models.Dialogue{}).Where("project_id = ?", projectID).Count(&total)
+	s.db.Where("project_id = ?", projectID).Order("updated_at DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&dialogues)
+	return DialoguePageResult{Items: dialogues, Total: total}
 }
 
 // AddMessage 添加消息到对话

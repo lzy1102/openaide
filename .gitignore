@@ -16,10 +16,12 @@ openaide-*
 *.dll
 *.so
 *.dylib
+backend/assistant
 backend/openaide-*
 backend/openaide[0-9]*
 backend/src/openaide-*
 backend/src/openaide[0-9]*
+terminal/assistant
 terminal/openaide-*
 deploy/
 
@@ -33,6 +35,16 @@ backend/src/*.py
 backend/src/*.log
 backend/src/*.err
 backend/config.server.json
+
+# 测试备份文件
+*.disabled
+*.bak
+
+# 部署脚本
+deploy*.sh
+fix_config.py
+update_config.py
+test*.sh
 
 # 敏感配置（包含 API Key、密码等）
 server_config.json

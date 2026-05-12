@@ -55,14 +55,37 @@ type DBConfig struct {
 
 // ServerConfig 服务配置
 type ServerConfig struct {
-	Port      int  `json:"port,omitempty"`       // 监听端口，默认 19375
-	LocalMode bool `json:"local_mode,omitempty"` // 本地模式，免认证
+	Port         int      `json:"port,omitempty"`
+	LocalMode    bool     `json:"local_mode,omitempty"`
+	AllowedDirs  []string `json:"allowed_dirs,omitempty"`
+}
+
+// SecurityLevel 安全级别
+// strict: 严格模式，所有写操作都需审查，高风险直接拒绝
+// standard: 标准模式，开发操作自动放行，系统修改需确认（默认）
+// permissive: 宽松模式，几乎所有操作放行，仅阻止极端危险操作
+// off: 关闭 Guardian，所有工具直接执行
+type SecurityLevel string
+
+const (
+	SecurityStrict     SecurityLevel = "strict"
+	SecurityStandard   SecurityLevel = "standard"
+	SecurityPermissive SecurityLevel = "permissive"
+	SecurityOff        SecurityLevel = "off"
+)
+
+// SecurityConfig 安全配置
+type SecurityConfig struct {
+	Level           SecurityLevel `json:"level,omitempty"`            // 安全级别: strict/standard/permissive/off
+	AutoApproveDev  bool          `json:"auto_approve_dev,omitempty"` // 自动批准开发操作
+	BlockDestructive bool         `json:"block_destructive,omitempty"` // 始终阻止破坏性操作
 }
 
 // Config 根配置结构
 type Config struct {
 	HomeDir         string          `json:"home_dir,omitempty"` // 数据主目录，默认 ~/.openaide
 	Server          ServerConfig    `json:"server"`             // 服务配置
+	Security        SecurityConfig  `json:"security"`           // 安全配置
 	Models          []ModelConfig   `json:"models"`
 	Feishu          FeishuConfig    `json:"feishu"`
 	Voice           VoiceConfig     `json:"voice"`
@@ -72,6 +95,12 @@ type Config struct {
 	Context         ContextConfig   `json:"context"`   // 上下文引擎配置 (Hermes Agent)
 	ActivityTimeout string          `json:"activity_timeout"` // 基于活动超时时间 (Hermes Agent)
 	Storage         StorageConfig   `json:"storage"`          // 存储配置（缓存+数据库）
+
+	// 后台服务开关
+	MemoryExtractionEnabled   bool `json:"memory_extraction_enabled"`   // 记忆提取，默认 true
+	SkillDiscoveryEnabled     bool `json:"skill_discovery_enabled"`     // 技能发现，默认 false
+	PatternDetectionEnabled   bool `json:"pattern_detection_enabled"`   // 模式检测，默认 false
+	FeedbackCollectionEnabled bool `json:"feedback_collection_enabled"` // 反馈收集，默认 false
 }
 
 // ContextConfig 上下文引擎配置 (Hermes Agent)

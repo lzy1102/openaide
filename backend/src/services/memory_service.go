@@ -484,7 +484,6 @@ func (s *MemoryService) invalidateUserCache(userID string) {
 	s.Cache.Delete(fmt.Sprintf("memories:user:%s:type:preference", userID))
 	s.Cache.Delete(fmt.Sprintf("memories:user:%s:type:procedure", userID))
 	s.Cache.Delete(fmt.Sprintf("memories:user:%s:type:context", userID))
-	_ = userID
 }
 
 func init() {

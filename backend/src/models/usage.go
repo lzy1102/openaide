@@ -37,7 +37,7 @@ type UsageRecord struct {
 	ErrorMessage     string             `json:"error_message" gorm:"type:text"`
 
 	// 元数据
-	Metadata         map[string]interface{} `json:"metadata" gorm:"type:json"`
+	Metadata         JSONMap                 `json:"metadata" gorm:"type:json"`
 
 	CreatedAt        time.Time           `json:"created_at" gorm:"index"`
 }

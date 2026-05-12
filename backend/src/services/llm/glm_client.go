@@ -233,7 +233,6 @@ func (c *GLMClient) buildChatRequest(req *ChatRequest) ([]byte, error) {
 		Messages:            messages,
 		Temperature:         req.Temperature,
 		MaxTokens:           req.MaxTokens,
-		MaxCompletionTokens: req.MaxTokens,
 		TopP:                req.TopP,
 		Stop:                req.Stop,
 		PresencePenalty:     req.PresencePenalty,

@@ -384,15 +384,33 @@ func (s *ToolCallingService) executeToolCall(ctx context.Context, tc llm.ToolCal
 			"execute_command": true, "shell": true, "bash": true,
 		}
 		if writeTools[tc.Function.Name] {
-			review, err := s.guardianSvc.Review(ctx, tc.Function.Name, tc.Function.Arguments, "")
-			if err == nil {
-				switch review.Verdict {
-				case VerdictDeny:
-					slog.Warn("Guardian denied tool execution", "component", "Guardian", "tool", tc.Function.Name, "reason", review.Reason)
-					return fmt.Sprintf("⛔ Guardian安全审查拒绝执行: %s\n风险等级: %s\n原因: %s", tc.Function.Name, review.RiskLevel, review.Reason)
-				case VerdictConfirm:
-					slog.Warn("Guardian requires confirmation for tool execution", "component", "Guardian", "tool", tc.Function.Name, "reason", review.Reason)
-					return fmt.Sprintf("⚠️ Guardian安全审查需要确认: %s\n风险等级: %s\n原因: %s\n建议: %v\n请使用 approved=true 参数重新调用。", tc.Function.Name, review.RiskLevel, review.Reason, review.Suggestions)
+			approvedByUser := false
+			if toolArgs != nil {
+				if val, ok := toolArgs["approved"].(bool); ok && val {
+					approvedByUser = true
+				}
+			}
+			if approvedByUser {
+				slog.Info("Guardian bypassed: user approved", "component", "Guardian", "tool", tc.Function.Name)
+				s.guardianSvc.ApproveSession(tc.Function.Name)
+			} else if s.guardianSvc.IsSessionApproved(tc.Function.Name) {
+				slog.Info("Guardian bypassed: session already approved", "component", "Guardian", "tool", tc.Function.Name)
+			} else {
+				review, err := s.guardianSvc.Review(ctx, tc.Function.Name, tc.Function.Arguments, "")
+				if err == nil {
+					switch review.Verdict {
+					case VerdictDeny:
+						slog.Warn("Guardian denied tool execution", "component", "Guardian", "tool", tc.Function.Name, "reason", review.Reason)
+						return fmt.Sprintf("⛔ Guardian安全审查拒绝执行: %s\n风险等级: %s\n原因: %s", tc.Function.Name, review.RiskLevel, review.Reason)
+					case VerdictConfirm:
+						slog.Warn("Guardian requires confirmation, auto-approving for session", "component", "Guardian", "tool", tc.Function.Name, "risk_level", review.RiskLevel, "reason", review.Reason)
+						s.guardianSvc.ApproveSession(tc.Function.Name)
+						if review.RiskLevel == RiskNone || review.RiskLevel == RiskLow {
+							slog.Info("Low risk confirmed operation, executing with warning", "component", "Guardian", "tool", tc.Function.Name)
+						} else {
+							return fmt.Sprintf("⚠️ Guardian安全审查需要确认: %s\n风险等级: %s\n原因: %s\n建议: %v\n已自动批准本次会话的此类操作，后续相同工具调用将不再拦截。", tc.Function.Name, review.RiskLevel, review.Reason, review.Suggestions)
+						}
+					}
 				}
 			}
 		}
@@ -540,6 +558,15 @@ func (s *ToolCallingService) SendMessageWithToolsStream(
 			}
 
 			thinkStep := stateMachine.StartThinking()
+
+			ch <- llm.ChatStreamChunk{
+				Choices: []llm.StreamChoice{{
+					Delta: llm.MessageDelta{
+						Role: "assistant",
+					},
+				}},
+				Progress: fmt.Sprintf("Round %d/%d: thinking...", round+1, s.maxRounds),
+			}
 
 			resp, err := s.modelSvc.ChatWithTools(modelID, messages, llmTools, options)
 			if err != nil {
@@ -853,15 +880,19 @@ func (s *ToolCallingService) summarizeWithLLM(ctx context.Context, messages []ll
 	for _, msg := range oldMessages {
 		switch msg.Role {
 		case llm.RoleUser:
-			historyText.WriteString(fmt.Sprintf("用户: %s\n", msg.Content))
+			content := msg.Content
+			if len(content) > 300 {
+				content = content[:300] + "..."
+			}
+			historyText.WriteString(fmt.Sprintf("用户: %s\n", content))
 		case llm.RoleAssistant:
 			content := msg.Content
-			if len(content) > 500 {
-				content = content[:500] + "..."
+			if len(content) > 300 {
+				content = content[:300] + "..."
 			}
 			historyText.WriteString(fmt.Sprintf("助手: %s\n", content))
 		case llm.RoleTool:
-			content := compressToolResult(msg.Content, 200)
+			content := compressToolResult(msg.Content, 150)
 			historyText.WriteString(fmt.Sprintf("工具(%s): %s\n", msg.ToolCallID, content))
 		}
 	}
@@ -876,7 +907,7 @@ func (s *ToolCallingService) summarizeWithLLM(ctx context.Context, messages []ll
 对话历史：
 %s
 
-请用要点格式总结，不超过500字：`, historyText.String())
+请用要点格式总结，不超过300字：`, historyText.String())
 
 	summaryModelID := modelID
 	models, err := s.modelSvc.ListModels()
@@ -894,7 +925,7 @@ func (s *ToolCallingService) summarizeWithLLM(ctx context.Context, messages []ll
 
 	resp, err := s.modelSvc.Chat(summaryModelID, []llm.Message{
 		{Role: llm.RoleUser, Content: summaryPrompt},
-	}, map[string]interface{}{"max_tokens": 2000})
+	}, map[string]interface{}{"max_tokens": 1000})
 
 	if err != nil {
 		slog.Error("LLM summarization failed, using messages as-is", "component", "ToolCalling", "error", err)
@@ -960,10 +991,8 @@ func (s *ToolCallingService) buildMessagesWithHistory(ctx context.Context, dialo
 	dialogueSvc := s.getDialogueService()
 	if dialogueSvc != nil {
 		history := dialogueSvc.GetMessages(dialogueID)
-		const maxHistoryMessages = 50
-		startIdx := 0
-		if len(history) > maxHistoryMessages {
-			startIdx = len(history) - maxHistoryMessages
+		if len(history) == 0 {
+			return append(messages, llm.Message{Role: llm.RoleUser, Content: currentContent})
 		}
 
 		estimator := NewTokenEstimator()
@@ -972,7 +1001,11 @@ func (s *ToolCallingService) buildMessagesWithHistory(ctx context.Context, dialo
 			modelID = m[0].ID
 		}
 
-		for i := startIdx; i < len(history); i++ {
+		const maxTokenBudget = 60000
+		currentTokens := estimator.EstimateTokens(currentContent, modelID)
+		budget := maxTokenBudget - currentTokens
+
+		for i := len(history) - 1; i >= 0; i-- {
 			msg := history[i]
 			var role string
 			switch msg.Sender {
@@ -989,25 +1022,29 @@ func (s *ToolCallingService) buildMessagesWithHistory(ctx context.Context, dialo
 			}
 
 			content := msg.Content
-			isRecent := i >= len(history)-8
+			isRecent := i >= len(history)-6
 
 			if !isRecent {
-				if role == llm.RoleAssistant {
-					if len(content) > 800 {
-						keyPoints := extractKeyPoints(content)
-						if keyPoints != "" {
-							content = keyPoints
-						} else {
-							content = content[:600] + "\n...(回复已压缩)"
-						}
+				if role == llm.RoleAssistant && len(content) > 600 {
+					keyPoints := extractKeyPoints(content)
+					if keyPoints != "" {
+						content = keyPoints
+					} else {
+						content = content[:500] + "\n...(已压缩)"
 					}
 				}
-				if role == llm.RoleTool {
-					if len(content) > 400 {
-						content = compressToolResult(content, 400)
-					}
+				if role == llm.RoleTool && len(content) > 300 {
+					content = compressToolResult(content, 300)
 				}
 			}
+
+			tokens := estimator.EstimateTokens(content, modelID)
+			if tokens > budget && !isRecent {
+				slog.Info("Token budget exceeded, truncating history", "component", "ToolCalling",
+					"msg_index", i, "budget", budget, "msg_tokens", tokens)
+				break
+			}
+			budget -= tokens
 
 			llmMsg := llm.Message{
 				Role:    role,
@@ -1019,13 +1056,14 @@ func (s *ToolCallingService) buildMessagesWithHistory(ctx context.Context, dialo
 			if msg.ToolCallID != "" {
 				llmMsg.ToolCallID = msg.ToolCallID
 			}
-			messages = append(messages, llmMsg)
+			messages = append([]llm.Message{llmMsg}, messages...)
 		}
 
 		totalTokens := 0
 		for _, msg := range messages {
 			totalTokens += estimator.EstimateTokens(msg.Content, modelID)
 		}
+		totalTokens += currentTokens
 		slog.Info("Built messages with history", "component", "ToolCalling",
 			"history_count", len(history), "messages", len(messages),
 			"estimated_tokens", totalTokens)
@@ -1209,7 +1247,17 @@ func toolCallSignature(toolCalls []llm.ToolCall) string {
 	for _, tc := range toolCalls {
 		sb.WriteString(tc.Function.Name)
 		sb.WriteString("(")
-		sb.WriteString(tc.Function.Arguments)
+		var args map[string]interface{}
+		if json.Unmarshal([]byte(tc.Function.Arguments), &args) == nil {
+			delete(args, "approved")
+			if filtered, err := json.Marshal(args); err == nil {
+				sb.WriteString(string(filtered))
+			} else {
+				sb.WriteString(tc.Function.Arguments)
+			}
+		} else {
+			sb.WriteString(tc.Function.Arguments)
+		}
 		sb.WriteString(")")
 	}
 	return sb.String()

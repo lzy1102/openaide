@@ -30,6 +30,7 @@ type Application struct {
 	LoggerService       *services.LoggerService
 	ModelService        *services.ModelService
 	DialogueService     *services.DialogueService
+	ProjectService      *services.ProjectService
 	WorkflowService     *services.WorkflowService
 	SkillService        *services.SkillService
 	PluginService       *services.PluginService
@@ -313,6 +314,7 @@ func (app *Application) initInfrastructure() error {
 		&models.ShortTermMemory{}, &models.MCPServer{}, &models.SelfReflection{}, &models.RepetitivePattern{},
 		&models.SkillEvolution{}, &models.CapabilityGap{}, &models.EvolutionMetrics{},
 		&models.CompressedContext{},
+		&models.Project{},
 		&models.OrchestrationRecord{}, &models.SubtaskExecutionRecord{},
 	); err != nil {
 		slog.Warn("AutoMigrate warning", "error", err)
@@ -355,6 +357,7 @@ func (app *Application) initCoreServices() error {
 
 	app.ModelService = services.NewModelService(app.Config, app.CacheService, app.DB)
 	app.DialogueService = services.NewDialogueService(app.DB, app.ModelService, app.LoggerService)
+	app.ProjectService = services.NewProjectService(app.DB, app.CacheService)
 	app.WorkflowService = services.NewWorkflowService(app.DB, app.ModelService.GetLLMClient())
 	app.SkillService = services.NewSkillService(app.DB, app.ModelService, app.LoggerService)
 	app.SkillService.InitBuiltinSkills()
@@ -443,8 +446,13 @@ func (app *Application) initOrchestrationServices() error {
 // initAdvancedServices 初始化高级服务
 func (app *Application) initAdvancedServices() error {
 	app.MultiAgentService = services.NewMultiAgentService(app.ModelService, app.ModelRouter, app.LoggerService)
-	app.VoiceService = services.NewVoiceService(services.VoiceConfig{})
-	app.SandboxService = services.NewSandboxService(services.SandboxConfig{})
+	// Voice/Sandbox 懒加载，仅在配置启用时初始化
+	if app.Config.Voice.Enabled {
+		app.VoiceService = services.NewVoiceService(services.VoiceConfig{})
+	}
+	if app.Config.Sandbox.Enabled {
+		app.SandboxService = services.NewSandboxService(services.SandboxConfig{})
+	}
 	app.ChannelRegistry = services.NewChannelRegistry()
 	app.ChannelRegistry.Register(services.NewAPIChannel())
 	app.PromptTemplateService = services.NewPromptTemplateService(app.DB, app.CacheService, app.LoggerService)
@@ -508,7 +516,6 @@ func (app *Application) initKnowledgeServices() error {
 	app.DocumentService = services.NewDocumentService(app.DB, app.EmbeddingService, app.KnowledgeService, app.CacheService)
 	app.RAGService = services.NewRAGService(app.KnowledgeService, app.ModelService.GetLLMClient(), app.CacheService)
 
-	_ = services.NewDefaultContextEngine(app.DB, app.DialogueService, app.CacheService, app.LoggerService, services.DefaultCompressionConfig, true)
 	app.ContextManager = services.NewContextManager(app.DB, app.DialogueService, app.CacheService, app.LoggerService, 100, 4000, 24*time.Hour, true)
 	app.ExtractionService = services.NewKnowledgeExtractionService(app.DB, app.ModelService.GetLLMClient(), app.KnowledgeService, app.DialogueService, app.LoggerService)
 	app.PromptService = services.NewPromptService(app.DB, app.MemoryService, app.RAGService)
@@ -557,12 +564,7 @@ func (app *Application) initCommunicationServices() error {
 
 // initExternalServices 初始化外部集成服务
 func (app *Application) initExternalServices() error {
-	cfg, err := config.Load()
-	if err != nil {
-		slog.Warn("Failed to load config, using defaults", "error", err)
-		cfg = &config.Config{Models: []config.ModelConfig{}}
-	}
-	app.Config = cfg
+	cfg := app.Config
 
 	// 应用语音配置
 	if cfg.Voice.Enabled {
@@ -581,14 +583,7 @@ func (app *Application) initExternalServices() error {
 	// 应用上下文引擎配置
 	if cfg.Context.CompressionMode != "" {
 		compressionMode := services.CompressionMode(cfg.Context.CompressionMode)
-		_ = services.NewDefaultContextEngine(app.DB, app.DialogueService, app.CacheService, app.LoggerService, services.CompressionConfig{
-			Mode:              compressionMode,
-			MaxTokens:         cfg.Context.MaxTokens,
-			KeepLastN:         cfg.Context.KeepLastN,
-			PreserveToolCalls: cfg.Context.PreserveToolCalls,
-			FallbackToSummary: cfg.Context.FallbackToSummary,
-		}, cfg.Context.CompressionEnabled)
-		slog.Info("Context engine initialized", "component", "Hermes Agent", "mode", compressionMode)
+		slog.Info("Context engine configured", "component", "Hermes Agent", "mode", compressionMode)
 	}
 
 	// 初始化记忆向量嵌入服务
@@ -685,11 +680,21 @@ func (app *Application) initHandlers() error {
 
 // initBackgroundServices 初始化后台服务
 func (app *Application) initBackgroundServices() error {
-	app.MemoryExtractionService = services.NewMemoryExtractionService(app.DB, app.MemoryService, app.ModelService.GetLLMClient(), true)
-	app.EnhancedDialogueService.SetMemoryExtractionService(app.MemoryExtractionService)
-	app.SkillDiscoveryService = services.NewSkillDiscoveryService(app.DB, app.SkillService, app.ModelService, app.MemoryService, true)
-	app.PatternDetector = services.NewPatternDetector(app.DB, app.ModelService, true)
-	app.UserFeedbackCollector = services.NewUserFeedbackCollector(app.DB, app.ModelService, app.SkillService, app.MemoryService, app.WebSocketService, true)
+	// 记忆提取：默认启用，但可通过配置关闭
+	if app.Config.MemoryExtractionEnabled {
+		app.MemoryExtractionService = services.NewMemoryExtractionService(app.DB, app.MemoryService, app.ModelService.GetLLMClient(), true)
+		app.EnhancedDialogueService.SetMemoryExtractionService(app.MemoryExtractionService)
+	}
+	// 技能发现、模式检测、反馈收集：默认关闭，减少后台 CPU 占用
+	if app.Config.SkillDiscoveryEnabled {
+		app.SkillDiscoveryService = services.NewSkillDiscoveryService(app.DB, app.SkillService, app.ModelService, app.MemoryService, true)
+	}
+	if app.Config.PatternDetectionEnabled {
+		app.PatternDetector = services.NewPatternDetector(app.DB, app.ModelService, true)
+	}
+	if app.Config.FeedbackCollectionEnabled {
+		app.UserFeedbackCollector = services.NewUserFeedbackCollector(app.DB, app.ModelService, app.SkillService, app.MemoryService, app.WebSocketService, true)
+	}
 
 	// 初始化活动超时跟踪器
 	activityTimeout := 30 * time.Minute

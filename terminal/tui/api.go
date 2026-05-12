@@ -41,7 +41,15 @@ func FetchModels(apiURL string) ([]Model, error) {
 }
 
 func FetchDialogues(apiURL string, userID string) ([]Dialogue, error) {
-	data, err := makeRequest("GET", apiURL+"/dialogues/user/"+userID, nil)
+	return FetchDialoguesByProject(apiURL, userID, "")
+}
+
+func FetchDialoguesByProject(apiURL string, userID string, projectID string) ([]Dialogue, error) {
+	endpoint := apiURL + "/dialogues"
+	if projectID != "" {
+		endpoint += "?project_id=" + projectID
+	}
+	data, err := makeRequest("GET", endpoint, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -72,9 +80,16 @@ func FetchMessages(apiURL, dialogueID string) ([]Message, error) {
 }
 
 func CreateDialogue(apiURL string) (Dialogue, error) {
+	return CreateDialogueWithProject(apiURL, "")
+}
+
+func CreateDialogueWithProject(apiURL string, projectID string) (Dialogue, error) {
 	reqBody := map[string]interface{}{
 		"user_id": "cli-user",
 		"title":   "CLI Chat",
+	}
+	if projectID != "" {
+		reqBody["project_id"] = projectID
 	}
 	data, err := makeRequest("POST", apiURL+"/dialogues", reqBody)
 	if err != nil {
@@ -85,6 +100,40 @@ func CreateDialogue(apiURL string) (Dialogue, error) {
 		return Dialogue{}, err
 	}
 	return result, nil
+}
+
+func FetchProjects(apiURL string) ([]Project, error) {
+	data, err := makeRequest("GET", apiURL+"/projects", nil)
+	if err != nil {
+		return nil, err
+	}
+	var projects []Project
+	if err := unwrapResponse(data, &projects); err != nil {
+		return nil, err
+	}
+	return projects, nil
+}
+
+func CreateProject(apiURL, name, description, color string) (Project, error) {
+	reqBody := map[string]interface{}{
+		"name":        name,
+		"description": description,
+		"color":       color,
+	}
+	data, err := makeRequest("POST", apiURL+"/projects", reqBody)
+	if err != nil {
+		return Project{}, err
+	}
+	var result Project
+	if err := unwrapResponse(data, &result); err != nil {
+		return Project{}, err
+	}
+	return result, nil
+}
+
+func DeleteProject(apiURL, projectID string) error {
+	_, err := makeRequest("DELETE", apiURL+"/projects/"+projectID, nil)
+	return err
 }
 
 func CompactContext(apiURL, dialogueID string) (map[string]interface{}, error) {
@@ -208,6 +257,7 @@ type StreamCallbacks struct {
 	OnDone          func(model string, usage *StreamUsage)
 	OnCompact       func(reason string, beforeMsgs, afterMsgs, savedTokens int)
 	OnGuardianReview func(tool string, verdict string, riskLevel string, reason string)
+	OnProgress      func(content string)
 }
 
 func SendMessageStream(ctx context.Context, apiURL, dialogueID string, content, model string, timeoutSec int, cb *StreamCallbacks) (string, error) {
@@ -249,116 +299,151 @@ func SendMessageStream(ctx context.Context, apiURL, dialogueID string, content, 
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" || strings.HasPrefix(line, ":") {
-			continue
+	lines := make(chan string, 64)
+	scanDone := make(chan error, 1)
+
+	go func() {
+		for scanner.Scan() {
+			lines <- scanner.Text()
 		}
-		if strings.HasPrefix(line, "data:") || strings.HasPrefix(line, "data: ") {
-			var data string
-			if strings.HasPrefix(line, "data: ") {
-				data = strings.TrimPrefix(line, "data: ")
-			} else {
-				data = strings.TrimPrefix(line, "data:")
-			}
-			if data == "[DONE]" {
-				if cb != nil && cb.OnDone != nil {
-					cb.OnDone(model, nil)
-				}
-				break
-			}
+		scanDone <- scanner.Err()
+		close(lines)
+	}()
 
-			var chunk map[string]interface{}
-			if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-				continue
-			}
+	heartbeatTimeout := 90 * time.Second
+	ticker := time.NewTicker(heartbeatTimeout)
+	defer ticker.Stop()
 
-			eventType, _ := chunk["type"].(string)
-
-			switch eventType {
-			case "thinking":
-				if cb != nil && cb.OnThinking != nil {
-					if thinking, ok := chunk["content"].(string); ok {
-						cb.OnThinking(thinking)
-					}
-				}
-			case "tool_call":
-				if cb != nil && cb.OnToolCall != nil {
-					tool, _ := chunk["tool"].(string)
-					params, _ := chunk["params"].(string)
-					cb.OnToolCall(tool, params)
-				}
-			case "tool_done":
-				if cb != nil && cb.OnToolDone != nil {
-					tool, _ := chunk["tool"].(string)
-					result, _ := chunk["result"].(string)
-					cb.OnToolDone(tool, result)
-				}
-			case "context_compact":
-				if cb != nil && cb.OnCompact != nil {
-					reason, _ := chunk["reason"].(string)
-					beforeMsgs := 0
-					afterMsgs := 0
-					savedTokens := 0
-					if v, ok := chunk["before_msgs"].(float64); ok {
-						beforeMsgs = int(v)
-					}
-					if v, ok := chunk["after_msgs"].(float64); ok {
-						afterMsgs = int(v)
-					}
-					if v, ok := chunk["saved_tokens"].(float64); ok {
-						savedTokens = int(v)
-					}
-					cb.OnCompact(reason, beforeMsgs, afterMsgs, savedTokens)
-				}
-			case "guardian_review":
-				if cb != nil && cb.OnGuardianReview != nil {
-					tool, _ := chunk["tool"].(string)
-					verdict, _ := chunk["verdict"].(string)
-					riskLevel, _ := chunk["risk_level"].(string)
-					reason, _ := chunk["reason"].(string)
-					cb.OnGuardianReview(tool, verdict, riskLevel, reason)
-				}
-			case "content":
-				if content, ok := chunk["content"].(string); ok {
-					if cb != nil && cb.OnContent != nil {
-						cb.OnContent(content)
-					}
-					fullResponse.WriteString(content)
-				}
-			case "done":
-				if cb != nil && cb.OnDone != nil {
-					m, _ := chunk["model"].(string)
-					var usage *StreamUsage
-					if usageRaw, ok := chunk["usage"]; ok {
-						usageBytes, _ := json.Marshal(usageRaw)
-						var u StreamUsage
-						if json.Unmarshal(usageBytes, &u) == nil {
-							usage = &u
-						}
-					}
-					cb.OnDone(m, usage)
+	for {
+		select {
+		case line, ok := <-lines:
+			if !ok {
+				if err := <-scanDone; err != nil {
+					return fullResponse.String(), fmt.Errorf("stream error: %w", err)
 				}
 				return fullResponse.String(), nil
-			case "error":
-				errMsg, _ := chunk["content"].(string)
-				if errMsg != "" {
-					return fullResponse.String(), fmt.Errorf("%s", errMsg)
+			}
+			ticker.Reset(heartbeatTimeout)
+
+			if line == "" || strings.HasPrefix(line, ":") {
+				continue
+			}
+			if strings.HasPrefix(line, "data:") || strings.HasPrefix(line, "data: ") {
+				var data string
+				if strings.HasPrefix(line, "data: ") {
+					data = strings.TrimPrefix(line, "data: ")
+				} else {
+					data = strings.TrimPrefix(line, "data:")
 				}
-			default:
-				if content, ok := chunk["content"].(string); ok {
-					if eventType == "" && content != "" {
+				if data == "[DONE]" {
+					if cb != nil && cb.OnDone != nil {
+						cb.OnDone(model, nil)
+					}
+					return fullResponse.String(), nil
+				}
+
+				var chunk map[string]interface{}
+				if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+					continue
+				}
+
+				eventType, _ := chunk["type"].(string)
+
+				switch eventType {
+				case "thinking":
+					if cb != nil && cb.OnThinking != nil {
+						if thinking, ok := chunk["content"].(string); ok {
+							cb.OnThinking(thinking)
+						}
+					}
+				case "tool_call":
+					if cb != nil && cb.OnToolCall != nil {
+						tool, _ := chunk["tool"].(string)
+						params, _ := chunk["params"].(string)
+						cb.OnToolCall(tool, params)
+					}
+				case "tool_done":
+					if cb != nil && cb.OnToolDone != nil {
+						tool, _ := chunk["tool"].(string)
+						result, _ := chunk["result"].(string)
+						cb.OnToolDone(tool, result)
+					}
+				case "context_compact":
+					if cb != nil && cb.OnCompact != nil {
+						reason, _ := chunk["reason"].(string)
+						beforeMsgs := 0
+						afterMsgs := 0
+						savedTokens := 0
+						if v, ok := chunk["before_msgs"].(float64); ok {
+							beforeMsgs = int(v)
+						}
+						if v, ok := chunk["after_msgs"].(float64); ok {
+							afterMsgs = int(v)
+						}
+						if v, ok := chunk["saved_tokens"].(float64); ok {
+							savedTokens = int(v)
+						}
+						cb.OnCompact(reason, beforeMsgs, afterMsgs, savedTokens)
+					}
+				case "guardian_review":
+					if cb != nil && cb.OnGuardianReview != nil {
+						tool, _ := chunk["tool"].(string)
+						verdict, _ := chunk["verdict"].(string)
+						riskLevel, _ := chunk["risk_level"].(string)
+						reason, _ := chunk["reason"].(string)
+						cb.OnGuardianReview(tool, verdict, riskLevel, reason)
+					}
+				case "progress":
+					if cb != nil && cb.OnProgress != nil {
+						if content, ok := chunk["content"].(string); ok {
+							cb.OnProgress(content)
+						}
+					}
+				case "content":
+					if content, ok := chunk["content"].(string); ok {
 						if cb != nil && cb.OnContent != nil {
 							cb.OnContent(content)
 						}
 						fullResponse.WriteString(content)
 					}
+				case "done":
+					if cb != nil && cb.OnDone != nil {
+						m, _ := chunk["model"].(string)
+						var usage *StreamUsage
+						if usageRaw, ok := chunk["usage"]; ok {
+							usageBytes, _ := json.Marshal(usageRaw)
+							var u StreamUsage
+							if json.Unmarshal(usageBytes, &u) == nil {
+								usage = &u
+							}
+						}
+						cb.OnDone(m, usage)
+					}
+					return fullResponse.String(), nil
+				case "error":
+					errMsg, _ := chunk["content"].(string)
+					if errMsg != "" {
+						return fullResponse.String(), fmt.Errorf("%s", errMsg)
+					}
+				default:
+					if content, ok := chunk["content"].(string); ok {
+						if eventType == "" && content != "" {
+							if cb != nil && cb.OnContent != nil {
+								cb.OnContent(content)
+							}
+							fullResponse.WriteString(content)
+						}
+					}
 				}
 			}
+
+		case <-ticker.C:
+			return fullResponse.String(), fmt.Errorf("connection timed out: no data received for %v", heartbeatTimeout)
+
+		case <-ctx.Done():
+			return fullResponse.String(), fmt.Errorf("request cancelled: %w", ctx.Err())
 		}
 	}
-
-	return fullResponse.String(), nil
 }
 
 func unwrapResponse(data []byte, target interface{}) error {

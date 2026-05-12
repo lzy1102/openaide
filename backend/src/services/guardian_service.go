@@ -7,13 +7,14 @@ import (
 	"log/slog"
 	"strings"
 
+	"openaide/backend/src/config"
 	"openaide/backend/src/services/llm"
 )
 
-const guardianPrompt = `You are a security guardian. Evaluate whether the following tool call is safe to execute.
+const guardianPrompt = `You are a security guardian for a development assistant. Evaluate whether the following tool call is safe to execute.
 
 Rate the operation on these dimensions:
-1. data_exfiltration: Could this leak sensitive data? (IPs, credentials, personal info, API keys)
+1. data_exfiltration: Could this leak sensitive data? (credentials, API keys, private user data)
 2. credential_probing: Could this access or expose authentication credentials?
 3. persistent_security_weakening: Could this permanently weaken system security? (opening ports, disabling firewalls, adding SSH keys)
 4. destructive_action: Could this cause irreversible damage? (deleting files, dropping databases, formatting disks)
@@ -37,11 +38,27 @@ Respond in JSON format:
 }
 
 Rules:
-- "allow": Safe operations (reading files, searching code, listing directories)
-- "confirm": Potentially risky operations that need user confirmation (writing files, executing commands, network requests)
-- "deny": Dangerous operations that should be blocked (rm -rf, exposing credentials, disabling security)
-- When in doubt, use "confirm" rather than "allow"
-- Never "allow" operations that could cause irreversible changes without confirmation`
+- "allow": Safe operations, including:
+  * Reading files, searching code, listing directories
+  * Creating directories (mkdir) for project scaffolding
+  * Writing source code files (.rs, .py, .js, .go, .toml, .yaml, .json, .html, .css, .md, etc.)
+  * Installing packages via package managers (apt, yum, npm, cargo, pip)
+  * Running build commands (cargo build, npm install, go build, make)
+  * Git operations (clone, pull, push, commit, status, log)
+  * Non-destructive system queries (ls, cat, grep, find, ps, df, free, top)
+- "confirm": Operations with moderate risk that should be confirmed:
+  * Executing commands that modify system state (systemctl, service, chmod, chown)
+  * Writing to system directories (/etc, /usr, /bin, /sbin)
+  * Network operations that expose services (starting servers on public interfaces)
+  * Operations involving sudo or elevated privileges
+- "deny": Dangerous operations that should be blocked:
+  * rm -rf / or similar destructive patterns
+  * Exposing credentials or API keys
+  * Disabling security mechanisms
+  * Formatting disks or dropping databases without explicit user intent
+- For development tasks (creating projects, writing code, building software), prefer "allow"
+- Only use "confirm" for operations that genuinely pose security risk
+- Never "deny" operations that the user explicitly requested as part of their development workflow`
 
 type GuardianVerdict string
 
@@ -77,16 +94,25 @@ type GuardianReview struct {
 }
 
 type GuardianService struct {
-	modelCaller ModelCaller
-	enabled     bool
-	autoAllow   map[string]bool
-	autoDeny    map[string]bool
+	modelCaller      ModelCaller
+	enabled          bool
+	level            config.SecurityLevel
+	autoAllow        map[string]bool
+	autoDeny         map[string]bool
+	sessionApprovals map[string]bool
 }
 
 func NewGuardianService(modelCaller ModelCaller) *GuardianService {
+	cfg, _ := config.Load()
+	level := config.SecurityStandard
+	if cfg != nil && cfg.Security.Level != "" {
+		level = cfg.Security.Level
+	}
+
 	return &GuardianService{
 		modelCaller: modelCaller,
-		enabled:     true,
+		enabled:     level != config.SecurityOff,
+		level:       level,
 		autoAllow: map[string]bool{
 			"read_file": true, "search": true, "web_search": true,
 			"list_directory": true, "get_file_info": true,
@@ -94,12 +120,36 @@ func NewGuardianService(modelCaller ModelCaller) *GuardianService {
 		autoDeny: map[string]bool{
 			"rm_rf": true, "format": true, "dd_if": true,
 		},
+		sessionApprovals: make(map[string]bool),
 	}
 }
 
+func (g *GuardianService) GetLevel() config.SecurityLevel {
+	return g.level
+}
+
+func (g *GuardianService) SetLevel(level config.SecurityLevel) {
+	g.level = level
+	g.enabled = level != config.SecurityOff
+	slog.Info("Guardian security level changed", "component", "Guardian", "level", level)
+}
+
+func (g *GuardianService) ApproveSession(toolName string) {
+	g.sessionApprovals[toolName] = true
+	slog.Info("Session approval granted", "component", "Guardian", "tool", toolName)
+}
+
+func (g *GuardianService) IsSessionApproved(toolName string) bool {
+	return g.sessionApprovals[toolName]
+}
+
+func (g *GuardianService) ClearSessionApprovals() {
+	g.sessionApprovals = make(map[string]bool)
+}
+
 func (g *GuardianService) Review(ctx context.Context, toolName, arguments, contextStr string) (*GuardianReview, error) {
-	if !g.enabled {
-		return &GuardianReview{Verdict: VerdictAllow, RiskLevel: RiskNone}, nil
+	if !g.enabled || g.level == config.SecurityOff {
+		return &GuardianReview{Verdict: VerdictAllow, RiskLevel: RiskNone, Reason: "guardian disabled"}, nil
 	}
 
 	if g.autoAllow[toolName] {
@@ -111,6 +161,8 @@ func (g *GuardianService) Review(ctx context.Context, toolName, arguments, conte
 	}
 
 	lowerArgs := strings.ToLower(arguments)
+
+	// 始终阻止极端危险操作（除非完全关闭）
 	for denied := range g.autoDeny {
 		if strings.Contains(lowerArgs, denied) {
 			return &GuardianReview{
@@ -120,18 +172,53 @@ func (g *GuardianService) Review(ctx context.Context, toolName, arguments, conte
 			}, nil
 		}
 	}
-
-	if strings.Contains(lowerArgs, "rm -rf") || strings.Contains(lowerArgs, "rm -r /") {
+	if strings.Contains(lowerArgs, "rm -rf") || strings.Contains(lowerArgs, "rm -r /") || strings.Contains(lowerArgs, "mkfs.") {
 		return &GuardianReview{
 			Verdict:   VerdictDeny,
 			RiskLevel: RiskCritical,
-			Risks: GuardianRisk{DestructiveAction: "high"},
-			Reason:   "recursive force delete detected",
+			Risks:     GuardianRisk{DestructiveAction: "high"},
+			Reason:    "recursive force delete or format detected",
 		}, nil
+	}
+
+	// permissive 模式：仅阻止极端危险操作，其他全部放行
+	if g.level == config.SecurityPermissive {
+		return &GuardianReview{
+			Verdict:   VerdictAllow,
+			RiskLevel: RiskLow,
+			Reason:    "permissive mode: auto-allowed",
+		}, nil
+	}
+
+	// 宽松模式：开发操作自动放行
+	devTools := map[string]bool{
+		"write_file": true, "execute_command": true, "shell": true, "bash": true,
+	}
+	if g.level == config.SecurityStandard && devTools[toolName] {
+		// 标准模式：检查是否为开发操作
+		if !strings.Contains(lowerArgs, "systemctl") &&
+			!strings.Contains(lowerArgs, "chmod") &&
+			!strings.Contains(lowerArgs, "chown") &&
+			!strings.Contains(lowerArgs, "iptables") &&
+			!strings.Contains(lowerArgs, "passwd") &&
+			!strings.Contains(lowerArgs, "sudo") {
+			return &GuardianReview{
+				Verdict:   VerdictAllow,
+				RiskLevel: RiskLow,
+				Reason:    "standard mode: development operation auto-allowed",
+			}, nil
+		}
 	}
 
 	modelID := g.findReviewModel()
 	if modelID == "" {
+		if g.level == config.SecurityStrict {
+			return &GuardianReview{
+				Verdict:   VerdictDeny,
+				RiskLevel: RiskMedium,
+				Reason:    "strict mode: no review model available, denying as precaution",
+			}, nil
+		}
 		return &GuardianReview{
 			Verdict:   VerdictConfirm,
 			RiskLevel: RiskMedium,
@@ -146,6 +233,13 @@ func (g *GuardianService) Review(ctx context.Context, toolName, arguments, conte
 	}, map[string]interface{}{"max_tokens": float64(1000), "temperature": float64(0.1)})
 	if err != nil {
 		slog.Error("Guardian review failed", "component", "Guardian", "error", err)
+		if g.level == config.SecurityStrict {
+			return &GuardianReview{
+				Verdict:   VerdictDeny,
+				RiskLevel: RiskMedium,
+				Reason:    "strict mode: guardian review failed, denying as precaution",
+			}, nil
+		}
 		return &GuardianReview{
 			Verdict:   VerdictConfirm,
 			RiskLevel: RiskMedium,
@@ -154,6 +248,9 @@ func (g *GuardianService) Review(ctx context.Context, toolName, arguments, conte
 	}
 
 	if len(resp.Choices) == 0 {
+		if g.level == config.SecurityStrict {
+			return &GuardianReview{Verdict: VerdictDeny, RiskLevel: RiskMedium, Reason: "strict mode: empty guardian response"}, nil
+		}
 		return &GuardianReview{Verdict: VerdictConfirm, RiskLevel: RiskMedium, Reason: "empty guardian response"}, nil
 	}
 
@@ -163,6 +260,13 @@ func (g *GuardianService) Review(ctx context.Context, toolName, arguments, conte
 	var review GuardianReview
 	if err := json.Unmarshal([]byte(content), &review); err != nil {
 		slog.Error("Failed to parse guardian review", "component", "Guardian", "error", err)
+		if g.level == config.SecurityStrict {
+			return &GuardianReview{
+				Verdict:   VerdictDeny,
+				RiskLevel: RiskMedium,
+				Reason:    "strict mode: failed to parse guardian review",
+			}, nil
+		}
 		return &GuardianReview{
 			Verdict:   VerdictConfirm,
 			RiskLevel: RiskMedium,
@@ -170,8 +274,15 @@ func (g *GuardianService) Review(ctx context.Context, toolName, arguments, conte
 		}, nil
 	}
 
+	// strict 模式：任何非 allow 都转为 deny
+	if g.level == config.SecurityStrict && review.Verdict != VerdictAllow {
+		review.Verdict = VerdictDeny
+		review.Reason = "strict mode: " + review.Reason
+	}
+
 	slog.Info("Guardian review completed", "component", "Guardian",
 		"tool", toolName,
+		"level", g.level,
 		"verdict", string(review.Verdict),
 		"risk_level", string(review.RiskLevel),
 		"reason", review.Reason)

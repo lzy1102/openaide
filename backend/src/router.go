@@ -1,10 +1,12 @@
 package main
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
 
+	"openaide/backend/src/config"
 	"openaide/backend/src/logger"
 	"openaide/backend/src/middleware"
 	"openaide/backend/src/models"
@@ -58,6 +60,7 @@ func (r *Router) Register(engine *gin.Engine) {
 	protectedAPI.Use(r.app.AuthHandler.AuthMiddleware())
 	{
 		r.registerDialogueRoutes(protectedAPI)
+		r.registerProjectRoutes(protectedAPI)
 		r.registerWorkflowRoutes(protectedAPI)
 		r.registerChatRoutes(protectedAPI)
 		r.registerModelRoutes(protectedAPI)
@@ -624,6 +627,49 @@ func (r *Router) registerAuthRoutes(api *gin.RouterGroup) {
 			admin.PUT("/users/:id", r.app.AuthHandler.UpdateUser)
 			admin.DELETE("/users/:id", r.app.AuthHandler.DeleteUser)
 		}
+
+		// 安全配置端点
+		protected.GET("/security/level", func(c *gin.Context) {
+			if r.app.GuardianSvc == nil {
+				response.OK(c, gin.H{"level": "off", "enabled": false})
+				return
+			}
+			level := r.app.GuardianSvc.GetLevel()
+			response.OK(c, gin.H{
+				"level":   string(level),
+				"enabled": r.app.GuardianSvc.IsEnabled(),
+				"levels":  []string{"strict", "standard", "permissive", "off"},
+			})
+		})
+		protected.POST("/security/level", func(c *gin.Context) {
+			var req struct {
+				Level string `json:"level" binding:"required"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				response.BadRequest(c, "invalid request: "+err.Error())
+				return
+			}
+			if r.app.GuardianSvc == nil {
+				response.InternalError(c, "guardian service not available")
+				return
+			}
+			var level config.SecurityLevel
+			switch req.Level {
+			case "strict":
+				level = config.SecurityStrict
+			case "standard":
+				level = config.SecurityStandard
+			case "permissive":
+				level = config.SecurityPermissive
+			case "off":
+				level = config.SecurityOff
+			default:
+				response.BadRequest(c, "invalid level: must be strict, standard, permissive, or off")
+				return
+			}
+			r.app.GuardianSvc.SetLevel(level)
+			response.OK(c, gin.H{"level": string(level), "message": "security level updated"})
+		})
 	}
 }
 
@@ -633,43 +679,32 @@ func (r *Router) registerDialogueRoutes(api *gin.RouterGroup) {
 	{
 		dialogues.GET("", func(c *gin.Context) {
 			pagination := middleware.GetPagination(c)
-			allDialogues := r.app.DialogueService.ListDialogues()
-			total := int64(len(allDialogues))
-			end := pagination.Offset + pagination.PageSize
-			if end > len(allDialogues) {
-				end = len(allDialogues)
+			projectID := c.Query("project_id")
+			var result services.DialoguePageResult
+			if projectID != "" {
+				result = r.app.DialogueService.ListDialoguesByProjectPaginated(projectID, pagination.Page, pagination.PageSize)
+			} else {
+				result = r.app.DialogueService.ListDialoguesPaginated(pagination.Page, pagination.PageSize)
 			}
-			if pagination.Offset >= len(allDialogues) {
-				response.OKPage(c, []interface{}{}, total, pagination.Page, pagination.PageSize)
-				return
-			}
-			response.OKPage(c, allDialogues[pagination.Offset:end], total, pagination.Page, pagination.PageSize)
+			response.OKPage(c, result.Items, result.Total, pagination.Page, pagination.PageSize)
 		})
 		dialogues.GET("/user/:userID", func(c *gin.Context) {
 			userID := c.Param("userID")
 			pagination := middleware.GetPagination(c)
-			allDialogues := r.app.DialogueService.ListDialoguesByUser(userID)
-			total := int64(len(allDialogues))
-			end := pagination.Offset + pagination.PageSize
-			if end > len(allDialogues) {
-				end = len(allDialogues)
-			}
-			if pagination.Offset >= len(allDialogues) {
-				response.OKPage(c, []interface{}{}, total, pagination.Page, pagination.PageSize)
-				return
-			}
-			response.OKPage(c, allDialogues[pagination.Offset:end], total, pagination.Page, pagination.PageSize)
+			result := r.app.DialogueService.ListDialoguesByUserPaginated(userID, pagination.Page, pagination.PageSize)
+			response.OKPage(c, result.Items, result.Total, pagination.Page, pagination.PageSize)
 		})
 		dialogues.POST("", func(c *gin.Context) {
 			var req struct {
-				UserID string `json:"user_id"`
-				Title  string `json:"title"`
+				UserID    string `json:"user_id"`
+				Title     string `json:"title"`
+				ProjectID string `json:"project_id"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
 				response.BadRequest(c, err.Error())
 				return
 			}
-			dialogue := r.app.DialogueService.CreateDialogue(req.UserID, req.Title)
+			dialogue := r.app.DialogueService.CreateDialogueWithProject(req.UserID, req.Title, req.ProjectID)
 			response.OK(c, dialogue)
 		})
 		dialogues.GET("/:id", func(c *gin.Context) {
@@ -1883,10 +1918,19 @@ func (r *Router) writeSSEStream(c *gin.Context, chunkChan <-chan llm.ChatStreamC
 	usedModel := ""
 	var totalUsage *llm.Usage
 	var compactInfo *llm.CompactInfo
+	doneSent := false
 	for chunk := range chunkChan {
 		if chunk.Error != nil {
 			c.SSEvent("error", map[string]interface{}{"type": "error", "content": chunk.Error.Error()})
+			c.Writer.Flush()
 			return
+		}
+		if chunk.Progress != "" {
+			c.SSEvent("message", map[string]interface{}{
+				"type":    "progress",
+				"content": chunk.Progress,
+			})
+			c.Writer.Flush()
 		}
 		if chunk.Model != "" {
 			usedModel = chunk.Model
@@ -1903,6 +1947,7 @@ func (r *Router) writeSSEStream(c *gin.Context, chunkChan <-chan llm.ChatStreamC
 				"after_msgs":    compactInfo.AfterMessages,
 				"saved_tokens":  compactInfo.SavedTokens,
 			})
+			c.Writer.Flush()
 		}
 		if chunk.ToolDone != nil {
 			c.SSEvent("message", map[string]interface{}{
@@ -1910,6 +1955,7 @@ func (r *Router) writeSSEStream(c *gin.Context, chunkChan <-chan llm.ChatStreamC
 				"tool":   chunk.ToolDone.Tool,
 				"result": chunk.ToolDone.Result,
 			})
+			c.Writer.Flush()
 		}
 
 		if len(chunk.Choices) > 0 {
@@ -1921,6 +1967,7 @@ func (r *Router) writeSSEStream(c *gin.Context, chunkChan <-chan llm.ChatStreamC
 					"type":    "thinking",
 					"content": delta.ReasoningContent,
 				})
+				c.Writer.Flush()
 			}
 
 			if len(delta.ToolCalls) > 0 {
@@ -1937,6 +1984,7 @@ func (r *Router) writeSSEStream(c *gin.Context, chunkChan <-chan llm.ChatStreamC
 						"params": toolArgs,
 					})
 				}
+				c.Writer.Flush()
 			}
 
 			if delta.Content != "" {
@@ -1944,9 +1992,11 @@ func (r *Router) writeSSEStream(c *gin.Context, chunkChan <-chan llm.ChatStreamC
 					"type":    "content",
 					"content": delta.Content,
 				})
+				c.Writer.Flush()
 			}
 
 			if choice.FinishReason != "" {
+				doneSent = true
 				doneEvent := map[string]interface{}{
 					"type":  "done",
 					"model": usedModel,
@@ -1960,16 +2010,97 @@ func (r *Router) writeSSEStream(c *gin.Context, chunkChan <-chan llm.ChatStreamC
 					}
 				}
 				c.SSEvent("message", doneEvent)
+				c.Writer.Flush()
 			}
 		}
 	}
-	doneEvent := map[string]interface{}{"type": "done", "model": usedModel, "done": true}
-	if totalUsage != nil {
-		doneEvent["usage"] = map[string]interface{}{
-			"prompt_tokens":     totalUsage.PromptTokens,
-			"completion_tokens": totalUsage.CompletionTokens,
-			"total_tokens":      totalUsage.TotalTokens,
+	if !doneSent {
+		doneEvent := map[string]interface{}{"type": "done", "model": usedModel, "done": true}
+		if totalUsage != nil {
+			doneEvent["usage"] = map[string]interface{}{
+				"prompt_tokens":     totalUsage.PromptTokens,
+				"completion_tokens": totalUsage.CompletionTokens,
+				"total_tokens":      totalUsage.TotalTokens,
+			}
 		}
+		c.SSEvent("message", doneEvent)
+		c.Writer.Flush()
 	}
-	c.SSEvent("message", doneEvent)
+}
+
+func (r *Router) registerProjectRoutes(api *gin.RouterGroup) {
+	projects := api.Group("/projects")
+	{
+		projects.GET("", func(c *gin.Context) {
+			projects, err := r.app.ProjectService.ListProjects()
+			if err != nil {
+				response.InternalError(c, err.Error())
+				return
+			}
+			response.OK(c, projects)
+		})
+
+		projects.POST("", func(c *gin.Context) {
+			var req struct {
+				Name         string `json:"name"`
+				Description  string `json:"description"`
+				Color        string `json:"color"`
+				Icon         string `json:"icon"`
+				SystemPrompt string `json:"system_prompt"`
+				ModelID      string `json:"model_id"`
+				WorkingDir   string `json:"working_dir"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				response.BadRequest(c, err.Error())
+				return
+			}
+			project, err := r.app.ProjectService.CreateProject(
+				c.Request.Context(), req.Name, req.Description, req.Color, req.Icon,
+				req.SystemPrompt, req.ModelID, req.WorkingDir,
+			)
+			if err != nil {
+				response.InternalError(c, err.Error())
+				return
+			}
+			response.OK(c, project)
+		})
+
+		projects.GET("/:id", func(c *gin.Context) {
+			id := c.Param("id")
+			project, err := r.app.ProjectService.GetProject(id)
+			if err != nil {
+				response.NotFound(c, "Project not found")
+				return
+			}
+			response.OK(c, project)
+		})
+
+		projects.PUT("/:id", func(c *gin.Context) {
+			id := c.Param("id")
+			var updates map[string]interface{}
+			if err := c.ShouldBindJSON(&updates); err != nil {
+				response.BadRequest(c, err.Error())
+				return
+			}
+			project, err := r.app.ProjectService.UpdateProject(id, updates)
+			if err != nil {
+				response.InternalError(c, err.Error())
+				return
+			}
+			response.OK(c, project)
+		})
+
+		projects.DELETE("/:id", func(c *gin.Context) {
+			id := c.Param("id")
+			if err := r.app.ProjectService.DeleteProject(id); err != nil {
+				if errors.Is(err, services.ErrCannotDeleteDefault) {
+					response.BadRequest(c, err.Error())
+				} else {
+					response.InternalError(c, err.Error())
+				}
+				return
+			}
+			response.OKWithMessage(c, "Project deleted successfully", nil)
+		})
+	}
 }

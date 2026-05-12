@@ -1,35 +1,41 @@
-# Build stage
-FROM golang:1.22-alpine AS builder
+# Build stage - 使用官方Go镜像编译
+FROM golang:1.23-alpine AS builder
 
 RUN apk add --no-cache git ca-certificates tzdata
 
 WORKDIR /app
 
+# 先复制依赖文件，利用Docker缓存层
 COPY go.mod go.sum ./
 RUN go mod download
 
+# 复制源代码
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-w -s' -o /openaide-server ./src
+# 编译二进制文件（静态链接，无CGO，减小体积）
+RUN CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-w -s -extldflags "-static"' -o /openaide-server ./src
 
-# Runtime stage
-FROM alpine:3.19
+# Runtime stage - 使用更小的alpine镜像（distroless可能无法拉取）
+FROM alpine:3.20
 
 RUN apk add --no-cache ca-certificates tzdata
 
-WORKDIR /app
-
-COPY --from=builder /openaide-server /app/
+# 复制编译好的二进制文件
+COPY --from=builder /openaide-server /app/openaide-server
 COPY --from=builder /app/config.example.json /app/config.example.json
 
-RUN mkdir -p /opt/openaide/data/db /opt/openaide/data/vectors /opt/openaide/data/ledis /opt/openaide/data/sessions /opt/openaide/logs
+WORKDIR /app
 
 ENV TZ=Asia/Shanghai
 ENV OPENAIDE_HOME=/opt/openaide
 
 EXPOSE 19375
 
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:19375/health || exit 1
+# 创建非root用户运行（安全最佳实践）
+RUN adduser -D -u 1000 openaide && \
+    mkdir -p /opt/openaide/data/db /opt/openaide/data/vectors /opt/openaide/data/ledis /opt/openaide/data/sessions /opt/openaide/logs && \
+    chown -R openaide:openaide /opt/openaide
+
+USER openaide:openaide
 
 CMD ["/app/openaide-server"]

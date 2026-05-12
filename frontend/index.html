@@ -57,6 +57,16 @@
                 <!-- 左侧边栏 - 对话历史 -->
                 <aside class="sidebar">
                     <div class="sidebar-header">
+                        <span class="sidebar-title" data-i18n="chat.projects">项目</span>
+                        <button class="btn-icon" id="new-project-btn" title="新建项目">
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                                <path d="M8 2V14M2 8H14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="sidebar-list project-section" id="project-list">
+                    </div>
+                    <div class="sidebar-header" style="margin-top: var(--space-md);">
                         <span class="sidebar-title" data-i18n="chat.conversations">对话列表</span>
                         <button class="btn-icon" id="new-chat-btn" data-i18n-title="chat.newChat" title="新建对话">
                             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -65,19 +75,6 @@
                         </button>
                     </div>
                     <div class="sidebar-list" id="conversation-list">
-                        <div class="sidebar-item active">
-                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                                <path d="M3 5C3 3.89543 3.89543 3 5 3H11C12.1046 3 13 3.89543 13 5V11C13 12.1046 12.1046 13 11 13H5C3.89543 13 3 12.1046 3 11V5Z" stroke="currentColor" stroke-width="2"/>
-                                <path d="M3 7H13" stroke="currentColor" stroke-width="2"/>
-                            </svg>
-                            <span data-i18n="chat.newConversation">新对话</span>
-                        </div>
-                        <div class="sidebar-item">
-                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                                <path d="M3 5C3 3.89543 3.89543 3 5 3H11C12.1046 3 13 3.89543 13 5V11C13 12.1046 12.1046 13 11 13H5C3.89543 13 3 12.1046 3 11V5Z" stroke="currentColor" stroke-width="2"/>
-                            </svg>
-                            <span data-i18n="chat.previousChat">历史对话</span>
-                        </div>
                     </div>
                 </aside>
 
@@ -210,7 +207,7 @@
         import { TemplatesPage } from './src/pages/templates-page.js';
         import { DashboardPage } from './src/pages/dashboard-page.js';
         import { ScheduledTasksPage } from './src/pages/scheduled-tasks-page.js';
-        import { dialogueAPI, thinkingAPI, modelAPI } from './src/services/api.js';
+        import { dialogueAPI, thinkingAPI, modelAPI, projectAPI } from './src/services/api.js';
 
         // 初始化国际化
         i18n.updatePageContent();
@@ -228,6 +225,9 @@
             currentPage: 'chat',
             currentDialogueId: null,
             currentModelId: null,
+            currentProjectId: null,
+            projects: [],
+            dialogues: [],
             thinkingVisualizer: null,
             correctionPanel: null,
             toolCallDisplay: null,
@@ -237,32 +237,47 @@
             scheduledTasksPage: null
         };
 
-        // 初始化应用
+        const STORAGE_KEY_LAST_DIALOGUE = 'openaide_last_dialogue_id';
+        const STORAGE_KEY_LAST_PROJECT = 'openaide_last_project_id';
+
         async function init() {
-            // 初始化主题
             initTheme();
-
-            // 初始化导航
             initNavigation();
-
-            // 初始化聊天功能
             initChat();
-
-            // 初始化组件
             initComponents();
-
-            // 加载默认模型
             await loadDefaultModel();
-
-            // 创建对话
-            await createDialogue();
+            await loadProjects();
+            const lastProjectId = localStorage.getItem(STORAGE_KEY_LAST_PROJECT);
+            if (lastProjectId) {
+                const found = state.projects.find(p => p.id === lastProjectId);
+                if (found) {
+                    state.currentProjectId = lastProjectId;
+                }
+            }
+            if (!state.currentProjectId && state.projects.length > 0) {
+                state.currentProjectId = state.projects[0].id;
+            }
+            renderProjectList();
+            await loadDialogues();
+            const lastId = localStorage.getItem(STORAGE_KEY_LAST_DIALOGUE);
+            if (lastId) {
+                const found = state.dialogues.find(d => d.id === lastId);
+                if (found) {
+                    await switchDialogue(lastId);
+                } else {
+                    await createDialogue();
+                }
+            } else {
+                await createDialogue();
+            }
         }
 
         // 加载默认模型
         async function loadDefaultModel() {
             try {
                 const models = await modelAPI.listModels();
-                const enabledModels = models.filter(m => m.status === 'enabled');
+                const list = Array.isArray(models) ? models : (models.items || []);
+                const enabledModels = list.filter(m => m.status === 'enabled');
                 if (enabledModels.length > 0) {
                     state.currentModelId = enabledModels[0].id;
                     console.log('Default model loaded:', state.currentModelId);
@@ -272,6 +287,124 @@
             } catch (error) {
                 console.error('加载模型列表失败:', error);
             }
+        }
+
+        async function loadProjects() {
+            try {
+                const result = await projectAPI.listProjects();
+                state.projects = Array.isArray(result) ? result : [];
+            } catch (error) {
+                console.error('加载项目列表失败:', error);
+                state.projects = [];
+            }
+        }
+
+        async function switchProject(projectId) {
+            state.currentProjectId = projectId;
+            localStorage.setItem(STORAGE_KEY_LAST_PROJECT, projectId);
+            renderProjectList();
+            await loadDialogues();
+            if (state.dialogues.length > 0) {
+                await switchDialogue(state.dialogues[0].id);
+            } else {
+                await createDialogue();
+            }
+        }
+
+        async function createProject() {
+            const name = prompt('项目名称:');
+            if (!name || !name.trim()) return;
+            try {
+                const project = await projectAPI.createProject({
+                    name: name.trim(),
+                    description: '',
+                    color: '',
+                    icon: '',
+                    system_prompt: '',
+                    model_id: '',
+                    working_dir: '',
+                });
+                state.projects.push(project);
+                state.currentProjectId = project.id;
+                localStorage.setItem(STORAGE_KEY_LAST_PROJECT, project.id);
+                renderProjectList();
+                await loadDialogues();
+                await createDialogue();
+                showToast('项目已创建', 'success');
+            } catch (error) {
+                console.error('创建项目失败:', error);
+                showToast('创建项目失败', 'error');
+            }
+        }
+
+        async function deleteProject(projectId) {
+            const project = state.projects.find(p => p.id === projectId);
+            if (!project) return;
+            if (project.is_default) {
+                showToast('不能删除默认项目', 'warning');
+                return;
+            }
+            if (!confirm(`确定要删除项目 "${project.name}" 吗？该项目下的对话将移至无项目状态。`)) return;
+            try {
+                await projectAPI.deleteProject(projectId);
+                state.projects = state.projects.filter(p => p.id !== projectId);
+                if (state.currentProjectId === projectId) {
+                    state.currentProjectId = state.projects.length > 0 ? state.projects[0].id : null;
+                    localStorage.setItem(STORAGE_KEY_LAST_PROJECT, state.currentProjectId || '');
+                    renderProjectList();
+                    await loadDialogues();
+                    if (state.dialogues.length > 0) {
+                        await switchDialogue(state.dialogues[0].id);
+                    } else {
+                        await createDialogue();
+                    }
+                } else {
+                    renderProjectList();
+                }
+                showToast('项目已删除', 'success');
+            } catch (error) {
+                console.error('删除项目失败:', error);
+                showToast('删除项目失败', 'error');
+            }
+        }
+
+        function renderProjectList() {
+            const container = document.getElementById('project-list');
+            if (!container) return;
+            container.innerHTML = '';
+            state.projects.forEach(p => {
+                const item = document.createElement('div');
+                item.className = 'project-item' + (p.id === state.currentProjectId ? ' active' : '');
+
+                const colorDot = document.createElement('span');
+                colorDot.className = 'project-color-dot';
+                colorDot.style.background = p.color || 'var(--primary)';
+
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'project-name';
+                nameSpan.textContent = p.name;
+                nameSpan.title = p.name;
+                nameSpan.addEventListener('click', () => switchProject(p.id));
+
+                if (!p.is_default) {
+                    const deleteBtn = document.createElement('button');
+                    deleteBtn.className = 'btn-icon project-delete-btn';
+                    deleteBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 2L10 10M10 2L2 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+                    deleteBtn.title = '删除项目';
+                    deleteBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        deleteProject(p.id);
+                    });
+                    item.appendChild(colorDot);
+                    item.appendChild(nameSpan);
+                    item.appendChild(deleteBtn);
+                } else {
+                    item.appendChild(colorDot);
+                    item.appendChild(nameSpan);
+                }
+
+                container.appendChild(item);
+            });
         }
 
         // 初始化主题
@@ -341,8 +474,8 @@
             const messageInput = document.getElementById('message-input');
             const sendBtn = document.getElementById('send-btn');
             const newChatBtn = document.getElementById('new-chat-btn');
+            const newProjectBtn = document.getElementById('new-project-btn');
 
-            // 发送消息
             sendBtn.addEventListener('click', sendMessage);
             messageInput.addEventListener('keypress', (e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
@@ -351,16 +484,19 @@
                 }
             });
 
-            // 自动调整输入框高度
             messageInput.addEventListener('input', () => {
                 messageInput.style.height = 'auto';
                 messageInput.style.height = Math.min(messageInput.scrollHeight, 120) + 'px';
             });
 
-            // 新建对话
             newChatBtn.addEventListener('click', async () => {
                 clearChat();
+                state.currentDialogueId = null;
                 await createDialogue();
+            });
+
+            newProjectBtn?.addEventListener('click', () => {
+                createProject();
             });
         }
 
@@ -432,16 +568,101 @@
             await state.scheduledTasksPage.render();
         }
 
-        // 创建对话
         async function createDialogue() {
             try {
-                const response = await dialogueAPI.createDialogue('user123', 'New Chat');
-                state.currentDialogueId = response.id;
+                const dialogue = await dialogueAPI.createDialogue('user-001', 'New Chat', state.currentProjectId);
+                state.currentDialogueId = dialogue.id;
+                localStorage.setItem(STORAGE_KEY_LAST_DIALOGUE, dialogue.id);
+                state.dialogues.unshift(dialogue);
+                renderDialogueList();
                 console.log('Dialogue created:', state.currentDialogueId);
             } catch (error) {
                 console.error('创建对话失败:', error);
-                state.currentDialogueId = 'mock-dialogue';
+                showToast(t('chat.createDialogueError') || 'Failed to create dialogue. Please refresh the page.', 'error');
             }
+        }
+
+        async function loadDialogues() {
+            try {
+                const result = await dialogueAPI.listDialogues(state.currentProjectId);
+                state.dialogues = Array.isArray(result) ? result : (result.items || []);
+                renderDialogueList();
+            } catch (error) {
+                console.error('加载对话列表失败:', error);
+            }
+        }
+
+        async function switchDialogue(dialogueId) {
+            try {
+                state.currentDialogueId = dialogueId;
+                localStorage.setItem(STORAGE_KEY_LAST_DIALOGUE, dialogueId);
+                renderDialogueList();
+
+                const dialogue = await dialogueAPI.getDialogue(dialogueId);
+                clearChat();
+
+                if (dialogue.messages && dialogue.messages.length > 0) {
+                    for (const msg of dialogue.messages) {
+                        addMessage(msg.sender, msg.content);
+                    }
+                }
+            } catch (error) {
+                console.error('切换对话失败:', error);
+                showToast('Failed to load dialogue', 'error');
+            }
+        }
+
+        async function deleteDialogue(dialogueId) {
+            try {
+                await dialogueAPI.deleteDialogue(dialogueId);
+                state.dialogues = state.dialogues.filter(d => d.id !== dialogueId);
+                renderDialogueList();
+
+                if (state.currentDialogueId === dialogueId) {
+                    if (state.dialogues.length > 0) {
+                        await switchDialogue(state.dialogues[0].id);
+                    } else {
+                        await createDialogue();
+                    }
+                }
+                showToast('对话已删除', 'success');
+            } catch (error) {
+                console.error('删除对话失败:', error);
+                showToast('删除对话失败', 'error');
+            }
+        }
+
+        function renderDialogueList() {
+            const listEl = document.getElementById('conversation-list');
+            if (!listEl) return;
+
+            listEl.innerHTML = '';
+
+            state.dialogues.forEach(d => {
+                const item = document.createElement('div');
+                item.className = 'sidebar-item' + (d.id === state.currentDialogueId ? ' active' : '');
+
+                const titleSpan = document.createElement('span');
+                titleSpan.className = 'dialogue-title';
+                titleSpan.textContent = d.title || 'New Chat';
+                titleSpan.title = d.title || 'New Chat';
+                titleSpan.addEventListener('click', () => switchDialogue(d.id));
+
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'btn-icon dialogue-delete-btn';
+                deleteBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 2L10 10M10 2L2 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+                deleteBtn.title = '删除';
+                deleteBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (confirm('确定要删除这个对话吗？')) {
+                        deleteDialogue(d.id);
+                    }
+                });
+
+                item.appendChild(titleSpan);
+                item.appendChild(deleteBtn);
+                listEl.appendChild(item);
+            });
         }
 
         // 发送消息
@@ -461,41 +682,96 @@
             // 显示加载状态
             const loadingId = addMessage('assistant', '<div class="loading">' + t('chat.thinking') + '</div>');
 
-            // 模拟思考过程
-            simulateThinkingProcess(message);
+            if (state.thinkingVisualizer) state.thinkingVisualizer.clear();
+            if (state.toolCallDisplay) state.toolCallDisplay.clear();
 
-            // 发送到后端
             try {
-                // 使用流式API获取响应
                 let responseText = '';
                 const messageElement = document.getElementById(loadingId);
                 if (messageElement) {
-                    messageElement.innerHTML = '';
+                    const contentDiv = messageElement.querySelector('.message-content');
+                    if (contentDiv) {
+                        contentDiv.innerHTML = '';
+                    }
                 }
 
-                // 检查是否有可用的模型
                 if (!state.currentModelId) {
                     updateMessage(loadingId, 'Error: No model available. Please configure a model first.');
                     return;
                 }
 
+                if (!state.currentDialogueId) {
+                    updateMessage(loadingId, 'Error: No dialogue session. Please refresh the page.');
+                    return;
+                }
+
+                let thinkingText = '';
+
                 await dialogueAPI.sendMessageStream(
                     state.currentDialogueId,
-                    'user-001', // 临时用户ID
+                    'user-001',
                     message,
-                    state.currentModelId, // 使用当前选中的模型ID
+                    state.currentModelId,
                     {},
                     (chunk) => {
-                        // 处理内容 - 即使是空字符串也要更新（可能是流的开头）
                         if (chunk.content !== undefined) {
                             responseText += chunk.content;
                             updateMessage(loadingId, responseText);
                         }
+                        if (chunk.thinking) {
+                            thinkingText += chunk.thinking;
+                            if (state.thinkingVisualizer) {
+                                state.thinkingVisualizer.addThought({
+                                    type: 'thinking',
+                                    content: chunk.thinking,
+                                    status: 'processing'
+                                });
+                            }
+                        }
+                        if (chunk.toolCall) {
+                            if (state.toolCallDisplay) {
+                                state.toolCallDisplay.addToolCall({
+                                    toolName: chunk.toolCall.tool,
+                                    parameters: chunk.toolCall.params,
+                                    status: 'running'
+                                });
+                            }
+                        }
+                        if (chunk.toolDone) {
+                            if (state.toolCallDisplay) {
+                                state.toolCallDisplay.updateToolCallStatus(
+                                    chunk.toolDone.tool,
+                                    'completed',
+                                    chunk.toolDone.result
+                                );
+                            }
+                        }
+                        if (chunk.progress) {
+                            const loadingEl = document.getElementById(loadingId);
+                            if (loadingEl) {
+                                const contentDiv = loadingEl.querySelector('.message-content');
+                                if (contentDiv) {
+                                    contentDiv.innerHTML = `<div class="loading">${chunk.progress}</div>`;
+                                }
+                            }
+                        }
+                        if (chunk.error) {
+                            updateMessage(loadingId, 'Error: ' + chunk.error);
+                        }
                         if (chunk.done) {
-                            console.log('Stream completed');
+                            console.log('Stream completed, model:', chunk.model);
+                            if (!responseText) {
+                                updateMessage(loadingId, t('chat.noResponse') || 'No response received.');
+                            }
                         }
                     }
                 );
+
+                if (responseText && state.currentDialogueId) {
+                    dialogueAPI.saveStreamMessage(state.currentDialogueId, responseText, thinkingText).catch(err => {
+                        console.error('Failed to save stream message:', err);
+                    });
+                }
 
             } catch (error) {
                 console.error('发送消息失败:', error);
@@ -503,80 +779,6 @@
             }
         }
 
-        // 模拟思考过程
-        function simulateThinkingProcess(message) {
-            const tv = state.thinkingVisualizer;
-            const tcd = state.toolCallDisplay;
-
-            // 清空之前的思考和工具调用
-            tv.clear();
-            tcd.clear();
-
-            // 模拟思考步骤
-            setTimeout(() => {
-                const step1 = tv.addThought({
-                    type: 'analysis',
-                    content: `Analyzing user message: "${message.substring(0, 50)}${message.length > 50 ? '...' : ''}"`,
-                    status: 'processing'
-                });
-
-                setTimeout(() => {
-                    tv.updateThoughtStatus(step1, 'completed');
-
-                    const step2 = tv.addThought({
-                        type: 'decision',
-                        content: 'Determining appropriate response strategy',
-                        status: 'processing'
-                    });
-
-                    // 模拟工具调用
-                    setTimeout(() => {
-                        const toolCallId = tcd.addToolCall({
-                            toolName: 'search_knowledge_base',
-                            parameters: { query: message.substring(0, 30) },
-                            status: 'running'
-                        });
-
-                        setTimeout(() => {
-                            tcd.updateToolCallStatus(toolCallId, 'completed', {
-                                found: true,
-                                results: [
-                                    { title: 'Relevant information 1', snippet: '...' },
-                                    { title: 'Relevant information 2', snippet: '...' }
-                                ]
-                            });
-                        }, 1500);
-                    }, 500);
-
-                    setTimeout(() => {
-                        tv.updateThoughtStatus(step2, 'completed');
-
-                        // 模拟一个纠错示例
-                        if (Math.random() > 0.7) {
-                            const step3 = tv.addThought({
-                                type: 'step',
-                                content: 'Generating initial response draft',
-                                status: 'completed'
-                            });
-
-                            // 添加纠错
-                            state.correctionPanel.addCorrection({
-                                type: 'improvement',
-                                severity: 'low',
-                                title: 'Response clarity improvement',
-                                description: 'The initial response could be more concise and clearer.',
-                                originalValue: 'I am going to provide you with a very detailed explanation about...',
-                                suggestedValue: 'Here\'s a concise explanation:',
-                                context: 'Response generation'
-                            });
-                        }
-
-                    }, 800);
-                }, 600);
-            }, 300);
-        }
-
-        // 添加消息到聊天
         function addMessage(sender, content) {
             const chatMessages = document.getElementById('chat-messages');
             const messageDiv = document.createElement('div');

@@ -147,6 +147,8 @@ type ChatStreamChunk struct {
 	ToolDone *ToolDoneInfo `json:"tool_done,omitempty"`
 
 	CompactInfo *CompactInfo `json:"compact_info,omitempty"`
+
+	Progress string `json:"progress,omitempty"`
 }
 
 type CompactInfo struct {

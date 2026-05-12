@@ -18,22 +18,36 @@ func NewBackgroundTasks(app *Application) *BackgroundTasks {
 
 // Start 启动所有后台任务
 func (b *BackgroundTasks) Start() {
+	cfg := b.app.Config
+
 	// 启动自动记忆提取服务
-	b.startMemoryExtraction()
+	if cfg.MemoryExtractionEnabled {
+		b.startMemoryExtraction()
+	}
 
 	// 启动技能进化定时任务
 	b.startSkillEvolution()
 
 	// 启动技能发现服务
-	b.startSkillDiscovery()
+	if cfg.SkillDiscoveryEnabled && b.app.SkillDiscoveryService != nil {
+		b.startSkillDiscovery()
+	}
 
 	// 启动模式检测器
-	b.startPatternDetection()
+	if cfg.PatternDetectionEnabled && b.app.PatternDetector != nil {
+		b.startPatternDetection()
+	}
 
 	// 启动用户反馈收集器
-	b.startUserFeedbackCollection()
+	if cfg.FeedbackCollectionEnabled && b.app.UserFeedbackCollector != nil {
+		b.startUserFeedbackCollection()
+	}
 
-	slog.Info("Skill discovery, pattern detection, and feedback collection enabled", "component", "Self-Evolution")
+	if cfg.SkillDiscoveryEnabled || cfg.PatternDetectionEnabled || cfg.FeedbackCollectionEnabled {
+		slog.Info("Skill discovery, pattern detection, and feedback collection enabled", "component", "Self-Evolution")
+	} else {
+		slog.Info("Self-evolution background services disabled", "component", "Self-Evolution")
+	}
 }
 
 // startMemoryExtraction 启动自动记忆提取

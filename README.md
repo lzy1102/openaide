@@ -56,6 +56,7 @@ A full-featured AI Agent development platform with multi-model support, multi-ag
 - **Per-Tool Timeout**: Each tool execution has an independent 30-second timeout — prevents single slow tool from blocking the entire ReAct loop
 - **Unified Message Pipeline**: Non-streaming and streaming paths share the same message construction logic (system prompt, conversation summary, token truncation)
 - **API Key Protection**: Model API keys are never exposed in API responses (json:"-" tag), write-only via separate DTO — prevents accidental key leakage
+- **Project Management**: Organize dialogues into projects with isolated context, system prompts, models, and working directories — auto-detect project from cwd in TUI
 
 #### Architecture
 
@@ -471,6 +472,7 @@ api:
 - **单工具超时控制**：每个工具执行独立 30 秒超时 — 防止单个慢工具阻塞整个 ReAct 循环
 - **统一消息管线**：非流式和流式路径共享消息构建逻辑（系统提示、对话摘要、Token截断）
 - **API 密钥保护**：模型 API Key 永远不会在 API 响应中暴露（json:"-" 标签），通过独立 DTO 写入 — 防止密钥意外泄露
+- **项目管理**：按项目组织对话，隔离上下文、系统提示、模型和工作目录 — TUI 启动时根据工作目录自动识别项目
 
 ### 系统架构
 
@@ -599,6 +601,25 @@ api:
   Type /help for commands, exit or /exit to quit
 ```
 
+#### TUI Project Commands
+
+```
+/project                    Show current project info
+/project list               List all projects
+/project switch             Interactive project selector (↑/↓ + Enter)
+/project switch <n|name>    Switch to project by number or name
+/project create <name>      Create a new project
+/project delete <n|name>    Delete a project
+```
+
+When starting `openaide` in a directory that matches a project's `working_dir`, the project is auto-detected:
+
+```
+$ cd /home/user/my-project
+$ openaide
+  📂 Auto-detected project: MyProject
+```
+
 ### API 端点总览
 
 > 完整 API 文档参见 [backend/API.md](backend/API.md)
@@ -609,6 +630,7 @@ api:
 | 用户 | `/api/profile` | 用户信息管理 |
 | 会话 | `/api/sessions` | 会话管理 |
 | 对话 | `/api/dialogues/*` | 对话 CRUD + 消息管理 + 流式 |
+| 项目 | `/api/projects/*` | 项目管理（隔离上下文/模型/工作目录） |
 | 聊天 | `/api/chat/*` | 普通聊天 / 流式 / 工具调用 / 自动路由 / 规划 |
 | MCP | `/api/mcp/*` | MCP Server 管理 / 工具发现 / 重连 / 刷新 |
 | 编排 | `/api/orchestration/*` | 智能编排全流程 |

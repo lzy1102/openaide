@@ -70,9 +70,7 @@ func (vm *VectorManager) CreateCollection(ctx context.Context, name string, dime
 // 注意：当使用非 HNSW 存储时，此方法返回错误
 func (vm *VectorManager) GetCollection(name string) (*PersistentHNSW, error) {
 	// 尝试获取底层 HNSW 存储（HNSWVectorStore 在当前包中）
-	if hnswStore, ok := vm.store.(*HNSWVectorStore); ok {
-		// 通过反射或内部方法获取（这里简化处理）
-		_ = hnswStore
+	if _, ok := vm.store.(*HNSWVectorStore); ok {
 		return nil, fmt.Errorf("GetCollection is deprecated, please use VectorStore interface methods")
 	}
 	return nil, fmt.Errorf("GetCollection only supported with HNSW backend")
@@ -210,8 +208,7 @@ func (vm *VectorManager) Close() error {
 
 // Backup 备份所有集合（仅 HNSW 支持）
 func (vm *VectorManager) Backup(backupDir string) error {
-	if hnswStore, ok := vm.store.(*HNSWVectorStore); ok {
-		_ = hnswStore
+	if _, ok := vm.store.(*HNSWVectorStore); ok {
 		// HNSWVectorStore 的备份逻辑可以通过扩展接口实现
 		logger.WithComponent("VectorManager").Warn("backup not yet implemented via interface")
 	}

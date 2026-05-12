@@ -29,22 +29,50 @@ async function request(endpoint, options = {}) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
         
-        return await response.json();
+        const json = await response.json();
+        if (json.code === 0 && json.data !== undefined) {
+            return json.data;
+        }
+        return json;
     } catch (error) {
         console.error('API request error:', error);
         throw error;
     }
 }
 
+// 项目相关API
+export const projectAPI = {
+    listProjects: () => request('/projects'),
+
+    createProject: (data) => request('/projects', {
+        method: 'POST',
+        body: JSON.stringify(data),
+    }),
+
+    getProject: (id) => request(`/projects/${id}`),
+
+    updateProject: (id, data) => request(`/projects/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+    }),
+
+    deleteProject: (id) => request(`/projects/${id}`, {
+        method: 'DELETE',
+    }),
+};
+
 // 对话相关API
 export const dialogueAPI = {
     // 获取所有对话
-    listDialogues: () => request('/dialogues'),
+    listDialogues: (projectId) => {
+        const query = projectId ? `?project_id=${projectId}` : '';
+        return request(`/dialogues${query}`);
+    },
 
     // 创建新对话
-    createDialogue: (userID, title) => request('/dialogues', {
+    createDialogue: (userID, title, projectId) => request('/dialogues', {
         method: 'POST',
-        body: JSON.stringify({ user_id: userID, title }),
+        body: JSON.stringify({ user_id: userID, title, project_id: projectId || '' }),
     }),
 
     // 获取对话详情
@@ -54,6 +82,17 @@ export const dialogueAPI = {
     updateDialogue: (id, title) => request(`/dialogues/${id}`, {
         method: 'PUT',
         body: JSON.stringify({ title }),
+    }),
+
+    // 删除对话
+    deleteDialogue: (id) => request(`/dialogues/${id}`, {
+        method: 'DELETE',
+    }),
+
+    // 保存流式消息内容
+    saveStreamMessage: (id, content, reasoningContent) => request(`/dialogues/${id}/save-stream`, {
+        method: 'POST',
+        body: JSON.stringify({ content, reasoning_content: reasoningContent || '' }),
     }),
 
     // 获取对话消息
@@ -76,35 +115,64 @@ export const dialogueAPI = {
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
+            let buffer = '';
 
             return new Promise((resolve, reject) => {
                 function read() {
                     reader.read().then(({ done, value }) => {
                         if (done) {
+                            if (buffer.trim()) {
+                                processSSELines(buffer);
+                            }
                             resolve();
                             return;
                         }
-                        const chunk = decoder.decode(value, { stream: true });
-                        // 解析 SSE 格式
-                        const lines = chunk.split('\n');
-                        let currentEvent = null;
-                        for (const line of lines) {
-                            const trimmedLine = line.trim();
-                            if (trimmedLine.startsWith('event:')) {
-                                currentEvent = trimmedLine.slice(6).trim();
-                            } else if (trimmedLine.startsWith('data:')) {
-                                try {
-                                    const dataStr = trimmedLine.slice(5).trim();
-                                    const data = JSON.parse(dataStr);
-                                    onChunk(data);
-                                } catch (e) {
-                                    // 忽略解析错误
-                                }
-                            }
-                        }
+                        buffer += decoder.decode(value, { stream: true });
+                        const lines = buffer.split('\n');
+                        buffer = lines.pop() || '';
+                        processSSELines(lines.join('\n'));
                         read();
                     }).catch(reject);
                 }
+
+                function processSSELines(text) {
+                    let currentEvent = null;
+                    const lines = text.split('\n');
+                    for (const line of lines) {
+                        const trimmedLine = line.trim();
+                        if (trimmedLine.startsWith('event:')) {
+                            currentEvent = trimmedLine.slice(6).trim();
+                        } else if (trimmedLine.startsWith('data:')) {
+                            try {
+                                const dataStr = trimmedLine.slice(5).trim();
+                                const data = JSON.parse(dataStr);
+                                if (data.type === 'content') {
+                                    onChunk({ content: data.content });
+                                } else if (data.type === 'thinking') {
+                                    onChunk({ thinking: data.content });
+                                } else if (data.type === 'tool_call') {
+                                    onChunk({ toolCall: { tool: data.tool, params: data.params } });
+                                } else if (data.type === 'tool_done') {
+                                    onChunk({ toolDone: { tool: data.tool, result: data.result } });
+                                } else if (data.type === 'context_compact') {
+                                    onChunk({ contextCompact: data });
+                                } else if (data.type === 'progress') {
+                                    onChunk({ progress: data.content });
+                                } else if (data.type === 'error') {
+                                    onChunk({ error: data.content });
+                                } else if (data.type === 'done') {
+                                    onChunk({ done: true, model: data.model, usage: data.usage });
+                                } else {
+                                    onChunk(data);
+                                }
+                            } catch (e) {
+                            }
+                        } else if (trimmedLine === '') {
+                            currentEvent = null;
+                        }
+                    }
+                }
+
                 read();
             });
         });

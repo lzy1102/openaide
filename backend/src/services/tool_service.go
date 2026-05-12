@@ -101,10 +101,24 @@ func NewToolService(db *gorm.DB, cache *CacheService, logger *LoggerService, mcp
 	// 注册内置工具
 	s.registerBuiltinTools()
 
-	// 从数据库加载工具
+	s.applyConfigAllowedDirs()
+
 	s.loadToolsFromDB()
 
 	return s
+}
+
+func (s *ToolService) applyConfigAllowedDirs() {
+	cfg, _ := config.Load()
+	if cfg == nil || len(cfg.Server.AllowedDirs) == 0 {
+		return
+	}
+	if wt, ok := s.registry.builtin["write_file"].(*FileWriteTool); ok {
+		wt.AllowedBaseDirs = cfg.Server.AllowedDirs
+	}
+	if rt, ok := s.registry.builtin["read_file"].(*FileReadTool); ok {
+		rt.AllowedBaseDirs = cfg.Server.AllowedDirs
+	}
 }
 
 // RegisterSelfRegisteringTool 注册外部自注册工具（用于需要依赖注入的工具如 TaskTool）
@@ -1494,9 +1508,18 @@ func (t *FileReadTool) Execute(ctx context.Context, params map[string]interface{
 func (t *FileReadTool) isPathAllowed(absPath string) bool {
 	t.once.Do(func() {
 		if len(t.AllowedBaseDirs) == 0 {
-			// 没有配置白名单时，允许当前工作目录和 /tmp
 			cwd, _ := os.Getwd()
-			t.AllowedBaseDirs = []string{cwd, "/tmp"}
+			homeDir, _ := os.UserHomeDir()
+			dirs := []string{cwd, "/tmp"}
+			if homeDir != "" {
+				dirs = append(dirs, homeDir)
+			}
+			for _, d := range []string{"/root", "/home", "/opt", "/srv", "/var/www", "/usr/local/src", "/etc", "/usr"} {
+				if fi, err := os.Stat(d); err == nil && fi.IsDir() {
+					dirs = append(dirs, d)
+				}
+			}
+			t.AllowedBaseDirs = dirs
 		}
 	})
 	for _, base := range t.AllowedBaseDirs {
@@ -1525,8 +1548,9 @@ func (t *FileWriteTool) Definition() map[string]interface{} {
 			"parameters": map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"path":    map[string]interface{}{"type": "string", "description": "文件路径"},
-					"content": map[string]interface{}{"type": "string", "description": "文件内容"},
+					"path":     map[string]interface{}{"type": "string", "description": "文件路径"},
+					"content":  map[string]interface{}{"type": "string", "description": "文件内容"},
+					"approved": map[string]interface{}{"type": "boolean", "description": "是否已获用户批准（Guardian审查需要）"},
 				},
 				"required": []string{"path", "content"},
 			},
@@ -1590,7 +1614,20 @@ func (t *FileWriteTool) isPathAllowed(absPath string) bool {
 	t.once.Do(func() {
 		if len(t.AllowedBaseDirs) == 0 {
 			cwd, _ := os.Getwd()
-			t.AllowedBaseDirs = []string{cwd, config.DefaultPaths.HomeDir, "/tmp"}
+			homeDir, _ := os.UserHomeDir()
+			dirs := []string{cwd, "/tmp"}
+			if config.DefaultPaths != nil && config.DefaultPaths.HomeDir != "" {
+				dirs = append(dirs, config.DefaultPaths.HomeDir)
+			}
+			if homeDir != "" {
+				dirs = append(dirs, homeDir)
+			}
+			for _, d := range []string{"/root", "/home", "/opt", "/srv", "/var/www", "/usr/local/src"} {
+				if fi, err := os.Stat(d); err == nil && fi.IsDir() {
+					dirs = append(dirs, d)
+				}
+			}
+			t.AllowedBaseDirs = dirs
 		}
 	})
 	for _, base := range t.AllowedBaseDirs {

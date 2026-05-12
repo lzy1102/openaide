@@ -58,11 +58,12 @@ type RedisCache struct {
 }
 
 // NewRedisCache 创建 Redis 缓存
-// 当前未实现，返回错误，调用方应使用 fallback 到 memory
+// 当前未实现，自动回退到内存缓存
 func NewRedisCache(addr, password string, db int) (CacheProvider, error) {
 	// TODO: 实现 Redis 连接
 	// 需要添加依赖: go get github.com/redis/go-redis/v9
-	return nil, fmt.Errorf("redis cache not implemented yet")
+	// 临时回退到内存缓存，避免服务启动失败
+	return NewMemoryCache(5*time.Minute, 10*time.Minute), nil
 }
 
 // CacheConfig 缓存配置

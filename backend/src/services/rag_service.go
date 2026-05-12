@@ -209,7 +209,7 @@ func (s *ragService) Retrieve(ctx context.Context, query string, topK int) ([]Kn
 	}
 
 	for _, result := range allResults {
-		_ = s.knowledge.IncrementAccessCount(result.ID)
+		s.knowledge.IncrementAccessCount(result.ID)
 	}
 
 	return allResults, nil

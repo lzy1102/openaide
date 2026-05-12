@@ -61,9 +61,27 @@ type Model struct {
 type Dialogue struct {
 	ID        string    `json:"id"`
 	UserID    string    `json:"user_id"`
+	ProjectID string    `json:"project_id"`
 	Title     string    `json:"title"`
 	CreatedAt string    `json:"created_at"`
 	UpdatedAt string    `json:"updated_at"`
+}
+
+// Project 项目结构（对齐后端）
+type Project struct {
+	ID          string `json:"id"`
+	UserID      string `json:"user_id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Color       string `json:"color"`
+	Icon        string `json:"icon"`
+	SystemPrompt string `json:"system_prompt"`
+	ModelID     string `json:"model_id"`
+	WorkingDir  string `json:"working_dir"`
+	SortOrder   int    `json:"sort_order"`
+	IsDefault   bool   `json:"is_default"`
+	CreatedAt   string `json:"created_at"`
+	UpdatedAt   string `json:"updated_at"`
 }
 
 // Message 消息结构（对齐后端，使用 Sender）
