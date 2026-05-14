@@ -1442,7 +1442,136 @@ GET    /health                   # 健康检查
 GET    /metrics                  # 指标
 ```
 
-### 7.6 依赖模块
+### 7.6 本地 Agent 安全设计
+
+OpenAIDE 是**本地运行**的 AI Agent，安全设计遵循**最小够用**原则，避免企业级系统的过度设计。
+
+#### 7.6.1 认证简化：系统用户识别
+
+```go
+type LocalIdentity struct {
+    UserID    string    `json:"user_id"`     // 系统用户名哈希
+    HomeDir   string    `json:"home_dir"`    // ~/.openaide/
+    CreatedAt time.Time `json:"created_at"`
+}
+
+func IdentifyUser() (*LocalIdentity, error) {
+    user, err := user.Current()
+    if err != nil {
+        return nil, err
+    }
+    return &LocalIdentity{
+        UserID:  hash(user.Username + user.Uid),
+        HomeDir: filepath.Join(user.HomeDir, ".openaide"),
+    }, nil
+}
+```
+
+**删除**：JWT、OAuth、mTLS、API Key（本地单用户无需复杂认证）
+
+#### 7.6.2 授权简化：危险操作确认
+
+```go
+type PermissionLevel int
+
+const (
+    PermSafe PermissionLevel = iota   // 安全操作：直接执行
+    PermWarn                           // 警告操作：记录日志
+    PermDangerous                      // 危险操作：需要确认
+)
+
+var DangerousOperations = []string{
+    "rm -rf", "format", "DROP TABLE", "sudo",
+}
+```
+
+**删除**：RBAC、ABAC（本地单用户无需角色权限系统）
+
+#### 7.6.3 限流简化：并发控制
+
+```go
+type LocalLimiter struct {
+    maxConcurrent int
+    semaphore     chan struct{}
+}
+
+func NewLocalLimiter(max int) *LocalLimiter {
+    return &LocalLimiter{
+        maxConcurrent: max,
+        semaphore:     make(chan struct{}, max),
+    }
+}
+```
+
+**删除**：四层令牌桶限流（本地资源独享，无需限流）
+
+#### 7.6.4 审计简化：关键操作日志
+
+```go
+type LocalAuditLog struct {
+    File *os.File
+}
+
+func (l *LocalAuditLog) Record(operation string, detail string) {
+    if !isImportant(operation) {
+        return
+    }
+    timestamp := time.Now().Format("2006-01-02 15:04:05")
+    logLine := fmt.Sprintf("[%s] %s: %s\n", timestamp, operation, detail)
+    l.File.WriteString(logLine)
+}
+```
+
+**删除**：全量审计记录、保留策略（本地只需记录关键操作）
+
+#### 7.6.5 传输安全
+
+**删除**：HTTPS/TLS（本地 localhost 无需加密传输）
+
+**保留**：文件权限控制
+
+```go
+func SecureFile(path string, data []byte) error {
+    err := os.WriteFile(path, data, 0600) // 仅所有者可读写
+    if err != nil {
+        return err
+    }
+    return os.Chmod(path, 0600)
+}
+```
+
+#### 7.6.6 安全中间件（本地版）
+
+```go
+func SetupLocalMiddleware(router *gin.Engine) {
+    router.Use(middleware.RequestID())              // 调试追踪
+    router.Use(middleware.RequestValidation())      // 输入验证
+    router.Use(middleware.InputSanitization())      // 输入消毒
+    router.Use(middleware.DangerousOperationConfirm()) // 危险操作确认
+    router.Use(middleware.SimpleAuditLog())         // 关键操作审计
+}
+```
+
+#### 7.6.7 安全设计对比
+
+| 模块 | 企业级设计 | 本地 Agent 简化 | 减少复杂度 |
+|------|-----------|----------------|-----------|
+| 认证 | JWT + OAuth + mTLS | 系统用户识别 | 90% |
+| 授权 | RBAC + ABAC | 危险操作确认 | 85% |
+| 限流 | 四层令牌桶 | 信号量并发控制 | 80% |
+| 审计 | 全量记录 + 保留策略 | 关键操作本地日志 | 75% |
+| 传输 | HTTPS + TLS 1.3 | 无需（localhost） | 100% |
+| 存储加密 | AES-256-GCM | 文件权限 0600 | 80% |
+
+#### 7.6.8 安全底线（不可省略）
+
+1. **危险操作确认**（`rm -rf` 等必须确认）
+2. **输入长度限制**（防内存溢出）
+3. **文件权限控制**（`0600` 保护配置）
+4. **关键操作审计**（记录危险操作）
+5. **价值对齐检查**（已讨论，保留）
+
+### 7.7 依赖模块
 
 | 依赖 | 用途 | 是否必须 |
 |------|------|----------|
@@ -1451,13 +1580,16 @@ GET    /metrics                  # 指标
 | `infra.DB` | 会话持久化 | 是 |
 | `infra.Logger` | 请求日志 | 是 |
 
-### 7.7 不做什么
+### 7.8 不做什么
 
 - ❌ 不决定用什么模型
 - ❌ 不拆解任务
 - ❌ 不选择工具
 - ❌ 不管理记忆（只传 SessionID）
 - ❌ 不执行业务逻辑
+- ❌ 不做企业级认证授权（本地单用户）
+- ❌ 不做 DDoS 防护（本地无此风险）
+- ❌ 不做传输加密（localhost 通信）
 
 ---
 
@@ -1713,12 +1845,243 @@ func SelectStrategy(event Event) CompressionStrategy {
 
 无。基础设施层是最底层，不依赖任何其他模块。
 
-### 8.7 不做什么
+### 8.7 可观测性（本地简化版）
+
+OpenAIDE 作为本地 Agent，可观测性设计遵循**够用即可**原则，避免企业级监控系统的过度设计。
+
+#### 8.7.1 监控指标（本地内存指标）
+
+```go
+type LocalMetrics struct {
+    ChatCount       int64         // 总对话次数
+    ChatDuration    time.Duration // 平均对话耗时
+    TokenConsumed   int64         // 总 Token 消耗
+    ToolCallCount   int64         // 工具调用次数
+    ToolFailCount   int64         // 工具失败次数
+    LLMLatency      time.Duration // LLM 平均延迟
+    MemoryUsage     int64         // 内存占用（MB）
+    ErrorCount      int64         // 错误次数
+    LastError       string        // 最近错误
+}
+
+func (m *LocalMetrics) Snapshot() string {
+    return fmt.Sprintf(`
+📊 OpenAIDE 运行指标
+─────────────────────
+对话次数:    %d
+Token 消耗:  %d
+工具调用:    %d (失败 %d)
+LLM 延迟:    %v
+内存占用:    %d MB
+错误次数:    %d
+─────────────────────
+`, m.ChatCount, m.TokenConsumed, m.ToolCallCount, m.ToolFailCount,
+   m.LLMLatency, m.MemoryUsage, m.ErrorCount)
+}
+```
+
+**删除**：Prometheus + Grafana（本地无需外部监控系统）
+
+#### 8.7.2 日志设计（分级日志）
+
+```go
+type Logger struct {
+    Level  LogLevel
+    Output io.Writer
+}
+
+type LogLevel int
+
+const (
+    LevelDebug LogLevel = iota
+    LevelInfo
+    LevelWarn
+    LevelError
+)
+
+func (l *Logger) log(level string, format string, args ...interface{}) {
+    timestamp := time.Now().Format("2006-01-02 15:04:05")
+    msg := fmt.Sprintf(format, args...)
+    fmt.Fprintf(l.Output, "[%s] %s: %s\n", timestamp, level, msg)
+}
+```
+
+**日志文件结构**：
+```
+~/.openaide/logs/
+├── openaide.log      # 主日志
+├── error.log         # 错误日志（单独记录）
+└── chat/             # 对话日志（按日期）
+    ├── 2026-05-14.log
+    └── 2026-05-15.log
+```
+
+**删除**：ELK Stack、结构化日志 JSON 格式（本地纯文本即可）
+
+#### 8.7.3 链路追踪（简化 TraceSpan）
+
+```go
+type TraceSpan struct {
+    Name      string
+    StartTime time.Time
+    EndTime   time.Time
+    Children  []*TraceSpan
+}
+
+func (s *TraceSpan) String() string {
+    var sb strings.Builder
+    s.print(&sb, 0)
+    return sb.String()
+}
+
+func (s *TraceSpan) print(sb *strings.Builder, depth int) {
+    indent := strings.Repeat("  ", depth)
+    sb.WriteString(fmt.Sprintf("%s%s: %v\n", indent, s.Name, s.Duration()))
+    for _, child := range s.Children {
+        child.print(sb, depth+1)
+    }
+}
+```
+
+**输出示例**：
+```
+ChatRequest: 2.5s
+  Think: 500ms
+  ToolCall(weather): 1.2s
+    HTTPRequest: 800ms
+  GenerateResponse: 800ms
+```
+
+**删除**：OpenTelemetry + Jaeger（本地无需分布式追踪）
+
+#### 8.7.4 健康检查
+
+```go
+type HealthCheck struct {
+    Name     string
+    Check    func() error
+    Critical bool
+}
+
+var DefaultChecks = []HealthCheck{
+    {Name: "llm_connection", Check: checkLLMConnection, Critical: true},
+    {Name: "memory_storage", Check: checkMemoryStorage, Critical: true},
+    {Name: "tool_registry", Check: checkToolRegistry, Critical: false},
+}
+```
+
+**删除**：K8s Probes（本地无容器编排）
+
+#### 8.7.5 调试模式
+
+```go
+type DebugMode struct {
+    Enabled       bool
+    ShowThinking  bool   // 显示思考过程
+    ShowToolCalls bool   // 显示工具调用详情
+    ShowTokens    bool   // 显示 Token 消耗
+    ShowLatency   bool   // 显示延迟
+    ShowMemory    bool   // 显示记忆访问
+}
+
+func (d *DebugMode) PrintEvent(event Event) {
+    if !d.Enabled {
+        return
+    }
+    switch event.Type() {
+    case EventTypeThinking:
+        if d.ShowThinking {
+            fmt.Printf("🤔 思考: %s\n", event.Content())
+        }
+    case EventTypeToolCall:
+        if d.ShowToolCalls {
+            fmt.Printf("🔧 工具: %s(%v)\n", event.ToolName(), event.Arguments())
+        }
+    case EventTypeTokenUsage:
+        if d.ShowTokens {
+            fmt.Printf("📊 Token: %d\n", event.TotalTokens())
+        }
+    }
+}
+```
+
+#### 8.7.6 性能分析（标准库 pprof）
+
+```go
+type Profiler struct {
+    enabled bool
+    file    *os.File
+}
+
+func (p *Profiler) StartCPUProfile(path string) error {
+    if !p.enabled {
+        return nil
+    }
+    f, err := os.Create(path)
+    if err != nil {
+        return err
+    }
+    p.file = f
+    return pprof.StartCPUProfile(f)
+}
+
+func (p *Profiler) StopCPUProfile() {
+    if !p.enabled {
+        return
+    }
+    pprof.StopCPUProfile()
+    p.file.Close()
+}
+```
+
+#### 8.7.7 可观测性汇总
+
+```go
+type Observability struct {
+    Metrics  *LocalMetrics
+    Logger   *Logger
+    Tracer   *TraceSpan
+    Health   *HealthChecker
+    Debug    *DebugMode
+    Profiler *Profiler
+}
+
+func (o *Observability) StatusReport() string {
+    return fmt.Sprintf(`
+%s
+%s
+健康状态: %s
+调试模式: %v
+`, o.Metrics.Snapshot(), o.Tracer.String(), o.Health.CheckAll().Status, o.Debug.Enabled)
+}
+```
+
+#### 8.7.8 可观测性设计对比
+
+| 模块 | 企业级设计 | 本地 Agent 简化 | 减少复杂度 |
+|------|-----------|----------------|-----------|
+| 监控 | Prometheus + Grafana | 内存指标结构体 | 90% |
+| 日志 | ELK Stack | 分级日志 + 文件 | 85% |
+| 链路追踪 | OpenTelemetry + Jaeger | 简单 TraceSpan | 90% |
+| 健康检查 | K8s Probes | 简单函数检查 | 80% |
+| 性能分析 | APM 工具 | pprof 标准库 | 70% |
+
+#### 8.7.9 可观测性底线
+
+1. **错误日志**（必须记录，方便排查）
+2. **关键指标**（Token 消耗、延迟）
+3. **健康检查**（LLM 连接、存储可用）
+4. **调试模式**（开发时查看内部状态）
+
+### 8.8 不做什么
 
 - ❌ 不定义业务模型（由 models/ 定义）
 - ❌ 不决定缓存策略（由调用方决定）
 - ❌ 不处理业务逻辑
 - ❌ 不定义事件语义（由 kernel 定义事件类型）
+- ❌ 不做企业级监控（Prometheus/Grafana）
+- ❌ 不做分布式追踪（OpenTelemetry）
+- ❌ 不做容器健康检查（K8s Probes）
 
 ---
 
