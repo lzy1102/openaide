@@ -4560,4 +4560,313 @@ type UpdateInfo struct {
 
 ---
 
+## 21. CLI 命令设计（参考 Claude Code）
+
+### 21.1 核心命令
+
+| 命令 | 说明 | 示例 |
+|------|------|------|
+| `openaide` | 进入当前项目会话（恢复或新建） | `openaide` |
+| `openaide -c` | 继续上次会话 | `openaide -c` |
+| `openaide -n` | 强制新建会话 | `openaide -n` |
+| `/clear` | 清除当前上下文（会话内） | `> /clear` |
+| `/exit` | 退出会话（会话内） | `> /exit` |
+| `/help` | 显示帮助（会话内） | `> /help` |
+
+### 21.2 会话管理命令
+
+```bash
+# 进入项目（自动恢复或新建）
+$ cd /my/project
+$ openaide
+
+🚀 OpenAIDE
+─────────────────────
+项目: my-project
+会话: 恢复上次 (2026-05-14 10:30)
+─────────────────────
+> 
+
+# 继续上次会话
+$ openaide -c
+
+🚀 OpenAIDE
+─────────────────────
+项目: my-project
+会话: 继续 (2026-05-14 10:30)
+─────────────────────
+> 
+
+# 强制新建会话
+$ openaide -n
+
+🚀 OpenAIDE
+─────────────────────
+项目: my-project
+会话: 新建 (2026-05-14 11:00)
+─────────────────────
+> 
+```
+
+### 21.3 会话内命令（以 `/` 开头）
+
+```bash
+> /clear
+
+🧹 上下文已清除
+─────────────────────
+> 
+
+> /help
+
+📖 OpenAIDE 命令
+─────────────────────
+/clear     清除当前上下文
+/exit      退出会话
+/help      显示帮助
+/history   显示对话历史
+/config    查看当前配置
+/tools     查看可用工具
+/memory    查看记忆状态
+/save      保存当前会话
+/load      加载历史会话
+```
+
+### 21.4 代码实现
+
+```go
+// cmd/openaide/main.go
+package main
+
+import (
+    "flag"
+    "fmt"
+    "os"
+)
+
+func main() {
+    var (
+        continueFlag = flag.Bool("c", false, "继续上次会话")
+        newFlag      = flag.Bool("n", false, "新建会话")
+        configFlag   = flag.Bool("config", false, "查看配置")
+        versionFlag  = flag.Bool("version", false, "查看版本")
+    )
+    flag.Parse()
+    
+    projectPath, _ := os.Getwd()
+    
+    switch {
+    case *versionFlag:
+        printVersion()
+    case *configFlag:
+        printConfig()
+    case *continueFlag:
+        runContinue(projectPath)
+    case *newFlag:
+        runNew(projectPath)
+    default:
+        runAuto(projectPath)
+    }
+}
+
+func runAuto(projectPath string) {
+    session := sessionManager.GetActiveSession(projectPath)
+    
+    if session != nil {
+        fmt.Println("🚀 OpenAIDE")
+        fmt.Println("─────────────────────")
+        fmt.Printf("项目: %s\n", getProjectName(projectPath))
+        fmt.Printf("会话: 恢复上次 (%s)\n", session.LastTime.Format("2006-01-02 15:04"))
+        fmt.Println("─────────────────────")
+        runInteractive(session)
+    } else {
+        runNew(projectPath)
+    }
+}
+
+func runContinue(projectPath string) {
+    session := sessionManager.GetLastSession(projectPath)
+    if session == nil {
+        fmt.Println("⚠️  没有找到历史会话，新建会话")
+        runNew(projectPath)
+        return
+    }
+    
+    fmt.Println("🚀 OpenAIDE")
+    fmt.Println("─────────────────────")
+    fmt.Printf("项目: %s\n", getProjectName(projectPath))
+    fmt.Printf("会话: 继续 (%s)\n", session.LastTime.Format("2006-01-02 15:04"))
+    fmt.Println("─────────────────────")
+    runInteractive(session)
+}
+
+func runNew(projectPath string) {
+    session := sessionManager.CreateSession(projectPath)
+    
+    fmt.Println("🚀 OpenAIDE")
+    fmt.Println("─────────────────────")
+    fmt.Printf("项目: %s\n", getProjectName(projectPath))
+    fmt.Printf("会话: 新建 (%s)\n", session.CreatedAt.Format("2006-01-02 15:04"))
+    fmt.Println("─────────────────────")
+    runInteractive(session)
+}
+
+func runInteractive(session *Session) {
+    scanner := bufio.NewScanner(os.Stdin)
+    
+    for {
+        fmt.Print("> ")
+        if !scanner.Scan() {
+            break
+        }
+        
+        input := scanner.Text()
+        
+        if strings.HasPrefix(input, "/") {
+            if handleCommand(input, session) {
+                break
+            }
+            continue
+        }
+        
+        response, err := session.Agent.Chat(input)
+        if err != nil {
+            fmt.Printf("❌ 错误: %v\n", err)
+            continue
+        }
+        
+        fmt.Println(response)
+    }
+}
+
+func handleCommand(cmd string, session *Session) bool {
+    switch cmd {
+    case "/clear":
+        session.ClearContext()
+        fmt.Println("🧹 上下文已清除")
+        return false
+    case "/exit":
+        session.Save()
+        fmt.Println("👋 再见")
+        return true
+    case "/help":
+        printHelp()
+        return false
+    case "/history":
+        printHistory(session)
+        return false
+    case "/config":
+        printSessionConfig(session)
+        return false
+    case "/tools":
+        printAvailableTools(session)
+        return false
+    case "/memory":
+        printMemoryStatus(session)
+        return false
+    case "/save":
+        session.Save()
+        fmt.Println("💾 会话已保存")
+        return false
+    default:
+        fmt.Printf("❓ 未知命令: %s，输入 /help 查看帮助\n", cmd)
+        return false
+    }
+}
+```
+
+### 21.5 会话状态管理
+
+```go
+type SessionManager struct {
+    db *gorm.DB
+}
+
+type Session struct {
+    ID        string    `json:"id"`
+    ProjectID string    `json:"project_id"`
+    Status    string    `json:"status"` // active, paused, closed
+    Messages  []Message `json:"messages"`
+    CreatedAt time.Time `json:"created_at"`
+    LastTime  time.Time `json:"last_time"`
+}
+
+func (sm *SessionManager) GetActiveSession(projectPath string) *Session {
+    projectID := generateProjectID(projectPath)
+    
+    var session Session
+    result := sm.db.Where("project_id = ? AND status = ?", projectID, "active").
+        Order("last_time DESC").
+        First(&session)
+    
+    if result.Error != nil {
+        return nil
+    }
+    
+    return &session
+}
+
+func (sm *SessionManager) GetLastSession(projectPath string) *Session {
+    projectID := generateProjectID(projectPath)
+    
+    var session Session
+    result := sm.db.Where("project_id = ?", projectID).
+        Order("last_time DESC").
+        First(&session)
+    
+    if result.Error != nil {
+        return nil
+    }
+    
+    return &session
+}
+
+func (sm *SessionManager) CreateSession(projectPath string) *Session {
+    projectID := generateProjectID(projectPath)
+    
+    sm.db.Model(&Session{}).
+        Where("project_id = ? AND status = ?", projectID, "active").
+        Update("status", "paused")
+    
+    session := &Session{
+        ID:        generateSessionID(),
+        ProjectID: projectID,
+        Status:    "active",
+        Messages:  []Message{},
+        CreatedAt: time.Now(),
+        LastTime:  time.Now(),
+    }
+    
+    sm.db.Create(session)
+    return session
+}
+
+func (s *Session) ClearContext() {
+    s.Messages = []Message{s.Messages[0]} // 保留系统消息
+    s.LastTime = time.Now()
+}
+
+func (s *Session) Save() {
+    s.LastTime = time.Now()
+}
+```
+
+### 21.6 与 Claude Code 对比
+
+| 功能 | Claude Code | OpenAIDE |
+|------|-------------|----------|
+| 进入项目 | `claude` | `openaide` |
+| 继续会话 | `claude -c` | `openaide -c` |
+| 新建会话 | `claude -n` | `openaide -n` |
+| 清除上下文 | `/clear` | `/clear` |
+| 退出 | `/exit` | `/exit` |
+| 查看帮助 | `/help` | `/help` |
+| 查看历史 | `/history` | `/history` |
+| 查看配置 | - | `/config` |
+| 查看工具 | - | `/tools` |
+| 查看记忆 | - | `/memory` |
+| 保存会话 | - | `/save` |
+
+---
+
 > 本文档为设计草案，欢迎评审和补充。
