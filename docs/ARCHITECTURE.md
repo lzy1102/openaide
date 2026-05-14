@@ -2009,110 +2009,103 @@ func SelectCompression(consumer string) EventCompressor {
 
 ## 8. 项目目录结构
 
-### 7.1 目标目录结构
+### 7.1 目标目录结构（混合模式）
 
 ```
 openaide/
-├── backend/
-│   ├── cmd/
-│   │   └── server/
-│   │       └── main.go                  # 入口：只负责启动
-│   │
-│   ├── internal/                        # 私有代码（不对外暴露）
-│   │   │
-│   │   ├── kernel/                      # ████ Agent 内核 ████
-│   │   │   ├── agent.go                 # Agent 定义与配置
-│   │   │   ├── reactor.go               # ReAct 执行引擎
-│   │   │   ├── state_machine.go         # 状态机
-│   │   │   ├── events.go                # 事件定义
-│   │   │   └── config.go                # 内核配置
-│   │   │
-│   │   ├── memory/                      # 记忆系统
-│   │   │   ├── interfaces.go            # 记忆接口
-│   │   │   ├── short_term.go            # 工作记忆（对话上下文）
-│   │   │   ├── long_term.go             # 长期记忆（SQLite）
-│   │   │   ├── vector.go                # 向量记忆（RAG）
-│   │   │   ├── embedding.go             # 嵌入服务
-│   │   │   └── compressor.go            # 上下文压缩
-│   │   │
-│   │   ├── tools/                       # 工具系统
-│   │   │   ├── interfaces.go            # 工具接口
-│   │   │   ├── registry.go              # 工具注册表
-│   │   │   ├── executor.go              # 工具执行器
-│   │   │   ├── mcp.go                   # MCP 客户端适配
-│   │   │   └── native/                  # 内置工具
-│   │   │       ├── bash.go
-│   │   │       ├── file.go
-│   │   │       ├── code.go
-│   │   │       ├── search.go
-│   │   │       └── http.go
-│   │   │
-│   │   ├── llm/                         # LLM 网关
-│   │   │   ├── gateway.go               # 网关核心
-│   │   │   ├── client.go                # 统一客户端接口
-│   │   │   ├── router.go                # 模型路由
-│   │   │   └── providers/               # 各提供商实现
-│   │   │       ├── openai.go
-│   │   │       ├── anthropic.go
-│   │   │       ├── deepseek.go
-│   │   │       ├── gemini.go
-│   │   │       ├── ollama.go
-│   │   │       └── ...
-│   │   │
-│   │   ├── orchestration/               # 编排层（可选）
-│   │   │   ├── interfaces.go            # 编排接口
-│   │   │   ├── planner.go               # 任务规划器
-│   │   │   ├── team.go                  # 多 Agent 团队
-│   │   │   ├── workflow.go              # 工作流引擎
-│   │   │   └── scheduler.go             # 调度器
-│   │   │
-│   │   ├── api/                         # API 层
-│   │   │   ├── server.go                # HTTP 服务器
-│   │   │   ├── router.go                # 路由注册
-│   │   │   ├── middleware/              # 中间件
-│   │   │   │   ├── auth.go
-│   │   │   │   ├── cors.go
-│   │   │   │   ├── rate_limit.go
-│   │   │   │   └── request_id.go
-│   │   │   ├── handlers/                # 处理器
-│   │   │   │   ├── chat.go              # 对话
-│   │   │   │   ├── agent.go             # Agent 管理
-│   │   │   │   ├── session.go           # 会话管理
-│   │   │   │   ├── task.go              # 任务管理
-│   │   │   │   └── system.go            # 系统接口
-│   │   │   └── websocket.go             # WebSocket
-│   │   │
-│   │   └── infra/                       # 基础设施
-│   │       ├── config.go                # 配置管理
-│   │       ├── database.go              # 数据库
-│   │       ├── cache.go                 # 缓存
-│   │       ├── vector.go                # 向量存储
-│   │       ├── event_bus.go             # 事件总线
-│   │       └── logger.go                # 日志
-│   │
-│   ├── pkg/                             # 可复用公共库
-│   │   ├── errors/
-│   │   ├── logger/
-│   │   └── utils/
-│   │
-│   ├── configs/
-│   │   └── config.yaml                  # 配置文件
-│   │
-│   └── go.mod
+├── cmd/
+│   └── openaide/
+│       └── main.go                      # 统一入口：根据子命令分发
 │
-├── terminal/                            # TUI 终端客户端
-│   ├── cmd/
-│   ├── internal/
-│   └── go.mod
+├── internal/                            # 私有代码（不对外暴露）
+│   │
+│   ├── kernel/                          # ████ Agent 内核 ████
+│   │   ├── agent.go                     # Agent 定义与配置
+│   │   ├── reactor.go                   # ReAct 执行引擎
+│   │   ├── state_machine.go             # 状态机
+│   │   ├── events.go                    # 事件定义
+│   │   └── config.go                    # 内核配置
+│   │
+│   ├── memory/                          # 记忆系统
+│   │   ├── interfaces.go                # 记忆接口
+│   │   ├── short_term.go                # 工作记忆（对话上下文）
+│   │   ├── long_term.go                 # 长期记忆（SQLite）
+│   │   ├── vector.go                    # 向量记忆（RAG）
+│   │   ├── embedding.go                 # 嵌入服务
+│   │   └── compressor.go                # 上下文压缩
+│   │
+│   ├── tools/                           # 工具系统
+│   │   ├── interfaces.go                # 工具接口
+│   │   ├── registry.go                  # 工具注册表
+│   │   ├── executor.go                  # 工具执行器
+│   │   ├── mcp.go                       # MCP 客户端适配
+│   │   └── native/                      # 内置工具
+│   │       ├── bash.go
+│   │       ├── file.go
+│   │       ├── code.go
+│   │       ├── search.go
+│   │       └── http.go
+│   │
+│   ├── llm/                             # LLM 网关
+│   │   ├── gateway.go                   # 网关核心
+│   │   ├── client.go                    # 统一客户端接口
+│   │   ├── router.go                    # 模型路由
+│   │   └── providers/                   # 各提供商实现
+│   │       ├── openai.go
+│   │       ├── anthropic.go
+│   │       ├── deepseek.go
+│   │       ├── gemini.go
+│   │       ├── ollama.go
+│   │       └── ...
+│   │
+│   ├── orchestration/                   # 编排层（可选）
+│   │   ├── interfaces.go                # 编排接口
+│   │   ├── planner.go                   # 任务规划器
+│   │   ├── team.go                      # 多 Agent 团队
+│   │   ├── workflow.go                  # 工作流引擎
+│   │   └── scheduler.go                 # 调度器
+│   │
+│   ├── api/                             # HTTP API 层（可选）
+│   │   ├── server.go                    # HTTP 服务器
+│   │   ├── router.go                    # 路由注册
+│   │   ├── middleware/                  # 中间件
+│   │   │   ├── auth.go
+│   │   │   ├── cors.go
+│   │   │   ├── rate_limit.go
+│   │   │   └── request_id.go
+│   │   ├── handlers/                    # 处理器
+│   │   │   ├── chat.go                  # 对话
+│   │   │   ├── agent.go                 # Agent 管理
+│   │   │   ├── session.go               # 会话管理
+│   │   │   ├── task.go                  # 任务管理
+│   │   │   └── system.go                # 系统接口
+│   │   └── websocket.go                 # WebSocket
+│   │
+│   ├── cli/                             # 命令行交互（直接模式）
+│   │   ├── chat.go                      # 对话命令
+│   │   ├── config.go                    # 配置命令
+│   │   └── interactive.go               # 交互式终端
+│   │
+│   ├── tui/                             # TUI 界面（可选）
+│   │   ├── app.go                       # TUI 应用
+│   │   ├── views/                       # 视图组件
+│   │   └── styles/                      # 样式定义
+│   │
+│   └── infra/                           # 基础设施
+│       ├── config.go                    # 配置管理
+│       ├── database.go                  # 数据库
+│       ├── cache.go                     # 缓存
+│       ├── vector.go                    # 向量存储
+│       ├── event_bus.go                 # 事件总线
+│       └── logger.go                    # 日志
 │
-├── frontend/                            # Web 前端
-│   ├── src/
-│   ├── public/
-│   └── package.json
+├── pkg/                                 # 可复用公共库
+│   ├── errors/
+│   ├── logger/
+│   └── utils/
 │
-├── sdk/                                 # 对外 SDK
-│   ├── go/                              # Go SDK
-│   └── python/                          # Python SDK（未来）
+├── configs/
+│   └── config.yaml                      # 默认配置文件
 │
 ├── docs/                                # 文档
 │   ├── ARCHITECTURE.md                  # 本文件
@@ -2131,6 +2124,85 @@ openaide/
 ├── Makefile
 └── README.md
 ```
+
+### 7.2 运行模式
+
+| 命令 | 模式 | 说明 |
+|------|------|------|
+| `openaide chat` | **直接模式（默认）** | 直接对话，无需启动 server |
+| `openaide server` | **服务器模式** | 启动 HTTP API，供远程连接 |
+| `openaide tui` | **TUI 模式** | 启动 TUI 界面（连接本地或远程） |
+| `openaide config` | **配置命令** | 查看和修改配置 |
+
+### 7.3 三种模式架构
+
+#### 直接模式（默认）
+
+```
+用户 -> CLI -> Kernel -> LLM/Tools
+```
+
+```go
+func runDirectMode() {
+    cfg := config.Load()
+    kernel := kernel.New(cfg)
+    cli := cli.New(kernel)
+    cli.Run()  // 交互式对话
+}
+```
+
+#### 服务器模式
+
+```
+用户 -> HTTP Client -> API Server -> Kernel -> LLM/Tools
+```
+
+```go
+func runServerMode() {
+    cfg := config.Load()
+    kernel := kernel.New(cfg)
+    server := api.NewServer(kernel)
+    server.Start(":8080")
+}
+```
+
+#### TUI 模式
+
+```
+用户 -> TUI -> HTTP Client -> API Server (本地或远程)
+```
+
+```go
+func runTUIMode() {
+    client := api.NewClient("http://localhost:8080")
+    tui := tui.New(client)
+    tui.Run()
+}
+```
+
+### 7.4 与现有目录对比
+
+| 现有路径 | 目标路径 | 说明 |
+|----------|----------|------|
+| `backend/cmd/server/` | `cmd/openaide/` | 统一入口 |
+| `backend/internal/` | `internal/` | 合并到根目录 |
+| `terminal/` | `internal/tui/` + `internal/cli/` | TUI 和 CLI 合并到 internal |
+| `backend/src/app.go` | `internal/api/server.go` | 应用容器 → API 服务器 |
+| `backend/src/router.go` | `internal/api/router.go` | 路由注册 |
+| `backend/src/handlers/` | `internal/api/handlers/` | HTTP 处理器 |
+| `backend/src/services/agent_executor.go` | `internal/kernel/reactor.go` | Agent 执行引擎 |
+| `backend/src/services/agent_router.go` | `internal/llm/router.go` | 模型路由 |
+| `backend/src/services/tool_calling_service.go` | `internal/kernel/reactor.go` + `internal/tools/` | 工具调用 → 内核 + 工具系统 |
+| `backend/src/services/dialogue_service.go` | `internal/memory/short_term.go` | 对话管理 → 工作记忆 |
+| `backend/src/services/memory_service.go` | `internal/memory/long_term.go` | 记忆服务 → 长期记忆 |
+| `backend/src/services/context_engine.go` | `internal/memory/compressor.go` | 上下文引擎 → 压缩器 |
+| `backend/src/services/llm/` | `internal/llm/providers/` | LLM 客户端保留 |
+| `backend/src/services/orchestration/` | `internal/orchestration/` | 编排保留 |
+| `backend/src/services/workflow_service.go` | `internal/orchestration/workflow.go` | 工作流服务 |
+| `backend/src/services/storage/` | `internal/infra/` | 存储 → 基础设施 |
+| `backend/src/models/` | `internal/models/` | 数据模型 |
+| `backend/src/config/` | `internal/infra/config.go` | 配置管理 |
+| `backend/src/middleware/` | `internal/api/middleware/` | 中间件 |
 
 ### 7.2 与现有目录对比
 

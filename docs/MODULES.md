@@ -39,10 +39,52 @@
 | **工具** | `internal/tools/` | 工具注册与执行 | 8-12 | P0 |
 | **LLM** | `internal/llm/` | 模型网关与提供商 | 20+ | P0 |
 | **编排** | `internal/orchestration/` | 任务规划与协作 | 5-8 | P1 |
-| **API** | `internal/api/` | HTTP 接口与传输 | 8-12 | P1 |
+| **API** | `internal/api/` | HTTP 接口与传输（可选） | 8-12 | P1 |
+| **CLI** | `internal/cli/` | 命令行交互（直接模式） | 3-5 | P0 |
+| **TUI** | `internal/tui/` | TUI 界面（可选） | 5-8 | P2 |
 | **基础设施** | `internal/infra/` | 存储与配置 | 6-8 | P1 |
 
 ### 1.2 模块分层图
+
+#### 直接模式（默认）
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         CLI 层                               │
+│   ┌─────────┐ ┌─────────┐ ┌─────────┐                     │
+│   │  Chat   │ │ Config  │ │Interactive│                    │
+│   └────┬────┘ └────┬────┘ └────┬────┘                     │
+└────────┼───────────┼───────────┼───────────────────────────┘
+         │           │           │
+         └───────────┴─────┬─────┘
+                           │
+              ┌────────────┼────────────┐
+              │            │            │
+              ▼            ▼            ▼
+       ┌──────────┐ ┌──────────┐ ┌──────────┐
+       │ 编排层    │ │ 内核层    │ │ 记忆层    │
+       │(可选增强) │ │(智能核心) │ │(信息存储) │
+       └────┬─────┘ └────┬─────┘ └────┬─────┘
+            │            │            │
+            └────────────┼────────────┘
+                         │
+              ┌──────────┴──────────┐
+              │                     │
+              ▼                     ▼
+       ┌──────────┐         ┌──────────┐
+       │ 工具层    │         │ LLM 层   │
+       │(能力扩展) │         │(模型调用) │
+       └──────────┘         └──────────┘
+              │                     │
+              └──────────┬──────────┘
+                         │
+              ┌──────────▼──────────┐
+              │    基础设施层        │
+              │  DB │ Cache │ Vector │
+              └─────────────────────┘
+```
+
+#### 服务器模式
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -1603,7 +1645,7 @@ func SetupLocalMiddleware(router *gin.Engine) {
 - 数据库：SQLite 连接与 GORM 管理
 - 缓存：内存/Redis 缓存操作
 - 向量存储：HNSW 向量索引
-- 配置：读取和管理应用配置
+- 配置：读取和管理应用配置（极简设计）
 - 日志：结构化日志记录
 - 事件总线：内存异步事件分发
 - 限流：请求频率控制
@@ -1696,12 +1738,100 @@ type Logger interface {
 | 数据类型 | 存储 | 技术 | 理由 |
 |----------|------|------|------|
 | 对话消息 | 结构化 | SQLite + GORM | 关系查询、事务 |
-| 用户配置 | 结构化 | SQLite | 小数据量 |
+| 用户配置 | **YAML 文件** | `gopkg.in/yaml.v3` | **简单直观，一眼看懂** |
 | 缓存 | KV | 内存/Redis | 高性能、TTL |
 | 向量 | ANN | HNSW | 近似最近邻 |
 | 日志 | 文件 | slog | 持久化、轮转 |
 | 实时事件 | 内存 | Channel | 轻量、异步 |
 | 持久化事件 | 结构化 | SQLite + 文件 | 可回放、审计 |
+
+### 8.5 配置管理（极简设计）
+
+OpenAIDE 配置遵循**极简原则**：8 个核心项，一眼看懂。
+
+#### 8.5.1 配置文件位置
+
+| 层级 | 路径 | 说明 |
+|------|------|------|
+| **全局配置** | `~/.openaide/config.yaml` | 用户级默认配置 |
+| **项目配置** | `.openaide/config.yaml` | 项目级覆盖配置（可选） |
+
+#### 8.5.2 配置结构
+
+```go
+type Config struct {
+    Model        string   `yaml:"model"`          // 模型名称
+    APIKey       string   `yaml:"api_key"`        // API 密钥
+    Language     string   `yaml:"language"`       // 语言：zh/en
+    Theme        string   `yaml:"theme"`          // 主题：dark/light
+    ShowThinking bool     `yaml:"show_thinking"`  // 显示思考过程
+    AutoConfirm  bool     `yaml:"auto_confirm"`   // 自动确认安全操作
+    Identity     string   `yaml:"identity"`       // 项目身份
+    Tools        []string `yaml:"tools"`          // 启用工具列表
+}
+```
+
+#### 8.5.3 全局配置示例 (`~/.openaide/config.yaml`)
+
+```yaml
+model: deepseek-chat        # 默认模型
+api_key: ${DEEPSEEK_KEY}    # API 密钥（环境变量）
+language: zh                # 语言：zh/en
+theme: dark                 # 主题：dark/light
+show_thinking: false        # 显示思考过程
+auto_confirm: false         # 自动确认安全操作
+```
+
+#### 8.5.4 项目配置示例 (`.openaide/config.yaml`)
+
+```yaml
+identity: "Go后端专家"      # 项目身份
+tools: [bash, file, go]     # 启用工具
+```
+
+#### 8.5.5 配置加载逻辑
+
+```go
+func GetConfig() *Config {
+    // 1. 加载全局配置
+    global, _ := Load("~/.openaide/config.yaml")
+    
+    // 2. 加载项目配置（如果存在）
+    project, _ := Load(".openaide/config.yaml")
+    
+    // 3. 合并：项目配置覆盖全局配置
+    if project != nil {
+        if project.Model != "" {
+            global.Model = project.Model
+        }
+        if project.Identity != "" {
+            global.Identity = project.Identity
+        }
+        if len(project.Tools) > 0 {
+            global.Tools = project.Tools
+        }
+    }
+    
+    return global
+}
+```
+
+#### 8.5.6 配置对比
+
+| 原设计 | 极简版 |
+|--------|--------|
+| 6 个嵌套结构体 | 1 个扁平结构体 |
+| 三层配置（系统/用户/项目） | 两层配置（全局/项目） |
+| 20+ 配置项 | 8 个核心配置项 |
+| 复杂校验 | 简单类型检查 |
+| 命令行工具 | 直接编辑文件 |
+
+#### 8.5.7 配置底线
+
+1. **YAML 格式**（人类可读）
+2. **环境变量支持**（`$API_KEY`）
+3. **两层合并**（全局 + 项目覆盖）
+4. **8 个核心项**（一眼看懂）
 
 ### 8.5 事件系统模块
 
