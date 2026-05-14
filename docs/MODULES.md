@@ -3915,24 +3915,325 @@ type Registry struct {
 
 ### 16.5 测试策略
 
-| 模块 | 测试类型 | 工具 | 覆盖率目标 |
-|------|----------|------|-----------|
-| kernel | 单元测试 + 集成测试 | testify + mock | 80%+ |
-| memory | 单元测试 + 集成测试 | testify + sqlite | 75%+ |
-| tools | 单元测试 | testify | 70%+ |
-| llm | 单元测试 + mock | testify + mock | 70%+ |
-| orchestration | 单元测试 + 集成测试 | testify | 75%+ |
-| api | 集成测试 + E2E | httptest | 60%+ |
-| infra | 集成测试 | testify | 70%+ |
+#### 16.5.1 测试金字塔
 
-### 16.6 性能目标
+```
+        ┌─────────┐
+        │  E2E    │  5%  (端到端)
+        │  测试   │
+       ┌┴─────────┴┐
+       │  集成测试  │  15% (模块间)
+       │           │
+      ┌┴───────────┴┐
+      │   单元测试    │  80% (核心逻辑)
+      │              │
+      └──────────────┘
+```
+
+#### 16.5.2 单元测试规范
+
+```go
+// reactor_test.go
+package kernel
+
+import (
+    "testing"
+    "github.com/stretchr/testify/assert"
+    "github.com/stretchr/testify/mock"
+)
+
+func TestReactor_Execute(t *testing.T) {
+    tests := []struct {
+        name     string
+        input    string
+        mockLLM  func(m *mockLLM)
+        want     string
+        wantErr  bool
+        errCode  ErrorCode
+    }{
+        {
+            name:  "简单对话",
+            input: "你好",
+            mockLLM: func(m *mockLLM) {
+                m.On("Chat", mock.Anything).Return("你好！有什么可以帮助？", nil)
+            },
+            want: "你好！有什么可以帮助？",
+        },
+        {
+            name:  "工具调用",
+            input: "查北京天气",
+            mockLLM: func(m *mockLLM) {
+                m.On("Chat", mock.Anything).Return("", ErrToolCall)
+            },
+            wantErr: true,
+            errCode: CodeToolFailed,
+        },
+        {
+            name:  "LLM 超时",
+            input: "复杂问题",
+            mockLLM: func(m *mockLLM) {
+                m.On("Chat", mock.Anything).Return("", context.DeadlineExceeded)
+            },
+            wantErr: true,
+            errCode: CodeLLMTimeout,
+        },
+    }
+    
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            m := new(mockLLM)
+            tt.mockLLM(m)
+            r := NewReactor(WithLLM(m))
+            
+            got, err := r.Execute(context.Background(), tt.input)
+            
+            if tt.wantErr {
+                assert.Error(t, err)
+                var appErr *AppError
+                assert.True(t, errors.As(err, &appErr))
+                assert.Equal(t, tt.errCode, appErr.Code)
+            } else {
+                assert.NoError(t, err)
+                assert.Equal(t, tt.want, got)
+            }
+        })
+    }
+}
+```
+
+#### 16.5.3 集成测试规范
+
+```go
+// integration_test.go
+package integration
+
+func TestEndToEnd_Chat(t *testing.T) {
+    app := NewTestApp(t)
+    defer app.Shutdown()
+    
+    resp, err := app.Chat("你好")
+    
+    assert.NoError(t, err)
+    assert.Contains(t, resp, "你好")
+    
+    history := app.GetHistory()
+    assert.Len(t, history, 2) // 用户 + AI
+}
+```
+
+#### 16.5.4 测试覆盖率目标
+
+| 模块 | 单元测试 | 集成测试 | 覆盖率目标 |
+|------|----------|----------|-----------|
+| kernel | ✅ | ✅ | 85% |
+| memory | ✅ | ✅ | 80% |
+| tools | ✅ | ⚠️ | 75% |
+| llm | ✅ | ⚠️ | 70% |
+| cli | ⚠️ | ✅ | 60% |
+| api | ⚠️ | ✅ | 60% |
+| infra | ✅ | ⚠️ | 70% |
+
+#### 16.5.5 CI/CD 测试流程
+
+```yaml
+# .github/workflows/test.yml
+name: Test
+
+on: [push, pull_request]
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v4
+      - run: go test ./... -race -coverprofile=coverage.out
+      - run: go tool cover -func=coverage.out | grep total
+      
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v4
+      - run: go test ./... -tags=integration -run Integration
+      
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v4
+      - run: go test ./e2e/... -tags=e2e
+```
+
+### 16.6 性能基准
+
+#### 16.6.1 核心性能指标
+
+| 指标 | 目标值 | 测试方法 | 优先级 |
+|------|--------|----------|--------|
+| **首 Token 延迟** | < 500ms | 从请求到第一个 Token | P0 |
+| **完整响应时间** | < 3s | 简单对话端到端 | P0 |
+| **工具调用延迟** | < 2s | 单次工具执行 | P0 |
+| **记忆检索延迟** | < 100ms | 向量检索 | P1 |
+| **并发请求数** | > 10 | 同时处理对话数 | P1 |
+| **内存占用** | < 512MB | 单实例常驻内存 | P0 |
+| **启动时间** | < 1s | 从命令到可交互 | P0 |
+| **上下文压缩率** | > 80% | 压缩后 Token 节省 | P1 |
+
+#### 16.6.2 基准测试代码
+
+```go
+// benchmark_test.go
+package benchmark
+
+import (
+    "testing"
+    "time"
+)
+
+func BenchmarkReactor_Execute(b *testing.B) {
+    reactor := NewTestReactor()
+    ctx := context.Background()
+    
+    b.ResetTimer()
+    for i := 0; i < b.N; i++ {
+        _, err := reactor.Execute(ctx, "你好")
+        if err != nil {
+            b.Fatal(err)
+        }
+    }
+}
+
+func BenchmarkMemory_Recall(b *testing.B) {
+    memory := NewTestMemory()
+    
+    b.ResetTimer()
+    for i := 0; i < b.N; i++ {
+        _, err := memory.Recall("查询历史")
+        if err != nil {
+            b.Fatal(err)
+        }
+    }
+}
+
+func BenchmarkContextCompression(b *testing.B) {
+    compressor := NewTestCompressor()
+    messages := generateLargeContext(100) // 100 条消息
+    
+    b.ResetTimer()
+    for i := 0; i < b.N; i++ {
+        _, err := compressor.Compress(messages, 4000)
+        if err != nil {
+            b.Fatal(err)
+        }
+    }
+}
+
+// 端到端性能测试
+func TestEndToEnd_Performance(t *testing.T) {
+    app := NewTestApp(t)
+    
+    // 测试简单对话
+    t.Run("简单对话", func(t *testing.T) {
+        start := time.Now()
+        _, err := app.Chat("你好")
+        elapsed := time.Since(start)
+        
+        assert.NoError(t, err)
+        assert.Less(t, elapsed, 3*time.Second, "简单对话应 < 3s")
+    })
+    
+    // 测试工具调用
+    t.Run("工具调用", func(t *testing.T) {
+        start := time.Now()
+        _, err := app.Chat("查北京天气")
+        elapsed := time.Since(start)
+        
+        assert.NoError(t, err)
+        assert.Less(t, elapsed, 5*time.Second, "工具调用应 < 5s")
+    })
+    
+    // 测试长上下文
+    t.Run("长上下文", func(t *testing.T) {
+        for i := 0; i < 50; i++ {
+            app.Chat(fmt.Sprintf("消息 %d", i))
+        }
+        
+        start := time.Now()
+        _, err := app.Chat("总结上文")
+        elapsed := time.Since(start)
+        
+        assert.NoError(t, err)
+        assert.Less(t, elapsed, 5*time.Second, "长上下文应 < 5s")
+    })
+}
+```
+
+#### 16.6.3 性能监控
+
+```go
+type PerformanceMonitor struct {
+    metrics map[string]*Metric
+}
+
+type Metric struct {
+    Name      string
+    Count     int64
+    TotalTime time.Duration
+    MaxTime   time.Duration
+    MinTime   time.Duration
+}
+
+func (pm *PerformanceMonitor) Record(name string, duration time.Duration) {
+    m := pm.metrics[name]
+    if m == nil {
+        m = &Metric{Name: name, MinTime: duration}
+        pm.metrics[name] = m
+    }
+    
+    m.Count++
+    m.TotalTime += duration
+    if duration > m.MaxTime {
+        m.MaxTime = duration
+    }
+    if duration < m.MinTime {
+        m.MinTime = duration
+    }
+}
+
+func (pm *PerformanceMonitor) Report() string {
+    var sb strings.Builder
+    sb.WriteString("📊 性能报告\n")
+    sb.WriteString("─────────────────────\n")
+    
+    for _, m := range pm.metrics {
+        avg := m.TotalTime / time.Duration(m.Count)
+        sb.WriteString(fmt.Sprintf("%s: 平均 %v, 最大 %v, 最小 %v, 次数 %d\n",
+            m.Name, avg, m.MaxTime, m.MinTime, m.Count))
+    }
+    
+    return sb.String()
+}
+```
+
+#### 16.6.4 性能优化检查清单
+
+| 检查项 | 优化前 | 优化后 | 方法 |
+|--------|--------|--------|------|
+| LLM 连接池 | 每次新建 | 复用连接 | `http.Client` 复用 |
+| 向量检索 | 全量扫描 | HNSW 索引 | 近似最近邻 |
+| 记忆加载 | 全量加载 | 按需加载 | 分页 + 缓存 |
+| 上下文压缩 | LLM 摘要 | 本地规则 | 减少 LLM 调用 |
+| 工具结果 | 重复执行 | 缓存结果 | TTL 缓存 |
+
+#### 16.6.5 性能目标
 
 | 指标 | 目标 | 说明 |
 |------|------|------|
 | 首 token 延迟 | < 500ms | 从请求到第一个 token |
 | 工具调用延迟 | < 2s | 单次工具调用 |
 | 记忆检索延迟 | < 100ms | 向量检索 |
-| 并发请求 | > 100 | 同时处理的对话数 |
+| 并发请求 | > 10 | 同时处理的对话数 |
 | 内存占用 | < 512MB | 单实例 |
 
 ### 16.7 增强能力性能影响
@@ -3945,6 +4246,317 @@ type Registry struct {
 | Alignment | +50-100ms | +0.2 LLM 调用 | 缓存规则结果 |
 | Pattern | 无（后台） | 无 | 定时任务 |
 | Multimodal | +500ms-2s | 模型调用 | 可选启用 |
+
+---
+
+## 17. 插件系统 (plugin/)
+
+### 17.1 插件类型
+
+| 类型 | 说明 | 示例 |
+|------|------|------|
+| **工具插件** | 扩展工具能力 | 数据库查询、API 调用 |
+| **LLM 插件** | 扩展模型支持 | 新提供商适配 |
+| **记忆插件** | 扩展存储方式 | Redis、PostgreSQL |
+| **事件插件** | 扩展事件处理 | 日志收集、监控 |
+| **UI 插件** | 扩展界面 | 自定义主题 |
+
+### 17.2 插件接口
+
+```go
+// plugin.go
+package plugin
+
+// Plugin 插件接口
+type Plugin interface {
+    Name() string
+    Version() string
+    Init(config map[string]interface{}) error
+    Close() error
+}
+
+// ToolPlugin 工具插件
+type ToolPlugin interface {
+    Plugin
+    GetTools() []Tool
+}
+
+// LLMPlugin LLM 插件
+type LLMPlugin interface {
+    Plugin
+    GetProvider() LLMProvider
+}
+
+// MemoryPlugin 记忆插件
+type MemoryPlugin interface {
+    Plugin
+    GetStore() MemoryStore
+}
+```
+
+### 17.3 插件加载
+
+```go
+type PluginManager struct {
+    plugins map[string]Plugin
+    tools   *tools.Registry
+    llm     *llm.Gateway
+}
+
+func (pm *PluginManager) Load(dir string) error {
+    entries, err := os.ReadDir(dir)
+    if err != nil {
+        return err
+    }
+    
+    for _, entry := range entries {
+        if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".so") {
+            if err := pm.loadPlugin(filepath.Join(dir, entry.Name())); err != nil {
+                log.Printf("加载插件失败 %s: %v", entry.Name(), err)
+            }
+        }
+    }
+    
+    return nil
+}
+
+func (pm *PluginManager) loadPlugin(path string) error {
+    p, err := plugin.Open(path)
+    if err != nil {
+        return err
+    }
+    
+    create, err := p.Lookup("Create")
+    if err != nil {
+        return err
+    }
+    
+    pluginInstance := create.(func() Plugin)()
+    
+    if err := pluginInstance.Init(nil); err != nil {
+        return err
+    }
+    
+    pm.plugins[pluginInstance.Name()] = pluginInstance
+    
+    switch p := pluginInstance.(type) {
+    case ToolPlugin:
+        for _, tool := range p.GetTools() {
+            pm.tools.Register(tool)
+        }
+    case LLMPlugin:
+        pm.llm.RegisterProvider(p.GetProvider())
+    }
+    
+    return nil
+}
+```
+
+### 17.4 插件示例
+
+```go
+// myplugin.go
+package main
+
+import (
+    "github.com/lzy1102/openaide/plugin"
+)
+
+type MyPlugin struct{}
+
+func (p *MyPlugin) Name() string { return "my-plugin" }
+func (p *MyPlugin) Version() string { return "1.0.0" }
+
+func (p *MyPlugin) Init(config map[string]interface{}) error {
+    return nil
+}
+
+func (p *MyPlugin) Close() error {
+    return nil
+}
+
+func (p *MyPlugin) GetTools() []plugin.Tool {
+    return []plugin.Tool{
+        {
+            Name:        "my_tool",
+            Description: "我的自定义工具",
+            Handler:     myHandler,
+        },
+    }
+}
+
+func myHandler(args map[string]interface{}) (string, error) {
+    return "执行成功", nil
+}
+
+func Create() plugin.Plugin {
+    return &MyPlugin{}
+}
+```
+
+### 17.5 插件配置
+
+```yaml
+# ~/.openaide/config.yaml
+plugins:
+  enabled: [my-plugin, db-plugin]
+  directory: ~/.openaide/plugins
+  
+  my-plugin:
+    api_key: xxx
+    
+  db-plugin:
+    connection: postgres://localhost/mydb
+```
+
+### 17.6 插件管理命令
+
+```bash
+# 列出插件
+openaide plugin list
+
+# 安装插件
+openaide plugin install https://github.com/user/my-plugin
+
+# 启用插件
+openaide plugin enable my-plugin
+
+# 禁用插件
+openaide plugin disable my-plugin
+
+# 卸载插件
+openaide plugin uninstall my-plugin
+```
+
+---
+
+## 18. 版本兼容性
+
+### 18.1 API 版本管理
+
+```go
+// api/version.go
+package api
+
+const (
+    APIVersionV1 = "v1"
+    APIVersionV2 = "v2"
+    APIVersionV3 = "v3"
+)
+
+type VersionRouter struct {
+    versions map[string]*gin.RouterGroup
+}
+
+func (vr *VersionRouter) Register(v string, r *gin.RouterGroup) {
+    vr.versions[v] = r
+}
+
+func (vr *VersionRouter) Route(v string) *gin.RouterGroup {
+    return vr.versions[v]
+}
+```
+
+### 18.2 配置版本迁移
+
+```go
+func MigrateConfigV1ToV2(old ConfigV1) ConfigV2 {
+    return ConfigV2{
+        Model: old.Model,
+        APIKey: old.APIKey,
+        ShowThinking: false,
+        AutoConfirm: false,
+    }
+}
+```
+
+---
+
+## 19. CLI 补全
+
+### 19.1 Shell 补全脚本
+
+```bash
+# bash completion
+_openaide_completion() {
+    local cur prev opts
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+    
+    opts="chat server tui config plugin help"
+    
+    case "${prev}" in
+        config)
+            opts="get set list reset"
+            ;;
+        plugin)
+            opts="list install enable disable uninstall"
+            ;;
+        server)
+            opts="start stop status"
+            ;;
+    esac
+    
+    COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
+    return 0
+}
+
+complete -F _openaide_completion openaide
+```
+
+### 19.2 自动生成补全
+
+```go
+func GenerateCompletion(shell string) string {
+    switch shell {
+    case "bash":
+        return generateBashCompletion()
+    case "zsh":
+        return generateZshCompletion()
+    case "fish":
+        return generateFishCompletion()
+    default:
+        return ""
+    }
+}
+```
+
+---
+
+## 20. 更新检查
+
+```go
+type Updater struct {
+    currentVersion string
+    checkURL       string
+}
+
+func (u *Updater) CheckUpdate() (*UpdateInfo, error) {
+    resp, err := http.Get(u.checkURL)
+    if err != nil {
+        return nil, err
+    }
+    defer resp.Body.Close()
+    
+    var info UpdateInfo
+    if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+        return nil, err
+    }
+    
+    if info.Version != u.currentVersion {
+        return &info, nil
+    }
+    
+    return nil, nil
+}
+
+type UpdateInfo struct {
+    Version     string `json:"version"`
+    DownloadURL string `json:"download_url"`
+    ReleaseNote string `json:"release_note"`
+}
+```
 
 ---
 
