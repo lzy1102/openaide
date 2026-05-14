@@ -4869,4 +4869,280 @@ func (s *Session) Save() {
 
 ---
 
+## 22. 纯文件存储架构
+
+### 22.1 设计原则
+
+1. **所有数据存文件**：人类可读，可编辑，可版本控制
+2. **索引用 JSON**：快速查询，无外部依赖
+3. **向量用二进制文件**：高效存储，内存搜索
+4. **零数据库**：不需要 SQLite，不需要 GORM
+
+### 22.2 目录结构
+
+```
+~/.openaide/
+├── config.yaml              # 配置（YAML）
+├── sessions/                # 会话
+│   ├── index.json          # 会话索引
+│   └── *.md                # 对话记录（Markdown）
+├── memory/                  # 长期记忆
+│   ├── summary.md          # 摘要
+│   └── key_infos.json      # 关键信息索引
+└── knowledge/               # 知识库
+    ├── index.json          # 知识索引
+    ├── embeddings.bin      # 向量数据（二进制）
+    └── docs/               # 文档
+        ├── *.md
+        └── *.txt
+```
+
+### 22.3 会话索引（JSON）
+
+```json
+{
+  "version": "1.0",
+  "sessions": [
+    {
+      "id": "xxx",
+      "project_id": "my-project",
+      "file_path": "sessions/2026-05-14-xxx.md",
+      "created_at": "2026-05-14T10:30:00Z",
+      "updated_at": "2026-05-14T11:00:00Z",
+      "message_count": 10
+    }
+  ]
+}
+```
+
+### 22.4 对话记录（Markdown）
+
+```markdown
+# OpenAIDE 会话记录
+
+## 会话信息
+- 项目: my-project
+- 开始时间: 2026-05-14 10:30
+
+---
+
+## 对话 1
+
+### 用户 (10:30)
+你好，帮我写一个 Go 函数
+
+### AI (10:31)
+好的，这是一个简单的 Go 函数：
+
+```go
+func Hello() string {
+    return "Hello, World!"
+}
+```
+```
+
+### 22.5 知识库索引（JSON）
+
+```json
+{
+  "version": "1.0",
+  "documents": [
+    {
+      "id": "api-design",
+      "title": "API设计规范",
+      "file_path": "docs/api-design.md",
+      "tags": ["api", "design"],
+      "embedding_offset": 0,
+      "embedding_length": 1536
+    }
+  ],
+  "tags": {
+    "api": ["api-design"],
+    "design": ["api-design"]
+  }
+}
+```
+
+### 22.6 向量文件（二进制）
+
+```
+embeddings.bin
+┌─────────────────────────────────────┐
+│  Header (16 bytes)                  │
+│  - Magic: "VECT" (4 bytes)          │
+│  - Version: 1 (4 bytes)             │
+│  - Dimension: 1536 (4 bytes)        │
+│  - Count: 100 (4 bytes)             │
+├─────────────────────────────────────┤
+│  Vector 1 (6144 bytes)              │
+│  [0.1, -0.2, 0.3, ...]              │
+├─────────────────────────────────────┤
+│  Vector 2 (6144 bytes)              │
+├─────────────────────────────────────┤
+│  ...                                │
+└─────────────────────────────────────┘
+```
+
+### 22.7 代码实现
+
+```go
+package storage
+
+type FileStorage struct {
+    baseDir string
+    mu      sync.RWMutex
+}
+
+// 加载会话索引
+func (s *FileStorage) loadSessionIndex() (*SessionIndex, error) {
+    path := filepath.Join(s.baseDir, "sessions", "index.json")
+    data, err := os.ReadFile(path)
+    if err != nil {
+        if os.IsNotExist(err) {
+            return &SessionIndex{Version: "1.0"}, nil
+        }
+        return nil, err
+    }
+    
+    var index SessionIndex
+    if err := json.Unmarshal(data, &index); err != nil {
+        return nil, err
+    }
+    return &index, nil
+}
+
+// 保存会话
+func (s *FileStorage) SaveConversation(session Session) error {
+    // 1. 保存 Markdown
+    mdPath := filepath.Join(s.baseDir, "sessions", session.ID+".md")
+    if err := s.writeMarkdown(mdPath, session); err != nil {
+        return err
+    }
+    
+    // 2. 更新索引
+    index, err := s.loadSessionIndex()
+    if err != nil {
+        return err
+    }
+    
+    entry := SessionEntry{
+        ID:           session.ID,
+        ProjectID:    session.ProjectID,
+        FilePath:     "sessions/" + session.ID + ".md",
+        CreatedAt:    session.CreatedAt,
+        UpdatedAt:    time.Now(),
+        MessageCount: len(session.Messages),
+    }
+    
+    // 更新或添加
+    updated := false
+    for i, existing := range index.Sessions {
+        if existing.ID == session.ID {
+            index.Sessions[i] = entry
+            updated = true
+            break
+        }
+    }
+    if !updated {
+        index.Sessions = append(index.Sessions, entry)
+    }
+    
+    // 3. 保存索引
+    return s.saveSessionIndex(index)
+}
+
+// 向量搜索（内存暴力搜索）
+type FileVectorStore struct {
+    filePath  string
+    dimension int
+    vectors   [][]float32
+}
+
+func (vs *FileVectorStore) Load() error {
+    file, err := os.Open(vs.filePath)
+    if err != nil {
+        return err
+    }
+    defer file.Close()
+    
+    // 读取 Header
+    var header struct {
+        Magic     [4]byte
+        Version   int32
+        Dimension int32
+        Count     int32
+    }
+    
+    if err := binary.Read(file, binary.LittleEndian, &header); err != nil {
+        return err
+    }
+    
+    vs.dimension = int(header.Dimension)
+    count := int(header.Count)
+    
+    // 读取向量到内存
+    vs.vectors = make([][]float32, count)
+    for i := 0; i < count; i++ {
+        vec := make([]float32, vs.dimension)
+        if err := binary.Read(file, binary.LittleEndian, vec); err != nil {
+            return err
+        }
+        vs.vectors[i] = vec
+    }
+    
+    return nil
+}
+
+func (vs *FileVectorStore) Search(query []float32, k int) []SearchResult {
+    var results []SearchResult
+    
+    for i, vec := range vs.vectors {
+        score := cosineSimilarity(query, vec)
+        results = append(results, SearchResult{
+            Index: i,
+            Score: score,
+        })
+    }
+    
+    // 排序
+    sort.Slice(results, func(i, j int) bool {
+        return results[i].Score > results[j].Score
+    })
+    
+    // 返回 top-k
+    if len(results) > k {
+        results = results[:k]
+    }
+    
+    return results
+}
+```
+
+### 22.8 性能评估
+
+| 数据量 | 关键词查询 | 向量搜索 | 是否够用 |
+|--------|-----------|----------|----------|
+| 10 篇 | < 1ms | < 10ms | ✅ |
+| 100 篇 | < 5ms | < 50ms | ✅ |
+| 1000 篇 | < 20ms | < 500ms | ✅ |
+
+### 22.9 与主流 Agent 对比
+
+| Agent | 存储方式 | 持久化 | 可编辑 |
+|-------|----------|--------|--------|
+| **Claude Code** | 内存 | ❌ | - |
+| **Aider** | Markdown | ✅ | ✅ |
+| **Continue** | JSON | ✅ | ✅ |
+| **OpenAIDE** | **Markdown + JSON** | **✅** | **✅** |
+
+### 22.10 依赖清单
+
+| 依赖 | 用途 | 大小 |
+|------|------|------|
+| `go-cache` | 内存缓存 | ~50KB |
+
+**总依赖：1 个库，纯 Go，零外部服务**
+
+---
+
 > 本文档为设计草案，欢迎评审和补充。
