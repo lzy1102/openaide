@@ -1,8 +1,6 @@
 package git
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 )
 
