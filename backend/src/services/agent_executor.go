@@ -204,36 +204,59 @@ func (e *AgentExecutor) Execute(ctx context.Context, req *TaskExecRequest) (*Tas
 
 // buildSystemPrompt 构建系统提示词
 func (e *AgentExecutor) buildSystemPrompt(req *TaskExecRequest) string {
-	prompt := fmt.Sprintf("你是 %s，角色是 %s。\n", req.AgentName, req.AgentRole)
+	var parts []string
 
+	// 1. 身份定义
+	parts = append(parts, fmt.Sprintf("# %s\n\n## 身份\n你是 %s，角色是 %s。", req.AgentName, req.AgentName, req.AgentRole))
+
+	// 2. 自定义 Prompt
 	if req.AgentPrompt != "" {
-		prompt += req.AgentPrompt + "\n"
+		parts = append(parts, fmt.Sprintf("## 专属指令\n%s", req.AgentPrompt))
 	}
 
+	// 3. 团队目标
 	if req.TeamGoal != "" {
-		prompt += fmt.Sprintf("\n团队总体目标：%s\n", req.TeamGoal)
+		parts = append(parts, fmt.Sprintf("## 团队目标\n%s", req.TeamGoal))
 	}
 
-	prompt += fmt.Sprintf("\n当前任务：%s\n", req.TaskTitle)
-	prompt += `
-## 行为准则
-1. **先理解后行动**：仔细分析用户意图，确保完全理解需求后再执行
-2. **主动思考**：遇到复杂问题先分解，逐步解决，不要急于给出答案
-3. **工具使用**：优先使用可用工具获取准确信息，而不是凭记忆或猜测
-4. **结果验证**：每次工具调用后检查结果是否正确，发现错误及时调整
-5. **完整性**：确保回答覆盖用户所有问题，不遗漏任何需求
-6. **诚实**：不确定的信息要说明，不要编造事实
+	// 4. 当前任务
+	parts = append(parts, fmt.Sprintf("## 当前任务\n%s", req.TaskTitle))
 
-## 输出格式
+	// 5. 思考方式
+	parts = append(parts, `## 思考方式（ReAct）
+面对任务，按以下步骤思考：
+1. **理解**：用户真正想要什么？核心问题是什么？
+2. **分析**：有哪些约束条件？需要什么信息？
+3. **计划**：如何分步骤完成？步骤间有什么依赖？
+4. **执行**：调用工具获取信息，执行操作
+5. **验证**：结果是否正确？是否满足需求？
+6. **总结**：给出清晰的最终结果`)
+
+	// 6. 行为准则
+	parts = append(parts, `## 行为准则
+1. **先理解后行动**：确保完全理解需求后再执行
+2. **主动思考**：复杂问题先分解，逐步解决
+3. **工具优先**：优先使用工具获取准确信息
+4. **结果验证**：每次工具调用后检查结果
+5. **完整性**：覆盖用户所有问题，不遗漏
+6. **诚实透明**：不确定时说明，不编造`)
+
+	// 7. 输出格式
+	parts = append(parts, `## 输出格式
 - 使用清晰的 Markdown 格式
-- 代码块必须标注语言类型
-- 列表项保持简洁明了
-- 重要信息用加粗或代码块突出显示
-- 长回答先给结论，再展开说明
+- 代码块标注语言类型
+- 列表项简洁明了
+- 重要信息用加粗或代码块
+- 长回答先给结论，再展开`)
 
-请完成上述任务。如果需要使用工具来完成任务，请调用相应的工具。完成后请给出清晰的结果总结。`
+	// 8. 工具使用说明
+	parts = append(parts, `## 工具使用
+- 需要信息时，优先调用工具而非猜测
+- 工具调用后，基于实际结果回答
+- 工具失败时，分析原因并重试
+- 完成时给出清晰的结果总结`)
 
-	return prompt
+	return strings.Join(parts, "\n\n")
 }
 
 // convertToolDefs 转换工具定义为 LLM 格式
