@@ -1,7 +1,6 @@
 package storage
 
 import (
-	"fmt"
 	"time"
 
 	"openaide/backend/src/logger"

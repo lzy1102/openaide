@@ -113,14 +113,12 @@ func (i *Indexer) IndexFile(path string) (*FileIndex, error) {
 	i.mu.Lock()
 	i.index.Files[path] = fileIndex
 
-	// 更新符号索引
+	// 更新符号索引和包索引
 	for _, sym := range symbols {
 		i.index.Symbols[sym.Name] = append(i.index.Symbols[sym.Name], &sym)
-	}
-
-	// 更新包索引
-	if sym.Package != "" {
-		i.index.Packages[sym.Package] = append(i.index.Packages[sym.Package], path)
+		if sym.Package != "" {
+			i.index.Packages[sym.Package] = append(i.index.Packages[sym.Package], path)
+		}
 	}
 
 	i.index.UpdatedAt = time.Now()
