@@ -23,9 +23,10 @@ type Status struct {
 
 // FileChange 文件变更
 type FileChange struct {
-	Path   string `json:"path"`
-	Status string `json:"status"` // A=Added, M=Modified, D=Deleted, R=Renamed, C=Copied, U=Updated
-	Score  int    `json:"score,omitempty"`
+	Path    string `json:"path"`
+	OldPath string `json:"old_path,omitempty"`
+	Status  string `json:"status"` // A=Added, M=Modified, D=Deleted, R=Renamed, C=Copied, U=Updated
+	Score   int    `json:"score,omitempty"`
 }
 
 // Diff 文件差异
