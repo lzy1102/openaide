@@ -30,6 +30,10 @@
 20. [更新检查器](#20-更新检查器)
 21. [CLI 命令设计](#21-cli-命令设计)
 22. [纯文件存储架构](#22-纯文件存储架构)
+23. [Git 集成与代码索引](#23-git-集成与代码索引系统)
+24. [多模态支持](#24-多模态支持系统)
+25. [插件系统](#25-插件系统设计)
+26. [Skill 系统](#26-skill-系统设计)
 
 ---
 
@@ -6062,6 +6066,642 @@ Agent: GetUser 在 models/user.go:45 定义，被 3 处调用。
 | **Phase 4** | 调用者搜索 + 影响分析 | 3 天 | P1 |
 | **Phase 5** | 与内核集成（自动注入上下文） | 3 天 | P1 |
 | **Phase 6** | AST 精确索引（长期） | 2 周 | P2 |
+
+---
+
+---
+
+## 24. 多模态支持系统
+
+> 目标: 扩展 Agent 输入能力，支持图像、语音、文档
+> 优先级: P2
+> 状态: 设计阶段
+
+### 24.1 为什么需要多模态
+
+**当前局限**:
+- 只能处理文本输入
+- 无法分析截图中的错误信息
+- 无法理解 UI 设计图
+- 无法处理语音指令
+
+**典型场景**:
+```
+用户: "这个报错是什么意思？" [截图]
+OpenAIDE: ❌ 无法处理图片
+
+用户: "帮我看看这个界面设计" [设计图]
+OpenAIDE: ❌ 无法处理图片
+
+用户: "用语音说: 帮我写个排序函数"
+OpenAIDE: ❌ 无法处理语音
+```
+
+### 24.2 设计原则
+
+| 原则 | 说明 |
+|------|------|
+| **可选模块** | 默认不启用，按需加载 |
+| **纯 Go 实现** | 图像解码、音频转码不用 CGO |
+| **本地优先** | 优先本地处理，保护隐私 |
+| **模型无关** | 支持多种视觉/语音模型 |
+| **渐进支持** | 先图像，后语音，再视频 |
+
+### 24.3 架构设计
+
+```
+┌─────────────────────────────────────────┐
+│           多模态输入层                    │
+│  ┌─────────┐ ┌─────────┐ ┌─────────┐  │
+│  │  图像   │ │  语音   │ │  文档   │  │
+│  │ 输入    │ │ 输入    │ │ 输入    │  │
+│  └────┬────┘ └────┬────┘ └────┬────┘  │
+└───────┼───────────┼───────────┼───────┘
+        │           │           │
+        ▼           ▼           ▼
+┌─────────────────────────────────────────┐
+│           预处理层（纯 Go）               │
+│  ┌─────────┐ ┌─────────┐ ┌─────────┐  │
+│  │ 图像解码 │ │ 语音转码 │ │ 文档提取 │  │
+│  │(image/) │ │(audio/) │ │(doc/)   │  │
+│  │- PNG    │ │- WAV    │ │- PDF    │  │
+│  │- JPEG   │ │- MP3    │ │- DOCX   │  │
+│  │- WebP   │ │- OGG    │ │- PPTX   │  │
+│  └────┬────┘ └────┬────┘ └────┬────┘  │
+└───────┼───────────┼───────────┼───────┘
+        │           │           │
+        └───────────┼───────────┘
+                    ▼
+┌─────────────────────────────────────────┐
+│           特征提取层                     │
+│  ┌─────────────────────────────────┐   │
+│  │  视觉模型（可选）                 │   │
+│  │  - 本地: llama.cpp (视觉版)      │   │
+│  │  - 云端: GPT-4V, Claude 3       │   │
+│  └─────────────────────────────────┘   │
+│  ┌─────────────────────────────────┐   │
+│  │  语音模型（可选）                 │   │
+│  │  - 本地: Whisper.cpp             │   │
+│  │  - 云端: Whisper API             │   │
+│  └─────────────────────────────────┘   │
+└─────────────────────────────────────────┘
+                    │
+                    ▼
+┌─────────────────────────────────────────┐
+│           统一表示层                     │
+│  所有模态转换为文本描述 + 结构化数据      │
+│  注入到 ReAct 上下文                     │
+└─────────────────────────────────────────┘
+```
+
+### 24.4 实现细节
+
+**图像处理模块**:
+```go
+// internal/multimodal/image.go
+package multimodal
+
+import (
+    "image"
+    _ "image/jpeg"
+    _ "image/png"
+    _ "image/webp"
+    "os"
+)
+
+type ImageProcessor struct {
+    maxWidth  int
+    maxHeight int
+}
+
+// Process 处理图像输入
+func (p *ImageProcessor) Process(path string) (*ImageContent, error) {
+    // 1. 解码图像
+    file, err := os.Open(path)
+    if err != nil {
+        return nil, err
+    }
+    defer file.Close()
+    
+    img, format, err := image.Decode(file)
+    if err != nil {
+        return nil, err
+    }
+    
+    // 2. 缩放（减少 token 消耗）
+    img = p.resize(img)
+    
+    // 3. 转换为 base64
+    base64Data, err := p.toBase64(img, format)
+    
+    // 4. 提取基本元数据
+    bounds := img.Bounds()
+    
+    return &ImageContent{
+        Data:      base64Data,
+        Format:    format,
+        Width:     bounds.Dx(),
+        Height:    bounds.Dy(),
+        Size:      p.getFileSize(path),
+    }, nil
+}
+
+type ImageContent struct {
+    Data      string // base64
+    Format    string
+    Width     int
+    Height    int
+    Size      int64
+    Caption   string // 可选：本地模型生成的描述
+}
+```
+
+**语音处理模块**:
+```go
+// internal/multimodal/audio.go
+package multimodal
+
+// AudioProcessor 语音转文字
+type AudioProcessor struct {
+    // 使用 Whisper.cpp（纯 C，通过 CGO 或外部进程）
+    // 或调用云端 API
+}
+
+func (p *AudioProcessor) Transcribe(path string) (*AudioContent, error) {
+    // 1. 解码音频（支持 MP3, WAV, OGG）
+    // 2. 转换为 WAV 16kHz（Whisper 要求）
+    // 3. 调用 Whisper 模型
+    // 4. 返回转录文本 + 时间戳
+    
+    return &AudioContent{
+        Text:      "转录的文本",
+        Duration:  10.5,
+        Segments: []Segment{
+            {Start: 0, End: 3.2, Text: "第一段"},
+            {Start: 3.2, End: 10.5, Text: "第二段"},
+        },
+    }, nil
+}
+```
+
+**与 LLM 集成**:
+```go
+// 将多模态内容注入到 LLM 请求
+func (k *Kernel) buildMultimodalMessage(content *MultimodalContent) []Message {
+    var messages []Message
+    
+    // 文本部分
+    if content.Text != "" {
+        messages = append(messages, Message{
+            Role:    "user",
+            Content: content.Text,
+        })
+    }
+    
+    // 图像部分（需要视觉模型支持）
+    for _, img := range content.Images {
+        messages = append(messages, Message{
+            Role: "user",
+            ContentParts: []ContentPart{
+                {
+                    Type:     "image_url",
+                    ImageURL: &ImageURL{
+                        URL: "data:image/png;base64," + img.Data,
+                    },
+                },
+            },
+        })
+    }
+    
+    return messages
+}
+```
+
+### 24.5 配置与启用
+
+```yaml
+# config.yaml
+multimodal:
+  enabled: true
+  
+  image:
+    enabled: true
+    max_size: 5MB        # 最大文件大小
+    max_width: 1920      # 最大宽度
+    max_height: 1080     # 最大高度
+    provider: local      # local 或 openai
+    
+  audio:
+    enabled: true
+    max_duration: 60s    # 最大时长
+    provider: whisper    # whisper 或 openai
+    
+  document:
+    enabled: true
+    formats: [pdf, docx, pptx]
+```
+
+### 24.6 优缺点
+
+| 优势 | 劣势 |
+|------|------|
+| 扩展应用场景 | 增加二进制体积 |
+| 提升用户体验 | 需要额外模型资源 |
+| 本地处理保护隐私 | 处理速度较慢 |
+| 可选模块不影响核心 | 配置复杂度增加 |
+
+---
+
+## 25. 插件系统设计
+
+> 目标: 支持第三方扩展，构建生态
+> 优先级: P2
+> 状态: 设计阶段
+
+### 25.1 设计目标
+
+- **扩展性**: 用户可自定义功能
+- **隔离性**: 插件崩溃不影响核心
+- **热更新**: 无需重启加载插件
+- **安全性**: 限制插件权限
+
+### 25.2 插件类型
+
+| 类型 | 说明 | 示例 |
+|------|------|------|
+| **工具插件** | 扩展工具能力 | 数据库查询、API 调用 |
+| **LLM 插件** | 扩展模型支持 | 新提供商适配 |
+| **记忆插件** | 扩展存储方式 | 外部数据库 |
+| **事件插件** | 扩展事件处理 | 日志收集、监控 |
+| **UI 插件** | 扩展界面 | 自定义主题 |
+
+### 25.3 插件接口
+
+```go
+// internal/plugin/plugin.go
+package plugin
+
+// Plugin 插件接口
+type Plugin interface {
+    // 元数据
+    Name() string
+    Version() string
+    Description() string
+    
+    // 生命周期
+    Init(config map[string]interface{}) error
+    Start() error
+    Stop() error
+    
+    // 能力注册
+    RegisterTools(registry ToolRegistry) error
+    RegisterHooks(hookManager HookManager) error
+}
+
+// Hook 机制
+type HookManager interface {
+    // 注册钩子
+    RegisterHook(point HookPoint, handler HookHandler)
+    
+    // 触发钩子
+    ExecuteHook(point HookPoint, ctx context.Context, data interface{}) error
+}
+
+type HookPoint string
+
+const (
+    HookBeforeRequest  HookPoint = "before_request"
+    HookAfterResponse  HookPoint = "after_response"
+    HookBeforeToolCall HookPoint = "before_tool_call"
+    HookAfterToolCall  HookPoint = "after_tool_call"
+    HookOnError        HookPoint = "on_error"
+)
+```
+
+### 25.4 插件加载机制
+
+```go
+// internal/plugin/loader.go
+package plugin
+
+import (
+    "plugin" // Go 原生 plugin 包（仅 Linux/macOS）
+    // 或使用 RPC/HTTP 方式（跨平台）
+)
+
+type PluginLoader struct {
+    pluginsDir string
+    plugins    map[string]Plugin
+}
+
+// Load 加载插件
+func (l *PluginLoader) Load(name string) (Plugin, error) {
+    // 方案一：Go plugin（.so 文件，仅 Unix）
+    // p, err := plugin.Open(path)
+    
+    // 方案二：独立进程 + RPC（推荐，跨平台）
+    // 启动独立进程，通过 gRPC/HTTP 通信
+    
+    // 方案三：WASM（未来方向）
+    // 加载 WASM 模块，沙箱执行
+    
+    return nil, nil
+}
+```
+
+### 25.5 插件示例
+
+```go
+// 示例：数据库查询插件
+package main
+
+import (
+    "database/sql"
+    "fmt"
+)
+
+type DBPlugin struct {
+    db *sql.DB
+}
+
+func (p *DBPlugin) Name() string { return "database" }
+func (p *DBPlugin) Version() string { return "1.0.0" }
+
+func (p *DBPlugin) Init(config map[string]interface{}) error {
+    dsn := config["dsn"].(string)
+    db, err := sql.Open("mysql", dsn)
+    if err != nil {
+        return err
+    }
+    p.db = db
+    return nil
+}
+
+func (p *DBPlugin) RegisterTools(registry ToolRegistry) error {
+    registry.Register(Tool{
+        Name:        "db_query",
+        Description: "执行 SQL 查询",
+        Parameters: []Parameter{
+            {Name: "sql", Type: "string", Required: true},
+        },
+        Handler: p.handleQuery,
+    })
+    return nil
+}
+
+func (p *DBPlugin) handleQuery(ctx context.Context, args map[string]interface{}) (string, error) {
+    sql := args["sql"].(string)
+    rows, err := p.db.QueryContext(ctx, sql)
+    // ...
+    return result, nil
+}
+```
+
+---
+
+## 26. Skill 系统设计
+
+> 目标: 封装专业流程，提升 Agent 效率
+> 优先级: P1
+> 状态: 设计阶段
+
+### 26.1 什么是 Skill
+
+**定义**: Skill 是 Agent 的"专业技能包"，封装了特定领域的知识、工具和流程。
+
+**对比**:
+| 概念 | 说明 |
+|------|------|
+| **Tool** | 单个功能（如：读文件、执行命令）|
+| **Skill** | 完整流程（如：代码审查、Bug 修复、API 设计）|
+| **Plugin** | 外部扩展（如：数据库连接、第三方 API）|
+
+### 26.2 Skill 结构
+
+```go
+// internal/skill/skill.go
+package skill
+
+// Skill 技能定义
+type Skill struct {
+    ID          string
+    Name        string
+    Description string
+    Category    string  // code_review, debugging, refactoring, etc.
+    
+    // 触发条件
+    Triggers []Trigger
+    
+    // 执行流程
+    Workflow Workflow
+    
+    // 知识库
+    Knowledge []string  // 关联的知识文档
+    
+    // 系统提示词覆盖
+    SystemPrompt string
+    
+    // 工具集
+    Tools []string  // 需要的工具列表
+    
+    // 记忆配置
+    Memory MemoryConfig
+}
+
+type Trigger struct {
+    Type    string  // keyword, intent, pattern, manual
+    Pattern string  // 匹配模式
+}
+
+type Workflow struct {
+    Steps []Step
+}
+
+type Step struct {
+    Name        string
+    Description string
+    Action      string      // llm, tool, condition, loop
+    Config      interface{} // 步骤配置
+}
+```
+
+### 26.3 内置 Skill 示例
+
+**代码审查 Skill**:
+```yaml
+# skills/code_review.yaml
+id: code_review
+name: 代码审查
+description: 自动审查代码变更，发现潜在问题
+category: quality
+
+triggers:
+  - type: manual
+    pattern: "/review"
+  - type: intent
+    pattern: "审查.*代码"
+
+workflow:
+  steps:
+    - name: 获取变更
+      action: tool
+      config:
+        tool: git_diff
+        args: {staged: true}
+    
+    - name: 分析变更
+      action: llm
+      config:
+        prompt: |
+          审查以下代码变更：
+          {{.diff}}
+          
+          检查：
+          1. 潜在 bug
+          2. 安全漏洞
+          3. 性能问题
+          4. 代码规范
+    
+    - name: 生成报告
+      action: llm
+      config:
+        format: markdown
+
+system_prompt: |
+  你是一位资深代码审查员，擅长发现代码中的问题。
+  审查时要严格但友善，给出具体改进建议。
+
+tools:
+  - git_diff
+  - file_read
+  - file_write
+
+memory:
+  persist_learnings: true  # 记住审查经验
+```
+
+### 26.4 Skill 执行流程
+
+```
+用户输入: "/review" 或 "帮我审查这段代码"
+
+  │
+  ▼
+┌─────────────────┐
+│ 1. 触发匹配      │ ← 匹配 Skill 的 triggers
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ 2. 加载 Skill   │ ← 读取配置，准备上下文
+│    注入知识库    │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ 3. 执行工作流    │ ← 按步骤执行
+│    - 获取数据    │
+│    - LLM 分析    │
+│    - 生成结果    │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ 4. 学习进化      │ ← 保存经验到记忆
+│    - 用户反馈    │
+│    - 效果评估    │
+└─────────────────┘
+```
+
+### 26.5 Skill 与现有系统的关系
+
+```
+┌─────────────────────────────────────────┐
+│           Skill 层                       │
+│  ┌─────────┐ ┌─────────┐ ┌─────────┐  │
+│  │代码审查  │ │Bug修复  │ │API设计  │  │
+│  │Skill    │ │Skill    │ │Skill    │  │
+│  └────┬────┘ └────┬────┘ └────┬────┘  │
+│       └───────────┼───────────┘       │
+│                   │                   │
+│              ┌────┴────┐              │
+│              │ Skill   │              │
+│              │ 引擎    │              │
+│              └────┬────┘              │
+└───────────────────┼───────────────────┘
+                    │
+    ┌───────────────┼───────────────┐
+    ▼               ▼               ▼
+┌─────────┐   ┌─────────┐   ┌─────────┐
+│ 工具层   │   │ LLM 层  │   │ 记忆层  │
+│ (tools/)│   │ (llm/)  │   │(memory/)│
+└─────────┘   └─────────┘   └─────────┘
+```
+
+### 26.6 Skill 自进化机制
+
+```go
+// internal/skill/evolution.go
+package skill
+
+// 从执行结果中学习，优化 Skill
+func (s *Skill) Learn(execution *ExecutionResult, feedback UserFeedback) error {
+    // 1. 分析执行效果
+    effectiveness := s.evaluateEffectiveness(execution, feedback)
+    
+    // 2. 提取改进点
+    improvements := s.extractImprovements(execution)
+    
+    // 3. 更新 Skill 配置
+    if effectiveness < 0.7 {
+        // 效果不佳，调整提示词或流程
+        s.adjustPrompt(improvements)
+        s.adjustWorkflow(improvements)
+    }
+    
+    // 4. 保存学习记录
+    s.saveLearningRecord(LearningRecord{
+        SkillID:       s.ID,
+        ExecutionID:   execution.ID,
+        Effectiveness: effectiveness,
+        Improvements:  improvements,
+        Timestamp:     time.Now(),
+    })
+    
+    return nil
+}
+```
+
+### 26.7 三个系统的对比
+
+| 维度 | 多模态 | 插件 | Skill |
+|------|--------|------|-------|
+| **目的** | 扩展输入能力 | 扩展功能 | 封装专业流程 |
+| **用户** | 终端用户 | 开发者 | 终端用户 |
+| **开发** | 核心团队 | 第三方 | 核心团队/社区 |
+| **复杂度** | 中 | 高 | 中 |
+| **优先级** | P2 | P2 | P1 |
+| **实现难度** | 中 | 高 | 低 |
+| **价值** | 扩展场景 | 生态建设 | 提升效率 |
+
+### 26.8 推荐实现顺序
+
+```
+Phase 1 (现在): Skill 系统
+  - 实现 Skill 引擎
+  - 内置 3-5 个常用 Skill（代码审查、重构、测试生成）
+  - 收益：立即提升用户体验
+
+Phase 2 (1-2 周后): 多模态
+  - 图像输入支持
+  - 语音输入支持（可选）
+  - 收益：扩展应用场景
+
+Phase 3 (长期): 插件系统
+  - 设计稳定的插件接口
+  - 实现插件加载器
+  - 收益：生态建设
+```
 
 ---
 
