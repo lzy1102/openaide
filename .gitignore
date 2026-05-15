@@ -72,3 +72,8 @@ vendor/
 # OS
 .DS_Store
 Thumbs.db
+
+# 文档临时文件
+docs/FlowServer/
+docs/server.cs
+docs/*.exe
