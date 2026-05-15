@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"openaide/backend/internal/kernel"
 )
 
 // Level 记忆级别

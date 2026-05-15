@@ -1,7 +1,6 @@
 package kernel
 
 import (
-	"context"
 	"time"
 )
 
