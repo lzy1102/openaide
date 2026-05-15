@@ -165,7 +165,7 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		userID := r.URL.Query().Get("user_id")
 		projectID := r.URL.Query().Get("project_id")
 
-		sessions, err := s.orchestrator.GetSessionHistory(r.Context(), "", 10)
+		sessions, err := s.orchestrator.ListSessions(r.Context(), projectID, userID, 10)
 		if err != nil {
 			s.writeError(w, http.StatusInternalServerError, err)
 			return
@@ -175,8 +175,8 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		for _, sess := range sessions {
 			result = append(result, SessionInfo{
 				ID:        sess.ID,
-				ProjectID: projectID,
-				UserID:    userID,
+				ProjectID: sess.ProjectID,
+				UserID:    sess.UserID,
 			})
 		}
 		s.writeJSON(w, http.StatusOK, result)

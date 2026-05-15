@@ -124,6 +124,14 @@ func (o *Orchestrator) GetSessionHistory(ctx context.Context, sessionID string, 
 	return o.memory.Load(ctx, sessionID, limit)
 }
 
+// ListSessions 列出会话
+func (o *Orchestrator) ListSessions(ctx context.Context, projectID, userID string, limit int) ([]*kernel.Session, error) {
+	if o.sessions == nil {
+		return nil, fmt.Errorf("session store not configured")
+	}
+	return o.sessions.List(ctx, projectID, userID, limit)
+}
+
 // SearchMemory 搜索记忆
 func (o *Orchestrator) SearchMemory(ctx context.Context, query string, limit int) ([]kernel.Message, float64, error) {
 	if o.memory == nil {
