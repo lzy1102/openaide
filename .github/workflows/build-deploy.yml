@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  GO_VERSION: "1.25"
+  GO_VERSION: "1.26"
 
 jobs:
   build:
@@ -18,24 +18,24 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
 
-      - name: Build Backend
+      - name: Build Server
         run: |
           cd backend
-          CGO_ENABLED=0 go build -ldflags "-s -w" -o ../dist/bin/openaide-server ./src
+          CGO_ENABLED=0 go build -ldflags "-s -w" -o ../dist/bin/openaide-server ./cmd/server
 
       - name: Build CLI
         run: |
-          cd terminal
-          CGO_ENABLED=0 go build -ldflags "-s -w" -o ../dist/bin/openaide .
+          cd backend
+          CGO_ENABLED=0 go build -ldflags "-s -w" -o ../dist/bin/openaide-cli ./cmd/cli
+
+      - name: Run Tests
+        run: |
+          cd backend
+          go test ./internal/...
 
       - name: Package
         run: |
-          mkdir -p dist/data/{database,knowledge,uploads}
-          cp .openaide.example dist/ 2>/dev/null || true
-          cp -r frontend dist/frontend 2>/dev/null || true
-          cp scripts/install.sh dist/ 2>/dev/null || true
-          cp scripts/uninstall.sh dist/ 2>/dev/null || true
-          chmod +x dist/install.sh dist/uninstall.sh 2>/dev/null || true
+          mkdir -p dist/data
           tar -czvf openaide-linux-amd64.tar.gz -C dist .
 
       - uses: actions/upload-artifact@v4

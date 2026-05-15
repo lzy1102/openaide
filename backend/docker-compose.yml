@@ -8,18 +8,15 @@ services:
     container_name: openaide-server
     restart: unless-stopped
     ports:
-      - "${PORT:-19375}:19375"
+      - "${PORT:-8080}:8080"
     volumes:
       - openaide-data:/opt/openaide/data
       - openaide-logs:/opt/openaide/logs
-      - ./config.json:/app/config.json:ro
     environment:
       - OPENAIDE_HOME=/opt/openaide
-      - OPENAIDE_JWT_SECRET=${JWT_SECRET:-}
-      - PORT=19375
       - TZ=Asia/Shanghai
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:19375/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
       interval: 30s
       timeout: 3s
       start_period: 10s
