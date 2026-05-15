@@ -5150,4 +5150,919 @@ func (vs *FileVectorStore) Search(query []float32, k int) []SearchResult {
 
 ---
 
+---
+
+## 23. Git 集成与代码索引系统
+
+> 目标: 让 Agent 理解代码变更、安全提交、项目级代码导航
+> 优先级: P0 (Git 集成) / P1 (代码索引)
+
+### 23.1 为什么需要 Git 集成
+
+**当前问题**: Agent 可以执行 `git commit`，但：
+- 看不懂 diff 的含义
+- 无法生成有意义的提交信息
+- 不知道变更影响了哪些代码
+- 误操作后无法安全回滚
+
+**对比 Claude Code**:
+```
+Claude Code: "检测到 3 个文件变更，建议提交信息: fix(auth): 修复登录校验"
+OpenAIDE:   "git commit -m 'update'" (无意义提交)
+```
+
+### 23.2 Git 集成设计
+
+#### 23.2.1 核心能力
+
+| 能力 | 说明 | 优先级 |
+|------|------|--------|
+| **状态感知** | 解析 git status，结构化展示变更 | P0 |
+| **Diff 解析** | 提取变更的函数/类型/行号 | P0 |
+| **提交建议** | 基于 diff 生成 conventional commit | P0 |
+| **安全提交** | 预览 + 确认 + 可回滚 | P0 |
+| **历史查询** | "这个文件最近谁改的？" | P1 |
+| **影响分析** | "改这个接口影响哪些地方？" | P1 |
+
+#### 23.2.2 数据结构
+
+```go
+// internal/tools/git_types.go
+package tools
+
+// GitStatus 结构化状态
+type GitStatus struct {
+    Branch      string
+    Ahead       int
+    Behind      int
+    Modified    []FileChange
+    Staged      []FileChange
+    Untracked   []string
+    Conflicts   []string
+    Clean       bool
+}
+
+type FileChange struct {
+    Path       string
+    Status     string  // modified, added, deleted, renamed
+    Additions  int
+    Deletions  int
+    Diff       string  // 前 100 行
+    Functions  []FuncChange  // 变更的函数
+}
+
+type FuncChange struct {
+    Name       string
+    Type       string  // added, modified, deleted
+    OldLine    int
+    NewLine    int
+    Signature  string  // func (r *Receiver) Name(params) returns
+}
+```
+
+#### 23.2.3 实现细节
+
+**步骤 1: 调用 git 命令**
+```go
+// internal/tools/git_executor.go
+package tools
+
+import (
+    "os/exec"
+    "strings"
+)
+
+type GitExecutor struct {
+    workDir string
+}
+
+func (g *GitExecutor) Status() (*GitStatus, error) {
+    // git status --porcelain=v2 --branch
+    output, err := g.exec("status", "--porcelain=v2", "--branch")
+    if err != nil {
+        return nil, err
+    }
+    return g.parseStatus(output)
+}
+
+func (g *GitExecutor) Diff(path string) (*FileChange, error) {
+    // git diff --unified=3 -- function-context
+    output, err := g.exec("diff", "--unified=3", "--", path)
+    if err != nil {
+        return nil, err
+    }
+    return g.parseDiff(path, output)
+}
+
+func (g *GitExecutor) exec(args ...string) (string, error) {
+    cmd := exec.Command("git", args...)
+    cmd.Dir = g.workDir
+    out, err := cmd.CombinedOutput()
+    return string(out), err
+}
+```
+
+**步骤 2: 解析 diff 提取函数变更**
+```go
+// internal/tools/git_parser.go
+package tools
+
+import (
+    "regexp"
+    "strings"
+)
+
+// 解析 git diff 输出，提取函数级变更
+func ParseDiff(diff string) []FuncChange {
+    var changes []FuncChange
+    
+    // 匹配函数定义行: @@ -old,old_len +new,new_len @@ func Name(...)
+    hunkRegex := regexp.MustCompile(`@@ -(\d+),\d+ \+(\d+),\d+ @@ (.*)`)
+    // 匹配 Go 函数定义
+    funcRegex := regexp.MustCompile(`^[+-]?func\s+(?:\([^)]+\)\s+)?(\w+)\s*\(`)
+    
+    lines := strings.Split(diff, "\n")
+    currentHunk := ""
+    
+    for _, line := range lines {
+        if matches := hunkRegex.FindStringSubmatch(line); matches != nil {
+            currentHunk = matches[3]
+            continue
+        }
+        
+        if matches := funcRegex.FindStringSubmatch(line); matches != nil {
+            funcName := matches[1]
+            changeType := "modified"
+            if strings.HasPrefix(line, "+") {
+                changeType = "added"
+            } else if strings.HasPrefix(line, "-") {
+                changeType = "deleted"
+            }
+            
+            changes = append(changes, FuncChange{
+                Name:      funcName,
+                Type:      changeType,
+                Signature: extractSignature(currentHunk),
+            })
+        }
+    }
+    
+    return changes
+}
+```
+
+**步骤 3: 生成提交信息**
+```go
+// internal/tools/git_commit.go
+package tools
+
+import (
+    "fmt"
+    "strings"
+)
+
+// GenerateCommitMessage 基于变更生成提交信息
+func GenerateCommitMessage(status *GitStatus, llm LLMClient) (string, error) {
+    // 构建 prompt
+    var sb strings.Builder
+    sb.WriteString("分析以下代码变更，生成符合 Conventional Commits 规范的提交信息。\n\n")
+    sb.WriteString("变更摘要:\n")
+    
+    for _, f := range status.Staged {
+        sb.WriteString(fmt.Sprintf("- %s (%s): +%d -%d\n", 
+            f.Path, f.Status, f.Additions, f.Deletions))
+        for _, fn := range f.Functions {
+            sb.WriteString(fmt.Sprintf("  - %s: %s\n", fn.Type, fn.Name))
+        }
+    }
+    
+    sb.WriteString("\n要求:\n")
+    sb.WriteString("1. 格式: <type>(<scope>): <subject>\n")
+    sb.WriteString("2. type: feat, fix, docs, style, refactor, test, chore\n")
+    sb.WriteString("3. subject 不超过 50 字\n")
+    sb.WriteString("4. 如有必要添加 body 描述\n")
+    sb.WriteString("\n只返回提交信息，不要解释。")
+    
+    return llm.Complete(sb.String())
+}
+
+// 简化版：无需 LLM，基于规则生成
+func GenerateCommitMessageSimple(status *GitStatus) string {
+    // 统计变更类型
+    hasFeat := false
+    hasFix := false
+    hasDocs := false
+    
+    for _, f := range status.Staged {
+        if strings.HasSuffix(f.Path, ".md") {
+            hasDocs = true
+        }
+        for _, fn := range f.Functions {
+            if strings.Contains(strings.ToLower(fn.Name), "fix") {
+                hasFix = true
+            }
+        }
+    }
+    
+    // 简单规则判断
+    switch {
+    case hasFix:
+        return fmt.Sprintf("fix: 修复 %s", status.Staged[0].Path)
+    case hasDocs:
+        return fmt.Sprintf("docs: 更新 %s", status.Staged[0].Path)
+    default:
+        return fmt.Sprintf("feat: 更新 %s", status.Staged[0].Path)
+    }
+}
+```
+
+**步骤 4: 安全提交流程**
+```go
+// internal/tools/git_safe_commit.go
+package tools
+
+import (
+    "bufio"
+    "fmt"
+    "os"
+    "strings"
+)
+
+// SafeCommit 带确认的安全提交
+func SafeCommit(executor *GitExecutor, message string, auto bool) error {
+    // 1. 检查是否有暂存变更
+    status, err := executor.Status()
+    if err != nil {
+        return err
+    }
+    if len(status.Staged) == 0 {
+        return fmt.Errorf("没有暂存的变更，请先执行 git add")
+    }
+    
+    // 2. 显示预览
+    fmt.Println("=== 提交预览 ===")
+    fmt.Printf("提交信息: %s\n", message)
+    fmt.Printf("变更文件: %d 个\n", len(status.Staged))
+    for _, f := range status.Staged {
+        fmt.Printf("  %s (%s): +%d -%d\n", f.Path, f.Status, f.Additions, f.Deletions)
+    }
+    
+    // 3. 显示 diff 摘要
+    fmt.Println("\n=== Diff 摘要 ===")
+    for _, f := range status.Staged {
+        if len(f.Diff) > 0 {
+            lines := strings.Split(f.Diff, "\n")
+            for i, line := range lines {
+                if i >= 20 {
+                    fmt.Println("  ...")
+                    break
+                }
+                if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
+                    fmt.Printf("  %s\n", line[:min(len(line), 80)])
+                }
+            }
+        }
+    }
+    
+    // 4. 确认
+    if !auto {
+        fmt.Print("\n确认提交? [Y/n/edit/cancel] ")
+        reader := bufio.NewReader(os.Stdin)
+        input, _ := reader.ReadString('\n')
+        input = strings.TrimSpace(strings.ToLower(input))
+        
+        switch input {
+        case "", "y", "yes":
+            // 继续提交
+        case "edit", "e":
+            fmt.Print("输入新提交信息: ")
+            newMsg, _ := reader.ReadString('\n')
+            message = strings.TrimSpace(newMsg)
+        default:
+            return fmt.Errorf("提交已取消")
+        }
+    }
+    
+    // 5. 执行提交
+    _, err = executor.exec("commit", "-m", message)
+    return err
+}
+```
+
+#### 23.2.4 CLI 命令设计
+
+```bash
+# 查看 Git 状态
+openaide> /git status
+分支: feature/login
+状态: 有 3 个文件变更
+  M  auth/login.go        +45 -12  (已暂存)
+  M  user/model.go        +8  -2   (已暂存)
+  M  docs/api.md          +15 -0   (未暂存)
+
+# 生成提交建议
+openaide> /git suggest
+建议提交信息:
+  feat(auth): 添加角色支持，修复登录校验逻辑
+
+  - 在 user 模型添加 Role 字段
+  - 修复登录密码校验逻辑
+  - 更新 API 文档
+
+# 安全提交
+openaide> /git commit
+=== 提交预览 ===
+提交信息: feat(auth): 添加角色支持，修复登录校验逻辑
+变更文件: 3 个
+...
+确认提交? [Y/n/edit/cancel]
+```
+
+---
+
+### 23.3 项目级代码索引
+
+#### 23.3.1 为什么需要索引
+
+**当前问题**: Agent 只能读取单个文件，不知道：
+- 这个函数在哪里被调用
+- 修改这个接口会影响哪些地方
+- 项目有哪些模块、依赖关系如何
+
+**对比 Claude Code**:
+```
+用户: "谁调用了 GetUser？"
+Claude Code: "GetUser 在 3 处被调用: handlers/auth.go:23, handlers/user.go:56..."
+OpenAIDE:    "我帮你搜索一下..." (文本搜索，不准确)
+```
+
+#### 23.3.2 轻量级索引设计
+
+**核心原则**: 不解析完整 AST，用正则 + 简单语法分析
+
+```go
+// internal/index/symbol_index.go
+package index
+
+import (
+    "encoding/json"
+    "os"
+    "path/filepath"
+    "regexp"
+    "strings"
+    "sync"
+    "time"
+)
+
+// SymbolIndex 符号索引
+type SymbolIndex struct {
+    Version    string                 `json:"version"`
+    ProjectID  string                 `json:"project_id"`
+    UpdatedAt  time.Time              `json:"updated_at"`
+    
+    // 符号表
+    Functions  map[string][]Location  `json:"functions"`  // 函数名 -> 位置列表
+    Types      map[string][]Location  `json:"types"`      // 类型名 -> 位置列表
+    Methods    map[string][]Location  `json:"methods"`    // 方法名 -> 位置列表 (Receiver.Method)
+    Imports    map[string][]string    `json:"imports"`    // 包路径 -> 导入它的文件
+    
+    // 文件元数据
+    Files      map[string]FileMeta    `json:"files"`
+}
+
+type Location struct {
+    File    string `json:"file"`
+    Line    int    `json:"line"`
+    Column  int    `json:"column"`
+    Comment string `json:"comment,omitempty"`  // 文档注释
+}
+
+type FileMeta struct {
+    Package   string   `json:"package"`
+    Imports   []string `json:"imports"`
+    Functions []string `json:"functions"`
+    Types     []string `json:"types"`
+    Size      int64    `json:"size"`
+    ModTime   int64    `json:"mod_time"`
+}
+```
+
+#### 23.3.3 索引构建实现
+
+```go
+// internal/index/builder.go
+package index
+
+import (
+    "bufio"
+    "os"
+    "path/filepath"
+    "regexp"
+    "strings"
+)
+
+type IndexBuilder struct {
+    root      string
+    index     *SymbolIndex
+    funcRegex *regexp.Regexp
+    typeRegex *regexp.Regexp
+    methodRegex *regexp.Regexp
+    importRegex *regexp.Regexp
+    commentRegex *regexp.Regexp
+}
+
+func NewIndexBuilder(root string) *IndexBuilder {
+    return &IndexBuilder{
+        root: root,
+        index: &SymbolIndex{
+            Version:   "1.0",
+            Functions: make(map[string][]Location),
+            Types:     make(map[string][]Location),
+            Methods:   make(map[string][]Location),
+            Imports:   make(map[string][]string),
+            Files:     make(map[string]FileMeta),
+        },
+        // Go 函数定义: func Name(params) returns { 或 func (r *Receiver) Name(params) {
+        funcRegex: regexp.MustCompile(`^func\s+(\w+)\s*\(`),
+        // Go 方法定义: func (r *Receiver) Name(params) {
+        methodRegex: regexp.MustCompile(`^func\s+\([^)]+\)\s+(\w+)\s*\(`),
+        // Go 类型定义: type Name struct/interface/func
+        typeRegex: regexp.MustCompile(`^type\s+(\w+)\s+(?:struct|interface|func)`),
+        // Go 导入: import "path" 或 import ( ... )
+        importRegex: regexp.MustCompile(`["']([^"']+)["']`),
+        // 文档注释
+        commentRegex: regexp.MustCompile(`^//\s*(.+)`),
+    }
+}
+
+// Build 构建索引
+func (b *IndexBuilder) Build() (*SymbolIndex, error) {
+    // 遍历所有 .go 文件
+    err := filepath.Walk(b.root, func(path string, info os.FileInfo, err error) error {
+        if err != nil {
+            return nil
+        }
+        
+        // 跳过 vendor、.git、test 文件
+        if strings.Contains(path, "vendor/") || 
+           strings.Contains(path, ".git/") ||
+           strings.HasSuffix(path, "_test.go") {
+            return nil
+        }
+        
+        if strings.HasSuffix(path, ".go") {
+            b.indexFile(path)
+        }
+        
+        return nil
+    })
+    
+    if err != nil {
+        return nil, err
+    }
+    
+    b.index.UpdatedAt = time.Now()
+    return b.index, nil
+}
+
+func (b *IndexBuilder) indexFile(path string) error {
+    file, err := os.Open(path)
+    if err != nil {
+        return err
+    }
+    defer file.Close()
+    
+    relPath, _ := filepath.Rel(b.root, path)
+    meta := FileMeta{
+        File: relPath,
+    }
+    
+    scanner := bufio.NewScanner(file)
+    lineNum := 0
+    lastComment := ""
+    
+    for scanner.Scan() {
+        lineNum++
+        line := scanner.Text()
+        
+        // 提取文档注释
+        if matches := b.commentRegex.FindStringSubmatch(line); matches != nil {
+            lastComment = matches[1]
+            continue
+        }
+        
+        // 提取包名
+        if strings.HasPrefix(line, "package ") {
+            meta.Package = strings.TrimSpace(strings.TrimPrefix(line, "package "))
+            continue
+        }
+        
+        // 提取导入
+        if strings.Contains(line, "import") {
+            if matches := b.importRegex.FindAllStringSubmatch(line, -1); matches != nil {
+                for _, m := range matches {
+                    importPath := m[1]
+                    meta.Imports = append(meta.Imports, importPath)
+                    b.index.Imports[importPath] = append(b.index.Imports[importPath], relPath)
+                }
+            }
+            continue
+        }
+        
+        // 提取函数
+        if matches := b.funcRegex.FindStringSubmatch(line); matches != nil {
+            funcName := matches[1]
+            loc := Location{
+                File:    relPath,
+                Line:    lineNum,
+                Comment: lastComment,
+            }
+            b.index.Functions[funcName] = append(b.index.Functions[funcName], loc)
+            meta.Functions = append(meta.Functions, funcName)
+            lastComment = ""
+            continue
+        }
+        
+        // 提取方法
+        if matches := b.methodRegex.FindStringSubmatch(line); matches != nil {
+            methodName := matches[1]
+            loc := Location{
+                File:    relPath,
+                Line:    lineNum,
+                Comment: lastComment,
+            }
+            b.index.Methods[methodName] = append(b.index.Methods[methodName], loc)
+            lastComment = ""
+            continue
+        }
+        
+        // 提取类型
+        if matches := b.typeRegex.FindStringSubmatch(line); matches != nil {
+            typeName := matches[1]
+            loc := Location{
+                File:    relPath,
+                Line:    lineNum,
+                Comment: lastComment,
+            }
+            b.index.Types[typeName] = append(b.index.Types[typeName], loc)
+            meta.Types = append(meta.Types, typeName)
+            lastComment = ""
+            continue
+        }
+    }
+    
+    b.index.Files[relPath] = meta
+    return scanner.Err()
+}
+```
+
+#### 23.3.4 索引查询实现
+
+```go
+// internal/index/query.go
+package index
+
+import (
+    "fmt"
+    "strings"
+)
+
+type IndexQuery struct {
+    index *SymbolIndex
+}
+
+// FindFunction 查找函数定义
+func (q *IndexQuery) FindFunction(name string) ([]Location, bool) {
+    locs, ok := q.index.Functions[name]
+    return locs, ok
+}
+
+// FindType 查找类型定义
+func (q *IndexQuery) FindType(name string) ([]Location, bool) {
+    locs, ok := q.index.Types[name]
+    return locs, ok
+}
+
+// FindCallers 查找调用者（简化版：文本搜索）
+func (q *IndexQuery) FindCallers(funcName string) []Location {
+    var callers []Location
+    
+    // 搜索 "funcName(" 模式
+    searchPattern := funcName + "("
+    
+    for filePath, meta := range q.index.Files {
+        content, err := os.ReadFile(filepath.Join(q.index.root, filePath))
+        if err != nil {
+            continue
+        }
+        
+        lines := strings.Split(string(content), "\n")
+        for i, line := range lines {
+            // 排除函数定义行（那是被调用者）
+            if strings.Contains(line, "func "+funcName) {
+                continue
+            }
+            // 排除注释
+            if strings.HasPrefix(strings.TrimSpace(line), "//") {
+                continue
+            }
+            // 查找调用
+            if strings.Contains(line, searchPattern) {
+                callers = append(callers, Location{
+                    File: filePath,
+                    Line: i + 1,
+                })
+            }
+        }
+    }
+    
+    return callers
+}
+
+// AnalyzeImpact 分析变更影响
+func (q *IndexQuery) AnalyzeImpact(funcName string) *ImpactReport {
+    report := &ImpactReport{
+        Function: funcName,
+    }
+    
+    // 1. 找到函数定义
+    if locs, ok := q.FindFunction(funcName); ok {
+        report.Definition = locs[0]
+    }
+    
+    // 2. 找到所有调用者
+    report.Callers = q.FindCallers(funcName)
+    
+    // 3. 分析调用者的调用者（二级影响）
+    for _, caller := range report.Callers {
+        // 提取调用者所在函数名
+        callerFunc := q.findEnclosingFunction(caller.File, caller.Line)
+        if callerFunc != "" {
+            indirect := q.FindCallers(callerFunc)
+            report.IndirectCallers = append(report.IndirectCallers, indirect...)
+        }
+    }
+    
+    return report
+}
+
+type ImpactReport struct {
+    Function        string
+    Definition      Location
+    Callers         []Location
+    IndirectCallers []Location
+}
+
+func (r *ImpactReport) String() string {
+    var sb strings.Builder
+    sb.WriteString(fmt.Sprintf("影响分析: %s\n", r.Function))
+    sb.WriteString(fmt.Sprintf("定义: %s:%d\n", r.Definition.File, r.Definition.Line))
+    sb.WriteString(fmt.Sprintf("直接调用: %d 处\n", len(r.Callers)))
+    for _, c := range r.Callers {
+        sb.WriteString(fmt.Sprintf("  - %s:%d\n", c.File, c.Line))
+    }
+    sb.WriteString(fmt.Sprintf("间接调用: %d 处\n", len(r.IndirectCallers)))
+    return sb.String()
+}
+```
+
+#### 23.3.5 索引存储与更新
+
+```go
+// internal/index/storage.go
+package index
+
+import (
+    "crypto/md5"
+    "encoding/json"
+    "fmt"
+    "os"
+    "path/filepath"
+)
+
+// IndexStorage 索引存储
+type IndexStorage struct {
+    baseDir string
+}
+
+func NewIndexStorage(baseDir string) *IndexStorage {
+    return &IndexStorage{
+        baseDir: filepath.Join(baseDir, "index"),
+    }
+}
+
+// Save 保存索引
+func (s *IndexStorage) Save(projectRoot string, index *SymbolIndex) error {
+    // 项目哈希作为文件名
+    projectHash := hashProject(projectRoot)
+    path := filepath.Join(s.baseDir, projectHash+".json")
+    
+    // 确保目录存在
+    os.MkdirAll(s.baseDir, 0755)
+    
+    data, err := json.MarshalIndent(index, "", "  ")
+    if err != nil {
+        return err
+    }
+    
+    return os.WriteFile(path, data, 0644)
+}
+
+// Load 加载索引
+func (s *IndexStorage) Load(projectRoot string) (*SymbolIndex, error) {
+    projectHash := hashProject(projectRoot)
+    path := filepath.Join(s.baseDir, projectHash+".json")
+    
+    data, err := os.ReadFile(path)
+    if err != nil {
+        return nil, err
+    }
+    
+    var index SymbolIndex
+    if err := json.Unmarshal(data, &index); err != nil {
+        return nil, err
+    }
+    
+    return &index, nil
+}
+
+// IsStale 检查索引是否过期
+func (s *IndexStorage) IsStale(projectRoot string) bool {
+    index, err := s.Load(projectRoot)
+    if err != nil {
+        return true
+    }
+    
+    // 检查每个文件的修改时间
+    for filePath, meta := range index.Files {
+        fullPath := filepath.Join(projectRoot, filePath)
+        info, err := os.Stat(fullPath)
+        if err != nil {
+            return true
+        }
+        if info.ModTime().Unix() > meta.ModTime {
+            return true
+        }
+    }
+    
+    return false
+}
+
+func hashProject(root string) string {
+    // 用项目路径的 MD5 作为哈希
+    return fmt.Sprintf("%x", md5.Sum([]byte(root)))
+}
+```
+
+#### 23.3.6 与 Agent 内核集成
+
+```go
+// internal/kernel/context.go
+package kernel
+
+// 在组装上下文时注入代码索引信息
+func (k *Kernel) enrichContext(ctx *Context) error {
+    // 1. 检查索引是否存在/过期
+    storage := index.NewIndexStorage(k.config.BaseDir)
+    
+    if storage.IsStale(ctx.ProjectRoot) {
+        // 异步重建索引
+        go k.rebuildIndex(ctx.ProjectRoot)
+    }
+    
+    // 2. 加载索引
+    idx, err := storage.Load(ctx.ProjectRoot)
+    if err != nil {
+        return nil // 索引不存在也不报错
+    }
+    
+    // 3. 注入相关符号信息到上下文
+    query := &index.IndexQuery{Index: idx}
+    
+    // 如果用户在讨论某个函数，注入其调用链
+    if ctx.FocusedSymbol != "" {
+        if locs, ok := query.FindFunction(ctx.FocusedSymbol); ok {
+            ctx.AddSystemPrompt(fmt.Sprintf(
+                "相关代码: %s 定义在 %s:%d",
+                ctx.FocusedSymbol, locs[0].File, locs[0].Line,
+            ))
+            
+            // 注入调用者信息
+            callers := query.FindCallers(ctx.FocusedSymbol)
+            if len(callers) > 0 {
+                ctx.AddSystemPrompt(fmt.Sprintf(
+                    "被调用位置: %d 处", len(callers),
+                ))
+            }
+        }
+    }
+    
+    return nil
+}
+```
+
+#### 23.3.7 CLI 交互示例
+
+```bash
+# 构建索引
+openaide> /index build
+正在构建代码索引...
+扫描 45 个文件...
+发现 128 个函数，32 个类型
+索引已保存: ~/.openaide/index/a1b2c3d4.json
+
+# 查询符号
+openaide> /index find GetUser
+GetUser 定义在:
+  - models/user.go:45
+    // GetUser 根据 ID 获取用户信息
+
+# 查找调用者
+openaide> /index callers GetUser
+GetUser 被调用位置:
+  - handlers/auth.go:23    LoginHandler
+  - handlers/user.go:56    GetProfileHandler
+  - services/user.go:89    BatchGetUsers
+
+# 影响分析
+openaide> /index impact GetUser
+影响分析: GetUser
+定义: models/user.go:45
+直接调用: 3 处
+  - handlers/auth.go:23
+  - handlers/user.go:56
+  - services/user.go:89
+间接调用: 5 处
+  - handlers/auth.go:45 (LoginHandler 被路由调用)
+  ...
+
+# 智能提示（自动使用索引）
+openaide> 帮我修改 GetUser 函数
+[Agent 自动查询索引]
+Agent: GetUser 在 models/user.go:45 定义，被 3 处调用。
+修改时需要注意:
+1. handlers/auth.go:23 的 LoginHandler 依赖返回值
+2. services/user.go:89 的 BatchGetUsers 批量调用
+建议先查看所有调用点，确认接口兼容性。
+```
+
+---
+
+### 23.4 性能评估
+
+| 指标 | 目标值 | 测试条件 |
+|------|--------|----------|
+| **Git 状态解析** | < 100ms | 100 个文件变更 |
+| **Diff 解析** | < 50ms | 单文件 100 行变更 |
+| **提交建议生成** | < 2s | 使用 LLM |
+| **索引构建** | < 5s | 100 个 Go 文件 |
+| **索引查询** | < 10ms | 内存加载后 |
+| **调用者搜索** | < 500ms | 100 个文件 |
+| **索引存储** | < 1MB | 1000 个函数 |
+
+---
+
+### 23.5 与现有架构的融合
+
+```
+┌─────────────────────────────────────────┐
+│           CLI 层                         │
+│  /git status  /git commit  /index find  │
+└─────────────┬───────────────────────────┘
+              │
+┌─────────────▼───────────────────────────┐
+│           工具层 (tools/)                │
+│  ┌─────────┐  ┌─────────────────────┐  │
+│  │ Git     │  │ 代码索引            │  │
+│  │ 集成    │  │ (index/)            │  │
+│  └────┬────┘  └──────────┬──────────┘  │
+│       │                  │             │
+│       └────────┬─────────┘             │
+│                ▼                       │
+│         ┌─────────────┐                │
+│         │ Agent 内核   │                │
+│         │ (ReAct 循环) │                │
+│         └──────┬──────┘                │
+│                │                       │
+│         ┌──────▼──────┐                │
+│         │   LLM 层    │                │
+│         └─────────────┘                │
+└─────────────────────────────────────────┘
+```
+
+---
+
+### 23.6 实现路线图
+
+| 阶段 | 功能 | 时间 | 优先级 |
+|------|------|------|--------|
+| **Phase 1** | Git 状态解析 + diff 提取 | 3 天 | P0 |
+| **Phase 2** | 提交建议生成 + 安全提交 | 2 天 | P0 |
+| **Phase 3** | 基础符号索引（函数/类型） | 5 天 | P1 |
+| **Phase 4** | 调用者搜索 + 影响分析 | 3 天 | P1 |
+| **Phase 5** | 与内核集成（自动注入上下文） | 3 天 | P1 |
+| **Phase 6** | AST 精确索引（长期） | 2 周 | P2 |
+
+---
+
 > 本文档为设计草案，欢迎评审和补充。
