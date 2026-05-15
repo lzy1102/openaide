@@ -51,7 +51,7 @@ require (
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
-	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/mattn/go-isatty v0.0.0-20240611172328-0e4efaa9b3d0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/pelletier/go-toml v1.0.1 // indirect
@@ -76,4 +76,21 @@ require (
 	modernc.org/mathutil v1.5.0 // indirect
 	modernc.org/memory v1.5.0 // indirect
 	modernc.org/sqlite v1.23.1 // indirect
+)
+
+replace (
+	openaide/backend/internal/api => ./internal/api
+	openaide/backend/internal/compress => ./internal/compress
+	openaide/backend/internal/config => ./internal/config
+	openaide/backend/internal/event => ./internal/event
+	openaide/backend/internal/git => ./internal/git
+	openaide/backend/internal/identity => ./internal/identity
+	openaide/backend/internal/index => ./internal/index
+	openaide/backend/internal/infra => ./internal/infra
+	openaide/backend/internal/kernel => ./internal/kernel
+	openaide/backend/internal/knowledge => ./internal/knowledge
+	openaide/backend/internal/llm => ./internal/llm
+	openaide/backend/internal/memory => ./internal/memory
+	openaide/backend/internal/orchestration => ./internal/orchestration
+	openaide/backend/internal/tools => ./internal/tools
 )
