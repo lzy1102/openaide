@@ -31,9 +31,10 @@
 21. [CLI 命令设计](#21-cli-命令设计)
 22. [纯文件存储架构](#22-纯文件存储架构)
 23. [Git 集成与代码索引](#23-git-集成与代码索引系统)
-24. [多模态支持](#24-多模态支持系统)
-25. [插件系统](#25-插件系统设计)
-26. [Skill 系统](#26-skill-系统设计)
+24. [大型项目支持](#24-大型项目支持系统)
+25. [多模态支持](#25-多模态支持系统)
+26. [插件系统](#26-插件系统设计)
+27. [Skill 系统](#27-skill-系统设计)
 
 ---
 
@@ -6135,13 +6136,408 @@ Week 5: 内核集成（Phase 5）
 
 ---
 
-## 24. 多模态支持系统
+## 24. 大型项目支持系统
+
+> 目标: 支持 10K+ 文件、100K+ 行代码的大型项目，包括 Monorepo 和多模块工作区
+> 优先级: P1
+> 状态: 设计阶段
+
+### 24.1 为什么需要大型项目支持
+
+**当前局限**:
+- 代码索引在 1000+ 文件时性能急剧下降
+- 上下文窗口无法容纳整个项目的代码理解
+- 缺乏 Monorepo 多包/多模块的隔离能力
+- 内存占用随项目规模线性增长，无上限控制
+- 重复分析相同文件，无有效缓存策略
+
+**典型场景**:
+```
+用户: "帮我分析这个微服务项目的依赖关系"
+OpenAIDE: ❌ 项目有 5000+ 文件，索引超时
+
+用户: "这个 Monorepo 里哪些服务用了过时的 API？"
+OpenAIDE: ❌ 无法跨包分析
+
+用户: "重构这个基础库，看看影响范围"
+OpenAIDE: ❌ 只能分析当前目录
+```
+
+### 24.2 设计原则
+
+| 原则 | 说明 |
+|------|------|
+| **增量优先** | 只索引变更的文件，不重复全量扫描 |
+| **按需加载** | 不把所有索引常驻内存，用 LRU 缓存 |
+| **分层索引** | 项目级 → 模块级 → 文件级，逐层细化 |
+| **并行处理** | 多 goroutine 并行索引，利用多核 |
+| **内存上限** | 索引内存占用可配置，超出则淘汰 |
+| **Workspace 感知** | 自动识别 Monorepo、多模块、子项目 |
+
+### 24.3 核心概念
+
+#### 24.3.1 Workspace（工作区）
+
+一个 Workspace 是一个逻辑项目单元，可以包含多个子模块：
+
+```
+Workspace: my-company
+├── .openaide/workspace.json          # 工作区配置
+├── .openaide/modules.json            # 子模块清单
+│
+├── frontend/                         # 子模块 1
+│   ├── package.json
+│   └── src/...
+│
+├── backend/                          # 子模块 2
+│   ├── go.mod
+│   └── src/...
+│
+├── shared-lib/                       # 子模块 3
+│   ├── go.mod
+│   └── pkg/...
+│
+└── mobile-app/                       # 子模块 4
+    ├── pubspec.yaml
+    └── lib/...
+```
+
+**自动识别规则**:
+| 文件 | 识别为 |
+|------|--------|
+| `go.work` / 多个 `go.mod` | Go Workspace |
+| `pnpm-workspace.yaml` / `lerna.json` | Node Monorepo |
+| `Cargo.toml` `[workspace]` | Rust Workspace |
+| 用户手动配置 | 自定义 Workspace |
+
+#### 24.3.2 分层索引架构
+
+```
+┌─────────────────────────────────────────────┐
+│           项目级索引 (Project Index)          │
+│  - 模块清单、依赖关系图                        │
+│  - 跨模块符号引用                              │
+│  - 项目架构概览 (AI 生成)                      │
+│  存储: .openaide/index/project.json          │
+├─────────────────────────────────────────────┤
+│           模块级索引 (Module Index)           │
+│  - 模块内符号表                                │
+│  - 模块内调用关系                              │
+│  - 模块对外暴露的 API                          │
+│  存储: .openaide/index/modules/<name>.json   │
+├─────────────────────────────────────────────┤
+│           文件级索引 (File Index)             │
+│  - 单个文件的符号列表                          │
+│  - 文件内调用关系                              │
+│  存储: .openaide/index/files/<hash>.json     │
+└─────────────────────────────────────────────┘
+```
+
+#### 24.3.3 索引粒度控制
+
+| 粒度 | 说明 | 适用场景 |
+|------|------|----------|
+| **粗略** | 只索引文件名 + 顶层类型/函数 | 10K+ 文件项目快速浏览 |
+| **标准** | 索引所有函数、类型、方法 | 日常使用 |
+| **精细** | 索引所有符号 + 调用关系 + 局部变量 | 深度重构 |
+
+### 24.4 增量索引设计
+
+#### 24.4.1 变更检测
+
+```go
+// 文件指纹缓存
+type FileFingerprint struct {
+    Path      string    `json:"path"`
+    Size      int64     `json:"size"`
+    ModTime   time.Time `json:"mtime"`
+    ContentHash string  `json:"hash"`  // SHA-256 前 8 字节
+}
+
+// 变更检测流程
+func (idx *Indexer) DetectChanges() (*ChangeSet, error) {
+    // 1. 扫描当前文件列表
+    currentFiles := idx.scanFiles()
+    
+    // 2. 加载上次指纹
+    lastPrints := idx.loadFingerprints()
+    
+    // 3. 对比差异
+    changes := &ChangeSet{}
+    for _, f := range currentFiles {
+        last, exists := lastPrints[f.Path]
+        switch {
+        case !exists:
+            changes.Added = append(changes.Added, f)
+        case f.ContentHash != last.ContentHash:
+            changes.Modified = append(changes.Modified, f)
+        }
+    }
+    for path := range lastPrints {
+        if !currentFiles.Contains(path) {
+            changes.Deleted = append(changes.Deleted, path)
+        }
+    }
+    
+    return changes, nil
+}
+```
+
+#### 24.4.2 增量更新流程
+
+```
+用户执行 /index update
+    │
+    ▼
+┌─────────────────┐
+│ 1. 检测变更文件  │ ◄── 对比文件指纹，< 1s
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ 2. 并行索引变更  │ ◄── 4 goroutine 并行
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ 3. 更新模块索引  │ ◄── 增量合并，非全量重建
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ 4. 更新项目索引  │ ◄── 只更新受影响的依赖关系
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ 5. 持久化 + 缓存 │ ◄── 写入磁盘，更新内存 LRU
+└─────────────────┘
+```
+
+**性能目标**:
+| 场景 | 目标时间 | 说明 |
+|------|----------|------|
+| 检测 10K 文件变更 | < 1s | 指纹对比 |
+| 索引 100 个变更文件 | < 3s | 并行处理 |
+| 全量索引 10K 文件 | < 30s | 首次或强制重建 |
+| 增量更新内存占用 | < 100MB | 仅加载变更部分 |
+
+### 24.5 内存管理
+
+#### 24.5.1 LRU 索引缓存
+
+```go
+type IndexCache struct {
+    maxSize   int64                    // 最大内存（默认 256MB）
+    current   int64                    // 当前占用
+    entries   map[string]*CacheEntry   // 路径 -> 条目
+    lru       *list.List               // 淘汰队列
+}
+
+type CacheEntry struct {
+    path      string
+    index     *FileIndex
+    size      int64
+    lastUsed  time.Time
+}
+
+// 按需加载，自动淘汰
+func (c *IndexCache) Get(path string) (*FileIndex, error) {
+    if entry, ok := c.entries[path]; ok {
+        c.lru.MoveToFront(entry.element)
+        return entry.index, nil
+    }
+    
+    // 从磁盘加载
+    index, err := c.loadFromDisk(path)
+    if err != nil {
+        return nil, err
+    }
+    
+    // 检查内存上限，淘汰旧条目
+    for c.current+index.Size > c.maxSize {
+        c.evictLRU()
+    }
+    
+    c.add(path, index)
+    return index, nil
+}
+```
+
+#### 24.5.2 内存分级策略
+
+| 级别 | 常驻内存 | 内容 | 说明 |
+|------|----------|------|------|
+| **L1** | 是 | 项目索引 + 当前模块索引 | < 10MB |
+| **L2** | 按需 | 最近使用的文件索引 | LRU，上限 200MB |
+| **L3** | 否 | 冷数据文件索引 | 仅磁盘，用时加载 |
+
+### 24.6 并行处理
+
+#### 24.6.1 并行索引架构
+
+```go
+const (
+    DefaultWorkers = 4  // 默认并行 worker 数
+    MaxWorkers     = 16 // 最大限制
+)
+
+type ParallelIndexer struct {
+    workers   int
+    sem       chan struct{}  // 信号量控制并发
+    results   chan IndexResult
+}
+
+func (p *ParallelIndexer) IndexBatch(files []FileInfo) []IndexResult {
+    var wg sync.WaitGroup
+    for _, f := range files {
+        wg.Add(1)
+        p.sem <- struct{}{}  // 获取信号量
+        
+        go func(file FileInfo) {
+            defer wg.Done()
+            defer func() { <-p.sem }()  // 释放信号量
+            
+            result := p.indexSingle(file)
+            p.results <- result
+        }(f)
+    }
+    
+    wg.Wait()
+    close(p.results)
+    return p.collectResults()
+}
+```
+
+#### 24.6.2 Worker 数自动调整
+
+```go
+func AutoDetectWorkers() int {
+    cpus := runtime.NumCPU()
+    
+    // 根据项目规模调整
+    switch {
+    case fileCount < 100:
+        return min(cpus, 2)
+    case fileCount < 1000:
+        return min(cpus, 4)
+    case fileCount < 5000:
+        return min(cpus, 8)
+    default:
+        return min(cpus, MaxWorkers)
+    }
+}
+```
+
+### 24.7 上下文管理（大项目场景）
+
+#### 24.7.1 问题：上下文装不下整个项目
+
+100K 行代码 ≈ 3M-5M tokens，远超 LLM 上下文限制。
+
+#### 24.7.2 解决方案：分层上下文注入
+
+```
+用户提问: "这个项目的认证流程是怎么设计的？"
+    │
+    ▼
+┌─────────────────────────────────────────────┐
+│ 1. 意图识别                                  │
+│    - 关键词: "认证", "流程"                   │
+│    - 相关模块: auth, login, middleware       │
+└────────┬────────────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────────────────┐
+│ 2. 项目级上下文 (Project Context)             │
+│    - 项目架构概览 (AI 预生成，500 tokens)      │
+│    - 模块依赖关系图                            │
+│    - 认证相关模块列表                          │
+└────────┬────────────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────────────────┐
+│ 3. 模块级上下文 (Module Context)              │
+│    - auth 模块的 API 列表                      │
+│    - middleware 模块的拦截器列表               │
+│    - 各模块的入口文件摘要                      │
+└────────┬────────────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────────────────┐
+│ 4. 文件级上下文 (File Context)                │
+│    - 认证相关的具体函数实现                     │
+│    - 调用链分析结果                            │
+│    - 最多加载 10 个最相关文件                   │
+└─────────────────────────────────────────────┘
+```
+
+**Token 预算分配** (假设 128K 上下文):
+| 层级 | Token 预算 | 内容 |
+|------|-----------|------|
+| 系统提示 | 2K | Agent 角色、工具说明 |
+| 项目概览 | 1K | 架构图、模块列表 |
+| 相关模块 | 4K | 模块 API、关键类型 |
+| 相关文件 | 8K | 具体实现代码 |
+| 对话历史 | 4K | 最近 10 轮 |
+| 用户输入 | 1K | 当前问题 |
+| **预留** | **108K** | **工具输出、思考过程** |
+
+### 24.8 性能基准（大型项目）
+
+| 指标 | 目标值 | 测试条件 | 说明 |
+|------|--------|----------|------|
+| **全量索引** | < 30s | 10K 文件，Go 项目 | 首次索引 |
+| **增量更新** | < 3s | 100 文件变更 | 日常开发 |
+| **变更检测** | < 1s | 10K 文件 | 指纹对比 |
+| **符号查询** | < 50ms | 内存命中 | 函数/类型查找 |
+| **跨模块搜索** | < 200ms | 5 个模块 | Workspace 范围 |
+| **内存占用** | < 256MB | 活跃索引缓存 | 可配置上限 |
+| **磁盘占用** | < 50MB | 10K 文件索引 | 纯 JSON 存储 |
+| **上下文构建** | < 500ms | 大项目查询 | 分层加载 |
+
+### 24.9 CLI 命令
+
+```bash
+# Workspace 管理
+openaide> /workspace init              # 初始化工作区配置
+openaide> /workspace add <path>        # 添加子模块
+openaide> /workspace list              # 列出所有子模块
+openaide> /workspace remove <name>     # 移除子模块
+
+# 索引管理（扩展）
+openaide> /index build --full          # 全量重建（大项目慎用）
+openaide> /index update                # 增量更新（默认）
+openaide> /index status                # 索引状态（文件数、内存占用）
+openaide> /index config                # 索引配置（粒度、内存上限）
+
+# 大项目专用查询
+openaide> /find --project <func>       # 跨模块搜索符号
+openaide> /deps <module>               # 查看模块依赖关系
+openaide> /arch                        # 查看项目架构概览
+```
+
+### 24.10 实现路线图
+
+| 阶段 | 功能 | 时间 | 优先级 |
+|------|------|------|--------|
+| **Phase 1** | Workspace 自动识别 + 配置 | 3 天 | P1 |
+| **Phase 2** | 分层索引架构（项目/模块/文件） | 5 天 | P1 |
+| **Phase 3** | 增量索引 + 变更检测 | 3 天 | P1 |
+| **Phase 4** | LRU 内存缓存 + 内存上限控制 | 3 天 | P1 |
+| **Phase 5** | 并行索引（多 goroutine） | 2 天 | P1 |
+| **Phase 6** | 分层上下文注入（大项目查询） | 4 天 | P1 |
+| **Phase 7** | 性能优化 + 10K 文件测试 | 3 天 | P2 |
+
+---
+
+## 25. 多模态支持系统
 
 > 目标: 扩展 Agent 输入能力，支持图像、语音、文档
 > 优先级: P2
 > 状态: 设计阶段
 
-### 24.1 为什么需要多模态
+### 25.1 为什么需要多模态
 
 **当前局限**:
 - 只能处理文本输入
@@ -6161,7 +6557,7 @@ OpenAIDE: ❌ 无法处理图片
 OpenAIDE: ❌ 无法处理语音
 ```
 
-### 24.2 设计原则
+### 25.2 设计原则
 
 | 原则 | 说明 |
 |------|------|
@@ -6171,7 +6567,7 @@ OpenAIDE: ❌ 无法处理语音
 | **模型无关** | 支持多种视觉/语音模型 |
 | **渐进支持** | 先图像，后语音，再视频 |
 
-### 24.3 架构设计
+### 25.3 架构设计
 
 ```
 ┌─────────────────────────────────────────┐
@@ -6218,7 +6614,7 @@ OpenAIDE: ❌ 无法处理语音
 └─────────────────────────────────────────┘
 ```
 
-### 24.4 实现细节
+### 25.4 实现细节
 
 **图像处理模块**:
 ```go
@@ -6341,7 +6737,7 @@ func (k *Kernel) buildMultimodalMessage(content *MultimodalContent) []Message {
 }
 ```
 
-### 24.5 配置与启用
+### 25.5 配置与启用
 
 ```yaml
 # config.yaml
@@ -6365,7 +6761,7 @@ multimodal:
     formats: [pdf, docx, pptx]
 ```
 
-### 24.6 优缺点
+### 25.6 优缺点
 
 | 优势 | 劣势 |
 |------|------|
@@ -6376,20 +6772,20 @@ multimodal:
 
 ---
 
-## 25. 插件系统设计
+## 26. 插件系统设计
 
 > 目标: 支持第三方扩展，构建生态
 > 优先级: P2
 > 状态: 设计阶段
 
-### 25.1 设计目标
+### 26.1 设计目标
 
 - **扩展性**: 用户可自定义功能
 - **隔离性**: 插件崩溃不影响核心
 - **热更新**: 无需重启加载插件
 - **安全性**: 限制插件权限
 
-### 25.2 插件类型
+### 26.2 插件类型
 
 | 类型 | 说明 | 示例 |
 |------|------|------|
@@ -6399,7 +6795,7 @@ multimodal:
 | **事件插件** | 扩展事件处理 | 日志收集、监控 |
 | **UI 插件** | 扩展界面 | 自定义主题 |
 
-### 25.3 插件接口
+### 26.3 插件接口
 
 ```go
 // internal/plugin/plugin.go
@@ -6442,7 +6838,7 @@ const (
 )
 ```
 
-### 25.4 插件加载机制
+### 26.4 插件加载机制
 
 ```go
 // internal/plugin/loader.go
@@ -6473,7 +6869,7 @@ func (l *PluginLoader) Load(name string) (Plugin, error) {
 }
 ```
 
-### 25.5 插件示例
+### 26.5 插件示例
 
 ```go
 // 示例：数据库查询插件
@@ -6523,13 +6919,13 @@ func (p *DBPlugin) handleQuery(ctx context.Context, args map[string]interface{})
 
 ---
 
-## 26. Skill 系统设计
+## 27. Skill 系统设计
 
 > 目标: 封装专业流程，提升 Agent 效率
 > 优先级: P1
 > 状态: 设计阶段
 
-### 26.1 什么是 Skill
+### 27.1 什么是 Skill
 
 **定义**: Skill 是 Agent 的"专业技能包"，封装了特定领域的知识、工具和流程。
 
@@ -6540,7 +6936,7 @@ func (p *DBPlugin) handleQuery(ctx context.Context, args map[string]interface{})
 | **Skill** | 完整流程（如：代码审查、Bug 修复、API 设计）|
 | **Plugin** | 外部扩展（如：数据库连接、第三方 API）|
 
-### 26.2 Skill 结构
+### 27.2 Skill 结构
 
 ```go
 // internal/skill/skill.go
@@ -6589,7 +6985,7 @@ type Step struct {
 }
 ```
 
-### 26.3 内置 Skill 示例
+### 27.3 内置 Skill 示例
 
 **代码审查 Skill**:
 ```yaml
@@ -6644,7 +7040,7 @@ memory:
   persist_learnings: true  # 记住审查经验
 ```
 
-### 26.4 Skill 执行流程
+### 27.4 Skill 执行流程
 
 ```
 用户输入: "/review" 或 "帮我审查这段代码"
@@ -6677,7 +7073,7 @@ memory:
 └─────────────────┘
 ```
 
-### 26.5 Skill 与现有系统的关系
+### 27.5 Skill 与现有系统的关系
 
 ```
 ┌─────────────────────────────────────────┐
@@ -6702,7 +7098,7 @@ memory:
 └─────────┘   └─────────┘   └─────────┘
 ```
 
-### 26.6 Skill 自进化机制
+### 27.6 Skill 自进化机制
 
 ```go
 // internal/skill/evolution.go
@@ -6736,7 +7132,7 @@ func (s *Skill) Learn(execution *ExecutionResult, feedback UserFeedback) error {
 }
 ```
 
-### 26.7 三个系统的对比
+### 27.7 三个系统的对比
 
 | 维度 | 多模态 | 插件 | Skill |
 |------|--------|------|-------|
@@ -6748,7 +7144,7 @@ func (s *Skill) Learn(execution *ExecutionResult, feedback UserFeedback) error {
 | **实现难度** | 中 | 高 | 低 |
 | **价值** | 扩展场景 | 生态建设 | 提升效率 |
 
-### 26.8 推荐实现顺序
+### 27.8 推荐实现顺序
 
 ```
 Phase 1 (现在): Skill 系统
