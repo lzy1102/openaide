@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -13,17 +14,17 @@ import (
 )
 
 var (
-	sUser  = lipgloss.NewStyle().Foreground(lipgloss.Color("#6C8EBF")).Bold(true)
-	sAI    = lipgloss.NewStyle().Foreground(lipgloss.Color("#82B74B")).Bold(true)
-	sThink = lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Italic(true)
-	sTool  = lipgloss.NewStyle().Foreground(lipgloss.Color("#D4A859"))
-	sErr   = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF6B6B"))
-	sInfo  = lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
-	sBar   = lipgloss.NewStyle().Background(lipgloss.Color("#222222")).Foreground(lipgloss.Color("#AAAAAA")).Padding(0, 1)
-	sInp   = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#444444")).Padding(0, 1)
+	tUser  = lipgloss.NewStyle().Foreground(lipgloss.Color("#6C8EBF")).Bold(true).PaddingLeft(1)
+	tAI    = lipgloss.NewStyle().Foreground(lipgloss.Color("#82B74B")).Bold(true).PaddingLeft(1)
+	tThink = lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Italic(true).PaddingLeft(3)
+	tTool  = lipgloss.NewStyle().Foreground(lipgloss.Color("#D4A859"))
+	tErr   = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF6B6B"))
+	tInfo  = lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+	tBar   = lipgloss.NewStyle().Background(lipgloss.Color("#1a1a2e")).Foreground(lipgloss.Color("#AAAAAA")).Padding(0, 1).Width(100)
+	tInput = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#444444")).Padding(0, 1)
 )
 
-type streamChunkMsg struct {
+type streamChunk struct {
 	content  string
 	thinking string
 	done     bool
@@ -34,11 +35,12 @@ type streamChunkMsg struct {
 
 type tuiModel struct {
 	app       *infra.Application
+	program   *tea.Program
 	messages  []tuiMsg
 	input     string
 	streaming bool
-	curThink  string
-	curAI     string
+	think     string
+	ai        string
 	tokens    int
 	tools     int
 	err       error
@@ -49,30 +51,26 @@ type tuiModel struct {
 type tuiMsg struct{ role, content string }
 
 func runTUI(app *infra.Application) error {
-	p := tea.NewProgram(initialModel(app), tea.WithAltScreen())
+	m := &tuiModel{app: app, width: 100, height: 40}
+	p := tea.NewProgram(m, tea.WithAltScreen())
+	m.program = p
 	_, err := p.Run()
 	return err
 }
 
-func initialModel(app *infra.Application) tuiModel {
-	return tuiModel{
-		app:      app,
-		messages: []tuiMsg{{role: "assistant", content: "OpenAIDE ready. Type a message and press Enter."}},
-	}
-}
+func (m *tuiModel) Init() tea.Cmd { return nil }
 
-func (m tuiModel) Init() tea.Cmd { return nil }
-
-func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		if m.streaming {
-			// Ctrl+C can interrupt streaming
 			if msg.String() == "ctrl+c" {
 				m.streaming = false
-				m.messages = append(m.messages, tuiMsg{role: "assistant", content: m.curAI})
-				m.curAI = ""
-				m.curThink = ""
+				if m.ai != "" {
+					m.messages = append(m.messages, tuiMsg{role: "assistant", content: formatThink(m.think) + m.ai})
+				}
+				m.ai = ""
+				m.think = ""
 				return m, nil
 			}
 			return m, nil
@@ -96,10 +94,11 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.input = ""
 			m.messages = append(m.messages, tuiMsg{role: "user", content: query})
 			m.streaming = true
-			m.curAI = ""
-			m.curThink = ""
+			m.ai = ""
+			m.think = ""
 			m.err = nil
-			return m, streamCmd(m.app, query)
+			go streamToProgram(m.program, m.app, query)
+			return m, nil
 
 		case "backspace":
 			if len(m.input) > 0 {
@@ -112,7 +111,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-	case streamChunkMsg:
+	case streamChunk:
 		if msg.err != nil {
 			m.err = msg.err
 			m.streaming = false
@@ -122,24 +121,20 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.streaming = false
 			m.tokens = msg.tokens
 			m.tools = msg.toolCnt
-			content := m.curAI
-			if m.curThink != "" {
-				content = "[思考]\n" + m.curThink + "\n\n" + content
+			if m.ai != "" {
+				m.messages = append(m.messages, tuiMsg{role: "assistant", content: formatThink(m.think) + m.ai})
 			}
-			if content != "" {
-				m.messages = append(m.messages, tuiMsg{role: "assistant", content: content})
-			}
-			m.curAI = ""
-			m.curThink = ""
+			m.ai = ""
+			m.think = ""
 			return m, nil
 		}
 		if msg.content != "" {
-			m.curAI += msg.content
+			m.ai += msg.content
 		}
 		if msg.thinking != "" {
-			m.curThink += msg.thinking
+			m.think += msg.thinking
 		}
-		return m, waitStreamCmd()
+		return m, nil
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -149,31 +144,28 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m tuiModel) View() string {
+func (m *tuiModel) View() string {
 	if m.width == 0 {
 		m.width = 100
 	}
-
 	var sb strings.Builder
 
-	// Messages (bottom-up to fit viewport)
-	var rendered []string
+	// Messages (newest at bottom)
+	rendered := []string{}
 	if m.streaming {
-		rendered = append(rendered, sAI.Render("◆ ")+m.curAI)
-		if m.curThink != "" {
-			rendered = append(rendered, sThink.Render("[思考] "+m.curThink))
+		if m.think != "" {
+			rendered = append(rendered, tThink.Render("... "+trunc(m.think, 200)))
 		}
+		rendered = append(rendered, tAI.Render(m.ai))
 	}
 	for i := len(m.messages) - 1; i >= 0; i-- {
 		msg := m.messages[i]
 		if msg.role == "user" {
-			rendered = append(rendered, sUser.Render("▸ ")+msg.content)
+			rendered = append(rendered, tUser.Render("▸ "+msg.content))
 		} else {
-			rendered = append(rendered, sAI.Render("◆ ")+msg.content)
+			rendered = append(rendered, tAI.Render(msg.content))
 		}
 	}
-
-	// Reverse and fit
 	for i := len(rendered) - 1; i >= 0; i-- {
 		sb.WriteString(rendered[i] + "\n")
 	}
@@ -181,73 +173,80 @@ func (m tuiModel) View() string {
 	// Status bar
 	status := ""
 	if m.tools > 0 {
-		status += sTool.Render(fmt.Sprintf(" 🔧%d ", m.tools))
+		status += tTool.Render(fmt.Sprintf("🔧%d ", m.tools))
 	}
 	if m.tokens > 0 {
-		status += sInfo.Render(fmt.Sprintf(" ⚡%d ", m.tokens))
+		status += tInfo.Render(fmt.Sprintf("⚡%d ", m.tokens))
 	}
 	if m.streaming {
-		status += sInfo.Render(" ● streaming ")
+		status += tInfo.Render("● ")
 	}
 	if status != "" {
-		sb.WriteString(sBar.Render(status) + "\n")
+		sb.WriteString(tBar.Render(status) + "\n")
 	}
-
-	// Error
 	if m.err != nil {
-		sb.WriteString(sErr.Render("✗ "+m.err.Error()) + "\n")
+		sb.WriteString(tErr.Render("✗ "+m.err.Error()) + "\n")
 	}
-
-	sb.WriteString(strings.Repeat("─", m.width) + "\n")
 
 	// Input
+	sb.WriteString(strings.Repeat("─", m.width) + "\n")
 	prompt := "> "
 	if m.streaming {
 		prompt = "⏳ "
 	}
-	inputLine := prompt + m.input
+	cursor := ""
 	if !m.streaming {
-		inputLine += "│"
+		cursor = "│"
 	}
-	sb.WriteString(sInp.Render(inputLine))
+	sb.WriteString(tInput.Render(prompt + m.input + cursor))
 
 	return sb.String()
 }
 
-func streamCmd(app *infra.Application, query string) tea.Cmd {
-	return func() tea.Msg {
-		ctx := context.Background()
-		stream, err := app.Orchestrator.ProcessQueryStream(ctx, "tui-user", "default", query, kernel.QueryOptions{})
-		if err != nil {
-			return streamChunkMsg{err: err, done: true}
-		}
+// ============ Streaming ============
 
-		totalTools := 0
-		totalTokens := 0
+func streamToProgram(p *tea.Program, app *infra.Application, query string) {
+	ctx := context.Background()
+	stream, err := app.Orchestrator.ProcessQueryStream(ctx, "tui-user", "default", query, kernel.QueryOptions{})
+	if err != nil {
+		p.Send(streamChunk{err: err, done: true})
+		return
+	}
 
-		for chunk := range stream {
-			if chunk.Error != nil {
-				return streamChunkMsg{err: chunk.Error, done: true}
-			}
-			if chunk.Done {
-				if chunk.Usage != nil {
-					totalTokens = chunk.Usage.TotalTokens
-				}
-				return streamChunkMsg{done: true, tokens: totalTokens, toolCnt: totalTools}
-			}
-			if len(chunk.ToolCalls) > 0 {
-				totalTools += len(chunk.ToolCalls)
-			}
-			// NOTE: Due to bubbletea's architecture, we can only send one message per command.
-			// Real streaming TUI requires p.Send() from a goroutine — see tui_advanced.go
-			if chunk.Content != "" {
-				// Accumulate
-			}
+	totalTools := 0
+	totalTokens := 0
+
+	for chunk := range stream {
+		if chunk.Error != nil {
+			p.Send(streamChunk{err: chunk.Error, done: true})
+			return
 		}
-		return streamChunkMsg{done: true}
+		if chunk.Done {
+			if chunk.Usage != nil {
+				totalTokens = chunk.Usage.TotalTokens
+			}
+			p.Send(streamChunk{done: true, tokens: totalTokens, toolCnt: totalTools})
+			return
+		}
+		if len(chunk.ToolCalls) > 0 {
+			totalTools += len(chunk.ToolCalls)
+		}
+		p.Send(streamChunk{content: chunk.Content, thinking: chunk.ReasoningContent})
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
-func waitStreamCmd() tea.Cmd {
-	return nil
+func formatThink(think string) string {
+	if think == "" {
+		return ""
+	}
+	return tThink.Render("[思考] "+think) + "\n"
+}
+
+func trunc(s string, n int) string {
+	rs := []rune(s)
+	if len(rs) <= n {
+		return s
+	}
+	return string(rs[:n]) + "..."
 }

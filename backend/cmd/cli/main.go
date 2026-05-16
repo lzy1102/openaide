@@ -53,8 +53,8 @@ func main() {
 		}
 	}
 
-	// 默认启动聊天模式
-	cmdChat(args)
+	// 默认启动 TUI
+	cmdTUI(args)
 }
 
 // cmdChat 启动交互式聊天
