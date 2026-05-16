@@ -26,7 +26,7 @@ OpenAIDE 安装在用户目录 `~/.openaide`，每个用户完全独立：
 |------|------|
 | `~/.openaide/bin/openaide-server` | API 服务器 |
 | `~/.openaide/bin/openaide-cli` | 命令行客户端 |
-| `~/.openaide/config.json` | 用户配置文件 |
+| `~/.openaide/config.yaml` | 用户配置文件 (YAML 格式，支持注释) |
 | `~/.openaide/data/` | 用户数据（会话、记忆、知识库） |
 | `~/.openaide/logs/` | 用户日志 |
 | `~/.openaide/start.sh` | 启动脚本 |
@@ -56,7 +56,7 @@ VERSION=v1.0.0 curl -fsSL https://raw.githubusercontent.com/lzy1102/openaide/mas
 
 ```bash
 # 编辑配置文件，填入 API Key
-vim ~/.openaide/config.json
+vim ~/.openaide/config.yaml
 
 # 启动服务
 ~/.openaide/start.sh
@@ -98,33 +98,29 @@ docker-compose logs -f
 ### 5.1 配置文件位置
 
 ```
-~/.openaide/config.json
+~/.openaide/config.yaml
 ```
 
 ### 5.2 最小可用配置
 
-```json
-{
-  "server": {
-    "host": "0.0.0.0",
-    "port": 8080,
-    "mode": "server"
-  },
-  "llm": {
-    "default_provider": "deepseek",
-    "providers": [
-      {
-        "name": "deepseek",
-        "type": "openai-compatible",
-        "base_url": "https://api.deepseek.com/v1",
-        "api_key": "sk-your-real-api-key",
-        "default_model": "deepseek-v4-pro",
-        "timeout": 60,
-        "enabled": true
-      }
-    ]
-  }
-}
+```yaml
+# 服务器配置
+server:
+  host: 0.0.0.0
+  port: 8080
+  mode: server
+
+# LLM 配置 (必填: 替换 api_key)
+llm:
+  default_provider: deepseek
+  providers:
+    - name: deepseek
+      type: openai-compatible
+      base_url: https://api.deepseek.com/v1
+      api_key: "sk-your-real-api-key"
+      default_model: deepseek-v4-pro
+      timeout: 60
+      enabled: true
 ```
 
 ### 5.3 支持的 LLM 提供商
@@ -164,7 +160,7 @@ openaide-cli
 
 ```bash
 # 检查配置文件格式
-~/.openaide/bin/openaide-server -config ~/.openaide/config.json
+~/.openaide/bin/openaide-server -config ~/.openaide/config.yaml
 
 # 查看日志
 cat ~/.openaide/logs/server.log

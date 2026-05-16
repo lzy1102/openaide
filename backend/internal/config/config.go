@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Config 应用配置
@@ -128,7 +131,7 @@ func DefaultConfig() *Config {
 	}
 }
 
-// Load 从文件加载配置
+// Load 从文件加载配置（支持 JSON 和 YAML）
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -136,14 +139,22 @@ func Load(path string) (*Config, error) {
 	}
 
 	config := DefaultConfig()
-	if err := json.Unmarshal(data, config); err != nil {
-		return nil, fmt.Errorf("parse config failed: %w", err)
+
+	// 根据文件扩展名选择解析器
+	if strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml") {
+		if err := yaml.Unmarshal(data, config); err != nil {
+			return nil, fmt.Errorf("parse yaml config failed: %w", err)
+		}
+	} else {
+		if err := json.Unmarshal(data, config); err != nil {
+			return nil, fmt.Errorf("parse json config failed: %w", err)
+		}
 	}
 
 	return config, nil
 }
 
-// Save 保存配置到文件
+// Save 保存配置到文件（自动根据扩展名选择 JSON 或 YAML）
 func (c *Config) Save(path string) error {
 	// 确保目录存在
 	dir := filepath.Dir(path)
@@ -151,9 +162,20 @@ func (c *Config) Save(path string) error {
 		return err
 	}
 
-	data, err := json.MarshalIndent(c, "", "  ")
-	if err != nil {
-		return err
+	var data []byte
+	var err error
+
+	// 根据文件扩展名选择序列化格式
+	if strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml") {
+		data, err = yaml.Marshal(c)
+		if err != nil {
+			return fmt.Errorf("marshal yaml config failed: %w", err)
+		}
+	} else {
+		data, err = json.MarshalIndent(c, "", "  ")
+		if err != nil {
+			return fmt.Errorf("marshal json config failed: %w", err)
+		}
 	}
 
 	return os.WriteFile(path, data, 0644)

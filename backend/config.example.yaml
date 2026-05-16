@@ -1,0 +1,98 @@
+# OpenAIDE 配置文件
+# 支持 YAML 和 JSON 格式，YAML 更简洁易读
+
+# ==================== 服务器配置 ====================
+server:
+  # 监听地址，0.0.0.0 表示监听所有网络接口
+  host: "0.0.0.0"
+  # 监听端口
+  port: 8080
+  # 运行模式: server (API服务), direct (直接模式), tui (终端UI)
+  mode: "server"
+
+# ==================== LLM 配置 ====================
+llm:
+  # 默认使用的提供商名称，对应 providers 中的 name
+  default_provider: "deepseek"
+  # 是否启用故障转移（主提供商失败时切换到备用）
+  fallback_enabled: true
+  # 提供商列表，可配置多个
+  providers:
+    # DeepSeek (推荐)
+    - name: "deepseek"
+      type: "openai-compatible"  # openai 或 openai-compatible
+      base_url: "https://api.deepseek.com/v1"
+      api_key: "sk-请替换为你的DeepSeek API Key"
+      default_model: "deepseek-v4-pro"  # deepseek-v4-pro 或 deepseek-v4-flash
+      timeout: 60
+      enabled: true
+
+    # OpenAI (备用)
+    - name: "openai"
+      type: "openai"
+      base_url: "https://api.openai.com/v1"
+      api_key: "sk-your-openai-key"
+      default_model: "gpt-4o-mini"
+      timeout: 60
+      enabled: false
+
+    # 阿里云百炼 (备用)
+    - name: "aliyun"
+      type: "openai-compatible"
+      base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+      api_key: "sk-your-aliyun-key"
+      default_model: "qwen-turbo"
+      timeout: 60
+      enabled: false
+
+    # 本地 Ollama (本地部署)
+    - name: "ollama"
+      type: "openai-compatible"
+      base_url: "http://localhost:11434/v1"
+      api_key: "ollama"  # Ollama 不需要真实 key
+      default_model: "llama3"
+      timeout: 120
+      enabled: false
+
+# ==================== 记忆配置 ====================
+memory:
+  # 记忆数据存储目录
+  data_dir: "./data/memory"
+  # 最大记忆条目数
+  max_items: 10000
+  # 触发压缩的阈值（消息数）
+  compress_threshold: 100
+
+# ==================== 工具配置 ====================
+tools:
+  # 启用的工具列表，空数组表示启用所有
+  enabled: []
+  # 危险工具列表，执行前需要确认
+  dangerous_tools:
+    - "execute_command"
+    - "write_file"
+  # 工具最大执行时间（秒）
+  max_execution_time: 30
+
+# ==================== 内核配置 ====================
+kernel:
+  # 最大 ReAct 循环轮数
+  max_rounds: 10
+  # 最大 Token 数
+  max_tokens: 4000
+  # 系统提示词
+  system_prompt: "You are a helpful AI assistant."
+
+# ==================== 存储配置 ====================
+storage:
+  # 数据根目录
+  data_dir: "./data"
+  # 代码索引目录
+  index_dir: "./data/index"
+
+# ==================== 日志配置 ====================
+log:
+  # 日志级别: debug, info, warn, error
+  level: "info"
+  # 日志格式: json, text
+  format: "json"
