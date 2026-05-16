@@ -5,26 +5,17 @@
     "mode": "server"
   },
   "llm": {
-    "default_provider": "openai",
+    "default_provider": "deepseek",
     "fallback_enabled": true,
     "providers": [
-      {
-        "name": "openai",
-        "type": "openai",
-        "base_url": "https://api.openai.com/v1",
-        "api_key": "sk-your-api-key-here",
-        "default_model": "gpt-4o-mini",
-        "timeout": 60,
-        "enabled": true
-      },
       {
         "name": "deepseek",
         "type": "openai-compatible",
         "base_url": "https://api.deepseek.com/v1",
-        "api_key": "sk-your-deepseek-key-here",
+        "api_key": "sk-请替换为你的DeepSeek API Key",
         "default_model": "deepseek-v4-pro",
         "timeout": 60,
-        "enabled": false
+        "enabled": true
       }
     ]
   },
