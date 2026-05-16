@@ -37,6 +37,8 @@ jobs:
       - name: Package
         run: |
           mkdir -p dist/data
+          cp install.sh dist/
+          cp backend/config.example.yaml dist/
           cp backend/config.example.json dist/
           tar -czvf openaide-linux-amd64.tar.gz -C dist .
 
