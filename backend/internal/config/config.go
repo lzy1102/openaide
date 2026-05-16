@@ -58,6 +58,16 @@ type ProviderConfig struct {
 	Timeout      int               `json:"timeout" yaml:"timeout"`
 	Enabled      bool              `json:"enabled" yaml:"enabled"`
 	Headers      map[string]string `json:"headers,omitempty" yaml:"headers,omitempty"`
+
+	// DeepSeek 特有配置
+	Thinking        *ThinkingConfig `json:"thinking,omitempty" yaml:"thinking,omitempty"`
+	ReasoningEffort string          `json:"reasoning_effort,omitempty" yaml:"reasoning_effort,omitempty"`
+	JSONMode        bool            `json:"json_mode,omitempty" yaml:"json_mode,omitempty"`
+}
+
+// ThinkingConfig 思考模式配置
+type ThinkingConfig struct {
+	Type string `json:"type" yaml:"type"` // enabled / disabled
 }
 
 // MemoryConfig 记忆配置

@@ -26,6 +26,11 @@ llm:
       default_model: "deepseek-v4-pro"  # deepseek-v4-pro 或 deepseek-v4-flash
       timeout: 60
       enabled: true
+      # 思考模式 (DeepSeek v4 特有)
+      thinking:
+        type: "enabled"           # enabled / disabled
+      reasoning_effort: "high"    # high / max
+      # json_mode: false          # 启用 JSON 输出模式
 
     # OpenAI (备用)
     - name: "openai"

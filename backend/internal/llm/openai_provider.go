@@ -230,6 +230,23 @@ func (p *OpenAIProvider) buildRequestBody(messages []kernel.Message, tools []ker
 		body["tools"] = p.convertTools(tools)
 	}
 
+	// DeepSeek thinking mode
+	if p.config.Thinking != nil {
+		body["thinking"] = map[string]string{
+			"type": p.config.Thinking.Type,
+		}
+	}
+	if p.config.ReasoningEffort != "" {
+		body["reasoning_effort"] = p.config.ReasoningEffort
+	}
+
+	// JSON mode
+	if p.config.JSONMode {
+		body["response_format"] = map[string]string{
+			"type": "json_object",
+		}
+	}
+
 	if options != nil {
 		for k, v := range options {
 			body[k] = v
