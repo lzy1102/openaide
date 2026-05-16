@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"flag"
 	"fmt"
@@ -9,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"golang.org/x/term"
 	"openaide/backend/internal/config"
 	"openaide/backend/internal/infra"
 	"openaide/backend/internal/kernel"
@@ -44,14 +44,24 @@ func main() {
 	fmt.Println("输入 '/clear' 清除上下文")
 	fmt.Println("---")
 
-	scanner := bufio.NewScanner(os.Stdin)
+	// 设置终端为 raw mode，支持退格、删除等
+	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
+	if err != nil {
+		// 如果无法设置 raw mode（如管道输入），回退到普通模式
+		runSimpleMode(app)
+		return
+	}
+	defer term.Restore(int(os.Stdin.Fd()), oldState)
+
+	terminal := term.NewTerminal(os.Stdin, "> ")
+
 	for {
-		fmt.Print("> ")
-		if !scanner.Scan() {
+		input, err := terminal.ReadLine()
+		if err != nil {
 			break
 		}
 
-		input := strings.TrimSpace(scanner.Text())
+		input = strings.TrimSpace(input)
 		if input == "" {
 			continue
 		}
@@ -66,6 +76,46 @@ func main() {
 		}
 
 		// 处理查询
+		ctx := context.Background()
+		resp, err := app.Orchestrator.ProcessQuery(ctx, "cli-user", "default", input, kernel.QueryOptions{})
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+			continue
+		}
+
+		fmt.Println(resp.Content)
+		if resp.ToolCalls > 0 {
+			fmt.Printf("(使用了 %d 个工具)\n", resp.ToolCalls)
+		}
+		fmt.Println()
+	}
+}
+
+// runSimpleMode 简单模式（不支持退格等高级功能）
+func runSimpleMode(app *infra.Application) {
+	fmt.Println("[警告] 终端不支持高级输入模式，退格键可能无法正常工作")
+
+	var input string
+	for {
+		fmt.Print("> ")
+		if _, err := fmt.Scanln(&input); err != nil {
+			break
+		}
+
+		input = strings.TrimSpace(input)
+		if input == "" {
+			continue
+		}
+
+		switch input {
+		case "quit", "exit":
+			fmt.Println("Goodbye!")
+			return
+		case "/clear":
+			fmt.Println("上下文已清除")
+			continue
+		}
+
 		ctx := context.Background()
 		resp, err := app.Orchestrator.ProcessQuery(ctx, "cli-user", "default", input, kernel.QueryOptions{})
 		if err != nil {
