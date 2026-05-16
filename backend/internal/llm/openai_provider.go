@@ -379,17 +379,19 @@ func (p *OpenAIProvider) buildRequestBody(messages []kernel.Message, tools []ker
 		body["tools"] = p.convertTools(tools)
 	}
 
-	// DeepSeek thinking mode
-	if p.config.Thinking != nil {
-		body["thinking"] = map[string]string{
-			"type": p.config.Thinking.Type,
+	// DeepSeek 特有参数 - 只在检测到 DeepSeek 时发送
+	if p.isDeepSeek() {
+		if p.config.Thinking != nil {
+			body["thinking"] = map[string]string{
+				"type": p.config.Thinking.Type,
+			}
+		}
+		if p.config.ReasoningEffort != "" {
+			body["reasoning_effort"] = p.config.ReasoningEffort
 		}
 	}
-	if p.config.ReasoningEffort != "" {
-		body["reasoning_effort"] = p.config.ReasoningEffort
-	}
 
-	// JSON mode
+	// JSON mode - 标准 OpenAI 参数，所有兼容提供商都支持
 	if p.config.JSONMode {
 		body["response_format"] = map[string]string{
 			"type": "json_object",
@@ -403,6 +405,15 @@ func (p *OpenAIProvider) buildRequestBody(messages []kernel.Message, tools []ker
 	}
 
 	return body
+}
+
+// isDeepSeek 检测是否为 DeepSeek 提供商
+func (p *OpenAIProvider) isDeepSeek() bool {
+	if p.config == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(p.config.BaseURL), "deepseek") ||
+		strings.Contains(strings.ToLower(p.config.Name), "deepseek")
 }
 
 func (p *OpenAIProvider) convertMessages(messages []kernel.Message) []map[string]interface{} {
