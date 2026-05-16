@@ -14,6 +14,20 @@ import (
 	"openaide/backend/internal/kernel"
 )
 
+// ANSI 颜色码
+const (
+	Reset   = "\033[0m"
+	Red     = "\033[31m"
+	Green   = "\033[32m"
+	Yellow  = "\033[33m"
+	Blue    = "\033[34m"
+	Magenta = "\033[35m"
+	Cyan    = "\033[36m"
+	White   = "\033[37m"
+	Bold    = "\033[1m"
+	Dim     = "\033[2m"
+)
+
 func main() {
 	var configPath string
 	flag.StringVar(&configPath, "config", os.Getenv("HOME")+"/.openaide/config.yaml", "Path to config file")
@@ -39,21 +53,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Println("OpenAIDE CLI - AI 编程助手")
-	fmt.Println("输入 'quit' 或 'exit' 退出")
-	fmt.Println("输入 '/clear' 清除上下文")
-	fmt.Println("---")
+	// 打印彩色欢迎信息
+	printWelcome()
 
 	// 设置终端为 raw mode，支持退格、删除等
 	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
 	if err != nil {
-		// 如果无法设置 raw mode（如管道输入），回退到普通模式
 		runSimpleMode(app)
 		return
 	}
 	defer term.Restore(int(os.Stdin.Fd()), oldState)
 
-	terminal := term.NewTerminal(os.Stdin, "> ")
+	terminal := term.NewTerminal(os.Stdin, color(Cyan, "> "))
 
 	for {
 		input, err := terminal.ReadLine()
@@ -68,10 +79,10 @@ func main() {
 
 		switch input {
 		case "quit", "exit":
-			fmt.Println("Goodbye!")
+			fmt.Println(color(Green, "Goodbye!"))
 			return
 		case "/clear":
-			fmt.Println("上下文已清除")
+			fmt.Println(color(Yellow, "上下文已清除"))
 			continue
 		}
 
@@ -79,25 +90,45 @@ func main() {
 		ctx := context.Background()
 		resp, err := app.Orchestrator.ProcessQuery(ctx, "cli-user", "default", input, kernel.QueryOptions{})
 		if err != nil {
-			fmt.Printf("Error: %v\n", err)
+			fmt.Printf("%sError: %v%s\n", Red, err, Reset)
 			continue
 		}
 
-		fmt.Println(resp.Content)
+		// 彩色输出 AI 回复
+		fmt.Printf("%sAI:%s %s\n", Bold+Green, Reset, resp.Content)
 		if resp.ToolCalls > 0 {
-			fmt.Printf("(使用了 %d 个工具)\n", resp.ToolCalls)
+			fmt.Printf("%s(使用了 %d 个工具)%s\n", Dim, resp.ToolCalls, Reset)
 		}
 		fmt.Println()
 	}
 }
 
-// runSimpleMode 简单模式（不支持退格等高级功能）
+// printWelcome 打印彩色欢迎信息
+func printWelcome() {
+	fmt.Println()
+	fmt.Printf("%s%s OpenAIDE CLI %s\n", Bold+Cyan, "▶", Reset)
+	fmt.Printf("%s  AI 编程助手%s\n", Dim, Reset)
+	fmt.Println()
+	fmt.Printf("%s命令:%s\n", Bold, Reset)
+	fmt.Printf("  %squit/exit%s  退出\n", Yellow, Reset)
+	fmt.Printf("  %s/clear%s     清除上下文\n", Yellow, Reset)
+	fmt.Println()
+	fmt.Printf("%s---%s\n", Dim, Reset)
+	fmt.Println()
+}
+
+// color 包装颜色
+func color(c, s string) string {
+	return c + s + Reset
+}
+
+// runSimpleMode 简单模式
 func runSimpleMode(app *infra.Application) {
-	fmt.Println("[警告] 终端不支持高级输入模式，退格键可能无法正常工作")
+	fmt.Printf("%s[警告] 终端不支持高级输入模式%s\n", Yellow, Reset)
 
 	var input string
 	for {
-		fmt.Print("> ")
+		fmt.Print(color(Cyan, "> "))
 		if _, err := fmt.Scanln(&input); err != nil {
 			break
 		}
@@ -109,23 +140,23 @@ func runSimpleMode(app *infra.Application) {
 
 		switch input {
 		case "quit", "exit":
-			fmt.Println("Goodbye!")
+			fmt.Println(color(Green, "Goodbye!"))
 			return
 		case "/clear":
-			fmt.Println("上下文已清除")
+			fmt.Println(color(Yellow, "上下文已清除"))
 			continue
 		}
 
 		ctx := context.Background()
 		resp, err := app.Orchestrator.ProcessQuery(ctx, "cli-user", "default", input, kernel.QueryOptions{})
 		if err != nil {
-			fmt.Printf("Error: %v\n", err)
+			fmt.Printf("%sError: %v%s\n", Red, err, Reset)
 			continue
 		}
 
-		fmt.Println(resp.Content)
+		fmt.Printf("%sAI:%s %s\n", Bold+Green, Reset, resp.Content)
 		if resp.ToolCalls > 0 {
-			fmt.Printf("(使用了 %d 个工具)\n", resp.ToolCalls)
+			fmt.Printf("%s(使用了 %d 个工具)%s\n", Dim, resp.ToolCalls, Reset)
 		}
 		fmt.Println()
 	}
