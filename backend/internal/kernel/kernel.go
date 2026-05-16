@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 )
@@ -20,9 +21,11 @@ type AgentKernel struct {
 	permission     PermissionChecker
 
 	// 增强能力（可选）
-	reflection     Reflection
-	learner        Learner
-	patternDetector PatternDetector
+	reflection       Reflection
+	learner          Learner
+	patternDetector  PatternDetector
+	knowledgeCollector KnowledgeCollector
+	qualityGate      QualityGate
 
 	// 事件系统
 	eventHandlers []EventHandler
@@ -107,6 +110,21 @@ func (k *AgentKernel) SetLearner(l Learner) {
 // SetPatternDetector 设置模式检测器
 func (k *AgentKernel) SetPatternDetector(pd PatternDetector) {
 	k.patternDetector = pd
+}
+
+// SetKnowledgeCollector 设置知识收集器
+func (k *AgentKernel) SetKnowledgeCollector(kc KnowledgeCollector) {
+	k.knowledgeCollector = kc
+}
+
+// SetQualityGate 设置质量门控
+// QualityGate 质量门控接口
+type QualityGate interface {
+	Pass(query, response string, toolSuccesses, toolFailures int, reflection *ReflectionResult) bool
+}
+
+func (k *AgentKernel) SetQualityGate(gate QualityGate) {
+	k.qualityGate = gate
 }
 
 // Process 处理用户查询（同步）
@@ -207,9 +225,18 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 			}, nil
 		}
 
-		// 执行工具调用
+		// 并行执行工具调用
 		k.setState(StateToolCalling)
-		for _, tc := range llmResp.ToolCalls {
+		type toolResult struct {
+			id      string
+			name    string
+			content string
+			err     string
+		}
+		results := make([]toolResult, len(llmResp.ToolCalls))
+		var wg sync.WaitGroup
+
+		for i, tc := range llmResp.ToolCalls {
 			k.publishEvent(Event{
 				Type:      EventToolCallStarted,
 				Source:    "kernel",
@@ -217,26 +244,39 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 				Timestamp: time.Now(),
 			})
 
-			result := k.executeTool(ctx, tc, session.ID)
-			totalToolCalls++
+			wg.Add(1)
+			go func(idx int, call ToolCall) {
+				defer wg.Done()
+				r := k.executeTool(ctx, call, session.ID)
+				content := fmt.Sprintf("%v", r.Content)
+				errStr := ""
+				if r.Error != "" {
+					errStr = r.Error
+					content = fmt.Sprintf("Error: %s", r.Error)
+				}
+				results[idx] = toolResult{
+					id:      call.ID,
+					name:    call.Function.Name,
+					content: content,
+					err:     errStr,
+				}
+				k.publishEvent(Event{
+					Type:      EventToolCallEnded,
+					Source:    "kernel",
+					Data:      map[string]interface{}{"tool": call.Function.Name, "success": r.Error == "", "session_id": session.ID},
+					Timestamp: time.Now(),
+				})
+			}(i, tc)
+		}
+		wg.Wait()
+		totalToolCalls += len(results)
 
-			// 添加 tool 结果到消息
-			toolContent := fmt.Sprintf("%v", result.Content)
-			if result.Error != "" {
-				toolContent = fmt.Sprintf("Error: %s", result.Error)
-			}
-
+		// 按原始顺序添加 tool 结果
+		for _, r := range results {
 			messages = append(messages, Message{
 				Role:       "tool",
-				Content:    toolContent,
-				ToolCallID: tc.ID,
-			})
-
-			k.publishEvent(Event{
-				Type:      EventToolCallEnded,
-				Source:    "kernel",
-				Data:      map[string]interface{}{"tool": tc.Function.Name, "success": result.Error == "", "session_id": session.ID},
-				Timestamp: time.Now(),
+				Content:    r.content,
+				ToolCallID: r.id,
 			})
 		}
 	}
@@ -255,47 +295,109 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 
 // ProcessStream 处理用户查询（流式）
 func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan StreamChunk, error) {
-	// 流式实现：先走同步流程，然后模拟流式输出
-	// 后续可优化为真正的流式 ReAct
+	start := time.Now()
+
+	// 1. 发布查询接收事件
+	k.publishEvent(Event{
+		Type:      EventQueryReceived,
+		Source:    "kernel",
+		Data:      map[string]interface{}{"session_id": query.SessionID, "content": query.Content},
+		Timestamp: time.Now(),
+	})
+
+	// 2. 获取或创建会话
+	session, err := k.getOrCreateSession(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("session error: %w", err)
+	}
+
+	// 3. 构建消息列表
+	messages := k.buildMessages(session, query)
+
+	// 4. 获取工具定义
+	tools := k.toolExecutor.GetDefinitions()
+	if len(query.Options.ToolFilter) > 0 {
+		tools = k.toolExecutor.GetDefinitionsByNames(query.Options.ToolFilter)
+	}
+
+	// 5. 调用 LLM 流式接口
+	k.setState(StateThinking)
+
+	llmStream, err := k.llmProvider.ChatStream(ctx, messages, tools, k.buildOptions(query.Options))
+	if err != nil {
+		k.setState(StateError)
+		return nil, fmt.Errorf("llm stream error: %w", err)
+	}
+
 	resultChan := make(chan StreamChunk, 100)
 
 	go func() {
 		defer close(resultChan)
 
-		// 发送开始事件
-		resultChan <- StreamChunk{Content: "", Done: false}
+		var fullContent strings.Builder
+		var reasoningContent strings.Builder
+		var totalTokens int
+		k.setState(StateResponding)
 
-		// 执行同步处理
-		resp, err := k.Process(ctx, query)
-		if err != nil {
-			resultChan <- StreamChunk{Error: err, Done: true}
-			return
-		}
-
-		// 模拟流式输出（按字符分块）
-		content := resp.Content
-		chunkSize := 10
-		for i := 0; i < len(content); i += chunkSize {
-			end := i + chunkSize
-			if end > len(content) {
-				end = len(content)
+		for chunk := range llmStream {
+			if chunk.Error != nil {
+				resultChan <- StreamChunk{Error: chunk.Error, Done: true}
+				k.setState(StateError)
+				return
 			}
+
+			if chunk.Done {
+				break
+			}
+
+			// 累积内容
+			if chunk.Content != "" {
+				fullContent.WriteString(chunk.Content)
+			}
+			if chunk.ReasoningContent != "" {
+				reasoningContent.WriteString(chunk.ReasoningContent)
+			}
+			if chunk.Usage != nil {
+				totalTokens = chunk.Usage.TotalTokens
+			}
+
+			// 转发流式块
 			select {
-			case resultChan <- StreamChunk{Content: content[i:end], Done: false}:
+			case resultChan <- chunk:
 			case <-ctx.Done():
 				return
 			}
-			time.Sleep(10 * time.Millisecond)
 		}
+
+		// 保存到记忆
+		messages = append(messages, Message{
+			Role:             "assistant",
+			Content:          fullContent.String(),
+			ReasoningContent: reasoningContent.String(),
+		})
+		k.saveToMemory(ctx, session.ID, messages)
+
+		// 更新会话
+		session.Messages = messages
+		session.UpdatedAt = time.Now()
+		k.sessionStore.Update(ctx, session)
+
+		k.setState(StateIdle)
+		k.publishEvent(Event{
+			Type:      EventResponseEnded,
+			Source:    "kernel",
+			Data:      map[string]interface{}{"session_id": session.ID, "tokens": totalTokens},
+			Timestamp: time.Now(),
+		})
 
 		// 发送结束标记
 		resultChan <- StreamChunk{
-			Content: "",
-			Done:    true,
-			Usage: &TokenUsage{TotalTokens: resp.TokensUsed},
+			Done:  true,
+			Usage: &TokenUsage{TotalTokens: totalTokens},
 		}
 	}()
 
+	_ = start // 避免未使用变量警告，实际统计在 goroutine 中处理
 	return resultChan, nil
 }
 
@@ -362,11 +464,44 @@ func (k *AgentKernel) buildMessages(session *Session, query *Query) []Message {
 		})
 	}
 
+	// 注入上轮反思结果（提升后续对话质量）
+	if session.Metadata != nil {
+		if ref, ok := session.Metadata["reflection"]; ok {
+			if r, ok := ref.(*ReflectionResult); ok && r != nil {
+				hint := fmt.Sprintf("[上轮反思] 质量评分: %d/10", r.Quality)
+				if len(r.Issues) > 0 {
+					hint += fmt.Sprintf(" | 问题: %s", strings.Join(r.Issues, "; "))
+				}
+				if len(r.Suggestions) > 0 {
+					hint += fmt.Sprintf(" | 建议: %s", strings.Join(r.Suggestions, "; "))
+				}
+				messages = append(messages, Message{
+					Role:    "system",
+					Content: hint,
+				})
+			}
+			// 清除已注入的反思，避免重复使用
+			delete(session.Metadata, "reflection")
+		}
+	}
+
 	// 加载历史记忆
 	if k.memory != nil && len(session.Messages) > 0 {
 		history, err := k.memory.Load(context.Background(), session.ID, 20)
 		if err == nil && len(history) > 0 {
 			messages = append(messages, history...)
+		}
+	}
+
+	// 注入相关知识库上下文
+	if k.knowledgeCollector != nil {
+		ctx := context.Background()
+		kbCtx, err := k.knowledgeCollector.InjectContext(ctx, query.Content, 500)
+		if err == nil && kbCtx != "" {
+			messages = append(messages, Message{
+				Role:    "system",
+				Content: kbCtx,
+			})
 		}
 	}
 
@@ -434,9 +569,70 @@ func (k *AgentKernel) doReflection(ctx context.Context, sessionID, query, respon
 		ToolCalls: make([]ToolCall, 0),
 	}
 
-	_, err := k.reflection.Reflect(ctx, sessionID, record)
+	result, err := k.reflection.Reflect(ctx, sessionID, record)
 	if err != nil {
 		slog.Warn("Reflection failed", "error", err)
+		return
+	}
+
+	// 存储反思结果到会话
+	if result != nil && k.sessionStore != nil {
+		session, err := k.sessionStore.Get(ctx, sessionID)
+		if err == nil && session != nil {
+			if session.Metadata == nil {
+				session.Metadata = make(map[string]interface{})
+			}
+			session.Metadata["reflection"] = result
+			k.sessionStore.Update(ctx, session)
+		}
+	}
+
+	// 自动知识抽取：质量门控通过后存入知识库
+	k.autoSaveKnowledge(ctx, sessionID, query, response, toolCalls)
+}
+
+// autoSaveKnowledge 自动知识抽取 — 质量门控通过后存入知识库
+func (k *AgentKernel) autoSaveKnowledge(ctx context.Context, sessionID, query, response string, toolCalls int) {
+	if k.knowledgeCollector == nil {
+		return
+	}
+
+	// 构建质量评估快照
+	toolSuccesses := toolCalls // 简化：有工具调用就计为成功尝试
+	toolFailures := 0
+
+	var reflectResult *ReflectionResult
+	if session, err := k.sessionStore.Get(ctx, sessionID); err == nil && session != nil {
+		if ref, ok := session.Metadata["reflection"]; ok {
+			if r, ok := ref.(*ReflectionResult); ok {
+				reflectResult = r
+				if r.Quality < 5 {
+					toolFailures = 1 // 低质量标记
+					toolSuccesses = 0
+				}
+			}
+		}
+	}
+
+	// 质量门控判断
+	if k.qualityGate != nil {
+		if !k.qualityGate.Pass(query, response, toolSuccesses, toolFailures, reflectResult) {
+			return
+		}
+	}
+
+	// 存入知识库
+	title := query
+	if len(title) > 80 {
+		title = title[:80] + "..."
+	}
+	tags := []string{"auto", "session:" + sessionID}
+	if reflectResult != nil && reflectResult.Quality >= 7 {
+		tags = append(tags, "high-quality")
+	}
+
+	if _, err := k.knowledgeCollector.AddKnowledge(ctx, title, response, "auto-extract", tags); err != nil {
+		slog.Debug("Auto knowledge save failed", "error", err)
 	}
 }
 

@@ -202,3 +202,23 @@ type Pattern struct {
 	Confidence  float64 `json:"confidence"`
 	Frequency   int     `json:"frequency"`
 }
+
+// KnowledgeCollector 知识收集接口 — 质量门控后的知识积累
+type KnowledgeCollector interface {
+	// AddKnowledge 添加知识条目（标题、内容、来源、标签）
+	AddKnowledge(ctx context.Context, title, content, source string, tags []string) (string, error)
+
+	// SearchKnowledge 搜索知识库
+	SearchKnowledge(ctx context.Context, query string, limit int) ([]KnowledgeItem, error)
+
+	// InjectContext 将相关知识注入为提示词片段
+	InjectContext(ctx context.Context, query string, maxTokens int) (string, error)
+}
+
+// KnowledgeItem 知识条目
+type KnowledgeItem struct {
+	ID      string   `json:"id"`
+	Title   string   `json:"title"`
+	Content string   `json:"content"`
+	Tags    []string `json:"tags"`
+}

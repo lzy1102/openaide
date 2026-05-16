@@ -1,5 +1,7 @@
 # AI助手开发计划
 
+> ⚠️ 本文档为项目初期规划，描述的是目标蓝图。当前实际实现状态见 [INSTALL.md](INSTALL.md) 和 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
+
 ## 1. 核心架构
 
 ### 1.1 系统架构

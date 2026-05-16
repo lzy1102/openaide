@@ -7,582 +7,350 @@
 <a name="english"></a>
 ## English
 
-### Quick Start
+### Prerequisites
 
-#### 1. Prerequisites
-
-- **Go 1.22+** (no CGO required, pure Go SQLite)
+- **Go 1.25+** (no CGO required, pure Go)
 - **Docker** (optional, for containerized deployment)
 
-#### 2. Install Backend
+### Build
 
 ```bash
-cd openaide/backend
-go mod tidy
+cd backend
 
-# Copy and edit configuration
-cp config.example.json config.json
-# Edit config.json and add your API keys
+# Install dependencies
+make deps
 
-# Run backend server (no CGO required)
-go run ./src/main.go
-# Server runs on http://localhost:19375
+# Build server and CLI
+make build
+# Output: bin/openaide-server, bin/openaide-cli
+
+# Or build directly
+CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide-server ./cmd/server
+CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide-cli ./cmd/cli
 ```
 
-#### 3. Build
+### Run
 
 ```bash
-go build -o openaide-server ./src
-./openaide-server
+# Start the API server
+cd backend && make run
+# Server runs on http://localhost:8080
+
+# Or use the compiled binary
+./bin/openaide-server -config ~/.openaide/config.yaml
+
+# Interactive CLI (forces direct mode, no API server)
+./bin/openaide-cli
 ```
 
 ### Configuration
 
-#### Config File Lookup Priority
+Config file: `~/.openaide/config.yaml` (or `.json`). Supports both YAML and JSON via file extension detection.
 
-`OPENAIDE_CONFIG` env → `/app/config.json` (Docker) → `OPENAIDE_HOME/config.json` → `./config.json` → executable directory → `~/.openaide/config.json`
-
-#### Backend Configuration (`config.json`)
-
-```json
-{
-  "home_dir": "/opt/openaide",
-  "server": {
-    "port": 19375,
-    "local_mode": false
-  },
-  "storage": {
-    "cache": {
-      "type": "ledis",
-      "default_expiration": 3600,
-      "cleanup_interval": 600,
-      "data_dir": "/opt/openaide/data/ledis"
-    },
-    "db": {
-      "type": "sqlite",
-      "uri": "/opt/openaide/data/db/openaide.db"
-    },
-    "vector_store": {
-      "type": "hnsw",
-      "data_dir": "/opt/openaide/data/vectors"
-    }
-  },
-  "models": [
-    {
-      "name": "deepseek-chat",
-      "provider": "deepseek",
-      "api_key": "your-deepseek-api-key",
-      "base_url": "https://api.deepseek.com",
-      "config": { "model": "deepseek-chat", "timeout": 60 },
-      "status": "enabled"
-    },
-    {
-      "name": "gpt-4",
-      "provider": "openai",
-      "api_key": "sk-your-openai-api-key",
-      "base_url": "https://api.openai.com/v1",
-      "config": { "model": "gpt-4", "timeout": 60 },
-      "status": "enabled"
-    }
-  ],
-  "context": {
-    "compression_enabled": true,
-    "compression_mode": "balanced",
-    "max_tokens": 8000,
-    "keep_last_n": 4
-  },
-  "activity_timeout": "30m"
-}
-```
-
-> See `config.example.json` for the full template with all options.
-
-#### Storage Configuration
-
-| Component | Type | Description |
-|-----------|------|-------------|
-| **Cache** | `memory` | In-memory cache (default, no persistence) |
-| | `ledis` | LedisDB embedded KV store (recommended, Redis-compatible) |
-| | `redis` | External Redis server |
-| **DB** | `sqlite` | SQLite database (default, pure Go, no CGO) |
-| | `postgres` | PostgreSQL database |
-| | `mysql` | MySQL database |
-| **VectorStore** | `hnsw` | HNSW vector index with JSON persistence (default) |
-| | `memory` | In-memory brute-force search (testing only) |
-
-#### Supported LLM Providers
-
-| Provider | API Key Required | Base URL | Tool Calling |
-|----------|------------------|----------|-------------|
-| `openai` | ✅ | https://api.openai.com/v1 | ✅ |
-| `anthropic` | ✅ | https://api.anthropic.com | ✅ |
-| `gemini` | ✅ | https://generativelanguage.googleapis.com | ✅ |
-| `deepseek` | ✅ | https://api.deepseek.com | ✅ |
-| `qwen` | ✅ | https://dashscope.aliyuncs.com/compatible-mode/v1 | ✅ |
-| `moonshot` | ✅ | https://api.moonshot.cn/v1 | ✅ |
-| `glm` (智谱) | ✅ | https://open.bigmodel.cn/api/paas/v4 | ✅ |
-| `ernie` | ✅ + secret_key | - | ❌ |
-| `ollama` (本地) | ❌ | http://localhost:11434/v1 | ✅ |
-
-### Authentication
-
-All API routes (except `/health` and `/api/auth/*`) require JWT authentication.
-
-```bash
-# Register a new user
-curl -X POST http://localhost:19375/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"username":"admin","email":"admin@example.com","password":"your-password"}'
-
-# Login to get access token
-curl -X POST http://localhost:19375/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"your-password"}'
-# Response: {"code":0,"message":"success","data":{"access_token":"eyJ...","refresh_token":"...","expires_in":86400}}
-
-# Access protected routes with Bearer token
-curl http://localhost:19375/api/dialogues \
-  -H "Authorization: Bearer eyJ..."
-```
-
-**Production**: Set `OPENAIDE_JWT_SECRET` environment variable. If not set, a random secret is generated on each restart (existing sessions will be invalidated).
-
-**Local Mode (No Auth)**: Set `server.local_mode: true` in config.json or `OPENAIDE_LOCAL_MODE=true` env var to skip authentication. All requests auto-login as admin. **Only for development/trusted internal networks!**
-
-### API Response Format
-
-All API responses use a unified format:
-
-```json
-// Success
-{"code": 0, "message": "success", "data": {...}}
-
-// Error
-{"code": 400, "message": "error description"}
-
-// Paginated list (supports ?page=1&page_size=20)
-{"code": 0, "message": "success", "data": {"items": [...], "total": 100, "page": 1, "page_size": 20, "total_pages": 5}}
-```
-
-Every response includes `X-Request-ID` header for request tracing.
-
-### Server Deployment
-
-#### Docker Compose (Recommended)
-
-```bash
-cd backend
-
-# Copy environment template
-cp .env.example .env
-# Edit .env and set JWT_SECRET
-
-# Copy and edit config
-cp config.example.json config.json
-# Edit config.json and add your API keys
-
-# Start service
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-
-# Stop service
-docker-compose down
-```
-
-#### Manual Deployment (Linux)
-
-```bash
-# 1. Build
-cd backend
-CGO_ENABLED=0 go build -o openaide-server ./src
-
-# 2. Create directories
-sudo mkdir -p /opt/openaide/data/{db,vectors,ledis,sessions}
-sudo mkdir -p /opt/openaide/logs
-sudo mkdir -p /var/log/openaide
-
-# 3. Deploy binary and config
-sudo cp openaide-server /opt/openaide/
-sudo cp config.json /opt/openaide/
-
-# 4. Create systemd service
-sudo cat > /lib/systemd/system/openaide.service << 'EOF'
-[Unit]
-Description=OpenAIDE AI Assistant Server
-After=network.target
-
-[Service]
-Type=simple
-WorkingDirectory=/opt/openaide
-Environment=PORT=19375
-Environment=OPENAIDE_HOME=/opt/openaide
-Environment=OPENAIDE_JWT_SECRET=your-secret-here
-ExecStart=/opt/openaide/openaide-server
-Restart=always
-RestartSec=5
-StandardOutput=append:/var/log/openaide/server.log
-StandardError=append:/var/log/openaide/server.log
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-# 5. Start service
-sudo systemctl daemon-reload
-sudo systemctl enable openaide
-sudo systemctl start openaide
-
-# 6. Check status and logs
-sudo systemctl status openaide
-curl http://localhost:19375/health
-
-# View logs
-tail -f /var/log/openaide/server.log
-```
-
-#### Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT` | `19375` | Server listen port (overridden by `server.port` in config) |
-| `OPENAIDE_HOME` | `~/.openaide` | Data directory root |
-| `OPENAIDE_CONFIG` | auto-detect | Config file path |
-| `OPENAIDE_JWT_SECRET` | auto-generated | JWT signing secret |
-| `OPENAIDE_LOCAL_MODE` | `false` | Skip authentication, auto-login as admin |
-| `OPENAIDE_FRONTEND_DIR` | auto-detect | Frontend static files |
-| `TZ` | system | Timezone |
-
-### CLI (Optional)
-
-```bash
-cd terminal
-go build -o openaide main.go
-
-# Use
-openaide              # Start chat
-openaide -m deepseek  # Specify model
-openaide models       # List models
-openaide --help       # Show help
-```
-
-Configure `~/.openaide/config.yaml`:
+**Minimal config:**
 
 ```yaml
-api:
-  base_url: http://localhost:19375/api
-  token: ""          # JWT token (leave empty if server.local_mode=true)
-  timeout_sec: 180
+server:
+  host: "0.0.0.0"
+  port: 8080
+  mode: "server"
+
+llm:
+  default_provider: "openai"
+  providers:
+    - name: "openai"
+      type: "openai"
+      base_url: "https://api.openai.com/v1"
+      api_key: "sk-your-api-key"
+      default_model: "gpt-4o-mini"
+      timeout: 60
+      enabled: true
+
+kernel:
+  max_rounds: 10
+  max_tokens: 4000
+
+log:
+  level: "info"
+  format: "json"
 ```
 
-> If the server has `local_mode: true`, no token is needed. Otherwise, login first and paste the access token.
+**Provider types:** `openai` or `openai-compatible` — all providers go through the OpenAI-compatible protocol. Supports OpenAI, DeepSeek, Qwen (阿里云百炼), Ollama, and any OpenAI-compatible API.
+
+**DeepSeek-specific options** (per provider):
+```yaml
+providers:
+  - name: "deepseek"
+    type: "openai-compatible"
+    base_url: "https://api.deepseek.com/v1"
+    api_key: "sk-your-key"
+    default_model: "deepseek-chat"
+    thinking:
+      type: "enabled"        # DeepSeek thinking mode (enabled/disabled)
+    reasoning_effort: "medium" # low/medium/high
+    json_mode: false
+    enabled: true
+```
+
+**Server modes:**
+- `server` — starts the HTTP API server
+- `direct` — no API server (used by CLI)
+
+### API Endpoints
+
+| Route | Method | Description |
+|-------|--------|-------------|
+| `/api/v1/chat` | POST | Chat (sync) |
+| `/api/v1/chat/stream` | POST | Chat (SSE streaming) |
+| `/api/v1/sessions` | GET/POST | List / Create sessions |
+| `/api/v1/sessions/{id}` | GET/DELETE | Get history / Delete session |
+| `/api/v1/memory/search?q=` | GET | Search memory |
+| `/api/v1/tools` | GET | List tools |
+| `/api/v1/stats` | GET | System stats |
+| `/health` | GET | Health check |
+
+No authentication required (auth is planned but not yet implemented).
+
+### Test
+
+```bash
+cd backend
+
+# Run all tests
+make test
+# or: go test -v ./internal/...
+
+# Run with coverage
+make test-coverage
+
+# Run a single package
+go test -v ./internal/kernel/...
+```
+
+### Lint & Format
+
+```bash
+cd backend
+make fmt
+make lint       # requires golangci-lint
+```
+
+### Docker
+
+```bash
+cd backend
+
+# Build image
+make docker-build
+
+# Start
+make docker-run
+
+# Stop
+make docker-stop
+
+# Or use docker-compose directly
+docker-compose up -d
+```
+
+### GitHub Actions CI/CD
+
+Push to `master` triggers: build → test → package.  
+Push a `v*` tag triggers: build → test → GitHub Release with binaries.
 
 ---
 
 <a name="中文"></a>
 ## 中文
 
-### 快速开始
+### 环境要求
 
-#### 1. 环境要求
-
-- **Go 1.22+**（无需 CGO，纯 Go SQLite）
+- **Go 1.25+**（无需 CGO，纯 Go）
 - **Docker**（可选，用于容器化部署）
 
-#### 2. 安装后端
+### 编译
 
 ```bash
-cd openaide/backend
-go mod tidy
+cd backend
 
-# 复制并编辑配置文件
-cp config.example.json config.json
-# 编辑 config.json，添加你的 API Keys
+# 安装依赖
+make deps
 
-# 运行后端服务（无需 CGO）
-CGO_ENABLED=0 go run ./src/main.go
-# 服务运行在 http://localhost:19375
+# 编译服务端和 CLI
+make build
+# 输出: bin/openaide-server, bin/openaide-cli
+
+# 或直接编译
+CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide-server ./cmd/server
+CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide-cli ./cmd/cli
 ```
 
-#### 3. 编译
+### 运行
 
 ```bash
-CGO_ENABLED=0 go build -o openaide-server ./src
-./openaide-server
+# 启动 API 服务
+cd backend && make run
+# 服务运行在 http://localhost:8080
+
+# 或使用编译好的二进制
+./bin/openaide-server -config ~/.openaide/config.yaml
+
+# 交互式 CLI（强制 direct 模式，不启动 API 服务）
+./bin/openaide-cli
 ```
 
 ### 配置
 
-#### 配置文件查找优先级
+配置文件：`~/.openaide/config.yaml`（或 `.json`），通过文件扩展名自动识别格式。
 
-`OPENAIDE_CONFIG` 环境变量 → `/app/config.json` (Docker) → `OPENAIDE_HOME/config.json` → `./config.json` → 可执行文件目录 → `~/.openaide/config.json`
-
-#### 后端配置 (`config.json`)
-
-```json
-{
-  "home_dir": "/opt/openaide",
-  "server": {
-    "port": 19375,
-    "local_mode": false
-  },
-  "storage": {
-    "cache": {
-      "type": "ledis",
-      "default_expiration": 3600,
-      "cleanup_interval": 600,
-      "data_dir": "/opt/openaide/data/ledis"
-    },
-    "db": {
-      "type": "sqlite",
-      "uri": "/opt/openaide/data/db/openaide.db"
-    },
-    "vector_store": {
-      "type": "hnsw",
-      "data_dir": "/opt/openaide/data/vectors"
-    }
-  },
-  "models": [
-    {
-      "name": "deepseek-chat",
-      "provider": "deepseek",
-      "api_key": "你的-deepseek-api-key",
-      "base_url": "https://api.deepseek.com",
-      "config": { "model": "deepseek-chat", "timeout": 60 },
-      "status": "enabled"
-    },
-    {
-      "name": "glm-5",
-      "provider": "glm",
-      "api_key": "你的-智谱-api-key",
-      "base_url": "https://open.bigmodel.cn/api/paas/v4",
-      "config": { "model": "glm-5", "timeout": 60 },
-      "status": "enabled"
-    }
-  ],
-  "context": {
-    "compression_enabled": true,
-    "compression_mode": "balanced",
-    "max_tokens": 8000,
-    "keep_last_n": 4
-  },
-  "activity_timeout": "30m"
-}
-```
-
-> 完整配置模板见 `config.example.json`。
-
-#### 存储配置
-
-| 组件 | 类型 | 说明 |
-|------|------|------|
-| **缓存** | `memory` | 内存缓存（默认，无持久化） |
-| | `ledis` | LedisDB 嵌入式 KV 存储（推荐，兼容 Redis） |
-| | `redis` | 外部 Redis 服务器 |
-| **数据库** | `sqlite` | SQLite 数据库（默认，纯 Go，无需 CGO） |
-| | `postgres` | PostgreSQL 数据库 |
-| | `mysql` | MySQL 数据库 |
-| **向量存储** | `hnsw` | HNSW 向量索引 + JSON 持久化（默认） |
-| | `memory` | 内存暴力搜索（仅测试用） |
-
-#### 支持的 LLM 提供商
-
-| 提供商 | 需要 API Key | Base URL | Tool Calling |
-|--------|--------------|----------|-------------|
-| `openai` | ✅ | https://api.openai.com/v1 | ✅ |
-| `anthropic` | ✅ | https://api.anthropic.com | ✅ |
-| `gemini` | ✅ | https://generativelanguage.googleapis.com | ✅ |
-| `deepseek` | ✅ | https://api.deepseek.com | ✅ |
-| `qwen` (通义千问) | ✅ | https://dashscope.aliyuncs.com/compatible-mode/v1 | ✅ |
-| `moonshot` (Kimi) | ✅ | https://api.moonshot.cn/v1 | ✅ |
-| `glm` (智谱) | ✅ | https://open.bigmodel.cn/api/paas/v4 | ✅ |
-| `ernie` (文心一言) | ✅ + secret_key | - | ❌ |
-| `ollama` (本地) | ❌ | http://localhost:11434/v1 | ✅ |
-
-### 认证
-
-所有 API 路由（除 `/health` 和 `/api/auth/*`）均需要 JWT 认证。
-
-```bash
-# 注册新用户
-curl -X POST http://localhost:19375/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"username":"admin","email":"admin@example.com","password":"your-password"}'
-
-# 登录获取访问令牌
-curl -X POST http://localhost:19375/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"your-password"}'
-# 响应: {"code":0,"message":"success","data":{"access_token":"eyJ...","refresh_token":"...","expires_in":86400}}
-
-# 使用 Bearer 令牌访问受保护路由
-curl http://localhost:19375/api/dialogues \
-  -H "Authorization: Bearer eyJ..."
-```
-
-**生产环境**：务必设置 `OPENAIDE_JWT_SECRET` 环境变量。未设置时每次重启自动生成新密钥，已登录用户的会话将失效。
-
-**本地模式（免认证）**：在 config.json 中设置 `server.local_mode: true` 或设置 `OPENAIDE_LOCAL_MODE=true` 环境变量，可跳过认证，所有请求自动以 admin 身份访问。**仅限开发或内网环境使用！**
-
-### API 响应格式
-
-所有 API 响应使用统一格式：
-
-```json
-// 成功
-{"code": 0, "message": "success", "data": {...}}
-
-// 错误
-{"code": 400, "message": "错误描述"}
-
-// 分页列表（支持 ?page=1&page_size=20 参数）
-{"code": 0, "message": "success", "data": {"items": [...], "total": 100, "page": 1, "page_size": 20, "total_pages": 5}}
-```
-
-每个响应都包含 `X-Request-ID` 请求追踪头。
-
-### 服务器部署
-
-#### Docker Compose 部署（推荐）
-
-```bash
-cd backend
-
-# 复制环境变量模板
-cp .env.example .env
-# 编辑 .env，设置 JWT_SECRET
-
-# 复制并编辑配置
-cp config.example.json config.json
-# 编辑 config.json，添加 API Keys
-
-# 启动服务
-docker-compose up -d
-
-# 查看日志
-docker-compose logs -f
-
-# 停止服务
-docker-compose down
-```
-
-#### 手动部署（Linux）
-
-```bash
-# 1. 编译
-cd backend
-CGO_ENABLED=0 go build -o openaide-server ./src
-
-# 2. 创建目录
-sudo mkdir -p /opt/openaide/data/{db,vectors,ledis,sessions}
-sudo mkdir -p /opt/openaide/logs
-sudo mkdir -p /var/log/openaide
-
-# 3. 部署二进制和配置
-sudo cp openaide-server /opt/openaide/
-sudo cp config.json /opt/openaide/
-
-# 4. 创建 systemd 服务
-sudo cat > /lib/systemd/system/openaide.service << 'EOF'
-[Unit]
-Description=OpenAIDE AI Assistant Server
-After=network.target
-
-[Service]
-Type=simple
-WorkingDirectory=/opt/openaide
-Environment=PORT=19375
-Environment=OPENAIDE_HOME=/opt/openaide
-Environment=OPENAIDE_JWT_SECRET=你的密钥
-ExecStart=/opt/openaide/openaide-server
-Restart=always
-RestartSec=5
-StandardOutput=append:/var/log/openaide/server.log
-StandardError=append:/var/log/openaide/server.log
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-# 5. 启动服务
-sudo systemctl daemon-reload
-sudo systemctl enable openaide
-sudo systemctl start openaide
-
-# 6. 检查状态和日志
-sudo systemctl status openaide
-curl http://localhost:19375/health
-
-# 查看日志
-tail -f /var/log/openaide/server.log
-```
-
-#### 环境变量
-
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `PORT` | `19375` | 服务监听端口（config 中 `server.port` 优先） |
-| `OPENAIDE_HOME` | `~/.openaide` | 数据目录根路径 |
-| `OPENAIDE_CONFIG` | 自动检测 | 配置文件路径 |
-| `OPENAIDE_JWT_SECRET` | 自动生成 | JWT 签名密钥 |
-| `OPENAIDE_LOCAL_MODE` | `false` | 免认证模式，自动以 admin 登录 |
-| `OPENAIDE_FRONTEND_DIR` | 自动检测 | 前端静态文件目录 |
-| `TZ` | 系统时区 | 时区设置 |
-
-### CLI (可选)
-
-```bash
-cd terminal
-go build -o openaide main.go
-
-# 使用
-openaide              # 开始聊天
-openaide -m deepseek  # 指定模型
-openaide models       # 列出模型
-openaide --help       # 显示帮助
-```
-
-配置 `~/.openaide/config.yaml`：
+**最小配置：**
 
 ```yaml
-api:
-  base_url: http://localhost:19375/api
-  token: ""          # JWT Token（服务器开启 local_mode 时留空）
-  timeout_sec: 180
+server:
+  host: "0.0.0.0"
+  port: 8080
+  mode: "server"
+
+llm:
+  default_provider: "openai"
+  providers:
+    - name: "openai"
+      type: "openai"
+      base_url: "https://api.openai.com/v1"
+      api_key: "sk-your-api-key"
+      default_model: "gpt-4o-mini"
+      timeout: 60
+      enabled: true
+
+kernel:
+  max_rounds: 10
+  max_tokens: 4000
+
+log:
+  level: "info"
+  format: "json"
 ```
 
-> 服务器开启 `local_mode` 时无需 Token，否则先登录获取 access_token 填入。
+**支持的提供商类型：** `openai` 或 `openai-compatible`。所有提供商统一通过 OpenAI 兼容协议接入。支持 OpenAI、DeepSeek、通义千问、Ollama 及任何 OpenAI 兼容 API。
+
+**DeepSeek 特有参数**（按 provider 配置）：
+```yaml
+providers:
+  - name: "deepseek"
+    type: "openai-compatible"
+    base_url: "https://api.deepseek.com/v1"
+    api_key: "sk-your-key"
+    default_model: "deepseek-chat"
+    thinking:
+      type: "enabled"        # thinking mode
+    reasoning_effort: "medium"
+    json_mode: false
+    enabled: true
+```
+
+**Server 运行模式：**
+- `server` — 启动 HTTP API 服务
+- `direct` — 不启动 API（CLI 使用）
+
+### API 端点
+
+| 路由 | 方法 | 说明 |
+|------|------|------|
+| `/api/v1/chat` | POST | 同步聊天 |
+| `/api/v1/chat/stream` | POST | 流式聊天 (SSE) |
+| `/api/v1/sessions` | GET/POST | 列出/创建会话 |
+| `/api/v1/sessions/{id}` | GET/DELETE | 获取历史/删除会话 |
+| `/api/v1/memory/search?q=` | GET | 搜索记忆 |
+| `/api/v1/tools` | GET | 工具列表 |
+| `/api/v1/stats` | GET | 系统统计 |
+| `/health` | GET | 健康检查 |
+
+目前无认证机制（认证计划中但尚未实现）。
+
+### 测试
+
+```bash
+cd backend
+make test                      # 运行全部测试
+make test-coverage             # 测试+覆盖率报告
+go test -v ./internal/kernel/...  # 单个包
+```
+
+### 代码检查
+
+```bash
+cd backend
+make fmt     # 格式化
+make lint    # Lint（需安装 golangci-lint）
+```
+
+### Docker
+
+```bash
+cd backend
+make docker-build    # 构建镜像
+make docker-run      # 启动容器
+make docker-stop     # 停止容器
+# 或直接用 docker-compose up -d
+```
+
+### GitHub Actions CI/CD
+
+推送到 `master`：构建 → 测试 → 打包。  
+推送 `v*` 标签：构建 → 测试 → 创建 GitHub Release。
 
 ---
 
-## Architecture | 架构
+## 项目结构 | Project Structure
 
 ```
-┌──────────────┐     ┌──────────────────────────────────────────┐     ┌─────────────────┐
-│  CLI Client  │────▶│           Backend API (Port 19375)       │────▶│  LLM Providers  │
-│  (openaide)  │     │                                          │     │  (OpenAI, etc)  │
-└──────────────┘     │  ┌─────────┐ ┌────────┐ ┌────────────┐ │     └─────────────────┘
-                     │  │  Auth   │ │ Router │ │ Middleware  │ │
-┌──────────────┐     │  │ (JWT)   │ │ (Gin)  │ │ CORS/ReqID │ │     ┌─────────────────┐
-│  Web Client  │────▶│  └─────────┘ └────────┘ └────────────┘ │     │  Vector Store   │
-│  (Frontend)  │     │                                          │────▶│  (HNSW/Memory)  │
-└──────────────┘     │  ┌─────────────────────────────────┐    │     └─────────────────┘
-                     │  │         Service Layer            │    │
-┌──────────────┐     │  │ Dialogue / Memory / Skill / ... │    │     ┌─────────────────┐
-│  Feishu Bot  │────▶│  └─────────────────────────────────┘    │────▶│     Cache       │
-│  (WebSocket) │     │                                          │     │ (Ledis/Redis)   │
-└──────────────┘     │  ┌─────────────────────────────────┐    │     └─────────────────┘
-                     │  │       Pluggable Storage          │    │
-                     │  │  DB / Cache / VectorStore        │────│────▶  SQLite / PG / MySQL
-                     │  └─────────────────────────────────┘    │
-                     └──────────────────────────────────────────┘
+backend/
+├── cmd/
+│   ├── server/main.go     # API 服务器入口
+│   └── cli/main.go        # 交互式 CLI 入口
+├── internal/
+│   ├── api/api.go         # HTTP REST API (net/http)
+│   ├── kernel/            # Agent 内核 (ReAct 循环)
+│   │   ├── kernel.go      # AgentKernel 实现
+│   │   ├── interfaces.go  # 全部接口定义
+│   │   ├── types.go       # 共享类型
+│   │   ├── reflection.go  # 反思
+│   │   ├── learner.go     # 学习
+│   │   ├── pattern.go     # 模式检测
+│   │   ├── compress.go    # 上下文压缩
+│   │   └── session_store.go
+│   ├── llm/               # LLM 网关
+│   │   ├── gateway.go     # 多提供商路由
+│   │   └── openai_provider.go  # OpenAI 兼容实现
+│   ├── tools/registry.go  # 工具注册表
+│   ├── memory/memory.go   # 文件记忆系统 (3级)
+│   ├── orchestration/     # 编排器
+│   ├── config/config.go   # 配置管理 (JSON/YAML)
+│   ├── infra/app.go       # DI 容器
+│   ├── event/event.go     # 事件总线 (未集成)
+│   ├── git/git.go         # Git 操作 (未集成)
+│   ├── index/             # 代码索引 (未集成)
+│   ├── identity/          # 身份检测 (未集成)
+│   ├── knowledge/         # 知识库 (未集成)
+│   └── compress/          # 高级压缩器 (未集成)
+├── Makefile
+├── Dockerfile
+└── docker-compose.yml
 ```
 
-**Key Points:**
-- **API Keys** are stored in `config.json` (server-side only)
-- **Pluggable Storage**: DB (SQLite/PostgreSQL/MySQL), Cache (Memory/LedisDB/Redis), VectorStore (HNSW/Memory)
-- **JWT Authentication**: All routes protected by default, configurable via `server.local_mode` in config or `OPENAIDE_LOCAL_MODE` env var
-- **Structured Logging**: slog-based logging with component tags, LLM request/response tracing
-- **Graceful Shutdown**: SIGINT/SIGTERM with 30s timeout
-- **Request Tracing**: X-Request-ID auto-generated and propagated
+## 与旧版文档的差异 | Differences from Legacy Docs
+
+旧版文档（`docs/ARCHITECTURE.md`、`docs/MODULES.md`）描述的是一个设计阶段的架构，部分功能尚未实现：
+
+| 文档描述 | 当前状态 |
+|----------|----------|
+| Gin 框架 / GORM | 使用 `net/http` 标准库，无 ORM |
+| 端口 19375 | 端口 8080 |
+| JWT 认证 | 未实现 |
+| 多数据库 (SQLite/PG/MySQL) | 文件 JSON + 内存存储 |
+| Redis 缓存 | 未实现 |
+| HNSW 向量存储 | 记忆搜索为简单文本匹配 |
+| WebSocket | 未实现 |
+| Skill 系统 / 插件系统 | 未实现 |
+| 多模态 | 未实现 |
+| 单独 Anthropic provider | 统一走 OpenAI 兼容协议 |

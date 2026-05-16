@@ -8,7 +8,9 @@ import (
 
 	"openaide/backend/internal/api"
 	"openaide/backend/internal/config"
+	"openaide/backend/internal/feedback"
 	"openaide/backend/internal/kernel"
+	"openaide/backend/internal/knowledge"
 	"openaide/backend/internal/llm"
 	"openaide/backend/internal/memory"
 	"openaide/backend/internal/orchestration"
@@ -103,8 +105,28 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 	agentKernel := kernel.NewAgentKernel(gateway, toolRegistry, memManager, sessionStore, kernelConfig)
 	app.Kernel = agentKernel
 
+	// 接入增强能力 — Reflection、Learner、PatternDetector
+	agentKernel.SetReflection(kernel.NewSimpleReflection())
+	if learner, err := kernel.NewSimpleLearner(cfg.Memory.DataDir); err == nil {
+		agentKernel.SetLearner(learner)
+	}
+	agentKernel.SetPatternDetector(kernel.NewSimplePatternDetector())
+
+	// 接入知识库 + 质量门控
+	kb, err := knowledge.NewBase(cfg.Storage.DataDir + "/knowledge")
+	if err == nil {
+		agentKernel.SetKnowledgeCollector(kb)
+		gate := feedback.NewGate()
+		agentKernel.SetQualityGate(gate)
+	} else {
+		slog.Warn("Failed to create knowledge base", "error", err)
+	}
+
 	// 6. 创建编排器
 	orch := orchestration.NewOrchestrator(agentKernel, gateway, toolRegistry, memManager, sessionStore)
+	if kb != nil {
+		orch.SetKnowledgeCollector(kb)
+	}
 	app.Orchestrator = orch
 
 	// 7. 创建 API 服务器

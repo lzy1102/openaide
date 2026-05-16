@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"openaide/backend/internal/kernel"
 )
 
 // Document 知识文档
@@ -241,4 +243,38 @@ func (kb *Base) load() error {
 	}
 
 	return nil
+}
+
+// ============ kernel.KnowledgeCollector 接口实现 ============
+
+// AddKnowledge 添加知识条目
+func (kb *Base) AddKnowledge(ctx context.Context, title, content, source string, tags []string) (string, error) {
+	doc, err := kb.Add(ctx, title, content, source, tags)
+	if err != nil {
+		return "", err
+	}
+	return doc.ID, nil
+}
+
+// SearchKnowledge 搜索知识库
+func (kb *Base) SearchKnowledge(ctx context.Context, query string, limit int) ([]kernel.KnowledgeItem, error) {
+	docs, err := kb.Search(ctx, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]kernel.KnowledgeItem, len(docs))
+	for i, doc := range docs {
+		items[i] = kernel.KnowledgeItem{
+			ID:      doc.ID,
+			Title:   doc.Title,
+			Content: doc.Content,
+			Tags:    doc.Tags,
+		}
+	}
+	return items, nil
+}
+
+// InjectContext 将相关知识注入提示词
+func (kb *Base) InjectContext(ctx context.Context, query string, maxTokens int) (string, error) {
+	return kb.InjectToPrompt(ctx, query, maxTokens)
 }

@@ -321,7 +321,13 @@ fi
 EOF
 
     chmod +x "$stop_script"
-    log_ok "启动/停止脚本已创建"
+
+    # 复制更新脚本
+    if [ -f "$INSTALL_DIR/scripts/update.sh" ]; then
+        chmod +x "$INSTALL_DIR/scripts/update.sh"
+    fi
+
+    log_ok "启动/停止/更新脚本已创建"
 }
 
 # 显示状态

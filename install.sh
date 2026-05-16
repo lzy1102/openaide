@@ -1,10 +1,10 @@
 #!/bin/bash
 #
 # OpenAIDE 安装脚本
-# 用户级安装，每个用户独立部署到 ~/.openaide
+# 支持从 GitHub Release 下载安装或本地编译安装
 #
 # 用法:
-#   1. 从 GitHub 最新 Release 安装:
+#   1. 从 GitHub 最新 Release 安装 (推荐):
 #      curl -fsSL https://raw.githubusercontent.com/lzy1102/openaide/master/install.sh | bash
 #
 #   2. 从指定版本安装:
@@ -12,6 +12,9 @@
 #
 #   3. 本地编译安装 (代码已在 ~/.openaide):
 #      bash ~/.openaide/install.sh --local
+#
+#   4. 使用本地 tar.gz 包安装:
+#      bash install.sh --archive /path/to/openaide-linux-amd64.tar.gz
 #
 
 set -e
@@ -95,12 +98,12 @@ download_release() {
     log_info "URL: $download_url"
 
     if command -v curl &> /dev/null; then
-        curl -fsSL -o "$temp_file" "$download_url" || {
+        curl -fsSL --progress-bar -o "$temp_file" "$download_url" || {
             log_error "下载失败，请检查版本号和网络"
             exit 1
         }
     else
-        wget -qO "$temp_file" "$download_url" || {
+        wget --progress=bar:force -qO "$temp_file" "$download_url" || {
             log_error "下载失败，请检查版本号和网络"
             exit 1
         }
@@ -110,28 +113,36 @@ download_release() {
     echo "$temp_file"
 }
 
-# 安装二进制文件
-install_binaries() {
+# 从本地存档安装
+install_from_archive() {
     local archive="$1"
 
-    log_info "安装到 $INSTALL_DIR..."
+    log_info "从本地包安装: $archive"
+
+    if [ ! -f "$archive" ]; then
+        log_error "文件不存在: $archive"
+        exit 1
+    fi
 
     # 创建目录
     mkdir -p "$BIN_DIR" "$DATA_DIR" "$LOG_DIR"
 
     # 解压
-    tar -xzf "$archive" -C "$INSTALL_DIR" --strip-components=0 2>/dev/null || {
-        local temp_extract="/tmp/openaide-extract-$$"
-        mkdir -p "$temp_extract"
-        tar -xzf "$archive" -C "$temp_extract"
-        cp -r "$temp_extract"/* "$INSTALL_DIR/" 2>/dev/null || true
-        rm -rf "$temp_extract"
-    }
+    log_info "解压到 $INSTALL_DIR..."
+    tar -xzf "$archive" -C "$INSTALL_DIR" --overwrite
 
     # 确保可执行
     chmod +x "$BIN_DIR"/openaide-server "$BIN_DIR"/openaide-cli 2>/dev/null || true
 
-    # 添加到 PATH (如果不存在)
+    # 创建快捷命令
+    ln -sf "$BIN_DIR/openaide-cli" "$BIN_DIR/openaide" 2>/dev/null || true
+
+    # 创建系统级软链接 (需要 root)
+    ln -sf "$BIN_DIR/openaide-server" /usr/local/bin/openaide-server 2>/dev/null || true
+    ln -sf "$BIN_DIR/openaide-cli" /usr/local/bin/openaide-cli 2>/dev/null || true
+    ln -sf "$BIN_DIR/openaide" /usr/local/bin/openaide 2>/dev/null || true
+
+    # 添加到 PATH
     local shell_rc=""
     if [ -f "$HOME/.bashrc" ]; then
         shell_rc="$HOME/.bashrc"
@@ -144,19 +155,36 @@ install_binaries() {
         log_ok "已添加 $BIN_DIR 到 PATH (请运行: source $shell_rc)"
     fi
 
-    # 创建快捷命令 openaide
-    ln -sf "$BIN_DIR/openaide-cli" "$BIN_DIR/openaide" 2>/dev/null || true
-
-    # 创建系统级软链接 (需要 root)
-    ln -sf "$BIN_DIR/openaide-server" /usr/local/bin/openaide-server 2>/dev/null || true
-    ln -sf "$BIN_DIR/openaide-cli" /usr/local/bin/openaide-cli 2>/dev/null || true
-    ln -sf "$BIN_DIR/openaide" /usr/local/bin/openaide 2>/dev/null || true
-
-    # 立即生效当前会话
+    # 立即生效
     export PATH="$BIN_DIR:$PATH"
 
-    log_ok "二进制文件安装完成"
-    log_info "快捷命令: openaide (已可用)"
+    log_ok "安装完成"
+}
+
+# 从 GitHub Release 安装
+install_from_release() {
+    local ver="$1"
+
+    if [ "$ver" = "latest" ]; then
+        ver=$(get_latest_version)
+        if [ -z "$ver" ]; then
+            log_warn "未找到 GitHub Release，切换到源码编译模式"
+            local_build
+            return
+        fi
+    fi
+
+    log_info "安装版本: $ver"
+
+    # 下载
+    local archive
+    archive=$(download_release "$ver")
+
+    # 安装
+    install_from_archive "$archive"
+
+    # 清理
+    rm -f "$archive"
 }
 
 # 初始化配置
@@ -253,9 +281,11 @@ local_build() {
     log_info "本地编译安装..."
 
     if [ ! -d "$INSTALL_DIR/backend" ]; then
-        log_error "未找到 $INSTALL_DIR/backend 目录"
-        log_info "请先克隆代码: git clone https://github.com/$GITHUB_REPO.git $INSTALL_DIR"
-        exit 1
+        log_info "克隆源码到 $INSTALL_DIR ..."
+        git clone "https://github.com/$GITHUB_REPO.git" "$INSTALL_DIR" 2>/dev/null || {
+            log_error "克隆失败，请检查网络或手动克隆"
+            exit 1
+        }
     fi
 
     cd "$INSTALL_DIR/backend"
@@ -280,6 +310,21 @@ local_build() {
     ln -sf "$BIN_DIR/openaide-server" /usr/local/bin/openaide-server 2>/dev/null || true
     ln -sf "$BIN_DIR/openaide-cli" /usr/local/bin/openaide-cli 2>/dev/null || true
     ln -sf "$BIN_DIR/openaide" /usr/local/bin/openaide 2>/dev/null || true
+
+    # 添加到 PATH
+    local shell_rc=""
+    if [ -f "$HOME/.bashrc" ]; then
+        shell_rc="$HOME/.bashrc"
+    elif [ -f "$HOME/.zshrc" ]; then
+        shell_rc="$HOME/.zshrc"
+    fi
+
+    if [ -n "$shell_rc" ] && ! grep -q "$BIN_DIR" "$shell_rc" 2>/dev/null; then
+        echo "export PATH=\"$BIN_DIR:\$PATH\"" >> "$shell_rc"
+        log_ok "已添加 $BIN_DIR 到 PATH (请运行: source $shell_rc)"
+    fi
+
+    export PATH="$BIN_DIR:$PATH"
 
     log_ok "本地编译完成"
 }
@@ -322,6 +367,12 @@ fi
 EOF
 
     chmod +x "$stop_script"
+
+    # 复制更新脚本（如果存在）
+    if [ -f "$INSTALL_DIR/scripts/update.sh" ]; then
+        chmod +x "$INSTALL_DIR/scripts/update.sh"
+    fi
+
     log_ok "启动/停止脚本已创建"
 }
 
@@ -356,12 +407,15 @@ show_status() {
     echo ""
     echo "如果 openaide 命令找不到，请运行:"
     echo "  export PATH=\"$BIN_DIR:\$PATH\""
+    echo ""
+    echo "更新到最新版本:"
+    echo "  bash $INSTALL_DIR/scripts/update.sh"
 }
 
 # 主函数
 main() {
     echo -e "${BLUE}========================================${NC}"
-    echo -e "${BLUE}  OpenAIDE 用户级安装脚本${NC}"
+    echo -e "${BLUE}  OpenAIDE 安装脚本${NC}"
     echo -e "${BLUE}  安装目录: $INSTALL_DIR${NC}"
     echo -e "${BLUE}========================================${NC}"
     echo ""
@@ -370,10 +424,15 @@ main() {
 
     # 解析参数
     local use_local=false
+    local archive_path=""
     for arg in "$@"; do
         case "$arg" in
             --local|-l)
                 use_local=true
+                ;;
+            --archive|-a)
+                archive_path="$2"
+                shift
                 ;;
             --version|-v)
                 VERSION="$2"
@@ -383,13 +442,20 @@ main() {
                 echo "用法: $0 [选项]"
                 echo ""
                 echo "选项:"
-                echo "  --local, -l      本地编译安装 (代码需在 $INSTALL_DIR)"
-                echo "  --version, -v    指定版本号 (默认: latest)"
-                echo "  --help, -h       显示帮助"
+                echo "  --local, -l           本地编译安装 (代码需在 $INSTALL_DIR)"
+                echo "  --archive, -a <path>  从本地 tar.gz 包安装"
+                echo "  --version, -v         指定版本号 (默认: latest)"
+                echo "  --help, -h            显示帮助"
                 echo ""
                 echo "环境变量:"
-                echo "  INSTALL_DIR      安装目录 (默认: \$HOME/.openaide)"
-                echo "  VERSION          版本号 (默认: latest)"
+                echo "  INSTALL_DIR           安装目录 (默认: \$HOME/.openaide)"
+                echo "  VERSION               版本号 (默认: latest)"
+                echo ""
+                echo "示例:"
+                echo "  $0                              # 从 GitHub Release 安装最新版"
+                echo "  VERSION=v1.0.0 $0               # 安装指定版本"
+                echo "  $0 --local                      # 本地编译安装"
+                echo "  $0 --archive ./openaide.tar.gz  # 从本地包安装"
                 exit 0
                 ;;
         esac
@@ -398,39 +464,15 @@ main() {
     # 创建安装目录
     mkdir -p "$INSTALL_DIR"
 
-    if [ "$use_local" = true ]; then
+    if [ -n "$archive_path" ]; then
+        # 从本地存档安装
+        install_from_archive "$archive_path"
+    elif [ "$use_local" = true ]; then
         # 本地编译模式
         local_build
     else
         # GitHub Release 模式
-        if [ "$VERSION" = "latest" ]; then
-            VERSION=$(get_latest_version)
-        fi
-
-        # 如果没有发布版本，自动切换到源码编译模式
-        if [ -z "$VERSION" ]; then
-            log_warn "未找到 GitHub Release，切换到源码编译模式"
-            log_info "克隆源码到 $INSTALL_DIR ..."
-            if [ -d "$INSTALL_DIR/.git" ]; then
-                cd "$INSTALL_DIR" && git pull
-            else
-                rm -rf "$INSTALL_DIR"
-                git clone "https://github.com/$GITHUB_REPO.git" "$INSTALL_DIR"
-            fi
-            local_build
-        else
-            log_info "安装版本: $VERSION"
-
-            # 下载
-            local archive
-            archive=$(download_release "$VERSION")
-
-            # 安装
-            install_binaries "$archive"
-
-            # 清理下载文件
-            rm -f "$archive"
-        fi
+        install_from_release "$VERSION"
     fi
 
     # 初始化配置

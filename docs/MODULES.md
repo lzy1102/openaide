@@ -1,58 +1,30 @@
 # OpenAIDE 模块职责分工文档
 
-> 版本: v3.0.0-draft  
-> 日期: 2026-05-15  
-> 状态: 设计评审中
+> 版本: v3.0.0  
+> 日期: 2026-05-16  
+> 状态: 持续实现中
 
----
+## 实现进度概览
 
-## 目录
+| 层 | 实现状态 | 文件 |
+|----|---------|------|
+| Kernel | ✅ 核心完成 | kernel.go, types.go, interfaces.go, reflection.go, learner.go, pattern.go, compress.go, session_store.go |
+| LLM | ⚠️ 部分完成 | gateway.go (多provider路由+fallback), openai_provider.go (统一OpenAI兼容实现). 缺少独立Anthropic provider |
+| Tools | ⚠️ 框架完成 | registry.go (注册表完整), 6个handler全是stub |
+| Memory | ✅ 基本完成 | memory.go (3级记忆, 文件存储). 缺少向量搜索 |
+| Orchestration | ⚠️ 基础完成 | orchestrator.go (基本编排+EnhancedOrchestrator). 缺少Planner/Team/Workflow |
+| API | ⚠️ 基础完成 | api.go (REST+SSE, CORS). 缺少WebSocket/Auth |
+| Infra | ⚠️ 基础完成 | app.go (DI容器), config.go (JSON/YAML). 缺少缓存/向量存储 |
+| Event | ⚠️ 独立模块 | event.go (事件总线完整), 但未集成到app.go |
+| Git | ✅ 独立模块 | git.go (git status/diff/log 完整), 但未集成到app.go |
+| Index | ✅ 独立模块 | indexer.go, workspace.go, incremental.go (代码索引完整), 但未集成 |
+| Identity | ✅ 独立模块 | identity.go (项目身份检测), 但未集成 |
+| Knowledge | ✅ 独立模块 | knowledge.go (文档CRUD), 但未集成 |
+| Compress | ✅ 独立模块 | compress.go (高级压缩器), 但未集成 (kernel内置了SimpleCompressor) |
+| Skill | ❌ 未实现 | 设计文档规划中 |
+| Plugin | ❌ 未实现 | 设计文档规划中 |
 
-1. [模块总览](#1-模块总览)
-2. [内核层 (kernel/)](#2-内核层-kernel)
-3. [记忆层 (memory/)](#3-记忆层-memory)
-4. [工具层 (tools/)](#4-工具层-tools)
-5. [LLM 层 (llm/)](#5-llm-层-llm)
-6. [编排层 (orchestration/)](#6-编排层-orchestration)
-7. [API 层 (api/)](#7-api-层-api)
-8. [基础设施层 (infra/)](#8-基础设施层-infra)
-9. [事件系统 (infra/event*)](#9-事件系统-infraevent)
-10. [终端会话隔离设计](#10-终端会话隔离设计)
-11. [技能系统 (skill/)](#11-技能系统-skill)
-12. [身份系统 (identity/)](#12-身份系统-identity)
-13. [知识库系统 (knowledge/)](#13-知识库系统-knowledge)
-14. [上下文压缩系统 (compress/)](#14-上下文压缩系统-compress)
-15. [模块间依赖关系](#15-模块间依赖关系)
-16. [增强能力联动设计](#16-增强能力联动设计)
-17. [关键设计约束](#17-关键设计约束)
-18. [版本兼容性设计](#18-版本兼容性设计)
-19. [CLI 自动补全](#19-cli-自动补全)
-20. [更新检查器](#20-更新检查器)
-21. [CLI 命令设计](#21-cli-命令设计)
-22. [纯文件存储架构](#22-纯文件存储架构)
-23. [Git 集成与代码索引](#23-git-集成与代码索引系统)
-24. [大型项目支持](#24-大型项目支持系统)
-25. [多模态支持](#25-多模态支持系统)
-26. [插件系统](#26-插件系统设计)
-27. [Skill 系统](#27-skill-系统设计)
-
----
-
-## 1. 模块总览
-
-### 1.1 模块清单
-
-| 模块 | 路径 | 核心职责 | 文件数(预估) | 优先级 |
-|------|------|----------|-------------|--------|
-| **内核** | `internal/kernel/` | Agent 智能核心（含增强能力） | 12-15 | P0 |
-| **记忆** | `internal/memory/` | 多级记忆系统 | 6-10 | P0 |
-| **工具** | `internal/tools/` | 工具注册与执行 | 8-12 | P0 |
-| **LLM** | `internal/llm/` | 模型网关与提供商 | 20+ | P0 |
-| **编排** | `internal/orchestration/` | 任务规划与协作 | 5-8 | P1 |
-| **API** | `internal/api/` | HTTP 接口与传输（可选） | 8-12 | P1 |
-| **CLI** | `internal/cli/` | 命令行交互（直接模式） | 3-5 | P0 |
-| **TUI** | `internal/tui/` | TUI 界面（可选） | 5-8 | P2 |
-| **基础设施** | `internal/infra/` | 存储与配置 | 6-8 | P1 |
+> **实际技术栈**: `net/http` (非Gin)、文件JSON存储 (非GORM)、端口8080 (非19375)
 
 ### 1.2 模块分层图
 

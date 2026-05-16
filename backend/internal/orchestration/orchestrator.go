@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"openaide/backend/internal/kernel"
+	"openaide/backend/internal/tools"
 )
 
 // Orchestrator 编排器 - 协调内核与外部系统
@@ -18,6 +19,7 @@ type Orchestrator struct {
 	sessions    kernel.SessionStore
 	compressor  kernel.ContextCompressor
 	permission  kernel.PermissionChecker
+	knowledge   kernel.KnowledgeCollector
 }
 
 // NewOrchestrator 创建编排器
@@ -45,6 +47,11 @@ func (o *Orchestrator) SetContextCompressor(c kernel.ContextCompressor) {
 // SetPermissionChecker 设置权限检查器
 func (o *Orchestrator) SetPermissionChecker(p kernel.PermissionChecker) {
 	o.permission = p
+}
+
+// SetKnowledgeCollector 设置知识收集器
+func (o *Orchestrator) SetKnowledgeCollector(kc kernel.KnowledgeCollector) {
+	o.knowledge = kc
 }
 
 // ProcessQuery 处理用户查询（完整编排流程）
@@ -81,6 +88,11 @@ func (o *Orchestrator) ProcessQuery(ctx context.Context, userID, projectID, cont
 		}
 	}
 
+	// 注入知识库到 context（供工具 handler 使用）
+	if o.knowledge != nil {
+		ctx = tools.WithKnowledge(ctx, o.knowledge)
+	}
+
 	// 4. 调用内核处理
 	resp, err := o.kernel.Process(ctx, query)
 	if err != nil {
@@ -111,6 +123,11 @@ func (o *Orchestrator) ProcessQueryStream(ctx context.Context, userID, projectID
 		UserID:    userID,
 		ProjectID: projectID,
 		Options:   opts,
+	}
+
+	// 注入知识库到 context
+	if o.knowledge != nil {
+		ctx = tools.WithKnowledge(ctx, o.knowledge)
 	}
 
 	return o.kernel.ProcessStream(ctx, query)
