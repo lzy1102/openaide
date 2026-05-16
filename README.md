@@ -1,673 +1,199 @@
-# OpenAIDE | AI 智能助手开发平台
+# OpenAIDE | AI Agent 内核平台
 
-[English](#english) | [中文](#中文)
+基于全新架构的 AI Agent 内核，采用分层设计：Kernel → Orchestration → API → Infrastructure。
 
 ---
 
-<a name="english"></a>
-## English
+## 快速开始
 
-A full-featured AI Agent development platform with multi-model support, multi-agent collaboration, knowledge base RAG, workflow orchestration, and enterprise integrations.
+### 1. 一键部署（推荐）
 
-### Features
-
-#### Core Capabilities
-- **18+ LLM Providers**: Unified interface for OpenAI, Claude, Gemini, Qwen, DeepSeek, GLM, Ollama, and more
-- **Multi-Agent Collaboration**: Role-based agents (architect, developer, reviewer, researcher, PM, tester) with team coordination
-- **Intelligent Orchestration**: Automatic task analysis → team planning → confirmation → execution pipeline
-- **Knowledge Base & RAG**: Document import, vector embedding, semantic search, retrieval-augmented generation
-- **Three-Layer Memory**: Working memory, short-term (dialogue summaries with TTL), long-term (facts/preferences/procedures/context with decay)
-- **5-Layer System Prompt**: Base prompt → optimization suggestions → user preferences → memory context → RAG context
-- **Local Knowledge First**: Auto-extract knowledge from dialogues, store locally, query local KB before calling LLM (high-confidence direct return saves tokens)
-- **Self-Evolution**: Skill discovery, pattern detection, feedback collection, memory extraction, skill evolution — closed-loop learning
-- **Structured Planning**: 5-step pipeline (understanding → planning → dependencies → tools → risks) with execution review and dynamic replanning
-- **Thinking & Reasoning**: Chain-of-Thought, Multi-Step Reasoning, Tree-of-Thought with correction system
-- **Tool Calling Framework**: HTTP requests, code execution, web search, weather, file I/O, and MCP external tools — with SSRF protection
-- **Workflow Engine**: Step-by-step workflow execution with state machine, rollback, and scheduling
-- **Plugin System**: Install, enable/disable, configure, and execute plugins
-- **Skill System**: Modular skill management with auto-matching, parameter extraction, typed parameter normalization, tool binding, and execution tracking
-- **Task Management**: CRUD, decomposition, dependencies (DAG), progress tracking, team assignment
-- **Scheduled Tasks**: Cron-based scheduling with webhook and script execution
-- **Code Sandbox**: Docker-isolated code execution with multi-language support and safety validation
-- **Voice Services**: STT (Whisper) and TTS with configurable providers
-- **WebSocket**: Real-time bidirectional communication and streaming dialogue
-- **Feishu Integration**: Enterprise messaging bot with card callbacks and `/skill` command execution for matched skills
-- **Adaptive Learning**: Feedback collection, preference learning, prompt optimization
-- **Smart Token Management**: Pre-send token estimation, smart context truncation, intelligent caching, cost optimization, user/dialogue token limits
-- **Usage Analytics**: Token/cost tracking, budget management, threshold alerts via email
-- **Authentication**: JWT tokens, API keys, role-based access control
-- **Reasoning Content Support**: Save and pass model reasoning/thinking content (DeepSeek, etc.), supports both streaming and non-streaming
-- **Fine-grained Permission System**: Agent-level permission control (build/plan/general/explore), command execution risk grading (allow/ask/deny)
-- **Agent Smart Routing**: Auto-route tasks to different models (fast/code/reasoning) for cost/performance optimization
-- **Slash Command System**: Built-in /compact, /model, /clear, /chapters, /context, /memory, /skill, /help shortcuts
-- **Task Tool (Sub-agent)**: Delegate sub-tasks to child agents with independent ReAct loops
-- **Smart Context Compaction**: 5-level progressive strategy — tool trimming → chapter outline → summarization → LLM compaction → emergency compression
-- **Chapter-based Context**: Novel-style chapter extraction with titles, summaries, keywords, and topic boundary detection
-- **DuckDuckGo Dual-Engine Search**: Instant Answer API + HTML search fallback, no API key required
-- **Request Orchestrator**: Unified intent classification (skill/plan/tool/knowledge/chat) and intelligent routing — auto-detects whether to use skills, planning, tool calling, RAG, or plain chat
-- **RAG Query Rewriting**: LLM-based query expansion before retrieval — rewrites colloquial queries to structured search terms, generates multiple expansion queries for better recall
-- **Multi-Factor Knowledge Ranking**: Search results ranked by vectorScore + accessCount + confidence + recency — utilizes previously ignored metadata
-- **Auto Memory Extraction**: Automatically extracts facts, preferences, and procedures from dialogues after each conversation — the system learns more about you over time
-- **CJK-Aware Similarity**: Chinese text tokenization via bigram for Jaccard similarity — fixes near-zero similarity for Chinese memory search
-- **Feedback Learning Loop**: Creating feedback automatically triggers learning — closed-loop feedback → analysis → optimization
-- **Token Budget Management**: System prompt total token limit with priority-based truncation — ensures core context is never lost
-- **LLM Call Budget Control**: Hourly/daily LLM call limits for periodic services — prevents unbounded token consumption
-- **Full Tool Calling Support**: All LLM clients (OpenAI, Anthropic, Gemini, GLM, DeepSeek, Qwen, Moonshot, Ollama, etc.) support Function Calling / Tool Use
-- **Per-Tool Timeout**: Each tool execution has an independent 30-second timeout — prevents single slow tool from blocking the entire ReAct loop
-- **Unified Message Pipeline**: Non-streaming and streaming paths share the same message construction logic (system prompt, conversation summary, token truncation)
-- **API Key Protection**: Model API keys are never exposed in API responses (json:"-" tag), write-only via separate DTO — prevents accidental key leakage
-- **Project Management**: Organize dialogues into projects with isolated context, system prompts, models, and working directories — auto-detect project from cwd in TUI
-
-#### Architecture
-
-```
-┌──────────────┐     ┌──────────────────────────────────────────────┐     ┌──────────────┐
-│  Web / CLI   │────▶│              Backend (Gin)                   │────▶│  18+ LLMs    │
-│  / Feishu    │     │  ┌─────┐ ┌──────┐ ┌──────┐ ┌─────────────┐ │     │  Providers   │
-└──────────────┘     │  │Auth │ │Chat  │ │Tools │ │ Orchestration│ │     └──────────────┘
-                     │  └─────┘ └──────┘ └──────┘ └─────────────┘ │
-                     │  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────────┐ │     ┌──────────────┐
-                     │  │Knowledge│RAG │ │Memory│ │Scheduler│ │────▶│   SQLite     │
-                     │  └──────┘ └──────┘ └──────┘ └──────────┘ │     │   + Vectors  │
-                     │  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────────┐ │     └──────────────┘
-                     │  │Teams │ │Skills│ │Plugins│ │ Voice/WS │ │
-                     │  └──────┘ └──────┘ └──────┘ └──────────┘ │
-                     └──────────────────────────────────────────────┘
-```
-
-**Tech Stack:** Go 1.22+ / Gin / GORM / SQLite (pure Go, no CGO) / HNSW / LedisDB / slog
-
-#### Supported LLM Providers
-
-##### Domestic Chinese LLMs
-| Provider | Alias | Models |
-|----------|-------|--------|
-| 通义千问 (Qwen) | `qwen`, `tongyi` | qwen-turbo, qwen-plus, qwen-max |
-| 文心一言 (ERNIE) | `ernie`, `wenxin` | ernie-bot-4, ernie-bot-turbo |
-| 混元 (Hunyuan) | `hunyuan` | hunyuan-lite, hunyuan-standard |
-| 星火 (Spark) | `spark`, `xunfei` | spark-v3.5, spark-v4.0 |
-| Moonshot (Kimi) | `moonshot`, `kimi` | moonshot-v1-8k, moonshot-v1-32k |
-| 百川 (Baichuan) | `baichuan` | Baichuan2-Turbo, Baichuan2-53B |
-| MiniMax | `minimax` | abab5.5-chat, abab5.5s-chat |
-| DeepSeek | `deepseek` | deepseek-chat, deepseek-coder |
-| 智谱 GLM | `glm`, `zhipu` | glm-5, glm-4.7, glm-4-plus, glm-4-flash |
-
-##### International LLMs
-| Provider | Alias | Models |
-|----------|-------|--------|
-| OpenAI | `openai` | gpt-4, gpt-4-turbo, gpt-3.5-turbo |
-| Anthropic (Claude) | `anthropic`, `claude` | claude-3-opus, claude-3-sonnet, claude-3-haiku |
-| Google Gemini | `gemini`, `google` | gemini-pro, gemini-ultra |
-| Mistral AI | `mistral` | mistral-large, mistral-medium, mistral-small |
-| Cohere | `cohere` | command, command-light |
-| Groq | `groq` | llama2-70b-4096, mixtral-8x7b-32768 |
-
-##### Local Models
-| Provider | Alias | Description |
-|----------|-------|-------------|
-| Ollama | `ollama`, `local` | Run models locally (llama2, mistral, etc.) |
-| vLLM | `vllm` | High-performance inference server |
-
-### API Endpoints Overview
-
-#### Authentication & User
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/auth/register` | Register new user |
-| POST | `/api/auth/login` | User login |
-| POST | `/api/auth/refresh` | Refresh access token |
-| GET | `/api/profile` | Get user profile |
-| PUT | `/api/profile` | Update profile |
-| POST | `/api/change-password` | Change password |
-| GET/DELETE | `/api/sessions` | Manage sessions |
-| CRUD | `/api/api-keys` | API key management |
-| CRUD | `/api/admin/users` | Admin user management |
-
-#### Chat & Dialogue
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/chat` | Send chat message |
-| POST | `/api/chat/stream` | Streaming chat (SSE) |
-| POST | `/api/chat/tools` | Chat with tool calling |
-| POST | `/api/chat/route` | Auto-routed streaming chat |
-| POST | `/api/chat/plan` | Chat with planning |
-| GET | `/api/chat/route-info` | Get model routing info |
-| CRUD | `/api/dialogues` | Dialogue management |
-| POST | `/api/dialogues/:id/stream` | Streaming dialogue (SSE) |
-
-#### Orchestration
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/orchestration/process` | Start orchestration pipeline |
-| POST | `/api/orchestration/analyze` | Analyze task only |
-| POST | `/api/orchestration/plan` | Generate team plan only |
-| GET | `/api/orchestration/sessions` | List sessions |
-| GET | `/api/orchestration/:id` | Get session status |
-| POST | `/api/orchestration/:id/action` | Approve/reject/adjust plan |
-| GET | `/api/orchestration/:id/progress` | Get execution progress |
-| POST | `/api/orchestration/:id/cancel` | Cancel session |
-| GET | `/api/orchestration/templates` | List team templates |
-| GET | `/api/orchestration/templates/:name` | Get template details |
-
-#### Multi-Agent & Teams
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/agents/collaborate` | Multi-agent collaboration |
-| POST | `/api/agents/run` | Run single agent |
-| GET | `/api/agents/roles` | Get agent role configs |
-| CRUD | `/api/teams` | Team management |
-| CRUD | `/api/teams/:id/agents` | Team member management |
-| CRUD | `/api/teams/:id/tasks` | Team task management |
-| CRUD | `/api/teams/agents` | Agent registration |
-
-#### Knowledge Base & RAG
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| CRUD | `/api/knowledge` | Knowledge entries |
-| POST | `/api/knowledge/search` | Semantic search |
-| POST | `/api/knowledge/hybrid-search` | Hybrid search |
-| CRUD | `/api/knowledge/categories` | Knowledge categories |
-| CRUD | `/api/documents` | Document management |
-| POST | `/api/documents/import` | Import document |
-| POST | `/api/rag/query` | RAG query |
-| POST | `/api/rag/stream` | Streaming RAG query |
-
-#### Memory
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/memory` | Create memory |
-| GET | `/api/memory/user/:id` | Get user memories |
-| GET | `/api/memory/search` | Search memories |
-| PUT | `/api/memory/:id` | Update memory |
-| DELETE | `/api/memory/:id` | Delete memory |
-| POST | `/api/memory/adjust-priority` | Adjust memory priorities |
-
-#### Thinking & Reasoning
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| CRUD | `/api/thinking/thoughts` | Thought management |
-| CRUD | `/api/thinking/thoughts/:id/corrections` | Correction management |
-| POST | `/api/thinking/cot` | Chain-of-Thought reasoning |
-| POST | `/api/thinking/multi-step` | Multi-step reasoning |
-| POST | `/api/thinking/tree-of-thought` | Tree-of-Thought reasoning |
-| GET | `/api/thinking/visualizations/:id` | Reasoning visualization |
-| GET | `/api/thinking/timelines/:id` | Reasoning timeline |
-
-#### Tools & Skills
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| CRUD | `/api/tools` | Tool management |
-| POST | `/api/tools/execute` | Execute tool |
-| GET | `/api/tools/definitions` | Get LLM tool definitions |
-| CRUD | `/api/skills` | Skill management |
-| GET | `/api/skills/:id/parameters` | List skill parameter definitions |
-| POST | `/api/skills/:id/parameters` | Create skill parameter definition |
-| PUT | `/api/skills/:id/parameters/:paramId` | Update skill parameter definition |
-| DELETE | `/api/skills/:id/parameters/:paramId` | Delete skill parameter definition |
-| GET | `/api/skills/:id/executions` | Get skill execution history |
-| POST | `/api/skills/match` | Auto-match skill |
-| POST | `/api/skills/execute-matched` | Execute matched skill |
-| CRUD | `/api/mcp/servers` | MCP server management |
-| GET | `/api/mcp/servers/:id/tools` | List MCP server tools |
-| POST | `/api/mcp/servers/:id/refresh` | Refresh MCP tools |
-| POST | `/api/mcp/servers/:id/reconnect` | Reconnect MCP server |
-
-#### Plugins & Automation
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| CRUD | `/api/plugins` | Plugin management |
-| POST | `/api/plugins/install` | Install plugin |
-| POST | `/api/plugins/:id/enable` | Enable plugin |
-| POST | `/api/plugins/:id/disable` | Disable plugin |
-| CRUD | `/api/automation/executions` | Automation executions |
-| POST | `/api/automation/executions/:id/execute` | Execute automation |
-
-#### Tasks & Workflows
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| CRUD | `/api/tasks` | Task management |
-| POST | `/api/tasks/decompose` | Decompose task |
-| CRUD | `/api/workflows` | Workflow management |
-| POST | `/api/workflows/:id/instances` | Create workflow instance |
-| POST | `/api/workflows/instances/:id/execute` | Execute workflow |
-
-#### Models & Planning
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| CRUD | `/api/models` | Model management |
-| POST | `/api/models/:id/enable` | Enable model |
-| POST | `/api/models/:id/disable` | Disable model |
-| POST | `/api/plan/execute` | Execute plan |
-| GET | `/api/plan/:sessionId` | Get plan status |
-| POST | `/api/plan/cancel` | Cancel plan |
-
-#### Scheduler, Sandbox, Voice, Code
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| CRUD | `/api/scheduler/tasks` | Scheduled tasks |
-| CRUD | `/api/scheduler/reminders` | Reminders |
-| GET | `/api/sandbox/status` | Sandbox status |
-| GET | `/api/sandbox/languages` | Supported languages |
-| POST | `/api/sandbox/execute` | Execute code in sandbox |
-| GET | `/api/voice/status` | Voice service status |
-| POST | `/api/voice/tts` | Text-to-speech |
-| POST | `/api/voice/stt` | Speech-to-text |
-| CRUD | `/api/code/executions` | Code execution records |
-
-#### Other
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| CRUD | `/api/confirmations` | Confirmation workflows |
-| GET/POST | `/api/channels` | Channel management |
-| CRUD | `/api/usage/*` | Usage analytics & billing |
-| CRUD | `/api/prompt-templates/*` | Prompt templates |
-| CRUD | `/api/learning/*` | Adaptive learning |
-| CRUD | `/api/feedback/*` | Feedback management |
-| CRUD | `/api/context/*` | Context management |
-| CRUD | `/api/extraction/*` | Knowledge extraction |
-| CRUD | `/api/events/*` | Event bus |
-| CRUD | `/api/feishu/*` | Feishu integration |
-| WS | `/ws` | WebSocket connection |
-| CRUD | `/api/ws/*` | WebSocket management |
-| GET | `/health` | Health check |
-
-### Installation
-
-> **Detailed guide**: [INSTALL.md](INSTALL.md)
-
-#### Quick Start
+从 GitHub 最新 Release 下载并部署：
 
 ```bash
-cd openaide/backend
-go mod tidy
+# 使用 curl
+curl -fsSL https://raw.githubusercontent.com/lzy1102/openaide/master/scripts/deploy.sh | sudo bash
 
-# Copy config template
-cp config.example.json config.json
-# Edit config.json and add your API keys
-
-# Run server
-CGO_ENABLED=0 go run ./src/main.go
-# Server runs on http://localhost:19375
+# 或使用 wget
+wget -qO- https://raw.githubusercontent.com/lzy1102/openaide/master/scripts/deploy.sh | sudo bash
 ```
 
-#### Build
+部署完成后：
+- 服务运行在 `http://localhost:8080`
+- 配置文件：`/opt/openaide/config.json`
+- 日志：`/opt/openaide/logs/server.log`
+
+### 2. 本地编译部署
 
 ```bash
-CGO_ENABLED=0 go build -o openaide-server ./src
-./openaide-server
+# 克隆代码
+git clone https://github.com/lzy1102/openaide.git /opt/openaide
+cd /opt/openaide
+
+# 运行部署脚本（本地编译模式）
+sudo bash scripts/deploy.sh --local
 ```
 
-#### Startup Banner
-
-When the server starts, it displays key configuration info:
-
-```
-  ╔═══════════════════════════════════════════╗
-  ║           OpenAIDE Server v2.0.0          ║
-  ╚═══════════════════════════════════════════╝
-
-  Version:      2.0.0
-  Port:         19375
-  Config:       /opt/openaide/config.json
-  Home Dir:     /opt/openaide
-  Database:     sqlite (/opt/openaide/data/db/openaide.db)
-  Cache:        memory
-  Vector Store: memory
-  Auth Mode:    LOCAL (no auth)
-
-  Listening on: http://0.0.0.0:19375
-```
-
-#### Configuration
-
-Config file lookup priority: `OPENAIDE_CONFIG` env → `/app/config.json` (Docker) → `OPENAIDE_HOME/config.json` → `./config.json` → executable directory → `~/.openaide/config.json`
-
-Create `config.json` with your API key:
-
-```json
-{
-  "home_dir": "/opt/openaide",
-  "server": {
-    "port": 19375,
-    "local_mode": false
-  },
-  "storage": {
-    "cache": { "type": "ledis", "data_dir": "/opt/openaide/data/ledis" },
-    "db": { "type": "sqlite", "uri": "/opt/openaide/data/db/openaide.db" },
-    "vector_store": { "type": "hnsw", "data_dir": "/opt/openaide/data/vectors" }
-  },
-  "models": [{
-    "name": "deepseek-chat",
-    "type": "llm",
-    "provider": "deepseek",
-    "api_key": "your-api-key-here",
-    "base_url": "https://api.deepseek.com",
-    "config": { "model": "deepseek-chat", "timeout": 60 },
-    "status": "enabled"
-  }]
-}
-```
-
-> **`server.local_mode`**: When set to `true`, all API routes are accessible without authentication (auto-login as admin). Useful for local development or trusted internal networks. **Do not enable in production!**
->
-> **`server.port`**: Server listen port. Can also be set via `PORT` env var (env var takes priority).
->
-> See `config.example.json` for full template.
-
-#### Authentication
-
-All API routes (except `/health` and `/api/auth/*`) require JWT authentication:
+### 3. Docker 部署
 
 ```bash
-# Register
-curl -X POST http://localhost:19375/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"username":"admin","email":"admin@example.com","password":"your-password"}'
-
-# Login
-curl -X POST http://localhost:19375/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"your-password"}'
-# Returns: {"access_token":"eyJ...","refresh_token":"...","expires_in":86400}
-
-# Use token
-curl http://localhost:19375/api/dialogues \
-  -H "Authorization: Bearer eyJ..."
+cd /opt/openaide/backend
+docker-compose up -d
 ```
-
-**Local Mode (No Auth):** Set `server.local_mode: true` in config.json or `OPENAIDE_LOCAL_MODE=true` env var to skip authentication. All requests auto-login as admin. **Only for development/trusted networks!**
-
-Set `OPENAIDE_JWT_SECRET` env var for production (auto-generated if not set).
-
-#### API Response Format
-
-All API responses use a unified format:
-
-```json
-// Success
-{"code": 0, "message": "success", "data": {...}}
-
-// Error
-{"code": 400, "message": "error description"}
-
-// Paginated list
-{"code": 0, "message": "success", "data": {"items": [...], "total": 100, "page": 1, "page_size": 20, "total_pages": 5}}
-```
-
-Every response includes `X-Request-ID` header for tracing.
-
-#### Terminal CLI
-
-```bash
-cd openaide/terminal
-go run main.go
-```
-
-Configure `~/.openaide/config.yaml`:
-
-```yaml
-api:
-  base_url: http://localhost:19375/api
-  token: ""          # JWT token (leave empty if server.local_mode=true)
-  timeout_sec: 180
-```
-
-> If the server has `local_mode: true`, no token is needed. Otherwise, login first and paste the access token.
-
-#### Prerequisites
-- Go 1.22+ (no CGO required, pure Go SQLite)
-- Docker (optional, for sandbox or deployment)
 
 ---
 
-<a name="中文"></a>
-## 中文
+## 配置说明
 
-一个全功能 AI Agent 开发平台，支持多模型接入、多 Agent 协作、知识库 RAG、工作流编排和企业级集成。
+配置文件位置：`/opt/openaide/config.json`
 
-### 功能特性
+首次部署会自动创建默认配置，**必须修改 API Key** 才能使用。
 
-#### 核心能力
-- **18+ 大模型提供商**：统一接口接入 OpenAI、Claude、Gemini、通义千问、DeepSeek、GLM、Ollama 等
-- **多 Agent 协作**：角色化 Agent（架构师、开发者、审查员、研究员、PM、测试员）团队协作
-- **智能编排**：任务分析 → 团队规划 → 确认审批 → 自动执行的全流程
-- **知识库 & RAG**：文档导入、向量嵌入、语义搜索、检索增强生成
-- **三层记忆架构**：工作记忆、短期记忆（对话摘要+TTL）、长期记忆（事实/偏好/流程/上下文+衰减机制）
-- **5 层 System Prompt**：基础 Prompt → 优化建议 → 用户偏好 → 记忆上下文 → RAG 上下文
-- **本地知识优先**：自动从对话中提取知识点并存储，查询时优先检索本地知识库，高置信度直接返回（节省token）
-- **自我进化**：技能发现、模式检测、反馈收集、记忆提取、技能进化 — 闭环学习
-- **结构化规划**：5步流水线（理解→规划→依赖→工具→风险），执行回顾与动态重规划
-- **思考推理**：思维链(CoT)、多步推理、思维树(ToT)、纠正系统、可视化
-- **工具调用框架**：HTTP 请求、代码执行、网页搜索、天气查询、文件读写，以及 MCP 外部工具接入，内置 SSRF 防护
-- **工作流引擎**：步骤编排、状态机、回滚恢复、调度执行
-- **插件系统**：安装、启用/禁用、配置、执行
-- **技能系统**：模块化技能管理，支持自动匹配、参数提取、类型归一化、工具绑定与执行追踪
-- **任务管理**：CRUD、分解、依赖关系(DAG)、进度跟踪、团队分配
-- **定时调度**：Cron 定时任务、Webhook 触发、脚本执行
-- **安全沙箱**：Docker 隔离代码执行，多语言支持，安全校验
-- **语音服务**：语音转文字(Whisper)、文字转语音，可配置提供商
-- **WebSocket**：实时双向通信、流式对话
-- **飞书集成**：企业消息机器人、卡片回调，以及 `/skill` 命令的技能匹配与执行
-- **自适应学习**：反馈收集、偏好学习、Prompt 自动优化
-- **智能 Token 管理**：预发送 Token 估算、智能上下文截断、智能缓存、成本优化、用户/对话级 Token 限额
-- **使用量统计**：Token/成本追踪、预算管理、阈值邮件告警
-- **认证鉴权**：JWT Token、API Key、角色权限控制
-- **Reasoning Content 支持**：保存并传递模型的推理/思考过程（DeepSeek 等），支持流式与非流式场景
-- **细粒度权限系统**：Agent 级别权限控制（build/plan/general/explore），命令执行风险分级（allow/ask/deny）
-- **Agent 智能路由**：根据任务类型自动路由到不同模型（fast/code/reasoning），优化成本与性能
-- **Slash 命令系统**：内置 /compact、/model、/clear、/chapters、/context、/memory、/skill、/help 等快捷命令
-- **任务工具（Task Tool）**：子 Agent 委派，独立 ReAct 循环执行子任务
-- **智能上下文压缩**：5 级渐进式策略 — 工具截断 → 章节目录 → 摘要压缩 → LLM 压缩 → 紧急压缩，防止上下文窗口溢出
-- **章节式上下文管理**：像小说一样自动提取对话章节名、摘要、关键词，话题边界检测，保留叙事脉络
-- **DuckDuckGo 双引擎搜索**：Instant Answer API + HTML 搜索回退，无需 API Key
-- **请求编排器（RequestOrchestrator）**：统一意图分类（skill/plan/tool/knowledge/chat）和智能路由 — 自动判断走技能、规划、工具调用、RAG 还是普通对话
-- **RAG 查询改写**：检索前用 LLM 改写口语化查询为结构化检索词，生成扩展查询提升召回率
-- **知识搜索多因子排序**：向量得分 + 访问热度 + 置信度 + 时效性加权排序，充分利用已有元数据
-- **对话后自动记忆提取**：每次对话结束自动提取事实、偏好、流程存入长期记忆 — 越用越懂你
-- **中文相似度修复**：CJK bigram 分词替代空格分词，修复中文记忆检索相似度≈0的问题
-- **反馈学习闭环**：创建反馈自动触发学习分析 — 反馈→分析→优化全自动化
-- **Token 预算管理**：System prompt 总量限制 + 优先级截断 — 确保核心上下文永不丢失
-- **LLM 调用预算控制**：周期服务的小时/日调用限额 — 防止无限制 Token 消耗
-- **全客户端 Tool Calling 支持**：所有 LLM 客户端（OpenAI、Anthropic、Gemini、GLM、DeepSeek、Qwen、Moonshot、Ollama 等）均支持 Function Calling / Tool Use
-- **单工具超时控制**：每个工具执行独立 30 秒超时 — 防止单个慢工具阻塞整个 ReAct 循环
-- **统一消息管线**：非流式和流式路径共享消息构建逻辑（系统提示、对话摘要、Token截断）
-- **API 密钥保护**：模型 API Key 永远不会在 API 响应中暴露（json:"-" 标签），通过独立 DTO 写入 — 防止密钥意外泄露
-- **项目管理**：按项目组织对话，隔离上下文、系统提示、模型和工作目录 — TUI 启动时根据工作目录自动识别项目
-
-### 系统架构
-
-```
-┌──────────────┐     ┌──────────────────────────────────────────────┐     ┌──────────────┐
-│  Web / CLI   │────▶│              Backend (Gin)                   │────▶│  18+ LLMs    │
-│  / 飞书       │     │  ┌─────┐ ┌──────┐ ┌──────┐ ┌─────────────┐ │     │  提供商      │
-└──────────────┘     │  │认证  │ │对话  │ │工具  │ │  智能编排    │ │     └──────────────┘
-                     │  └─────┘ └──────┘ └──────┘ └─────────────┘ │
-                     │  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────────┐ │     ┌──────────────┐
-                     │  │知识库 │ │ RAG  │ │记忆  │ │ 定时调度  │ │────▶│   SQLite     │
-                     │  └──────┘ └──────┘ └──────┘ └──────────┘ │     │   + 向量存储  │
-                     │  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────────┐ │     └──────────────┘
-                     │  │团队  │ │技能  │ │插件  │ │ 语音/WS  │ │
-                     │  └──────┘ └──────┘ └──────┘ └──────────┘ │
-                     └──────────────────────────────────────────────┘
-```
-
-**技术栈**：Go 1.22+ / Gin / GORM / SQLite (纯 Go, 无需 CGO) / HNSW / LedisDB / slog
-
-### 安装
-
-> **详细指南**：[INSTALL.md](INSTALL.md)
-
-```bash
-cd openaide/backend
-go mod tidy
-CGO_ENABLED=0 go run ./src/main.go
-# 服务运行在 http://localhost:19375
-```
-
-#### 零 CGO 编译
-
-```bash
-CGO_ENABLED=0 go build -o bin/openaide-server ./src
-./bin/openaide-server
-```
-
-#### 启动信息
-
-服务启动时会显示关键配置：
-
-```
-  ╔═══════════════════════════════════════════╗
-  ║           OpenAIDE Server v2.0.0          ║
-  ╚═══════════════════════════════════════════╝
-
-  Version:      2.0.0
-  Port:         19375
-  Config:       /opt/openaide/config.json
-  Home Dir:     /opt/openaide
-  Database:     sqlite (/opt/openaide/data/db/openaide.db)
-  Cache:        memory
-  Vector Store: memory
-  Auth Mode:    LOCAL (no auth)
-
-  Listening on: http://0.0.0.0:19375
-```
-
-#### 配置文件
-
-在 `~/.openaide/config.json` 中创建配置：
+### 最小可用配置
 
 ```json
 {
-  "home_dir": "/opt/openaide",
   "server": {
-    "port": 19375,
-    "local_mode": true
+    "host": "0.0.0.0",
+    "port": 8080,
+    "mode": "server"
   },
-  "models": [{
-    "name": "my-model",
-    "type": "llm",
-    "provider": "openai",
-    "api_key": "your-api-key-here",
-    "base_url": "https://api.example.com/v1",
-    "config": {
-      "model": "gpt-4o-mini"
-    },
-    "status": "enabled"
-  }],
-  "storage": {
-    "db": { "type": "sqlite", "uri": "/opt/openaide/data/db/openaide.db" }
-  },
-  "feishu": {"enabled": false},
-  "voice": {"enabled": false},
-  "sandbox": {"enabled": false},
-  "embedding": {"enabled": false}
+  "llm": {
+    "default_provider": "openai",
+    "providers": [
+      {
+        "name": "openai",
+        "type": "openai",
+        "base_url": "https://api.openai.com/v1",
+        "api_key": "sk-your-real-api-key",
+        "default_model": "gpt-4o-mini",
+        "timeout": 60,
+        "enabled": true
+      }
+    ]
+  }
 }
 ```
 
-> **`server.local_mode`**：设为 `true` 时免认证访问所有 API（自动以 admin 身份登录），适合本地开发或内网环境，**生产环境请勿开启！**
->
-> **`server.port`**：服务监听端口，也可通过 `PORT` 环境变量设置（环境变量优先）。
->
-> 参考 `config.example.json` 模板文件。
+### 配置项说明
 
-#### 终端 CLI
+| 配置项 | 说明 | 默认值 |
+|--------|------|--------|
+| `server.host` | 监听地址 | `0.0.0.0` |
+| `server.port` | 监听端口 | `8080` |
+| `server.mode` | 运行模式：`server`/`direct` | `server` |
+| `llm.default_provider` | 默认 LLM 提供商名称 | `""` |
+| `llm.providers` | 提供商列表 | `[]` |
+| `memory.data_dir` | 记忆数据目录 | `./data/memory` |
+| `tools.dangerous_tools` | 危险工具列表 | `["execute_command", "write_file"]` |
+| `kernel.max_rounds` | 最大 ReAct 轮数 | `10` |
+| `log.level` | 日志级别：`debug`/`info`/`warn`/`error` | `info` |
 
-```bash
-cd openaide/terminal
-go run main.go
-```
+### 支持的 LLM 提供商
 
-配置 `~/.openaide/config.yaml`：
+| 提供商 | type | 示例 base_url |
+|--------|------|--------------|
+| OpenAI | `openai` | `https://api.openai.com/v1` |
+| DeepSeek | `openai-compatible` | `https://api.deepseek.com/v1` |
+| 阿里云百炼 | `openai-compatible` | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
+| 本地 Ollama | `openai-compatible` | `http://localhost:11434/v1` |
 
-```yaml
-api:
-  base_url: http://localhost:19375/api
-  token: ""          # JWT Token（服务器开启 local_mode 时留空）
-  timeout_sec: 180
-```
+---
 
-> 服务器开启 `local_mode` 时无需 Token，否则先登录获取 access_token 填入。
+## 部署方式对比
 
-交互式模式：
-```
-  ╭─────────────────────────────╮
-  │  OpenAIDE CLI               │
-  ╰─────────────────────────────╯
-
-    API:   http://localhost:19375/api
-    Model: gpt-4o-mini
-    Mode:  Streaming
-
-  Type /help for commands, exit or /exit to quit
-```
-
-#### TUI Project Commands
-
-```
-/project                    Show current project info
-/project list               List all projects
-/project switch             Interactive project selector (↑/↓ + Enter)
-/project switch <n|name>    Switch to project by number or name
-/project create <name>      Create a new project
-/project delete <n|name>    Delete a project
-```
-
-When starting `openaide` in a directory that matches a project's `working_dir`, the project is auto-detected:
-
-```
-$ cd /home/user/my-project
-$ openaide
-  📂 Auto-detected project: MyProject
-```
-
-### API 端点总览
-
-> 完整 API 文档参见 [backend/API.md](backend/API.md)
-
-| 分组 | 路由前缀 | 说明 |
+| 方式 | 适用场景 | 命令 |
 |------|----------|------|
-| 认证 | `/api/auth/*` | 注册、登录、Token 刷新 |
-| 用户 | `/api/profile` | 用户信息管理 |
-| 会话 | `/api/sessions` | 会话管理 |
-| 对话 | `/api/dialogues/*` | 对话 CRUD + 消息管理 + 流式 |
-| 项目 | `/api/projects/*` | 项目管理（隔离上下文/模型/工作目录） |
-| 聊天 | `/api/chat/*` | 普通聊天 / 流式 / 工具调用 / 自动路由 / 规划 |
-| MCP | `/api/mcp/*` | MCP Server 管理 / 工具发现 / 重连 / 刷新 |
-| 编排 | `/api/orchestration/*` | 智能编排全流程 |
-| Agent | `/api/agents/*` | 多 Agent 协作 / 单 Agent 运行 |
-| 团队 | `/api/teams/*` | 团队管理 / 成员 / 任务 |
-| 知识库 | `/api/knowledge/*` | 知识条目 / 分类 / 搜索 |
-| 文档 | `/api/documents/*` | 文档管理 / 导入 |
-| RAG | `/api/rag/*` | 检索增强生成 |
-| 记忆 | `/api/memory/*` | 三层记忆管理 |
-| 推理 | `/api/thinking/*` | CoT / 多步 / 思维树 / 纠正 |
-| 工具 | `/api/tools/*` | 工具注册 / 执行 / 定义 |
-| 技能 | `/api/skills/*` | 技能管理 / 参数定义 / 匹配 / 执行 / 执行历史 |
-| 插件 | `/api/plugins/*` | 插件管理 / 安装 / 启用 |
-| 自动化 | `/api/automation/*` | 自动化执行管理 |
-| 任务 | `/api/tasks/*` | 任务管理 / 分解 / 进度 |
-| 工作流 | `/api/workflows/*` | 工作流编排 / 实例执行 |
-| 模型 | `/api/models/*` | 模型管理 / 启用 / 禁用 |
-| 规划 | `/api/plan/*` | 规划执行 / 状态 / 取消 |
-| 调度 | `/api/scheduler/*` | 定时任务 / 提醒 |
-| 沙箱 | `/api/sandbox/*` | 安全代码执行 |
-| 语音 | `/api/voice/*` | TTS / STT |
-| 代码 | `/api/code/*` | 代码执行记录 |
-| 确认 | `/api/confirmations/*` | 审批确认流程 |
-| 渠道 | `/api/channels/*` | 多渠道管理 |
-| 统计 | `/api/usage/*` | 用量统计 / 预算 / 定价 |
-| 模板 | `/api/prompt-templates/*` | Prompt 模板管理 |
-| 学习 | `/api/learning/*` | 自适应学习 / 优化 |
-| 反馈 | `/api/feedback/*` | 反馈管理 |
-| 上下文 | `/api/context/*` | 上下文管理 |
-| 提取 | `/api/extraction/*` | 知识提取 |
-| 事件 | `/api/events/*` | 事件总线 |
-| 飞书 | `/api/feishu/*` | 飞书集成 |
-| WS | `/ws`, `/api/ws/*` | WebSocket |
-| 健康 | `/health` | 健康检查 |
+| **一键脚本** | 快速部署，生产环境 | `curl ... \| sudo bash` |
+| **本地编译** | 开发调试，定制修改 | `sudo bash scripts/deploy.sh --local` |
+| **GitHub Release** | 指定版本，离线环境 | `VERSION=v1.0.0 curl ... \| bash` |
+| **Docker** | 容器化部署 | `docker-compose up -d` |
 
 ---
 
-## License | 许可证
+## 服务管理
+
+```bash
+# 启动/停止/重启
+sudo systemctl start openaide
+sudo systemctl stop openaide
+sudo systemctl restart openaide
+
+# 查看状态
+sudo systemctl status openaide
+
+# 查看日志
+sudo journalctl -u openaide -f
+
+# 使用 CLI
+openaide-cli
+```
+
+---
+
+## 项目结构
+
+```
+openaide/
+├── backend/
+│   ├── cmd/
+│   │   ├── server/          # API 服务器入口
+│   │   └── cli/             # 命令行客户端
+│   ├── internal/
+│   │   ├── kernel/          # AI Agent 内核 (ReAct 循环)
+│   │   ├── llm/             # LLM 网关 (多提供商)
+│   │   ├── tools/           # 工具系统
+│   │   ├── memory/          # 记忆系统
+│   │   ├── orchestration/   # 编排层
+│   │   ├── api/             # RESTful API
+│   │   ├── config/          # 配置管理
+│   │   ├── git/             # Git 集成
+│   │   ├── index/           # 代码索引
+│   │   ├── knowledge/       # 知识库
+│   │   ├── compress/        # 上下文压缩
+│   │   ├── event/           # 事件系统
+│   │   └── identity/        # 身份检测
+│   ├── config.example.json  # 配置示例
+│   └── Dockerfile
+├── docs/                    # 架构文档
+├── scripts/
+│   └── deploy.sh            # 一键部署脚本
+└── README.md
+```
+
+---
+
+## GitHub Actions
+
+每次推送到 `master` 分支会自动：
+1. 编译 `openaide-server` 和 `openaide-cli`
+2. 运行测试
+3. 打包为 `openaide-linux-amd64.tar.gz`
+
+打标签 `v*` 会自动创建 GitHub Release 并上传二进制文件。
+
+```bash
+# 发布新版本
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+---
+
+## API 端点
+
+| 路由 | 说明 |
+|------|------|
+| `POST /api/v1/chat` | 聊天 |
+| `POST /api/v1/chat/stream` | 流式聊天 |
+| `GET /api/v1/sessions` | 会话列表 |
+| `GET /api/v1/sessions/{id}` | 会话历史 |
+| `GET /api/v1/memory/search?q=xxx` | 记忆搜索 |
+| `GET /api/v1/tools` | 工具列表 |
+| `GET /health` | 健康检查 |
+
+---
+
+## License
 
 MIT License

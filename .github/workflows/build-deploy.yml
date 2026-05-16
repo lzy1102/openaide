@@ -1,8 +1,9 @@
-name: Build
+name: Build and Release
 
 on:
   push:
     branches: [master]
+    tags: ['v*']
   workflow_dispatch:
 
 env:
@@ -36,9 +37,20 @@ jobs:
       - name: Package
         run: |
           mkdir -p dist/data
+          cp backend/config.example.json dist/
           tar -czvf openaide-linux-amd64.tar.gz -C dist .
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
         with:
           name: openaide-linux-amd64
           path: openaide-linux-amd64.tar.gz
+
+      - name: Upload to Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: openaide-linux-amd64.tar.gz
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
