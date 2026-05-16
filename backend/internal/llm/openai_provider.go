@@ -93,10 +93,11 @@ func (p *OpenAIProvider) Chat(ctx context.Context, messages []kernel.Message, to
 	}
 
 	llmResp := &kernel.LLMResponse{
-		ID:        result.ID,
-		Content:   choice.Message.Content,
-		ToolCalls: toolCalls,
-		Model:     result.Model,
+		ID:               result.ID,
+		Content:          choice.Message.Content,
+		ReasoningContent: choice.Message.ReasoningContent,
+		ToolCalls:        toolCalls,
+		Model:            result.Model,
 	}
 
 	if result.Usage != nil {

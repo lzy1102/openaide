@@ -48,11 +48,12 @@ type FunctionDef struct {
 
 // LLMResponse LLM 响应（内核通用格式）
 type LLMResponse struct {
-	ID       string   `json:"id"`
-	Content  string   `json:"content"`
-	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
-	Usage    *TokenUsage `json:"usage,omitempty"`
-	Model    string   `json:"model"`
+	ID               string     `json:"id"`
+	Content          string     `json:"content"`
+	ReasoningContent string     `json:"reasoning_content,omitempty"`
+	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`
+	Usage            *TokenUsage `json:"usage,omitempty"`
+	Model            string     `json:"model"`
 }
 
 // TokenUsage Token 使用统计

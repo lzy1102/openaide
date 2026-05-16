@@ -165,11 +165,12 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 			totalTokens += llmResp.Usage.TotalTokens
 		}
 
-		// 添加 assistant 消息
+		// 添加 assistant 消息（包含 reasoning_content）
 		messages = append(messages, Message{
-			Role:      "assistant",
-			Content:   llmResp.Content,
-			ToolCalls: llmResp.ToolCalls,
+			Role:             "assistant",
+			Content:          llmResp.Content,
+			ReasoningContent: llmResp.ReasoningContent,
+			ToolCalls:        llmResp.ToolCalls,
 		})
 
 		// 无工具调用 -> 返回结果
