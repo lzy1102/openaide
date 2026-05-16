@@ -13,84 +13,84 @@ import (
 // Config 应用配置
 type Config struct {
 	// 服务器配置
-	Server ServerConfig `json:"server"`
+	Server ServerConfig `json:"server" yaml:"server"`
 
 	// LLM 配置
-	LLM LLMConfig `json:"llm"`
+	LLM LLMConfig `json:"llm" yaml:"llm"`
 
 	// 记忆配置
-	Memory MemoryConfig `json:"memory"`
+	Memory MemoryConfig `json:"memory" yaml:"memory"`
 
 	// 工具配置
-	Tools ToolsConfig `json:"tools"`
+	Tools ToolsConfig `json:"tools" yaml:"tools"`
 
 	// 内核配置
-	Kernel KernelConfig `json:"kernel"`
+	Kernel KernelConfig `json:"kernel" yaml:"kernel"`
 
 	// 存储配置
-	Storage StorageConfig `json:"storage"`
+	Storage StorageConfig `json:"storage" yaml:"storage"`
 
 	// 日志配置
-	Log LogConfig `json:"log"`
+	Log LogConfig `json:"log" yaml:"log"`
 }
 
 // ServerConfig 服务器配置
 type ServerConfig struct {
-	Host string `json:"host"`
-	Port int    `json:"port"`
-	Mode string `json:"mode"` // direct, server, tui
+	Host string `json:"host" yaml:"host"`
+	Port int    `json:"port" yaml:"port"`
+	Mode string `json:"mode" yaml:"mode"` // direct, server, tui
 }
 
 // LLMConfig LLM 配置
 type LLMConfig struct {
-	DefaultProvider string              `json:"default_provider"`
-	Providers       []ProviderConfig    `json:"providers"`
-	FallbackEnabled bool                `json:"fallback_enabled"`
+	DefaultProvider string              `json:"default_provider" yaml:"default_provider"`
+	Providers       []ProviderConfig    `json:"providers" yaml:"providers"`
+	FallbackEnabled bool                `json:"fallback_enabled" yaml:"fallback_enabled"`
 }
 
 // ProviderConfig 提供商配置
 type ProviderConfig struct {
-	Name         string            `json:"name"`
-	Type         string            `json:"type"`
-	BaseURL      string            `json:"base_url"`
-	APIKey       string            `json:"api_key"`
-	DefaultModel string            `json:"default_model"`
-	Timeout      int               `json:"timeout"`
-	Enabled      bool              `json:"enabled"`
-	Headers      map[string]string `json:"headers,omitempty"`
+	Name         string            `json:"name" yaml:"name"`
+	Type         string            `json:"type" yaml:"type"`
+	BaseURL      string            `json:"base_url" yaml:"base_url"`
+	APIKey       string            `json:"api_key" yaml:"api_key"`
+	DefaultModel string            `json:"default_model" yaml:"default_model"`
+	Timeout      int               `json:"timeout" yaml:"timeout"`
+	Enabled      bool              `json:"enabled" yaml:"enabled"`
+	Headers      map[string]string `json:"headers,omitempty" yaml:"headers,omitempty"`
 }
 
 // MemoryConfig 记忆配置
 type MemoryConfig struct {
-	DataDir      string  `json:"data_dir"`
-	MaxItems     int     `json:"max_items"`
-	CompressThreshold int `json:"compress_threshold"`
+	DataDir      string  `json:"data_dir" yaml:"data_dir"`
+	MaxItems     int     `json:"max_items" yaml:"max_items"`
+	CompressThreshold int `json:"compress_threshold" yaml:"compress_threshold"`
 }
 
 // ToolsConfig 工具配置
 type ToolsConfig struct {
-	Enabled        []string `json:"enabled"`
-	DangerousTools []string `json:"dangerous_tools"`
-	MaxExecutionTime int    `json:"max_execution_time"`
+	Enabled        []string `json:"enabled" yaml:"enabled"`
+	DangerousTools []string `json:"dangerous_tools" yaml:"dangerous_tools"`
+	MaxExecutionTime int    `json:"max_execution_time" yaml:"max_execution_time"`
 }
 
 // KernelConfig 内核配置
 type KernelConfig struct {
-	MaxRounds    int    `json:"max_rounds"`
-	MaxTokens    int    `json:"max_tokens"`
-	SystemPrompt string `json:"system_prompt"`
+	MaxRounds    int    `json:"max_rounds" yaml:"max_rounds"`
+	MaxTokens    int    `json:"max_tokens" yaml:"max_tokens"`
+	SystemPrompt string `json:"system_prompt" yaml:"system_prompt"`
 }
 
 // StorageConfig 存储配置
 type StorageConfig struct {
-	DataDir string `json:"data_dir"`
-	IndexDir string `json:"index_dir"`
+	DataDir string `json:"data_dir" yaml:"data_dir"`
+	IndexDir string `json:"index_dir" yaml:"index_dir"`
 }
 
 // LogConfig 日志配置
 type LogConfig struct {
-	Level  string `json:"level"`
-	Format string `json:"format"`
+	Level  string `json:"level" yaml:"level"`
+	Format string `json:"format" yaml:"format"`
 }
 
 // DefaultConfig 默认配置
