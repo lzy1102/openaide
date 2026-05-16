@@ -173,16 +173,43 @@ git push origin v1.0.0
 
 ---
 
+## 核心能力
+
+- **ReAct Agent**: 思考→行动→观察循环，最大10轮，工具并行执行
+- **9个内置工具**: 读写文件、执行命令、列目录、搜索文件、Git状态、知识库搜索/添加、代码符号搜索
+- **5个Skill**: 代码审查、Git提交、调试助手、代码重构、代码解释（自动检测触发）
+- **任务规划器**: 复杂请求自动拆分+子任务顺序执行+结果汇总
+- **反思+学习**: 每轮自动反思评分，反馈到下一轮；学习模式存入insights
+- **知识库**: 自动质量门控抽取（score>0.6），下次对话注入相关上下文
+- **3级记忆**: L1工作/L2短期/L3长期，TF-IDF向量语义搜索
+- **会话持久化**: 文件JSON存储，死机重启完整恢复
+- **小说式上下文压缩**: 章节摘要+悬念钩子，超出窗口自动压缩
+- **LLM网关**: OpenAI兼容+Anthropic原生+DeepSeek特殊支持(thinking/FIM)，故障转移
+- **JWT认证**: HMAC-SHA256，注册/登录/中间件
+- **WebSocket**: /ws端点，双向流式+心跳
+
+## CLI
+
+```bash
+openaide           # Bubbletea TUI（推荐）
+openaide update    # 更新
+openaide version   # 版本
+```
+
 ## API 端点
 
 | 路由 | 说明 |
 |------|------|
-| `POST /api/v1/chat` | 聊天 |
-| `POST /api/v1/chat/stream` | 流式聊天 |
-| `GET /api/v1/sessions` | 会话列表 |
-| `GET /api/v1/sessions/{id}` | 会话历史 |
-| `GET /api/v1/memory/search?q=xxx` | 记忆搜索 |
-| `GET /api/v1/tools` | 工具列表 |
+| `POST /api/v1/chat` | 聊天 (需认证) |
+| `POST /api/v1/chat/stream` | 流式聊天 SSE (需认证) |
+| `POST /api/v1/auth/register` | 注册 |
+| `POST /api/v1/auth/login` | 登录获取JWT |
+| `GET /api/v1/sessions` | 会话列表 (需认证) |
+| `GET /api/v1/sessions/{id}` | 会话历史 (需认证) |
+| `GET /api/v1/memory/search?q=xxx` | 记忆搜索 (需认证) |
+| `GET /api/v1/tools` | 工具列表 (需认证) |
+| `GET /api/v1/stats` | 系统统计 (需认证) |
+| `GET /ws` | WebSocket (需认证) |
 | `GET /health` | 健康检查 |
 
 ---
