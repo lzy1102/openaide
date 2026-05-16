@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"openaide/backend/internal/auth"
 	"openaide/backend/internal/kernel"
 	"openaide/backend/internal/orchestration"
 )
@@ -15,18 +16,20 @@ import (
 // Server API 服务器
 type Server struct {
 	orchestrator *orchestration.Orchestrator
+	authService  *auth.Service
 	addr         string
 	server       *http.Server
 }
 
 // NewServer 创建 API 服务器
-func NewServer(orch *orchestration.Orchestrator, addr string) *Server {
+func NewServer(orch *orchestration.Orchestrator, addr string, authSvc *auth.Service) *Server {
 	if addr == "" {
 		addr = ":8080"
 	}
 
 	s := &Server{
 		orchestrator: orch,
+		authService:  authSvc,
 		addr:         addr,
 	}
 
@@ -38,11 +41,19 @@ func NewServer(orch *orchestration.Orchestrator, addr string) *Server {
 	mux.HandleFunc("/api/v1/memory/search", s.handleMemorySearch)
 	mux.HandleFunc("/api/v1/tools", s.handleTools)
 	mux.HandleFunc("/api/v1/stats", s.handleStats)
+	mux.HandleFunc("/api/v1/auth/", authSvc.AuthHandler)
 	mux.HandleFunc("/health", s.handleHealth)
+
+	// 应用中间件链: CORS → Auth
+	var handler http.Handler = mux
+	handler = s.withCORS(handler)
+	if authSvc != nil {
+		handler = authSvc.Middleware(handler)
+	}
 
 	s.server = &http.Server{
 		Addr:         addr,
-		Handler:      s.withCORS(mux),
+		Handler:      handler,
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 120 * time.Second,
 	}

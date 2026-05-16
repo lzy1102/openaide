@@ -26,6 +26,7 @@ type AgentKernel struct {
 	patternDetector  PatternDetector
 	knowledgeCollector KnowledgeCollector
 	qualityGate      QualityGate
+	skillManager     *SkillManager
 
 	// 事件系统
 	eventHandlers []EventHandler
@@ -121,6 +122,10 @@ func (k *AgentKernel) SetKnowledgeCollector(kc KnowledgeCollector) {
 // QualityGate 质量门控接口
 type QualityGate interface {
 	Pass(query, response string, toolSuccesses, toolFailures int, reflection *ReflectionResult) bool
+}
+
+func (k *AgentKernel) SetSkillManager(sm *SkillManager) {
+	k.skillManager = sm
 }
 
 func (k *AgentKernel) SetQualityGate(gate QualityGate) {

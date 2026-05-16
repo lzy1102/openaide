@@ -7,8 +7,12 @@ import (
 	"os"
 
 	"openaide/backend/internal/api"
+	"openaide/backend/internal/auth"
+	"openaide/backend/internal/compress"
 	"openaide/backend/internal/config"
+	"openaide/backend/internal/event"
 	"openaide/backend/internal/feedback"
+	"openaide/backend/internal/identity"
 	"openaide/backend/internal/kernel"
 	"openaide/backend/internal/knowledge"
 	"openaide/backend/internal/llm"
@@ -87,7 +91,15 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 	}
 
 	// 4. 创建会话存储
-	sessionStore := kernel.NewSessionStoreAdapter()
+	// 使用文件持久化会话存储（死机可恢复）
+	var sessionStore kernel.SessionStore
+	fileStore, err := kernel.NewFileSessionStore(cfg.Storage.DataDir + "/sessions")
+	if err != nil {
+		slog.Warn("Failed to create file session store, using memory", "error", err)
+		sessionStore = kernel.NewSessionStoreAdapter()
+	} else {
+		sessionStore = fileStore
+	}
 
 	// 5. 创建内核
 	kernelConfig := &kernel.Config{
@@ -111,6 +123,7 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 		agentKernel.SetLearner(learner)
 	}
 	agentKernel.SetPatternDetector(kernel.NewSimplePatternDetector())
+	agentKernel.SetSkillManager(kernel.NewSkillManager(cfg.Storage.DataDir + "/skills"))
 
 	// 接入知识库 + 质量门控
 	kb, err := knowledge.NewBase(cfg.Storage.DataDir + "/knowledge")
@@ -122,6 +135,15 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 		slog.Warn("Failed to create knowledge base", "error", err)
 	}
 
+	// 接入身份检测 + 事件总线 + 高级压缩器
+	if projIdentity, err := identity.NewDetector().Detect(context.Background(), "."); err == nil && projIdentity != nil {
+		slog.Info("Project identity detected", "type", projIdentity.ProjectType)
+	}
+	eventBus := event.NewBus()
+	eventBus.EnablePersistence(cfg.Storage.DataDir + "/events")
+	agentKernel.SetContextCompressor(compress.NewNovelCompressor())
+	_ = eventBus // 事件总线已在后台运行
+
 	// 6. 创建编排器
 	orch := orchestration.NewOrchestrator(agentKernel, gateway, toolRegistry, memManager, sessionStore)
 	if kb != nil {
@@ -131,7 +153,8 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 
 	// 7. 创建 API 服务器
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
-	app.APIServer = api.NewServer(orch, addr)
+	authSvc := auth.NewService(os.Getenv("OPENAIDE_JWT_SECRET"))
+	app.APIServer = api.NewServer(orch, addr, authSvc)
 
 	return app, nil
 }

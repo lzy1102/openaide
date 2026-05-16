@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"openaide/backend/internal/kernel"
@@ -54,8 +55,22 @@ func (o *Orchestrator) SetKnowledgeCollector(kc kernel.KnowledgeCollector) {
 	o.knowledge = kc
 }
 
-// ProcessQuery 处理用户查询（完整编排流程）
+// ProcessQuery 处理用户查询 — 自动检测复杂任务并使用规划器
 func (o *Orchestrator) ProcessQuery(ctx context.Context, userID, projectID, content string, opts kernel.QueryOptions) (*kernel.Response, error) {
+	// 复杂任务先规划再执行
+	planner := NewPlanner(o.llmGateway)
+	if planner.needsPlanning(content) {
+		plan, err := planner.Plan(ctx, content)
+		if err == nil && len(plan.Subtasks) > 1 {
+			return o.executePlan(ctx, userID, projectID, content, plan, opts)
+		}
+	}
+
+	return o.processSingle(ctx, userID, projectID, content, opts)
+}
+
+// processSingle 单步执行（原有逻辑）
+func (o *Orchestrator) processSingle(ctx context.Context, userID, projectID, content string, opts kernel.QueryOptions) (*kernel.Response, error) {
 	start := time.Now()
 
 	// 1. 获取或创建会话
@@ -293,4 +308,39 @@ func (e *EnhancedOrchestrator) enhance(ctx context.Context, userID, projectID, q
 			slog.Warn("Learning failed", "error", err)
 		}
 	}
+}
+
+// executePlan 执行任务规划 — 逐个执行子任务，结果汇总
+func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, content string, plan *Plan, opts kernel.QueryOptions) (*kernel.Response, error) {
+	var results []string
+	totalTools := 0
+
+	for i, st := range plan.Subtasks {
+		subQuery := fmt.Sprintf("## 总体目标: %s\n## 当前步骤 (%d/%d): %s\n## 具体要求: %s\n\n请完成此步骤的任务。",
+			plan.Goal, i+1, len(plan.Subtasks), st.Title, st.Description)
+
+		// 注入前面步骤的结果
+		if i > 0 {
+			subQuery += fmt.Sprintf("\n\n## 已完成的步骤结果:\n%s", strings.Join(results, "\n"))
+		}
+
+		resp, err := o.processSingle(ctx, userID, projectID, subQuery, opts)
+		if err != nil {
+			results = append(results, fmt.Sprintf("❌ 步骤%d(%s)失败: %v", st.ID, st.Title, err))
+			continue
+		}
+		results = append(results, fmt.Sprintf("### 步骤%d: %s\n%s", st.ID, st.Title, resp.Content))
+		totalTools += resp.ToolCalls
+	}
+
+	// 汇总
+	summary := fmt.Sprintf("## %s\n\n完成 %d/%d 个子任务：\n\n%s",
+		plan.Goal, len(results), len(plan.Subtasks), strings.Join(results, "\n\n---\n\n"))
+
+	return &kernel.Response{
+		Content:    summary,
+		ToolCalls:  totalTools,
+		TokensUsed: 0,
+		Duration:   0,
+	}, nil
 }

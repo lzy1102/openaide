@@ -2,13 +2,40 @@ package kernel
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
 )
 
-// SessionStoreAdapter 内存会话存储（用于新内核）
+// FileSessionStore 文件持久化会话存储 — 死机/重启后可恢复
+type FileSessionStore struct {
+	mu       sync.RWMutex
+	dataDir  string
+	sessions map[string]*Session // 内存索引
+}
+
+// NewFileSessionStore 创建文件会话存储
+func NewFileSessionStore(dataDir string) (*FileSessionStore, error) {
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		return nil, fmt.Errorf("create session dir failed: %w", err)
+	}
+
+	s := &FileSessionStore{
+		dataDir:  dataDir,
+		sessions: make(map[string]*Session),
+	}
+
+	// 恢复已有会话
+	s.recover()
+	return s, nil
+}
+
+// SessionStoreAdapter 内存会话存储（兼容旧代码，重启丢失）
 type SessionStoreAdapter struct {
 	sessions map[string]*Session
 }
@@ -20,7 +47,129 @@ func NewSessionStoreAdapter() *SessionStoreAdapter {
 	}
 }
 
-// Create 创建会话
+// ============ FileSessionStore 实现（持久化） ============
+
+func (s *FileSessionStore) Create(ctx context.Context, projectID, userID string) (*Session, error) {
+	session := &Session{
+		ID:        uuid.New().String(),
+		ProjectID: projectID,
+		UserID:    userID,
+		Messages:  make([]Message, 0),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		Metadata:  make(map[string]interface{}),
+	}
+
+	s.mu.Lock()
+	s.sessions[session.ID] = session
+	s.mu.Unlock()
+
+	if err := s.save(session); err != nil {
+		return nil, err
+	}
+	return session, nil
+}
+
+func (s *FileSessionStore) Get(ctx context.Context, sessionID string) (*Session, error) {
+	s.mu.RLock()
+	session, ok := s.sessions[sessionID]
+	s.mu.RUnlock()
+
+	if ok {
+		return session, nil
+	}
+
+	// 尝试从磁盘加载（可能在其他实例创建或索引未加载）
+	return s.load(sessionID)
+}
+
+func (s *FileSessionStore) Update(ctx context.Context, session *Session) error {
+	session.UpdatedAt = time.Now()
+
+	s.mu.Lock()
+	s.sessions[session.ID] = session
+	s.mu.Unlock()
+
+	return s.save(session)
+}
+
+func (s *FileSessionStore) List(ctx context.Context, projectID, userID string, limit int) ([]*Session, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var result []*Session
+	for _, session := range s.sessions {
+		if (projectID == "" || session.ProjectID == projectID) &&
+			(userID == "" || session.UserID == userID) {
+			result = append(result, session)
+			if limit > 0 && len(result) >= limit {
+				break
+			}
+		}
+	}
+	return result, nil
+}
+
+// Count 返回会话总数
+func (s *FileSessionStore) Count() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.sessions)
+}
+
+// ============ 持久化 ============
+
+func (s *FileSessionStore) sessionPath(id string) string {
+	return filepath.Join(s.dataDir, id+".json")
+}
+
+func (s *FileSessionStore) save(session *Session) error {
+	data, err := json.MarshalIndent(session, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(s.sessionPath(session.ID), data, 0644)
+}
+
+func (s *FileSessionStore) load(sessionID string) (*Session, error) {
+	path := s.sessionPath(sessionID)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("session not found: %s", sessionID)
+	}
+
+	var session Session
+	if err := json.Unmarshal(data, &session); err != nil {
+		return nil, err
+	}
+
+	s.mu.Lock()
+	s.sessions[session.ID] = &session
+	s.mu.Unlock()
+
+	return &session, nil
+}
+
+// recover 从磁盘恢复所有会话（启动时调用）
+func (s *FileSessionStore) recover() {
+	entries, err := os.ReadDir(s.dataDir)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		id := entry.Name()[:len(entry.Name())-5] // remove .json
+		session, err := s.load(id)
+		if err == nil {
+			s.sessions[id] = session
+		}
+	}
+}
+
+// ============ SessionStoreAdapter 实现（内存，兼容旧代码） ============
+
 func (s *SessionStoreAdapter) Create(ctx context.Context, projectID, userID string) (*Session, error) {
 	session := &Session{
 		ID:        uuid.New().String(),
@@ -34,7 +183,6 @@ func (s *SessionStoreAdapter) Create(ctx context.Context, projectID, userID stri
 	return session, nil
 }
 
-// Get 获取会话
 func (s *SessionStoreAdapter) Get(ctx context.Context, sessionID string) (*Session, error) {
 	if session, ok := s.sessions[sessionID]; ok {
 		return session, nil
@@ -42,13 +190,11 @@ func (s *SessionStoreAdapter) Get(ctx context.Context, sessionID string) (*Sessi
 	return nil, fmt.Errorf("session not found: %s", sessionID)
 }
 
-// Update 更新会话
 func (s *SessionStoreAdapter) Update(ctx context.Context, session *Session) error {
 	s.sessions[session.ID] = session
 	return nil
 }
 
-// List 列出会话
 func (s *SessionStoreAdapter) List(ctx context.Context, projectID, userID string, limit int) ([]*Session, error) {
 	var result []*Session
 	for _, session := range s.sessions {

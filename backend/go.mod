@@ -16,6 +16,8 @@ require (
 	golang.org/x/sys v0.44.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	openaide/backend/internal/api v0.0.0 // indirect
+	openaide/backend/internal/compress v0.0.0-00010101000000-000000000000 // indirect
+	openaide/backend/internal/event v0.0.0-00010101000000-000000000000 // indirect
 	openaide/backend/internal/llm v0.0.0 // indirect
 	openaide/backend/internal/memory v0.0.0 // indirect
 	openaide/backend/internal/orchestration v0.0.0 // indirect

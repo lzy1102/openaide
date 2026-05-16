@@ -53,9 +53,10 @@ type MemoryItem struct {
 
 // Manager 记忆管理器
 type Manager struct {
-	dataDir string
-	items   map[string]*MemoryItem // 内存缓存
-	mu      sync.RWMutex
+	dataDir  string
+	items    map[string]*MemoryItem // 内存缓存
+	vecIndex *VectorIndex           // 语义向量索引
+	mu       sync.RWMutex
 }
 
 // NewManager 创建记忆管理器
@@ -65,8 +66,9 @@ func NewManager(dataDir string) (*Manager, error) {
 	}
 
 	m := &Manager{
-		dataDir: dataDir,
-		items:   make(map[string]*MemoryItem),
+		dataDir:  dataDir,
+		items:    make(map[string]*MemoryItem),
+		vecIndex: NewVectorIndex(),
 	}
 
 	// 加载已有记忆
@@ -95,6 +97,7 @@ func (m *Manager) Save(ctx context.Context, sessionID string, level Level, conte
 
 	m.mu.Lock()
 	m.items[item.ID] = item
+	m.vecIndex.Add(item.ID, item.Content)
 	m.mu.Unlock()
 
 	// 持久化
@@ -124,31 +127,55 @@ func (m *Manager) Get(ctx context.Context, itemID string) (*MemoryItem, error) {
 	return item, nil
 }
 
-// Search 搜索记忆
+// Search 搜索记忆（向量语义搜索 + 文本回退）
 func (m *Manager) Search(ctx context.Context, query string, level Level, limit int) ([]*MemoryItem, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	var results []*MemoryItem
-	queryLower := strings.ToLower(query)
+	seen := make(map[string]bool)
 
-	for _, item := range m.items {
-		if level >= 0 && item.Level != level {
-			continue
-		}
-
-		// 简单文本匹配（后续可替换为向量搜索）
-		contentLower := strings.ToLower(item.Content)
-		if strings.Contains(contentLower, queryLower) {
-			results = append(results, item)
-			continue
-		}
-
-		// 标签匹配
-		for _, tag := range item.Tags {
-			if strings.Contains(strings.ToLower(tag), queryLower) {
+	// 1. 向量语义搜索
+	if ids, scores := m.vecIndex.Search(query, limit*2); len(ids) > 0 {
+		_ = scores
+		for _, id := range ids {
+			if item, ok := m.items[id]; ok {
+				if level >= 0 && item.Level != level {
+					continue
+				}
 				results = append(results, item)
-				break
+				seen[id] = true
+				if limit > 0 && len(results) >= limit {
+					break
+				}
+			}
+		}
+	}
+
+	// 2. 文本匹配回退
+	if len(results) < limit || limit == 0 {
+		queryLower := strings.ToLower(query)
+		for _, item := range m.items {
+			if seen[item.ID] {
+				continue
+			}
+			if level >= 0 && item.Level != level {
+				continue
+			}
+
+			contentLower := strings.ToLower(item.Content)
+			if strings.Contains(contentLower, queryLower) {
+				results = append(results, item)
+				seen[item.ID] = true
+				continue
+			}
+
+			for _, tag := range item.Tags {
+				if strings.Contains(strings.ToLower(tag), queryLower) {
+					results = append(results, item)
+					seen[item.ID] = true
+					break
+				}
 			}
 		}
 	}
