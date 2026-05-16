@@ -29,8 +29,9 @@ llm:
       # 思考模式 (DeepSeek v4 特有)
       thinking:
         type: "enabled"           # enabled / disabled
-      reasoning_effort: "high"    # high / max
-      # json_mode: false          # 启用 JSON 输出模式
+      reasoning_effort: "high"    # high / max (low/medium 会映射为 high, xhigh 映射为 max)
+      # json_mode: false          # 启用 JSON 输出模式 (prompt 中必须包含 "json" 字样)
+      # strict_tools: false       # 启用工具严格模式 (Beta, 需使用 /beta 端点)
 
     # OpenAI (备用)
     - name: "openai"

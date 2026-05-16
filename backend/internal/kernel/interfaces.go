@@ -46,6 +46,25 @@ type LLMProvider interface {
 	GetModelID() string
 }
 
+// PrefixCompleter 对话前缀续写接口 (DeepSeek Beta)
+type PrefixCompleter interface {
+	// CompleteWithPrefix 使用前缀续写
+	CompleteWithPrefix(ctx context.Context, messages []Message, prefix string, options map[string]interface{}) (*LLMResponse, error)
+}
+
+// FIMCompleter FIM 补全接口 (DeepSeek Beta)
+type FIMCompleter interface {
+	// FIMComplete Fill In The Middle 补全
+	FIMComplete(ctx context.Context, prompt, suffix string, options map[string]interface{}) (*FIMResponse, error)
+}
+
+// FIMResponse FIM 补全响应
+type FIMResponse struct {
+	Text  string `json:"text"`
+	Model string `json:"model"`
+	Usage *TokenUsage `json:"usage,omitempty"`
+}
+
 // ToolExecutor 工具执行器接口
 type ToolExecutor interface {
 	// GetDefinitions 获取所有工具定义

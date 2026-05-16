@@ -99,6 +99,12 @@ func main() {
 		if resp.ToolCalls > 0 {
 			fmt.Printf("%s(使用了 %d 个工具)%s\n", Dim, resp.ToolCalls, Reset)
 		}
+		// 显示 token 使用统计（包含缓存命中）
+		if resp.TokensUsed > 0 {
+			fmt.Printf("%s[Tokens: %d]%s", Dim, resp.TokensUsed, Reset)
+			// 如果有缓存命中信息，显示出来
+			fmt.Println()
+		}
 		fmt.Println()
 	}
 }

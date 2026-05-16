@@ -20,6 +20,12 @@ type ProviderConfig struct {
 	Timeout     int               `json:"timeout"`
 	Headers     map[string]string `json:"headers,omitempty"`
 	Enabled     bool              `json:"enabled"`
+
+	// DeepSeek 特有配置
+	Thinking        *kernel.ThinkingConfig `json:"thinking,omitempty"`
+	ReasoningEffort string                 `json:"reasoning_effort,omitempty"`
+	JSONMode        bool                   `json:"json_mode,omitempty"`
+	StrictTools     bool                   `json:"strict_tools,omitempty"`
 }
 
 // Gateway LLM 网关 - 统一接入所有提供商

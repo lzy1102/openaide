@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"openaide/backend/internal/kernel"
 )
 
 // Config 应用配置
@@ -60,15 +62,13 @@ type ProviderConfig struct {
 	Headers      map[string]string `json:"headers,omitempty" yaml:"headers,omitempty"`
 
 	// DeepSeek 特有配置
-	Thinking        *ThinkingConfig `json:"thinking,omitempty" yaml:"thinking,omitempty"`
-	ReasoningEffort string          `json:"reasoning_effort,omitempty" yaml:"reasoning_effort,omitempty"`
-	JSONMode        bool            `json:"json_mode,omitempty" yaml:"json_mode,omitempty"`
+	Thinking        *kernel.ThinkingConfig `json:"thinking,omitempty" yaml:"thinking,omitempty"`
+	ReasoningEffort string                 `json:"reasoning_effort,omitempty" yaml:"reasoning_effort,omitempty"`
+	JSONMode        bool                   `json:"json_mode,omitempty" yaml:"json_mode,omitempty"`
+	StrictTools     bool                   `json:"strict_tools,omitempty" yaml:"strict_tools,omitempty"`
 }
 
-// ThinkingConfig 思考模式配置
-type ThinkingConfig struct {
-	Type string `json:"type" yaml:"type"` // enabled / disabled
-}
+
 
 // MemoryConfig 记忆配置
 type MemoryConfig struct {

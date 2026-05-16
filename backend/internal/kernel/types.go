@@ -44,6 +44,7 @@ type FunctionDef struct {
 	Name        string                 `json:"name"`
 	Description string                 `json:"description"`
 	Parameters  map[string]interface{} `json:"parameters"`
+	Strict      bool                   `json:"strict,omitempty"`
 }
 
 // LLMResponse LLM 响应（内核通用格式）
@@ -58,9 +59,16 @@ type LLMResponse struct {
 
 // TokenUsage Token 使用统计
 type TokenUsage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
+	PromptTokens           int `json:"prompt_tokens"`
+	CompletionTokens       int `json:"completion_tokens"`
+	TotalTokens            int `json:"total_tokens"`
+	PromptCacheHitTokens   int `json:"prompt_cache_hit_tokens,omitempty"`
+	PromptCacheMissTokens  int `json:"prompt_cache_miss_tokens,omitempty"`
+}
+
+// ThinkingConfig 思考模式配置 (DeepSeek 特有)
+type ThinkingConfig struct {
+	Type string `json:"type"` // enabled / disabled
 }
 
 // StreamChunk 流式响应块

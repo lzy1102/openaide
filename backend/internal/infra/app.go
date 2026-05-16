@@ -36,33 +36,30 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 		}
 
 		var provider llm.Provider
+		llmConfig := &llm.ProviderConfig{
+			Name:            providerCfg.Name,
+			Type:            providerCfg.Type,
+			BaseURL:         providerCfg.BaseURL,
+			APIKey:          providerCfg.APIKey,
+			DefaultModel:    providerCfg.DefaultModel,
+			Timeout:         providerCfg.Timeout,
+			Headers:         providerCfg.Headers,
+			Enabled:         providerCfg.Enabled,
+			Thinking:        providerCfg.Thinking,
+			ReasoningEffort: providerCfg.ReasoningEffort,
+			JSONMode:        providerCfg.JSONMode,
+			StrictTools:     providerCfg.StrictTools,
+		}
+
 		switch providerCfg.Type {
 		case "openai", "openai-compatible":
-			provider = llm.NewOpenAIProvider(&llm.ProviderConfig{
-				Name:         providerCfg.Name,
-				Type:         providerCfg.Type,
-				BaseURL:      providerCfg.BaseURL,
-				APIKey:       providerCfg.APIKey,
-				DefaultModel: providerCfg.DefaultModel,
-				Timeout:      providerCfg.Timeout,
-				Headers:      providerCfg.Headers,
-				Enabled:      providerCfg.Enabled,
-			})
+			provider = llm.NewOpenAIProvider(llmConfig)
 		default:
 			slog.Warn("Unknown provider type, skipping", "name", providerCfg.Name, "type", providerCfg.Type)
 			continue
 		}
 
-		gateway.RegisterProvider(providerCfg.Name, provider, &llm.ProviderConfig{
-			Name:         providerCfg.Name,
-			Type:         providerCfg.Type,
-			BaseURL:      providerCfg.BaseURL,
-			APIKey:       providerCfg.APIKey,
-			DefaultModel: providerCfg.DefaultModel,
-			Timeout:      providerCfg.Timeout,
-			Headers:      providerCfg.Headers,
-			Enabled:      providerCfg.Enabled,
-		})
+		gateway.RegisterProvider(providerCfg.Name, provider, llmConfig)
 		slog.Info("Provider registered", "name", providerCfg.Name, "model", providerCfg.DefaultModel)
 	}
 
