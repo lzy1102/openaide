@@ -79,8 +79,7 @@ get_latest_version() {
     fi
 
     if [ -z "$version" ]; then
-        log_warn "无法获取最新版本，使用默认版本"
-        echo "v0.1.0"
+        echo ""
     else
         echo "$version"
     fi
@@ -408,17 +407,30 @@ main() {
             VERSION=$(get_latest_version)
         fi
 
-        log_info "安装版本: $VERSION"
+        # 如果没有发布版本，自动切换到源码编译模式
+        if [ -z "$VERSION" ]; then
+            log_warn "未找到 GitHub Release，切换到源码编译模式"
+            log_info "克隆源码到 $INSTALL_DIR ..."
+            if [ -d "$INSTALL_DIR/.git" ]; then
+                cd "$INSTALL_DIR" && git pull
+            else
+                rm -rf "$INSTALL_DIR"
+                git clone "https://github.com/$GITHUB_REPO.git" "$INSTALL_DIR"
+            fi
+            local_build
+        else
+            log_info "安装版本: $VERSION"
 
-        # 下载
-        local archive
-        archive=$(download_release "$VERSION")
+            # 下载
+            local archive
+            archive=$(download_release "$VERSION")
 
-        # 安装
-        install_binaries "$archive"
+            # 安装
+            install_binaries "$archive"
 
-        # 清理下载文件
-        rm -f "$archive"
+            # 清理下载文件
+            rm -f "$archive"
+        fi
     fi
 
     # 初始化配置
