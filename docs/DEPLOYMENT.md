@@ -2,15 +2,15 @@
 
 > 版本: v3.0.0
 > 日期: 2026-05-16
-> 适用场景: 服务器部署、Docker 部署
+> 适用场景: 用户级安装，每个用户独立部署
 
 ---
 
 ## 目录
 
 1. [目录结构](#1-目录结构)
-2. [一键部署](#2-一键部署)
-3. [本地编译部署](#3-本地编译部署)
+2. [一键安装](#2-一键安装)
+3. [本地编译安装](#3-本地编译安装)
 4. [Docker 部署](#4-docker-部署)
 5. [配置说明](#5-配置说明)
 6. [服务管理](#6-服务管理)
@@ -20,60 +20,61 @@
 
 ## 1. 目录结构
 
-OpenAIDE 统一安装在 `/opt/openaide`：
+OpenAIDE 安装在用户目录 `~/.openaide`，每个用户完全独立：
 
 | 路径 | 说明 |
 |------|------|
-| `/opt/openaide/bin/openaide-server` | API 服务器 |
-| `/opt/openaide/bin/openaide-cli` | 命令行客户端 |
-| `/opt/openaide/config.json` | 主配置文件 |
-| `/opt/openaide/data/` | 数据目录（会话、记忆、知识库） |
-| `/opt/openaide/logs/` | 日志目录 |
-| `/opt/openaide/scripts/deploy.sh` | 部署脚本 |
+| `~/.openaide/bin/openaide-server` | API 服务器 |
+| `~/.openaide/bin/openaide-cli` | 命令行客户端 |
+| `~/.openaide/config.json` | 用户配置文件 |
+| `~/.openaide/data/` | 用户数据（会话、记忆、知识库） |
+| `~/.openaide/logs/` | 用户日志 |
+| `~/.openaide/start.sh` | 启动脚本 |
+| `~/.openaide/stop.sh` | 停止脚本 |
 
 ---
 
-## 2. 一键部署
+## 2. 一键安装
 
-### 2.1 从 GitHub Release 部署（推荐）
+### 2.1 从 GitHub Release 安装（推荐）
 
 ```bash
 # 使用 curl
-curl -fsSL https://raw.githubusercontent.com/lzy1102/openaide/master/scripts/deploy.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/lzy1102/openaide/master/scripts/deploy.sh | bash
 
 # 或使用 wget
-wget -qO- https://raw.githubusercontent.com/lzy1102/openaide/master/scripts/deploy.sh | sudo bash
+wget -qO- https://raw.githubusercontent.com/lzy1102/openaide/master/scripts/deploy.sh | bash
 ```
 
-### 2.2 指定版本部署
+### 2.2 指定版本安装
 
 ```bash
-VERSION=v1.0.0 curl -fsSL https://raw.githubusercontent.com/lzy1102/openaide/master/scripts/deploy.sh | sudo bash
+VERSION=v1.0.0 curl -fsSL https://raw.githubusercontent.com/lzy1102/openaide/master/scripts/deploy.sh | bash
 ```
 
-### 2.3 部署后配置
+### 2.3 安装后配置
 
 ```bash
 # 编辑配置文件，填入 API Key
-sudo vim /opt/openaide/config.json
+vim ~/.openaide/config.json
 
-# 重启服务
-sudo systemctl restart openaide
+# 启动服务
+~/.openaide/start.sh
 ```
 
 ---
 
-## 3. 本地编译部署
+## 3. 本地编译安装
 
-适用于开发调试或修改代码后部署：
+适用于开发调试或修改代码后安装：
 
 ```bash
-# 1. 克隆代码
-git clone https://github.com/lzy1102/openaide.git /opt/openaide
-cd /opt/openaide
+# 1. 克隆代码到用户目录
+git clone https://github.com/lzy1102/openaide.git ~/.openaide
+cd ~/.openaide
 
-# 2. 运行部署脚本（本地编译模式）
-sudo bash scripts/deploy.sh --local
+# 2. 运行安装脚本（本地编译模式）
+bash scripts/deploy.sh --local
 ```
 
 ---
@@ -81,7 +82,7 @@ sudo bash scripts/deploy.sh --local
 ## 4. Docker 部署
 
 ```bash
-cd /opt/openaide/backend
+cd ~/.openaide/backend
 
 # 构建并启动
 docker-compose up -d
@@ -97,7 +98,7 @@ docker-compose logs -f
 ### 5.1 配置文件位置
 
 ```
-/opt/openaide/config.json
+~/.openaide/config.json
 ```
 
 ### 5.2 最小可用配置
@@ -135,32 +136,24 @@ docker-compose logs -f
 | 阿里云百炼 | `openai-compatible` | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
 | Ollama (本地) | `openai-compatible` | `http://localhost:11434/v1` |
 
-### 5.4 环境变量
-
-| 变量 | 说明 | 默认值 |
-|------|------|--------|
-| `OPENAIDE_HOME` | 数据根目录 | `/opt/openaide` |
-| `OPENAIDE_CONFIG` | 配置文件路径 | `/opt/openaide/config.json` |
-
 ---
 
 ## 6. 服务管理
 
 ```bash
-# 查看状态
-sudo systemctl status openaide
+# 启动服务
+~/.openaide/start.sh
 
-# 启动/停止/重启
-sudo systemctl start openaide
-sudo systemctl stop openaide
-sudo systemctl restart openaide
+# 停止服务
+~/.openaide/stop.sh
 
 # 查看日志
-sudo journalctl -u openaide -f
-sudo tail -f /opt/openaide/logs/server.log
+tail -f ~/.openaide/logs/server.log
 
 # 使用 CLI
 openaide-cli
+# 或
+~/.openaide/bin/openaide-cli
 ```
 
 ---
@@ -171,10 +164,10 @@ openaide-cli
 
 ```bash
 # 检查配置文件格式
-sudo /opt/openaide/bin/openaide-server -config /opt/openaide/config.json
+~/.openaide/bin/openaide-server -config ~/.openaide/config.json
 
-# 查看详细日志
-sudo journalctl -u openaide -n 100
+# 查看日志
+cat ~/.openaide/logs/server.log
 ```
 
 ### 7.2 API 无响应
@@ -187,10 +180,13 @@ curl http://localhost:8080/health
 ss -tlnp | grep 8080
 ```
 
-### 7.3 LLM 调用失败
+### 7.3 命令找不到
 
 ```bash
-# 测试 LLM 连接
-curl https://api.deepseek.com/v1/models \
-  -H "Authorization: Bearer your-api-key"
+# 添加 PATH
+export PATH="$HOME/.openaide/bin:$PATH"
+
+# 或永久添加
+echo 'export PATH="$HOME/.openaide/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
 ```

@@ -20,24 +20,24 @@ wget -qO- https://raw.githubusercontent.com/lzy1102/openaide/master/scripts/depl
 
 部署完成后：
 - 服务运行在 `http://localhost:8080`
-- 配置文件：`/opt/openaide/config.json`
-- 日志：`/opt/openaide/logs/server.log`
+- 配置文件：`~/.openaide/config.json`
+- 日志：`~/.openaide/logs/server.log`
 
 ### 2. 本地编译部署
 
 ```bash
-# 克隆代码
-git clone https://github.com/lzy1102/openaide.git /opt/openaide
-cd /opt/openaide
+# 克隆代码到用户目录
+git clone https://github.com/lzy1102/openaide.git ~/.openaide
+cd ~/.openaide
 
 # 运行部署脚本（本地编译模式）
-sudo bash scripts/deploy.sh --local
+bash scripts/deploy.sh --local
 ```
 
 ### 3. Docker 部署
 
 ```bash
-cd /opt/openaide/backend
+cd ~/.openaide/backend
 docker-compose up -d
 ```
 
@@ -45,7 +45,7 @@ docker-compose up -d
 
 ## 配置说明
 
-配置文件位置：`/opt/openaide/config.json`
+配置文件位置：`~/.openaide/config.json`
 
 首次部署会自动创建默认配置，**必须修改 API Key** 才能使用。
 
@@ -114,16 +114,14 @@ docker-compose up -d
 ## 服务管理
 
 ```bash
-# 启动/停止/重启
-sudo systemctl start openaide
-sudo systemctl stop openaide
-sudo systemctl restart openaide
+# 启动服务
+~/.openaide/start.sh
 
-# 查看状态
-sudo systemctl status openaide
+# 停止服务
+~/.openaide/stop.sh
 
 # 查看日志
-sudo journalctl -u openaide -f
+tail -f ~/.openaide/logs/server.log
 
 # 使用 CLI
 openaide-cli
@@ -134,30 +132,25 @@ openaide-cli
 ## 项目结构
 
 ```
-openaide/
-├── backend/
+~/.openaide/
+├── bin/
+│   ├── openaide-server      # API 服务器
+│   └── openaide-cli         # 命令行客户端
+├── config.json              # 用户配置
+├── data/                    # 用户数据
+│   ├── memory/              # 记忆
+│   ├── sessions/            # 会话
+│   └── knowledge/           # 知识库
+├── logs/                    # 日志
+├── start.sh                 # 启动脚本
+├── stop.sh                  # 停止脚本
+├── backend/                 # 源代码 (如本地编译)
 │   ├── cmd/
-│   │   ├── server/          # API 服务器入口
-│   │   └── cli/             # 命令行客户端
 │   ├── internal/
-│   │   ├── kernel/          # AI Agent 内核 (ReAct 循环)
-│   │   ├── llm/             # LLM 网关 (多提供商)
-│   │   ├── tools/           # 工具系统
-│   │   ├── memory/          # 记忆系统
-│   │   ├── orchestration/   # 编排层
-│   │   ├── api/             # RESTful API
-│   │   ├── config/          # 配置管理
-│   │   ├── git/             # Git 集成
-│   │   ├── index/           # 代码索引
-│   │   ├── knowledge/       # 知识库
-│   │   ├── compress/        # 上下文压缩
-│   │   ├── event/           # 事件系统
-│   │   └── identity/        # 身份检测
-│   ├── config.example.json  # 配置示例
-│   └── Dockerfile
-├── docs/                    # 架构文档
+│   └── ...
+├── docs/                    # 文档
 ├── scripts/
-│   └── deploy.sh            # 一键部署脚本
+│   └── deploy.sh            # 安装脚本
 └── README.md
 ```
 
