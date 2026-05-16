@@ -47,6 +47,7 @@ func NewServer(orch *orchestration.Orchestrator, addr string, authSvc *auth.Serv
 
 	// 应用中间件链: CORS → Auth
 	var handler http.Handler = mux
+	handler = NewRateLimiter(20, 200).Middleware(handler)
 	handler = s.withCORS(handler)
 	if authSvc != nil {
 		handler = authSvc.Middleware(handler)

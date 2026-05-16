@@ -300,6 +300,23 @@ func BuiltinTools() []kernel.ToolDefinition {
 				},
 			},
 		},
+		{
+			Type: "function",
+			Function: kernel.FunctionDef{
+				Name:        "read_image",
+				Description: "读取图片文件，返回base64数据供多模态模型分析",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"path": map[string]interface{}{
+							"type":        "string",
+							"description": "图片路径",
+						},
+					},
+					"required": []string{"path"},
+				},
+			},
+		},
 	}
 }
 
@@ -315,6 +332,7 @@ func BuiltinHandlers() map[string]kernel.ToolHandler {
 		"search_knowledge": handleSearchKnowledge,
 		"add_knowledge":    handleAddKnowledge,
 		"search_symbols":   handleSearchSymbols,
+		"read_image":       handleReadImage,
 	}
 }
 

@@ -18,6 +18,7 @@ import (
 	"openaide/backend/internal/llm"
 	"openaide/backend/internal/memory"
 	"openaide/backend/internal/orchestration"
+	"openaide/backend/internal/plugin"
 	"openaide/backend/internal/tools"
 )
 
@@ -124,6 +125,13 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 	}
 	agentKernel.SetPatternDetector(kernel.NewSimplePatternDetector())
 	agentKernel.SetSkillManager(kernel.NewSkillManager(cfg.Storage.DataDir + "/skills"))
+
+	// 接入插件管理器
+	pluginMgr := plugin.NewManager(cfg.Storage.DataDir + "/plugins")
+	pluginPrompt := pluginMgr.GetPrompt()
+	if pluginPrompt != "" {
+		kernelConfig.SystemPrompt += "\n\n" + pluginPrompt
+	}
 
 	// 接入知识库 + 质量门控
 	kb, err := knowledge.NewBase(cfg.Storage.DataDir + "/knowledge")
