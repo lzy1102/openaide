@@ -40,8 +40,9 @@ backend/config.server.json
 *.disabled
 *.bak
 
-# 部署脚本
+# 部署脚本 (根目录下的旧脚本)
 deploy*.sh
+!scripts/deploy.sh
 fix_config.py
 update_config.py
 test*.sh
