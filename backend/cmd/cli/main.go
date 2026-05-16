@@ -45,8 +45,10 @@ func main() {
 		case "help", "-h", "--help":
 			cmdHelp()
 			return
+		case "tui":
+			cmdTUI(args[1:])
+			return
 		case "chat", "run":
-			// 显式启动聊天模式
 			args = args[1:]
 		}
 	}
@@ -196,8 +198,9 @@ func cmdHelp() {
 	fmt.Println(color(Bold+Cyan, "▶ OpenAIDE CLI 帮助"))
 	fmt.Println()
 	fmt.Println("用法:")
-	fmt.Println("  openaide              启动交互式聊天 (默认)")
-	fmt.Println("  openaide chat         启动交互式聊天")
+	fmt.Println("  openaide              启动 TUI 界面 (默认)")
+	fmt.Println("  openaide chat         启动交互式聊天 (raw mode)")
+	fmt.Println("  openaide tui          启动 TUI 界面 (推荐)")
 	fmt.Println("  openaide update       更新到最新版本")
 	fmt.Println("  openaide update --local  本地重新编译")
 	fmt.Println("  openaide version      显示版本信息")
@@ -363,5 +366,35 @@ func runSimpleMode(app *infra.Application) {
 			fmt.Printf("%s[Tokens: %d]%s\n", Dim, resp.TokensUsed, Reset)
 		}
 		fmt.Println()
+	}
+}
+
+// cmdTUI 启动 Bubbletea TUI
+func cmdTUI(args []string) {
+	configPath := os.Getenv("HOME") + "/.openaide/config.yaml"
+	for i, arg := range args {
+		if arg == "-config" && i+1 < len(args) {
+			configPath = args[i+1]
+			break
+		}
+	}
+
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		cfg = config.DefaultConfig()
+	}
+	cfg.Server.Mode = "direct"
+
+	infra.InitLogger(cfg.Log.Level, cfg.Log.Format)
+
+	app, err := infra.NewApplication(cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create application: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := runTUI(app); err != nil {
+		fmt.Fprintf(os.Stderr, "TUI error: %v\n", err)
+		os.Exit(1)
 	}
 }

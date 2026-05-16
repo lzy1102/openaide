@@ -42,6 +42,7 @@ func NewServer(orch *orchestration.Orchestrator, addr string, authSvc *auth.Serv
 	mux.HandleFunc("/api/v1/tools", s.handleTools)
 	mux.HandleFunc("/api/v1/stats", s.handleStats)
 	mux.HandleFunc("/api/v1/auth/", authSvc.AuthHandler)
+	mux.HandleFunc("/ws", s.handleWebSocket)
 	mux.HandleFunc("/health", s.handleHealth)
 
 	// 应用中间件链: CORS → Auth
