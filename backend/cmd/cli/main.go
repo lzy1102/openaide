@@ -16,11 +16,7 @@ import (
 
 func main() {
 	var configPath string
-	defaultConfig := os.Getenv("HOME") + "/.openaide/config.yaml"
-	if _, err := os.Stat(defaultConfig); err != nil {
-		defaultConfig = "./config.yaml"
-	}
-	flag.StringVar(&configPath, "config", defaultConfig, "Path to config file")
+	flag.StringVar(&configPath, "config", os.Getenv("HOME")+"/.openaide/config.yaml", "Path to config file")
 	flag.Parse()
 
 	// 加载配置
