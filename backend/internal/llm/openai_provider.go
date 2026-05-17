@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -419,9 +420,10 @@ func (p *OpenAIProvider) isDeepSeek() bool {
 func (p *OpenAIProvider) convertMessages(messages []kernel.Message) []map[string]interface{} {
 	result := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
+		content := p.convertContent(msg)
 		m := map[string]interface{}{
 			"role":    msg.Role,
-			"content": msg.Content,
+			"content": content,
 		}
 		if msg.ReasoningContent != "" {
 			m["reasoning_content"] = msg.ReasoningContent
@@ -438,6 +440,51 @@ func (p *OpenAIProvider) convertMessages(messages []kernel.Message) []map[string
 		result[i] = m
 	}
 	return result
+}
+
+// convertContent 转换消息内容，支持多模态（图片base64→vision格式）
+func (p *OpenAIProvider) convertContent(msg kernel.Message) interface{} {
+	// 检测是否包含 base64 图片
+	if strings.Contains(msg.Content, "data:image/") && strings.Contains(msg.Content, ";base64,") {
+		return p.splitMultimodal(msg.Content)
+	}
+	return msg.Content
+}
+
+// splitMultimodal 将文本+base64图片拆分为vision content array
+func (p *OpenAIProvider) splitMultimodal(raw string) []map[string]interface{} {
+	var parts []map[string]interface{}
+
+	// 提取所有 data:image/...;base64,... 片段
+	re := regexp.MustCompile(`data:image/\w+;base64,[A-Za-z0-9+/=]+`)
+	images := re.FindAllString(raw, -1)
+
+	// 文本部分（去掉所有图片数据URI）
+	text := re.ReplaceAllString(raw, "")
+	text = strings.TrimSpace(text)
+
+	if text != "" {
+		parts = append(parts, map[string]interface{}{
+			"type": "text",
+			"text": text,
+		})
+	}
+
+	for _, img := range images {
+		parts = append(parts, map[string]interface{}{
+			"type": "image_url",
+			"image_url": map[string]interface{}{
+				"url":    img,
+				"detail": "auto",
+			},
+		})
+	}
+
+	// 纯文本回退
+	if len(parts) == 0 {
+		return []map[string]interface{}{{"type": "text", "text": raw}}
+	}
+	return parts
 }
 
 func (p *OpenAIProvider) convertTools(tools []kernel.ToolDefinition) []map[string]interface{} {

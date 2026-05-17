@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -235,10 +236,15 @@ func (p *AnthropicProvider) buildAnthropicBody(messages []kernel.Message, tools 
 				})
 			}
 		default: // user
-			content = append(content, map[string]interface{}{
-				"type": "text",
-				"text": msg.Content,
-			})
+			// 多模态：检测base64图片 → Anthropic格式
+			if strings.Contains(msg.Content, "data:image/") && strings.Contains(msg.Content, ";base64,") {
+				content = append(content, splitMultimodalAnthropic(msg.Content)...)
+			} else {
+				content = append(content, map[string]interface{}{
+					"type": "text",
+					"text": msg.Content,
+				})
+			}
 		}
 
 		anthropicMessages = append(anthropicMessages, map[string]interface{}{
@@ -308,4 +314,38 @@ type anthropicStreamEvent struct {
 type anthropicStreamDelta struct {
 	Type string `json:"type"`
 	Text string `json:"text"`
+}
+
+
+// splitMultimodalAnthropic 将文本+base64图片拆分为Anthropic vision格式
+func splitMultimodalAnthropic(raw string) []map[string]interface{} {
+	var parts []map[string]interface{}
+	re := regexpCompile(`data:image/(\w+);base64,([A-Za-z0-9+/=]+)`)
+	matches := re.FindAllStringSubmatch(raw, -1)
+	text := re.ReplaceAllString(raw, "")
+	text = strings.TrimSpace(text)
+
+	if text != "" {
+		parts = append(parts, map[string]interface{}{"type": "text", "text": text})
+	}
+	for _, m := range matches {
+		if len(m) >= 3 {
+			parts = append(parts, map[string]interface{}{
+				"type": "image",
+				"source": map[string]interface{}{
+					"type":       "base64",
+					"media_type": "image/" + m[1],
+					"data":       m[2],
+				},
+			})
+		}
+	}
+	if len(parts) == 0 {
+		return []map[string]interface{}{{"type": "text", "text": raw}}
+	}
+	return parts
+}
+
+func regexpCompile(pattern string) *regexp.Regexp {
+	return regexp.MustCompile(pattern)
 }
