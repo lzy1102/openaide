@@ -80,6 +80,9 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 	app.LLMGateway = gateway
 	gateway.SetPromptCache(llm.NewPromptCache(cfg.Storage.DataDir + "/cache"))
 
+	// 浏览器配置：配置文件 browser.enabled 或 环境变量 OPENAIDE_BROWSER
+	tools.SetBrowserEnabled(cfg.Browser.Enabled)
+
 	// 2. 创建工具注册表
 	toolRegistry := tools.NewRegistry()
 	if err := tools.RegisterBuiltins(toolRegistry); err != nil {

@@ -54,9 +54,16 @@ func autoInstallChromium() error {
 	return nil
 }
 
+var browserGlobalEnabled bool
+
+// SetBrowserEnabled 设置浏览器是否启用（由app.go根据配置调用）
+func SetBrowserEnabled(enabled bool) {
+	browserGlobalEnabled = enabled
+}
+
 // browserEnabled 检查浏览器功能是否启用
 func browserEnabled() bool {
-	return os.Getenv("OPENAIDE_BROWSER") == "true"
+	return browserGlobalEnabled || os.Getenv("OPENAIDE_BROWSER") == "true"
 }
 
 // initBrowser 惰性初始化浏览器（仅在OPENAIDE_BROWSER=true时）

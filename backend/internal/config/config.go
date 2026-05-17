@@ -32,6 +32,9 @@ type Config struct {
 	// 存储配置
 	Storage StorageConfig `json:"storage" yaml:"storage"`
 
+	// 浏览器配置
+	Browser BrowserConfig `json:"browser" yaml:"browser"`
+
 	// 日志配置
 	Log LogConfig `json:"log" yaml:"log"`
 }
@@ -97,6 +100,11 @@ type StorageConfig struct {
 	IndexDir string `json:"index_dir" yaml:"index_dir"`
 }
 
+// BrowserConfig 浏览器配置
+type BrowserConfig struct {
+	Enabled bool `json:"enabled" yaml:"enabled"`
+}
+
 // LogConfig 日志配置
 type LogConfig struct {
 	Level  string `json:"level" yaml:"level"`
@@ -133,6 +141,9 @@ func DefaultConfig() *Config {
 		Storage: StorageConfig{
 			DataDir:  "./data",
 			IndexDir: "./data/index",
+		},
+		Browser: BrowserConfig{
+			Enabled: false, // 默认关闭，需手动开启
 		},
 		Log: LogConfig{
 			Level:  "info",
