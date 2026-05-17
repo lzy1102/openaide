@@ -177,23 +177,26 @@ git push origin v1.0.0
 
 ## 核心能力
 
-- **ReAct Agent**: 思考→行动→观察循环，最大10轮，工具并行执行
-- **10个内置工具**: 读写文件、执行命令、列目录、搜索文件、Git、知识库、符号索引、图片读取
-- **5个Skill**: 代码审查、Git提交、调试助手、重构、解释（自动检测触发）
-- **Planner**: 复杂请求自动拆分+顺序执行+汇总
-- **DAG工作流**: 有向无环图并行执行，自动依赖管理
-- **多Agent Team**: 分析员→程序员→审查员→执行者，角色委派
-- **反思+学习**: 每轮自动反思评分反馈，学习模式存入insights
-- **知识库**: 质量门控自动抽取(score>0.6)，下次对话注入上下文
+- **22个内置工具**: 文件读写/执行命令/列目录/搜索/Git深度(diff/log/blame)/知识库/代码符号索引
+- **联网搜索**: web_search/web_fetch/ai_search (DuckDuckGo，无需API Key)
+- **浏览器自动化**: Headless Chrome (browser_navigate/extract/screenshot/click/fill)
+- **Diff编辑**: 精确search/replace + 行号替换
+- **多模态Vision**: base64图片→Vision API格式 (OpenAI+Anthropic)
+- **5个Skill**: 代码审查/Git提交/调试/重构/解释（自动检测触发）
+- **模型智能路由**: 按任务类型自动选择provider/model（代码/搜索/翻译/对话）
+- **Planner + DAG**: 复杂请求自动拆分+DAG并行执行
+- **多Agent Team**: 分析员→程序员→审查员→执行者角色委派
+- **反思+学习**: 每轮自动评分反馈+insights持久化
+- **知识库**: 质量门控自动抽取(score>0.6)+提示词注入
 - **3级记忆**: L1/L2/L3 + TF-IDF向量语义搜索
-- **会话持久化**: 文件JSON，死机重启完整恢复
-- **小说式压缩**: 章节摘要+悬念钩子
+- **上下文压缩**: 小说式压缩(章节摘要+悬念钩子)+Prompt缓存
+- **会话持久化**: 文件JSON，死机重启恢复
 - **LLM网关**: OpenAI+Anthropic原生+DeepSeek(thinking/FIM)+故障转移
-- **JWT认证**: HMAC-SHA256，注册/登录
-- **API限流**: Token bucket，20req/s+200burst
+- **MCP协议**: JSON-RPC stdio，外部工具生态接入
 - **WebSocket**: 双向流式+心跳
-- **插件系统**: 可插拔扩展，工具+提示词注入
-- **多模态**: read_image base64输出
+- **插件系统**: 可插拔扩展，提示词+工具注入
+- **TUI**: Bubbletea (AltScreen可选) + 流式渲染 + 思考过程显示
+- **认证**: JWT默认关闭，OPENAIDE_AUTH=true开启
 
 ## CLI
 
