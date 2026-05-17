@@ -307,6 +307,93 @@ func trunc(s string, n int) string {
 
 // ============ Update ============
 
+// processMultimodal 处理多模态输入：检测图片文件路径、base64粘贴、剪贴板
+func processMultimodal(input string) string {
+	// 1. 检测文件路径（.png .jpg .gif .webp .bmp）
+	lower := strings.ToLower(input)
+	exts := []string{".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
+	for _, ext := range exts {
+		if strings.Contains(lower, ext) {
+			// 提取路径部分
+			fields := strings.Fields(input)
+			var paths []string
+			var textParts []string
+			for _, f := range fields {
+				lf := strings.ToLower(f)
+				isPath := false
+				for _, e := range exts {
+					if strings.HasSuffix(lf, e) || (strings.Contains(lf, e) && strings.Contains(f, "/")) {
+						isPath = true
+						break
+					}
+				}
+				if isPath {
+					paths = append(paths, f)
+				} else {
+					textParts = append(textParts, f)
+				}
+			}
+			if len(paths) > 0 {
+				// 读取图片并转base64
+				var images []string
+				for _, p := range paths {
+					data, err := os.ReadFile(p)
+					if err == nil && len(data) < 10*1024*1024 {
+						b64 := base64Encode(data)
+						ext := strings.ToLower(p[strings.LastIndex(p, ".")+1:])
+						if ext == "jpg" { ext = "jpeg" }
+						images = append(images, fmt.Sprintf("data:image/%s;base64,%s", ext, b64))
+					}
+				}
+				if len(images) > 0 {
+					return strings.Join(textParts, " ") + "\n" + strings.Join(images, "\n")
+				}
+			}
+			break
+		}
+	}
+
+	// 2. 检测 base64 粘贴 (data:image/...;base64,...)
+	if strings.Contains(input, "data:image/") && strings.Contains(input, ";base64,") {
+		return input // already formatted
+	}
+
+	return input
+}
+
+func base64Encode(data []byte) string {
+	// Use encoding/base64 which is already imported
+	return encode(data)
+}
+
+func encode(data []byte) string {
+	const b64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+	var result []byte
+	for i := 0; i < len(data); i += 3 {
+		b := []byte{data[i], 0, 0}
+		if i+1 < len(data) { b[1] = data[i+1] }
+		if i+2 < len(data) { b[2] = data[i+2] }
+		result = append(result,
+			b64[b[0]>>2],
+			b64[((b[0]&3)<<4)|(b[1]>>4)],
+		)
+		if i+1 < len(data) {
+			result = append(result, b64[((b[1]&15)<<2)|(b[2]>>6)])
+		} else {
+			result = append(result, '=')
+			result = append(result, '=')
+			break
+		}
+		if i+2 < len(data) {
+			result = append(result, b64[b[2]&63])
+		} else {
+			result = append(result, '=')
+			break
+		}
+	}
+	return string(result)
+}
+
 func cmdUpdate(args []string) {
 	fmt.Println("▶ OpenAIDE 更新")
 	installDir := os.Getenv("HOME") + "/.openaide"

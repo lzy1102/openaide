@@ -30,11 +30,12 @@ type ProviderConfig struct {
 
 // Gateway LLM 网关 - 统一接入所有提供商
 type Gateway struct {
-	providers   map[string]Provider
-	configs     map[string]*ProviderConfig
+	providers       map[string]Provider
+	configs         map[string]*ProviderConfig
 	defaultProvider string
-	cache        *PromptCache
-	mu          sync.RWMutex
+	cache           *PromptCache
+	router          *Router
+	mu              sync.RWMutex
 }
 
 // Provider LLM 提供商接口（内部使用）
@@ -114,11 +115,36 @@ func (g *Gateway) GetEnabledProviders() []string {
 	return names
 }
 
-// Chat 发送聊天请求（使用默认提供商）
+// SetRouter 设置模型路由器
+func (g *Gateway) SetRouter(r *Router) { g.router = r }
+
+// routeProvider 根据用户输入选择最佳 provider
+func (g *Gateway) routeProvider(query string) string {
+	if g.router != nil {
+		provider, _, matched := g.router.Route(query)
+		if matched && provider != "" {
+			if _, ok := g.providers[provider]; ok {
+				return provider
+			}
+		}
+	}
+	return g.GetDefaultProvider()
+}
+
+// Chat 发送聊天请求（智能路由 + 默认提供商）
 func (g *Gateway) Chat(ctx context.Context, messages []kernel.Message, tools []kernel.ToolDefinition, options map[string]interface{}) (*kernel.LLMResponse, error) {
-	providerName := g.GetDefaultProvider()
+	// 从最后一条user消息提取query用于路由
+	query := ""
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "user" {
+			query = messages[i].Content
+			break
+		}
+	}
+
+	providerName := g.routeProvider(query)
 	if providerName == "" {
-		return nil, fmt.Errorf("no default provider configured")
+		return nil, fmt.Errorf("no provider configured")
 	}
 	return g.ChatWithProvider(ctx, providerName, messages, tools, options)
 }
@@ -154,11 +180,18 @@ func (g *Gateway) ChatWithProvider(ctx context.Context, providerName string, mes
 	return resp, nil
 }
 
-// ChatStream 发送流式聊天请求
+// ChatStream 发送流式聊天请求（智能路由）
 func (g *Gateway) ChatStream(ctx context.Context, messages []kernel.Message, tools []kernel.ToolDefinition, options map[string]interface{}) (<-chan kernel.StreamChunk, error) {
-	providerName := g.GetDefaultProvider()
+	query := ""
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "user" {
+			query = messages[i].Content
+			break
+		}
+	}
+	providerName := g.routeProvider(query)
 	if providerName == "" {
-		return nil, fmt.Errorf("no default provider configured")
+		return nil, fmt.Errorf("no provider configured")
 	}
 	return g.ChatStreamWithProvider(ctx, providerName, messages, tools, options)
 }

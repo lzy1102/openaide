@@ -80,6 +80,13 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 	app.LLMGateway = gateway
 	gateway.SetPromptCache(llm.NewPromptCache(cfg.Storage.DataDir + "/cache"))
 
+	// 模型路由：按任务类型自动选择provider/model
+	if cfg.Router.Enabled {
+		gateway.SetRouter(llm.NewRouter(cfg.Router.Rules))
+	} else {
+		gateway.SetRouter(llm.DefaultRouter()) // 内置路由规则
+	}
+
 	// 浏览器配置：配置文件 browser.enabled 或 环境变量 OPENAIDE_BROWSER
 	tools.SetBrowserEnabled(cfg.Browser.Enabled)
 

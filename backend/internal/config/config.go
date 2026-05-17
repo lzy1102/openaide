@@ -10,6 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"openaide/backend/internal/kernel"
+	"openaide/backend/internal/llm"
 )
 
 // Config 应用配置
@@ -19,6 +20,9 @@ type Config struct {
 
 	// LLM 配置
 	LLM LLMConfig `json:"llm" yaml:"llm"`
+
+	// 路由配置
+	Router llm.RouterConfig `json:"router" yaml:"router"`
 
 	// 记忆配置
 	Memory MemoryConfig `json:"memory" yaml:"memory"`
