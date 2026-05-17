@@ -20,8 +20,9 @@ wget -qO- https://raw.githubusercontent.com/lzy1102/openaide/master/scripts/depl
 
 部署完成后：
 - 服务运行在 `http://localhost:8080`
-- 配置文件：`~/.openaide/config.json`
+- 配置文件：`~/.openaide/config.yaml`
 - 日志：`~/.openaide/logs/server.log`
+- 默认管理员：`admin / admin123`
 
 ### 2. 本地编译部署
 
@@ -45,7 +46,7 @@ docker-compose up -d
 
 ## 配置说明
 
-配置文件位置：`~/.openaide/config.json`
+配置文件位置：`~/.openaide/config.yaml`（支持 JSON/YAML）
 
 首次部署会自动创建默认配置，**必须修改 API Key** 才能使用。
 
@@ -94,6 +95,7 @@ docker-compose up -d
 | 提供商 | type | 示例 base_url |
 |--------|------|--------------|
 | OpenAI | `openai` | `https://api.openai.com/v1` |
+| Anthropic | `anthropic` | `https://api.anthropic.com` |
 | DeepSeek | `openai-compatible` | `https://api.deepseek.com/v1` |
 | 阿里云百炼 | `openai-compatible` | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
 | 本地 Ollama | `openai-compatible` | `http://localhost:11434/v1` |
@@ -176,17 +178,22 @@ git push origin v1.0.0
 ## 核心能力
 
 - **ReAct Agent**: 思考→行动→观察循环，最大10轮，工具并行执行
-- **9个内置工具**: 读写文件、执行命令、列目录、搜索文件、Git状态、知识库搜索/添加、代码符号搜索
-- **5个Skill**: 代码审查、Git提交、调试助手、代码重构、代码解释（自动检测触发）
-- **任务规划器**: 复杂请求自动拆分+子任务顺序执行+结果汇总
-- **反思+学习**: 每轮自动反思评分，反馈到下一轮；学习模式存入insights
-- **知识库**: 自动质量门控抽取（score>0.6），下次对话注入相关上下文
-- **3级记忆**: L1工作/L2短期/L3长期，TF-IDF向量语义搜索
-- **会话持久化**: 文件JSON存储，死机重启完整恢复
-- **小说式上下文压缩**: 章节摘要+悬念钩子，超出窗口自动压缩
-- **LLM网关**: OpenAI兼容+Anthropic原生+DeepSeek特殊支持(thinking/FIM)，故障转移
-- **JWT认证**: HMAC-SHA256，注册/登录/中间件
-- **WebSocket**: /ws端点，双向流式+心跳
+- **10个内置工具**: 读写文件、执行命令、列目录、搜索文件、Git、知识库、符号索引、图片读取
+- **5个Skill**: 代码审查、Git提交、调试助手、重构、解释（自动检测触发）
+- **Planner**: 复杂请求自动拆分+顺序执行+汇总
+- **DAG工作流**: 有向无环图并行执行，自动依赖管理
+- **多Agent Team**: 分析员→程序员→审查员→执行者，角色委派
+- **反思+学习**: 每轮自动反思评分反馈，学习模式存入insights
+- **知识库**: 质量门控自动抽取(score>0.6)，下次对话注入上下文
+- **3级记忆**: L1/L2/L3 + TF-IDF向量语义搜索
+- **会话持久化**: 文件JSON，死机重启完整恢复
+- **小说式压缩**: 章节摘要+悬念钩子
+- **LLM网关**: OpenAI+Anthropic原生+DeepSeek(thinking/FIM)+故障转移
+- **JWT认证**: HMAC-SHA256，注册/登录
+- **API限流**: Token bucket，20req/s+200burst
+- **WebSocket**: 双向流式+心跳
+- **插件系统**: 可插拔扩展，工具+提示词注入
+- **多模态**: read_image base64输出
 
 ## CLI
 

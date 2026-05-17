@@ -49,13 +49,13 @@
 | compress | 1个 | 小说式上下文压缩 |
 | skill | (kernel内) | 5个内置技能 |
 
-## 未实现 (按需)
+## 全部完成
 
-| 功能 | 说明 |
+| 功能 | 状态 |
 |------|------|
-| 多Agent协作(Team) | Planner已做单Agent拆分，多Agent委派未做 |
-| 多模态(图片/音频) | 需额外依赖 |
-| 插件系统 | 架构预留，未实现 |
-| DAG工作流引擎 | 当前线性子任务够用 |
-| API限流 | 生产环境需要 |
-| 工具沙箱 | execute_command需文件系统隔离 |
+| 多Agent Team | ✅ analyst/coder/reviewer/executor |
+| DAG工作流 | ✅ 有向无环图并行执行 |
+| 插件系统 | ✅ 可插拔扩展管理器 |
+| 多模态 | ✅ read_image base64 |
+| API限流 | ✅ token bucket 20req/s |
+| 工具沙箱 | ❌ 不需要 |
