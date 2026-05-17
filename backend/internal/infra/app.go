@@ -167,7 +167,11 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 
 	// 7. 创建 API 服务器
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
-	authSvc := auth.NewService(os.Getenv("OPENAIDE_JWT_SECRET"))
+	// 认证默认关闭（本地Agent不需要）。OPENAIDE_AUTH=true 开启JWT
+	var authSvc *auth.Service
+	if os.Getenv("OPENAIDE_AUTH") == "true" {
+		authSvc = auth.NewService(os.Getenv("OPENAIDE_JWT_SECRET"))
+	}
 	app.APIServer = api.NewServer(orch, addr, authSvc)
 
 	return app, nil
