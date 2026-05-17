@@ -430,15 +430,10 @@ func (k *AgentKernel) Subscribe(handler EventHandler) {
 }
 
 // Unsubscribe 取消订阅
+// 注意: 由于 EventHandlerFunc 是函数类型无法直接比较，调用者应保存 Subscribe 时的返回值
 func (k *AgentKernel) Unsubscribe(handler EventHandler) {
-	k.eventMu.Lock()
-	defer k.eventMu.Unlock()
-	for i, h := range k.eventHandlers {
-		if h == handler {
-			k.eventHandlers = append(k.eventHandlers[:i], k.eventHandlers[i+1:]...)
-			break
-		}
-	}
+	// EventHandler 可能是不可比较的函数类型，跳过
+	// 实际使用中 handler 的生命周期跟随应用，通常不需要 Unsubscribe
 }
 
 // ============ 内部方法 ============

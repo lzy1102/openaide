@@ -154,15 +154,15 @@ func tokenize(text string) []string {
 	var current []rune
 
 	for _, r := range strings.ToLower(text) {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) {
-			current = append(current, r)
-		} else if unicode.Is(unicode.Han, r) {
-			// 中文字符，每个字作为独立 token
+		if unicode.Is(unicode.Han, r) {
+			// 中文字符，每个字作为独立 token（必须在IsLetter之前检查）
 			if len(current) > 0 {
 				tokens = append(tokens, string(current))
 				current = nil
 			}
 			tokens = append(tokens, string(r))
+		} else if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			current = append(current, r)
 		} else {
 			if len(current) > 0 {
 				tokens = append(tokens, string(current))
