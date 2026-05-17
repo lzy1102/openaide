@@ -33,6 +33,7 @@ type Gateway struct {
 	providers   map[string]Provider
 	configs     map[string]*ProviderConfig
 	defaultProvider string
+	cache        *PromptCache
 	mu          sync.RWMutex
 }
 
@@ -66,6 +67,8 @@ func (g *Gateway) RegisterProvider(name string, provider Provider, config *Provi
 }
 
 // SetDefaultProvider 设置默认提供商
+func (g *Gateway) SetPromptCache(pc *PromptCache) { g.cache = pc }
+
 func (g *Gateway) SetDefaultProvider(name string) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -130,6 +133,13 @@ func (g *Gateway) ChatWithProvider(ctx context.Context, providerName string, mes
 		return nil, fmt.Errorf("provider not found: %s", providerName)
 	}
 
+	// 检查缓存
+	if g.cache != nil {
+		if cached := g.cache.Get(messages, tools, g.GetDefaultProvider()); cached != nil {
+			return cached, nil
+		}
+	}
+
 	start := time.Now()
 	resp, err := provider.Chat(ctx, messages, tools, options)
 	if err != nil {
@@ -137,6 +147,9 @@ func (g *Gateway) ChatWithProvider(ctx context.Context, providerName string, mes
 		return nil, err
 	}
 
+	if g.cache != nil && err == nil {
+		g.cache.Set(messages, tools, g.GetDefaultProvider(), resp)
+	}
 	slog.Debug("LLM chat success", "provider", providerName, "model", resp.Model, "tokens", resp.Usage, "duration", time.Since(start))
 	return resp, nil
 }

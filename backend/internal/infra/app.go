@@ -15,6 +15,7 @@ import (
 	"openaide/backend/internal/identity"
 	"openaide/backend/internal/kernel"
 	"openaide/backend/internal/knowledge"
+	"openaide/backend/internal/mcp"
 	"openaide/backend/internal/llm"
 	"openaide/backend/internal/memory"
 	"openaide/backend/internal/orchestration"
@@ -77,6 +78,7 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 	}
 
 	app.LLMGateway = gateway
+	gateway.SetPromptCache(llm.NewPromptCache(cfg.Storage.DataDir + "/cache"))
 
 	// 2. 创建工具注册表
 	toolRegistry := tools.NewRegistry()
@@ -125,9 +127,13 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 	}
 	agentKernel.SetPatternDetector(kernel.NewSimplePatternDetector())
 	agentKernel.SetSkillManager(kernel.NewSkillManager(cfg.Storage.DataDir + "/skills"))
+	agentKernel.SetApprover(kernel.NewAutoApprover())
+	agentKernel.SetAdaptiveRounds(kernel.NewAdaptiveRounds(5, 30))
 
 	// 接入插件管理器
+	mcpMgr := mcp.NewManager()
 	pluginMgr := plugin.NewManager(cfg.Storage.DataDir + "/plugins")
+	_ = mcpMgr
 	pluginPrompt := pluginMgr.GetPrompt()
 	if pluginPrompt != "" {
 		kernelConfig.SystemPrompt += "\n\n" + pluginPrompt

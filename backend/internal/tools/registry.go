@@ -317,6 +317,64 @@ func BuiltinTools() []kernel.ToolDefinition {
 				},
 			},
 		},
+
+		{
+			Type: "function",
+			Function: kernel.FunctionDef{
+				Name:        "diff_edit",
+				Description: "精确搜索替换编辑文件（只修改匹配部分）",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"path": map[string]interface{}{"type": "string", "description": "文件路径"},
+						"search_text": map[string]interface{}{"type": "string", "description": "要搜索的文本（必须唯一）"},
+						"replace_text": map[string]interface{}{"type": "string", "description": "替换后的文本"},
+					},
+					"required": []string{"path", "search_text", "replace_text"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: kernel.FunctionDef{
+				Name:        "git_diff",
+				Description: "获取Git工作区差异",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"path": map[string]interface{}{"type": "string", "description": "文件路径（可选，默认所有文件）"},
+						"staged": map[string]interface{}{"type": "boolean", "description": "是否只看暂存区"},
+					},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: kernel.FunctionDef{
+				Name:        "git_log",
+				Description: "获取Git提交历史",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"limit": map[string]interface{}{"type": "integer", "description": "返回条数（默认10）"},
+					},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: kernel.FunctionDef{
+				Name:        "git_blame",
+				Description: "追溯文件每行的最后修改者",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"path": map[string]interface{}{"type": "string", "description": "文件路径"},
+					},
+					"required": []string{"path"},
+				},
+			},
+		},
 	}
 }
 
@@ -333,6 +391,10 @@ func BuiltinHandlers() map[string]kernel.ToolHandler {
 		"add_knowledge":    handleAddKnowledge,
 		"search_symbols":   handleSearchSymbols,
 		"read_image":       handleReadImage,
+		"diff_edit":        handleDiffEdit,
+		"git_diff":         handleGitDiff,
+		"git_log":          handleGitLog,
+		"git_blame":        handleGitBlame,
 	}
 }
 

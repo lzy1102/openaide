@@ -27,6 +27,8 @@ type AgentKernel struct {
 	knowledgeCollector KnowledgeCollector
 	qualityGate      QualityGate
 	skillManager     *SkillManager
+	approver         Approver
+	adaptiveRounds   *AdaptiveRounds
 
 	// 事件系统
 	eventHandlers []EventHandler
@@ -124,6 +126,9 @@ type QualityGate interface {
 	Pass(query, response string, toolSuccesses, toolFailures int, reflection *ReflectionResult) bool
 }
 
+func (k *AgentKernel) SetApprover(a Approver) { k.approver = a }
+func (k *AgentKernel) SetAdaptiveRounds(ar *AdaptiveRounds) { k.adaptiveRounds = ar }
+
 func (k *AgentKernel) SetSkillManager(sm *SkillManager) {
 	k.skillManager = sm
 }
@@ -164,7 +169,11 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 	totalToolCalls := 0
 	totalTokens := 0
 
-	for round := 0; round < k.maxRounds; round++ {
+	maxRounds := k.maxRounds
+	if k.adaptiveRounds != nil {
+		maxRounds = k.adaptiveRounds.Calculate(query.Content, len(session.Messages))
+	}
+	for round := 0; round < maxRounds; round++ {
 		// 检查上下文长度，必要时压缩
 		if k.compressor != nil {
 			tokenCount := k.compressor.EstimateTokens(messages)
@@ -533,6 +542,22 @@ func (k *AgentKernel) buildOptions(opts QueryOptions) map[string]interface{} {
 }
 
 func (k *AgentKernel) executeTool(ctx context.Context, tc ToolCall, sessionID string) *ToolResult {
+	// 审批检查（高危工具需要用户确认）
+	if k.approver != nil {
+		if reason, dangerous := DangerousTools[tc.Function.Name]; dangerous {
+			result := k.approver.RequestApproval(ctx, &ApprovalRequest{
+				ID:     tc.ID,
+				Tool:   tc.Function.Name,
+				Args:   tc.Function.Arguments,
+				Reason: reason,
+				Risk:   "high",
+			})
+			if !result.Approved {
+				return &ToolResult{Error: fmt.Sprintf("Approval denied: %s", result.Reason)}
+			}
+		}
+	}
+
 	// 权限检查
 	if k.permission != nil {
 		allowed, reason := k.permission.Check(ctx, "tool.execute", tc.Function.Name, map[string]interface{}{
