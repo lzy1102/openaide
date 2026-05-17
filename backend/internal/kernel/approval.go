@@ -84,13 +84,13 @@ func NewAutoApprover() *AutoApprover {
 			"git_diff":        true,
 			"git_log":         true,
 			"git_blame":       true,
-			// 以下需要审批
-			"write_file":      false,
-			"execute_command": false,
-			"add_knowledge":   false,
-			"read_image":      false,
-			"diff_edit":       false,
-			"diff_edit_lines": false,
+			// 本地Agent默认放行
+			"write_file":        true,
+			"execute_command":   true,
+			"add_knowledge":     true,
+			"read_image":        true,
+			"diff_edit":         true,
+			"diff_edit_lines":   true,
 		},
 	}
 }
