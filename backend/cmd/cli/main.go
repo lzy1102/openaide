@@ -101,7 +101,10 @@ func main() {
 	}
 
 	m := &model{app: app, width: 100}
-	p := tea.NewProgram(m) // 不用 AltScreen，保留终端回滚
+	p := tea.NewProgram(m,
+		tea.WithInput(os.Stdin),
+		tea.WithOutput(os.Stdout),
+	) // 显式绑定stdin/stdout，修复SSH下无法输入的问题
 	m.program = p
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
