@@ -475,3 +475,12 @@ func InitLogger(level, format string) {
 
 	slog.SetDefault(slog.New(handler))
 }
+
+// SetAutoApprove enables/disables auto-approval for all tool calls (skips confirmation).
+func (a *Application) SetAutoApprove(on bool) {
+	if k, ok := a.Kernel.(*kernel.AgentKernel); ok {
+		approver := kernel.NewAutoApprover()
+		approver.UnsafeMode = on
+		k.SetApprover(approver)
+	}
+}

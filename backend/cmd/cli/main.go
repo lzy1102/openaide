@@ -1,45 +1,87 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"openaide/backend/internal/config"
 	"openaide/backend/internal/infra"
+	"openaide/backend/internal/kernel"
 )
 
-func main() {
-	args := os.Args[1:]
-	continueSess := false
+type cliFlags struct {
+	configPath  string
+	prompt      string
+	continueSess bool
+	yes         bool
+	model       string
+	verbose     bool
+}
 
-	for _, a := range args {
-		switch a {
-		case "-c", "--continue":
-			continueSess = true
-		case "update", "upgrade":
-			cmdUpdate(args[1:])
-			return
-		case "version", "-v", "--version":
+func parseFlags(args []string) cliFlags {
+	f := cliFlags{
+		configPath: os.Getenv("HOME") + "/.openaide/config.yaml",
+	}
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "-c" || a == "--continue":
+			f.continueSess = true
+		case a == "-y" || a == "--yes":
+			f.yes = true
+		case a == "--verbose":
+			f.verbose = true
+		case a == "--model" && i+1 < len(args):
+			i++
+			f.model = args[i]
+		case a == "--config" && i+1 < len(args):
+			i++
+			f.configPath = args[i]
+		case a == "-h" || a == "--help" || a == "help":
+			printHelp()
+			os.Exit(0)
+		case a == "-v" || a == "--version" || a == "version":
 			fmt.Println("OpenAIDE CLI dev")
-			printHelp()
-			return
-		case "help", "-h", "--help":
-			printHelp()
-			return
+			os.Exit(0)
+		case a == "update" || a == "upgrade":
+			cmdUpdate(args[i+1:])
+			os.Exit(0)
+		case !strings.HasPrefix(a, "-"):
+			f.prompt = strings.Join(args[i:], " ")
+			return f
 		}
 	}
+	return f
+}
 
-	configPath := os.Getenv("HOME") + "/.openaide/config.yaml"
-	cfg, err := config.Load(configPath)
+func main() {
+	flags := parseFlags(os.Args[1:])
+
+	cfg, err := config.Load(flags.configPath)
 	if err != nil {
 		cfg = config.DefaultConfig()
 	}
 	cfg.Server.Mode = "direct"
+	if flags.verbose {
+		cfg.Log.Level = "debug"
+	}
 	infra.InitLogger(cfg.Log.Level, cfg.Log.Format)
+
+	if flags.model != "" {
+		for i := range cfg.LLM.Providers {
+			if cfg.LLM.Providers[i].DefaultModel != "" {
+				cfg.LLM.Providers[i].DefaultModel = flags.model
+				break
+			}
+		}
+	}
 
 	app, err := infra.NewApplication(cfg)
 	if err != nil {
@@ -47,7 +89,25 @@ func main() {
 		os.Exit(1)
 	}
 
-	m := initModel(app, continueSess)
+	if flags.prompt != "" {
+		if flags.yes {
+			app.SetAutoApprove(true)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
+		defer cancel()
+		resp, err := app.Orchestrator.ProcessQuery(ctx, "cli-user", "default", flags.prompt, kernel.QueryOptions{})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println(resp.Content)
+		return
+	}
+
+	if flags.yes {
+		app.SetAutoApprove(true)
+	}
+	m := initModel(app, flags.continueSess)
 	p := tea.NewProgram(m,
 		tea.WithAltScreen(),
 		tea.WithMouseCellMotion(),
@@ -60,20 +120,29 @@ func main() {
 }
 
 func printHelp() {
-	fmt.Println("OpenAIDE CLI")
+	fmt.Println("OpenAIDE CLI — AI Agent 终端")
 	fmt.Println()
 	fmt.Println("Usage:")
-	fmt.Println("  openaide          Start new interactive chat (default)")
-	fmt.Println("  openaide -c       Continue last session")
-	fmt.Println("  openaide update   Update to latest version")
-	fmt.Println("  openaide version  Show version info")
-	fmt.Println("  openaide help     Show this help")
+	fmt.Println("  openaide                     Start interactive chat")
+	fmt.Println("  openaide <prompt>            One-shot mode (non-interactive)")
+	fmt.Println("  openaide -c                  Continue last session")
+	fmt.Println("  openaide -y                  Auto-approve all actions")
+	fmt.Println("  openaide --model <name>      Override model (e.g. gpt-4o, claude-3-opus)")
+	fmt.Println("  openaide --config <path>     Custom config file")
+	fmt.Println("  openaide --verbose           Debug logging")
+	fmt.Println("  openaide update              Update to latest version")
+	fmt.Println("  openaide version             Show version info")
+	fmt.Println()
+	fmt.Println("Examples:")
+	fmt.Println("  openaide fix this bug                   One-shot fix")
+	fmt.Println("  openaide -c -y                          Continue, auto-approve")
+	fmt.Println("  openaide --model claude-3-opus review this")
 	fmt.Println()
 	fmt.Println("In-Chat Keybindings:")
 	fmt.Println("  Ctrl+C / Ctrl+D   Quit (or stop streaming)")
 	fmt.Println("  Ctrl+S            Open session list")
 	fmt.Println("  F1 / Ctrl+H        Show help")
-	fmt.Println("  ↑ / ↓             Input history")
+	fmt.Println("  \u2191 / \u2193             Input history")
 	fmt.Println("  PgUp / PgDown     Scroll chat")
 	fmt.Println()
 	fmt.Println("In-Chat Commands:")
@@ -84,7 +153,7 @@ func printHelp() {
 }
 
 func cmdUpdate(args []string) {
-	fmt.Println("▶ OpenAIDE Update")
+	fmt.Println("\u25b6 OpenAIDE Update")
 	installDir := os.Getenv("HOME") + "/.openaide"
 	script := filepath.Join(installDir, "scripts", "update.sh")
 	if _, err := os.Stat(script); os.IsNotExist(err) {
@@ -110,5 +179,5 @@ func cmdUpdate(args []string) {
 		fmt.Printf("\nUpdate failed: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Println("\n✓ Update complete!")
+	fmt.Println("\n\u2713 Update complete!")
 }
