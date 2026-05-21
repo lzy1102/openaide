@@ -148,6 +148,9 @@ func (p *OpenAIProvider) ChatStream(ctx context.Context, messages []kernel.Messa
 		defer close(resultChan)
 		defer resp.Body.Close()
 
+		// 跨 chunk 累加 tool calls（OpenAI 流式 tool call 参数会拆分到多个 delta chunk）
+		accumulatedToolCalls := make([]kernel.ToolCall, 0)
+
 		scanner := bufio.NewScanner(resp.Body)
 		for scanner.Scan() {
 			line := scanner.Text()
@@ -178,17 +181,33 @@ func (p *OpenAIProvider) ChatStream(ctx context.Context, messages []kernel.Messa
 			}
 
 			if len(delta.ToolCalls) > 0 {
-				streamChunk.ToolCalls = make([]kernel.ToolCall, len(delta.ToolCalls))
-				for i, tc := range delta.ToolCalls {
-					streamChunk.ToolCalls[i] = kernel.ToolCall{
-						ID:   tc.ID,
-						Type: tc.Type,
-						Function: kernel.FunctionCall{
-							Name:      tc.Function.Name,
-							Arguments: tc.Function.Arguments,
-						},
+				for _, tc := range delta.ToolCalls {
+					if tc.Index >= len(accumulatedToolCalls) {
+						accumulatedToolCalls = append(accumulatedToolCalls, kernel.ToolCall{
+							ID:   tc.ID,
+							Type: tc.Type,
+							Function: kernel.FunctionCall{
+								Name:      tc.Function.Name,
+								Arguments: tc.Function.Arguments,
+							},
+						})
+					} else {
+						// 合并到已有条目：只覆盖非空字段
+						if tc.ID != "" {
+							accumulatedToolCalls[tc.Index].ID = tc.ID
+						}
+						if tc.Type != "" {
+							accumulatedToolCalls[tc.Index].Type = tc.Type
+						}
+						if tc.Function.Name != "" {
+							accumulatedToolCalls[tc.Index].Function.Name = tc.Function.Name
+						}
+						accumulatedToolCalls[tc.Index].Function.Arguments += tc.Function.Arguments
 					}
 				}
+				// 每个 chunk 都发出当前合并后的完整 tool calls
+				streamChunk.ToolCalls = make([]kernel.ToolCall, len(accumulatedToolCalls))
+				copy(streamChunk.ToolCalls, accumulatedToolCalls)
 			}
 
 			if chunk.Usage != nil {
@@ -215,6 +234,74 @@ func (p *OpenAIProvider) ChatStream(ctx context.Context, messages []kernel.Messa
 // GetModelID 获取模型 ID
 func (p *OpenAIProvider) GetModelID() string {
 	return p.modelID
+}
+
+// Embed 文本向量化
+func (p *OpenAIProvider) Embed(ctx context.Context, text string) ([]float32, error) {
+	return p.embeddingRequest(ctx, []string{text})
+}
+
+// EmbedBatch 批量向量化
+func (p *OpenAIProvider) EmbedBatch(ctx context.Context, texts []string) ([][]float32, error) {
+	if len(texts) == 0 {
+		return nil, fmt.Errorf("empty texts")
+	}
+	res, err := p.embeddingRequest(ctx, texts)
+	if err != nil {
+		return nil, err
+	}
+	return [][]float32{res}, nil
+}
+
+func (p *OpenAIProvider) embeddingRequest(ctx context.Context, inputs []string) ([]float32, error) {
+	model := p.config.DefaultModel
+	if p.config.EmbeddingModel != "" {
+		model = p.config.EmbeddingModel
+	}
+
+	body := map[string]interface{}{
+		"model": model,
+		"input": inputs,
+	}
+
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("marshal embedding request: %w", err)
+	}
+
+	url := p.config.BaseURL + "/embeddings"
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+p.config.APIKey)
+	for k, v := range p.config.Headers {
+		req.Header.Set(k, v)
+	}
+
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("embedding http request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("embedding http error %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result openAIEmbeddingResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode embedding response: %w", err)
+	}
+
+	if len(result.Data) == 0 {
+		return nil, fmt.Errorf("empty embedding response")
+	}
+
+	return result.Data[0].Embedding, nil
 }
 
 // HealthCheck 健康检查
@@ -400,6 +487,11 @@ func (p *OpenAIProvider) buildRequestBody(messages []kernel.Message, tools []ker
 	}
 
 	if options != nil {
+		if rf, ok := options["response_format"]; ok {
+			body["response_format"] = rf
+		}
+	}
+	if options != nil {
 		for k, v := range options {
 			body[k] = v
 		}
@@ -544,6 +636,7 @@ type openAIMessage struct {
 }
 
 type openAIToolCall struct {
+	Index    int                `json:"index"`
 	ID       string             `json:"id"`
 	Type     string             `json:"type"`
 	Function openAIFunctionCall `json:"function"`
@@ -598,4 +691,18 @@ type fimChoice struct {
 	Text         string `json:"text"`
 	Index        int    `json:"index"`
 	FinishReason string `json:"finish_reason"`
+}
+
+// embedding 请求响应类型
+type openAIEmbeddingResponse struct {
+	Object string                `json:"object"`
+	Data   []openAIEmbeddingData `json:"data"`
+	Model  string                `json:"model"`
+	Usage  *openAIUsage          `json:"usage,omitempty"`
+}
+
+type openAIEmbeddingData struct {
+	Object    string    `json:"object"`
+	Index     int       `json:"index"`
+	Embedding []float32 `json:"embedding"`
 }

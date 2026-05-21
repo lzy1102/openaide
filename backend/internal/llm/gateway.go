@@ -10,24 +10,6 @@ import (
 	"openaide/backend/internal/kernel"
 )
 
-// ProviderConfig 提供商配置
-type ProviderConfig struct {
-	Name        string            `json:"name"`
-	Type        string            `json:"type"`
-	BaseURL     string            `json:"base_url"`
-	APIKey      string            `json:"api_key"`
-	DefaultModel string           `json:"default_model"`
-	Timeout     int               `json:"timeout"`
-	Headers     map[string]string `json:"headers,omitempty"`
-	Enabled     bool              `json:"enabled"`
-
-	// DeepSeek 特有配置
-	Thinking        *kernel.ThinkingConfig `json:"thinking,omitempty"`
-	ReasoningEffort string                 `json:"reasoning_effort,omitempty"`
-	JSONMode        bool                   `json:"json_mode,omitempty"`
-	StrictTools     bool                   `json:"strict_tools,omitempty"`
-}
-
 // Gateway LLM 网关 - 统一接入所有提供商
 type Gateway struct {
 	providers       map[string]Provider
@@ -42,8 +24,29 @@ type Gateway struct {
 type Provider interface {
 	Chat(ctx context.Context, messages []kernel.Message, tools []kernel.ToolDefinition, options map[string]interface{}) (*kernel.LLMResponse, error)
 	ChatStream(ctx context.Context, messages []kernel.Message, tools []kernel.ToolDefinition, options map[string]interface{}) (<-chan kernel.StreamChunk, error)
+	Embed(ctx context.Context, text string) ([]float32, error)
+	EmbedBatch(ctx context.Context, texts []string) ([][]float32, error)
 	GetModelID() string
 	HealthCheck(ctx context.Context) error
+}
+
+// ProviderConfig 提供商配置
+type ProviderConfig struct {
+	Name           string            `json:"name"`
+	Type           string            `json:"type"`
+	BaseURL        string            `json:"base_url"`
+	APIKey         string            `json:"api_key"`
+	DefaultModel   string            `json:"default_model"`
+	EmbeddingModel string            `json:"embedding_model,omitempty"`
+	Timeout        int               `json:"timeout"`
+	Headers        map[string]string `json:"headers,omitempty"`
+	Enabled        bool              `json:"enabled"`
+
+	// DeepSeek 特有配置
+	Thinking        *kernel.ThinkingConfig `json:"thinking,omitempty"`
+	ReasoningEffort string                 `json:"reasoning_effort,omitempty"`
+	JSONMode        bool                   `json:"json_mode,omitempty"`
+	StrictTools     bool                   `json:"strict_tools,omitempty"`
 }
 
 // NewGateway 创建 LLM 网关
@@ -265,6 +268,75 @@ func (g *Gateway) FallbackChat(ctx context.Context, messages []kernel.Message, t
 		}
 		lastErr = err
 		slog.Warn("Provider failed, trying next", "provider", name, "error", err)
+	}
+
+	return nil, fmt.Errorf("all providers failed, last error: %w", lastErr)
+}
+
+// Embed 使用默认提供商进行文本向量化
+func (g *Gateway) Embed(ctx context.Context, text string) ([]float32, error) {
+	providerName := g.GetDefaultProvider()
+	if providerName == "" {
+		return nil, fmt.Errorf("no provider configured for embedding")
+	}
+
+	g.mu.RLock()
+	provider, ok := g.providers[providerName]
+	g.mu.RUnlock()
+
+	if !ok {
+		return nil, fmt.Errorf("provider not found: %s", providerName)
+	}
+
+	return provider.Embed(ctx, text)
+}
+
+// EmbedWithProvider 使用指定提供商进行文本向量化
+func (g *Gateway) EmbedWithProvider(ctx context.Context, providerName, text string) ([]float32, error) {
+	g.mu.RLock()
+	provider, ok := g.providers[providerName]
+	g.mu.RUnlock()
+
+	if !ok {
+		return nil, fmt.Errorf("provider not found: %s", providerName)
+	}
+
+	return provider.Embed(ctx, text)
+}
+
+// EmbedBatch 批量向量化
+func (g *Gateway) EmbedBatch(ctx context.Context, texts []string) ([][]float32, error) {
+	providerName := g.GetDefaultProvider()
+	if providerName == "" {
+		return nil, fmt.Errorf("no provider configured for embedding")
+	}
+
+	g.mu.RLock()
+	provider, ok := g.providers[providerName]
+	g.mu.RUnlock()
+
+	if !ok {
+		return nil, fmt.Errorf("provider not found: %s", providerName)
+	}
+
+	return provider.EmbedBatch(ctx, texts)
+}
+
+// FallbackEmbed 带故障转移的向量化
+func (g *Gateway) FallbackEmbed(ctx context.Context, text string) ([]float32, error) {
+	providers := g.GetEnabledProviders()
+	if len(providers) == 0 {
+		return nil, fmt.Errorf("no enabled providers")
+	}
+
+	var lastErr error
+	for _, name := range providers {
+		vec, err := g.EmbedWithProvider(ctx, name, text)
+		if err == nil {
+			return vec, nil
+		}
+		lastErr = err
+		slog.Warn("Embedding provider failed, trying next", "provider", name, "error", err)
 	}
 
 	return nil, fmt.Errorf("all providers failed, last error: %w", lastErr)
