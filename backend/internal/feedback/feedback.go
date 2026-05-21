@@ -10,19 +10,19 @@ import (
 type Verdict int
 
 const (
-	VerdictNone    Verdict = iota // 无反馈
-	VerdictGood                   // 用户认可
-	VerdictBad                    // 用户否定/纠正
+	VerdictNone Verdict = iota // 无反馈
+	VerdictGood                // 用户认可
+	VerdictBad                 // 用户否定/纠正
 )
 
 // Result 执行结果快照（用于质量评估）
 type Result struct {
-	Query         string              `json:"query"`
-	Response      string              `json:"response"`
-	ToolSuccesses int                 `json:"tool_successes"`
-	ToolFailures  int                 `json:"tool_failures"`
+	Query         string                   `json:"query"`
+	Response      string                   `json:"response"`
+	ToolSuccesses int                      `json:"tool_successes"`
+	ToolFailures  int                      `json:"tool_failures"`
 	Reflection    *kernel.ReflectionResult `json:"reflection,omitempty"`
-	UserVerdict   Verdict             `json:"user_verdict"`
+	UserVerdict   Verdict                  `json:"user_verdict"`
 }
 
 // QualityScore 计算综合质量评分 (0.0-1.0)

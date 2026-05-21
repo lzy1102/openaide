@@ -52,9 +52,9 @@ type ServerConfig struct {
 
 // LLMConfig LLM 配置
 type LLMConfig struct {
-	DefaultProvider string              `json:"default_provider" yaml:"default_provider"`
-	Providers       []ProviderConfig    `json:"providers" yaml:"providers"`
-	FallbackEnabled bool                `json:"fallback_enabled" yaml:"fallback_enabled"`
+	DefaultProvider string           `json:"default_provider" yaml:"default_provider"`
+	Providers       []ProviderConfig `json:"providers" yaml:"providers"`
+	FallbackEnabled bool             `json:"fallback_enabled" yaml:"fallback_enabled"`
 }
 
 // ProviderConfig 提供商配置
@@ -75,20 +75,18 @@ type ProviderConfig struct {
 	StrictTools     bool                   `json:"strict_tools,omitempty" yaml:"strict_tools,omitempty"`
 }
 
-
-
 // MemoryConfig 记忆配置
 type MemoryConfig struct {
-	DataDir      string  `json:"data_dir" yaml:"data_dir"`
-	MaxItems     int     `json:"max_items" yaml:"max_items"`
-	CompressThreshold int `json:"compress_threshold" yaml:"compress_threshold"`
+	DataDir           string `json:"data_dir" yaml:"data_dir"`
+	MaxItems          int    `json:"max_items" yaml:"max_items"`
+	CompressThreshold int    `json:"compress_threshold" yaml:"compress_threshold"`
 }
 
 // ToolsConfig 工具配置
 type ToolsConfig struct {
-	Enabled        []string `json:"enabled" yaml:"enabled"`
-	DangerousTools []string `json:"dangerous_tools" yaml:"dangerous_tools"`
-	MaxExecutionTime int    `json:"max_execution_time" yaml:"max_execution_time"`
+	Enabled          []string `json:"enabled" yaml:"enabled"`
+	DangerousTools   []string `json:"dangerous_tools" yaml:"dangerous_tools"`
+	MaxExecutionTime int      `json:"max_execution_time" yaml:"max_execution_time"`
 }
 
 // KernelConfig 内核配置
@@ -100,7 +98,7 @@ type KernelConfig struct {
 
 // StorageConfig 存储配置
 type StorageConfig struct {
-	DataDir string `json:"data_dir" yaml:"data_dir"`
+	DataDir  string `json:"data_dir" yaml:"data_dir"`
 	IndexDir string `json:"index_dir" yaml:"index_dir"`
 }
 
@@ -134,9 +132,9 @@ func DefaultConfig() *Config {
 			CompressThreshold: 100,
 		},
 		Tools: ToolsConfig{
-			Enabled:           []string{},
-			DangerousTools:    []string{"execute_command", "write_file"},
-			MaxExecutionTime:  30,
+			Enabled:          []string{},
+			DangerousTools:   []string{"execute_command", "write_file"},
+			MaxExecutionTime: 30,
 		},
 		Kernel: KernelConfig{
 			MaxRounds: 10,

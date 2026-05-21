@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"openaide/backend/internal/kernel"
+	"openaide/backend/internal/llm"
 )
 
 // Document 知识文档
@@ -20,15 +22,17 @@ type Document struct {
 	Content   string    `json:"content"`
 	Source    string    `json:"source"` // file, url, manual
 	Tags      []string  `json:"tags,omitempty"`
+	Embedding []float32 `json:"embedding,omitempty"` // LLM embedding 向量，用于语义搜索
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // Base 知识库
 type Base struct {
-	dataDir   string
-	docs      map[string]*Document
-	mu        sync.RWMutex
+	dataDir  string
+	docs     map[string]*Document
+	embedder llm.Embedder
+	mu       sync.RWMutex
 }
 
 // NewBase 创建知识库
@@ -38,12 +42,20 @@ func NewBase(dataDir string) (*Base, error) {
 	}
 
 	kb := &Base{
-		dataDir: dataDir,
-		docs:    make(map[string]*Document),
+		dataDir:  dataDir,
+		docs:     make(map[string]*Document),
+		embedder: llm.NoopEmbedder{},
 	}
 
 	kb.load()
 	return kb, nil
+}
+
+// SetEmbedder 设置向量嵌入器（语义搜索增强）
+func (kb *Base) SetEmbedder(e llm.Embedder) {
+	kb.mu.Lock()
+	defer kb.mu.Unlock()
+	kb.embedder = e
 }
 
 // Add 添加文档
@@ -56,6 +68,18 @@ func (kb *Base) Add(ctx context.Context, title, content, source string, tags []s
 		Tags:      tags,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
+	}
+
+	// 如果有嵌入器，生成向量（使用标题+内容合成文本）
+	if kb.embedder != nil && kb.embedder.Dimension() > 0 {
+		embedText := title
+		if content != "" {
+			embedText = title + "\n" + content
+		}
+		vec, err := kb.embedder.Embed(ctx, embedText)
+		if err == nil && len(vec) > 0 {
+			doc.Embedding = vec
+		}
 	}
 
 	kb.mu.Lock()
@@ -80,42 +104,68 @@ func (kb *Base) Get(ctx context.Context, docID string) (*Document, error) {
 	return nil, fmt.Errorf("document not found: %s", docID)
 }
 
-// Search 搜索文档
+// Search 搜索文档（语义 + 文本混合搜索）
 func (kb *Base) Search(ctx context.Context, query string, limit int) ([]*Document, error) {
 	kb.mu.RLock()
 	defer kb.mu.RUnlock()
 
 	var results []*Document
-	queryLower := strings.ToLower(query)
+	seen := make(map[string]bool)
 
-	for _, doc := range kb.docs {
-		score := 0
-
-		// 标题匹配
-		if strings.Contains(strings.ToLower(doc.Title), queryLower) {
-			score += 10
-		}
-
-		// 内容匹配
-		if strings.Contains(strings.ToLower(doc.Content), queryLower) {
-			score += 5
-		}
-
-		// 标签匹配
-		for _, tag := range doc.Tags {
-			if strings.Contains(strings.ToLower(tag), queryLower) {
-				score += 3
+	// 1. LLM 向量语义搜索
+	if kb.embedder != nil {
+		queryVec, err := kb.embedder.Embed(ctx, query)
+		if err == nil && len(queryVec) > 0 {
+			type scoredDoc struct {
+				doc   *Document
+				score float64
 			}
-		}
-
-		if score > 0 {
-			results = append(results, doc)
+			var scored []scoredDoc
+			for _, doc := range kb.docs {
+				if len(doc.Embedding) == 0 || len(doc.Embedding) != len(queryVec) {
+					continue
+				}
+				sim := llm.CosineSimilarity(queryVec, doc.Embedding)
+				if sim > 0.5 {
+					scored = append(scored, scoredDoc{doc, sim})
+				}
+			}
+			sort.Slice(scored, func(i, j int) bool {
+				return scored[i].score > scored[j].score
+			})
+			for i := 0; i < len(scored) && (limit <= 0 || len(results) < limit); i++ {
+				results = append(results, scored[i].doc)
+				seen[scored[i].doc.ID] = true
+			}
 		}
 	}
 
-	// 按相关性排序（简单实现）
-	// 实际应使用向量相似度
-	if len(results) > limit && limit > 0 {
+	// 2. 文本匹配回退
+	if len(results) < limit || limit == 0 {
+		queryLower := strings.ToLower(query)
+		for _, doc := range kb.docs {
+			if seen[doc.ID] {
+				continue
+			}
+
+			if strings.Contains(strings.ToLower(doc.Title), queryLower) ||
+				strings.Contains(strings.ToLower(doc.Content), queryLower) {
+				results = append(results, doc)
+				seen[doc.ID] = true
+				continue
+			}
+
+			for _, tag := range doc.Tags {
+				if strings.Contains(strings.ToLower(tag), queryLower) {
+					results = append(results, doc)
+					seen[doc.ID] = true
+					break
+				}
+			}
+		}
+	}
+
+	if limit > 0 && len(results) > limit {
 		results = results[:limit]
 	}
 

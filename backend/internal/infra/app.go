@@ -80,6 +80,10 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 	app.LLMGateway = gateway
 	gateway.SetPromptCache(llm.NewPromptCache(cfg.Storage.DataDir + "/cache"))
 
+	// 创建 Embedder 适配器（用于记忆/知识库语义搜索）
+	embedderDim := 1536 // OpenAI text-embedding-ada-002 默认维度
+	embedder := llm.NewEmbedderFunc(gateway.Embed, gateway.EmbedBatch, embedderDim)
+
 	// 模型路由：按任务类型自动选择provider/model
 	if cfg.Router.Enabled {
 		gateway.SetRouter(llm.NewRouter(cfg.Router.Rules))
@@ -101,6 +105,8 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 	if err != nil {
 		slog.Warn("Failed to create memory manager", "error", err)
 		memManager = nil
+	} else {
+		memManager.SetEmbedder(embedder)
 	}
 
 	// 4. 创建会话存储
@@ -130,14 +136,16 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 	agentKernel := kernel.NewAgentKernel(gateway, toolRegistry, memManager, sessionStore, kernelConfig)
 	app.Kernel = agentKernel
 
-	// 接入增强能力 — Reflection、Learner、PatternDetector
-	agentKernel.SetReflection(kernel.NewSimpleReflection())
+	// 接入增强能力 — LLM Reflection（降级到 SimpleReflection）
+	agentKernel.SetReflection(kernel.NewLLMReflection(gateway, kernel.NewSimpleReflection()))
 	if learner, err := kernel.NewSimpleLearner(cfg.Memory.DataDir); err == nil {
 		agentKernel.SetLearner(learner)
 	}
 	agentKernel.SetPatternDetector(kernel.NewSimplePatternDetector())
 	agentKernel.SetSkillManager(kernel.NewSkillManager(cfg.Storage.DataDir + "/skills"))
-	agentKernel.SetApprover(kernel.NewAutoApprover())
+	approver := kernel.NewAutoApprover()
+	approver.UnsafeMode = true // 保留本地便利模式；设为 false 启用危险工具拦截
+	agentKernel.SetApprover(approver)
 	agentKernel.SetAdaptiveRounds(kernel.NewAdaptiveRounds(5, 30))
 
 	// 接入插件管理器
@@ -149,9 +157,10 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 		kernelConfig.SystemPrompt += "\n\n" + pluginPrompt
 	}
 
-	// 接入知识库 + 质量门控
+	// 接入知识库 + 质量门控 + 语义搜索
 	kb, err := knowledge.NewBase(cfg.Storage.DataDir + "/knowledge")
 	if err == nil {
+		kb.SetEmbedder(embedder)
 		agentKernel.SetKnowledgeCollector(kb)
 		gate := feedback.NewGate()
 		agentKernel.SetQualityGate(gate)
@@ -165,7 +174,7 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 	}
 	eventBus := event.NewBus()
 	eventBus.EnablePersistence(cfg.Storage.DataDir + "/events")
-	agentKernel.SetContextCompressor(compress.NewNovelCompressor())
+	agentKernel.SetContextCompressor(compress.NewLLMCompressor(gateway, compress.NewNovelCompressor()))
 	_ = eventBus // 事件总线已在后台运行
 
 	// 6. 创建编排器

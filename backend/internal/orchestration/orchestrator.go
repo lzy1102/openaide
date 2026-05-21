@@ -148,20 +148,43 @@ func (o *Orchestrator) ProcessQueryStream(ctx context.Context, userID, projectID
 	return o.kernel.ProcessStream(ctx, query)
 }
 
-// GetSessionHistory 获取会话历史
-func (o *Orchestrator) GetSessionHistory(ctx context.Context, sessionID string, limit int) ([]kernel.Message, error) {
-	if o.memory == nil {
-		return nil, fmt.Errorf("memory not configured")
-	}
-	return o.memory.Load(ctx, sessionID, limit)
-}
-
-// ListSessions 列出会话
-func (o *Orchestrator) ListSessions(ctx context.Context, projectID, userID string, limit int) ([]*kernel.Session, error) {
+// CreateSession 创建会话
+func (o *Orchestrator) CreateSession(ctx context.Context, projectID, userID string) (*kernel.Session, error) {
 	if o.sessions == nil {
 		return nil, fmt.Errorf("session store not configured")
 	}
-	return o.sessions.List(ctx, projectID, userID, limit)
+	return o.sessions.Create(ctx, projectID, userID)
+}
+
+// DeleteSession 删除会话
+func (o *Orchestrator) DeleteSession(ctx context.Context, sessionID string) error {
+	if o.sessions == nil {
+		return fmt.Errorf("session store not configured")
+	}
+	return o.sessions.Delete(ctx, sessionID)
+}
+
+// GetSessionHistory 获取会话历史
+func (o *Orchestrator) GetSessionHistory(ctx context.Context, sessionID string, limit int) ([]kernel.Message, error) {
+	if o.sessions == nil {
+		return nil, fmt.Errorf("session store not configured")
+	}
+	session, err := o.sessions.Get(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	if len(session.Messages) > limit {
+		return session.Messages[len(session.Messages)-limit:], nil
+	}
+	return session.Messages, nil
+}
+
+// ListSessions 列出会话
+func (o *Orchestrator) ListSessions(ctx context.Context, projectID, userID string, limit, offset int) ([]*kernel.Session, error) {
+	if o.sessions == nil {
+		return nil, fmt.Errorf("session store not configured")
+	}
+	return o.sessions.List(ctx, projectID, userID, limit, offset)
 }
 
 // SearchMemory 搜索记忆
@@ -192,6 +215,22 @@ func (o *Orchestrator) CompressSession(ctx context.Context, sessionID string) er
 	return nil
 }
 
+// GetToolDefinitions 获取工具定义列表
+func (o *Orchestrator) GetToolDefinitions() []kernel.ToolDefinition {
+	if o.toolExec == nil {
+		return nil
+	}
+	return o.toolExec.GetDefinitions()
+}
+
+// GetSession 获取单个会话
+func (o *Orchestrator) GetSession(ctx context.Context, sessionID string) (*kernel.Session, error) {
+	if o.sessions == nil {
+		return nil, fmt.Errorf("session store not configured")
+	}
+	return o.sessions.Get(ctx, sessionID)
+}
+
 // GetStats 获取系统统计
 func (o *Orchestrator) GetStats() map[string]interface{} {
 	stats := map[string]interface{}{
@@ -213,7 +252,7 @@ func (o *Orchestrator) GetStats() map[string]interface{} {
 func (o *Orchestrator) getOrCreateSession(ctx context.Context, projectID, userID string) (*kernel.Session, error) {
 	// 列出已有会话
 	if o.sessions != nil {
-		sessions, err := o.sessions.List(ctx, projectID, userID, 1)
+		sessions, err := o.sessions.List(ctx, projectID, userID, 1, 0)
 		if err == nil && len(sessions) > 0 {
 			return sessions[0], nil
 		}
@@ -284,7 +323,7 @@ func (e *EnhancedOrchestrator) ProcessQuery(ctx context.Context, userID, project
 func (e *EnhancedOrchestrator) enhance(ctx context.Context, userID, projectID, query string, resp *kernel.Response) {
 	// 获取会话历史用于模式检测
 	if e.patternDetector != nil && e.memory != nil {
-		sessions, _ := e.sessions.List(ctx, projectID, userID, 1)
+		sessions, _ := e.sessions.List(ctx, projectID, userID, 1, 0)
 		if len(sessions) > 0 {
 			messages, _ := e.memory.Load(ctx, sessions[0].ID, 50)
 			if len(messages) > 0 {

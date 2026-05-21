@@ -57,18 +57,96 @@ var planningPrompt = `你是一个任务规划专家。将用户的复杂请求�
 
 ## 你的规划（JSON）`
 
+var planTool = kernel.ToolDefinition{
+	Type: "function",
+	Function: kernel.FunctionDef{
+		Name:        "create_plan",
+		Description: "Create a structured plan with subtasks for a complex user request",
+		Parameters: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"goal": map[string]interface{}{
+					"type":        "string",
+					"description": "One-sentence summary of the overall goal",
+				},
+				"subtasks": map[string]interface{}{
+					"type":        "array",
+					"description": "List of executable subtasks",
+					"items": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"id":          map[string]interface{}{"type": "integer", "description": "Subtask ID (1-based)"},
+							"title":       map[string]interface{}{"type": "string", "description": "Short title"},
+							"description": map[string]interface{}{"type": "string", "description": "What to do and how"},
+							"tool_hints":  map[string]interface{}{"type": "string", "description": "Suggested tools, comma separated"},
+							"depends_on": map[string]interface{}{
+								"type":        "array",
+								"items":       map[string]interface{}{"type": "integer"},
+								"description": "IDs of subtasks this depends on",
+							},
+						},
+						"required": []string{"id", "title", "description"},
+					},
+				},
+			},
+			"required": []string{"goal", "subtasks"},
+		},
+	},
+}
+
 // Plan 分析请求并生成任务规划
+// 优先使用 function calling 获取结构化输出，失败则回退到文本 JSON 解析
 func (p *Planner) Plan(ctx context.Context, query string) (*Plan, error) {
-	if !p.needsPlanning(query) {
-		// 简单请求不需要规划
-		return &Plan{
-			Goal: query,
-			Subtasks: []SubTask{{
-				ID: 1, Title: query, Description: query,
-			}},
-		}, nil
+	defaultPlan := &Plan{
+		Goal: query,
+		Subtasks: []SubTask{{
+			ID: 1, Title: query, Description: query,
+		}},
 	}
 
+	if !p.needsPlanning(query) {
+		return defaultPlan, nil
+	}
+
+	// 1. 尝试 function calling 规划
+	plan, err := p.planWithFunctionCall(ctx, query)
+	if err == nil && plan != nil {
+		return plan, nil
+	}
+
+	// 2. 回退到文本 JSON 解析
+	plan, err = p.planWithTextPrompt(ctx, query)
+	if err == nil && plan != nil {
+		return plan, nil
+	}
+
+	return defaultPlan, nil
+}
+
+// planWithFunctionCall 使用 function calling 获取结构化规划
+func (p *Planner) planWithFunctionCall(ctx context.Context, query string) (*Plan, error) {
+	messages := []kernel.Message{
+		{Role: "system", Content: "You are a task planner. Analyze the user's request and create a structured plan."},
+		{Role: "user", Content: query},
+	}
+
+	resp, err := p.llm.Chat(ctx, messages, []kernel.ToolDefinition{planTool}, map[string]interface{}{
+		"temperature": 0.3,
+		"max_tokens":  500,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("function calling planning failed: %w", err)
+	}
+
+	if len(resp.ToolCalls) == 0 {
+		return nil, fmt.Errorf("no tool calls in response")
+	}
+
+	return parsePlanFromFC(resp.ToolCalls[0].Function.Arguments)
+}
+
+// planWithTextPrompt 回退方案：通过文本提示 + JSON 提取
+func (p *Planner) planWithTextPrompt(ctx context.Context, query string) (*Plan, error) {
 	prompt := fmt.Sprintf(planningPrompt, query)
 	messages := []kernel.Message{
 		{Role: "system", Content: "You are a task planner. Output ONLY valid JSON, no other text."},
@@ -80,26 +158,10 @@ func (p *Planner) Plan(ctx context.Context, query string) (*Plan, error) {
 		"max_tokens":  1000,
 	})
 	if err != nil {
-		// 规划失败，退化为单步执行
-		return &Plan{
-			Goal: query,
-			Subtasks: []SubTask{{
-				ID: 1, Title: query, Description: query,
-			}},
-		}, nil
+		return nil, err
 	}
 
-	plan, err := p.parsePlan(resp.Content)
-	if err != nil {
-		return &Plan{
-			Goal: query,
-			Subtasks: []SubTask{{
-				ID: 1, Title: query, Description: query,
-			}},
-		}, nil
-	}
-
-	return plan, nil
+	return parsePlan(resp.Content)
 }
 
 // needsPlanning 判断是否需要任务规划（简单问题跳过）
@@ -126,7 +188,18 @@ func (p *Planner) needsPlanning(query string) bool {
 	return len([]rune(query)) > 100 // 超长问题也需要规划
 }
 
-func (p *Planner) parsePlan(content string) (*Plan, error) {
+func parsePlanFromFC(arguments string) (*Plan, error) {
+	var plan Plan
+	if err := json.Unmarshal([]byte(arguments), &plan); err != nil {
+		return nil, fmt.Errorf("unmarshal function call plan: %w", err)
+	}
+	if len(plan.Subtasks) == 0 {
+		return nil, fmt.Errorf("empty plan from function call")
+	}
+	return &plan, nil
+}
+
+func parsePlan(content string) (*Plan, error) {
 	// 提取 JSON 部分
 	start := strings.Index(content, "{")
 	end := strings.LastIndex(content, "}")

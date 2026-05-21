@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"openaide/backend/internal/kernel"
+	"openaide/backend/internal/llm"
 )
 
 // Level 记忆级别
@@ -45,6 +46,7 @@ type MemoryItem struct {
 	Type      string    `json:"type"` // fact, preference, pattern, summary
 	Tags      []string  `json:"tags,omitempty"`
 	Importance float64  `json:"importance"` // 0.0 - 1.0
+	Embedding []float32 `json:"embedding,omitempty"` // LLM embedding 向量，用于语义搜索
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	AccessCount int     `json:"access_count"`
@@ -55,7 +57,8 @@ type MemoryItem struct {
 type Manager struct {
 	dataDir  string
 	items    map[string]*MemoryItem // 内存缓存
-	vecIndex *VectorIndex           // 语义向量索引
+	vecIndex *VectorIndex           // TF-IDF 稀疏向量索引
+	embedder llm.Embedder           // LLM 向量嵌入（可选）
 	mu       sync.RWMutex
 }
 
@@ -69,6 +72,7 @@ func NewManager(dataDir string) (*Manager, error) {
 		dataDir:  dataDir,
 		items:    make(map[string]*MemoryItem),
 		vecIndex: NewVectorIndex(),
+		embedder: llm.NoopEmbedder{},
 	}
 
 	// 加载已有记忆
@@ -77,6 +81,13 @@ func NewManager(dataDir string) (*Manager, error) {
 	}
 
 	return m, nil
+}
+
+// SetEmbedder 设置向量嵌入器（语义搜索增强）
+func (m *Manager) SetEmbedder(e llm.Embedder) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.embedder = e
 }
 
 // Save 保存记忆
@@ -93,6 +104,14 @@ func (m *Manager) Save(ctx context.Context, sessionID string, level Level, conte
 		UpdatedAt:    time.Now(),
 		AccessCount:  0,
 		LastAccessed: time.Now(),
+	}
+
+	// 如果有嵌入器，生成向量
+	if m.embedder != nil && m.embedder.Dimension() > 0 {
+		vec, err := m.embedder.Embed(ctx, content)
+		if err == nil && len(vec) > 0 {
+			item.Embedding = vec
+		}
 	}
 
 	m.mu.Lock()
@@ -127,7 +146,7 @@ func (m *Manager) Get(ctx context.Context, itemID string) (*MemoryItem, error) {
 	return item, nil
 }
 
-// Search 搜索记忆（向量语义搜索 + 文本回退）
+// Search 搜索记忆（语义 + TF-IDF + 文本三级搜索）
 func (m *Manager) Search(ctx context.Context, query string, level Level, limit int) ([]*MemoryItem, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -135,24 +154,60 @@ func (m *Manager) Search(ctx context.Context, query string, level Level, limit i
 	var results []*MemoryItem
 	seen := make(map[string]bool)
 
-	// 1. 向量语义搜索
-	if ids, scores := m.vecIndex.Search(query, limit*2); len(ids) > 0 {
-		_ = scores
-		for _, id := range ids {
-			if item, ok := m.items[id]; ok {
+	// 1. LLM 向量语义搜索（embedding 余弦相似度）
+	if m.embedder != nil {
+		queryVec, err := m.embedder.Embed(ctx, query)
+		if err == nil && len(queryVec) > 0 {
+			type scoredItem struct {
+				item  *MemoryItem
+				score float64
+			}
+			var scored []scoredItem
+			for _, item := range m.items {
 				if level >= 0 && item.Level != level {
 					continue
 				}
-				results = append(results, item)
-				seen[id] = true
-				if limit > 0 && len(results) >= limit {
-					break
+				if len(item.Embedding) == 0 || len(item.Embedding) != len(queryVec) {
+					continue
+				}
+				sim := llm.CosineSimilarity(queryVec, item.Embedding)
+				if sim > 0.5 {
+					scored = append(scored, scoredItem{item, sim})
+				}
+			}
+			sort.Slice(scored, func(i, j int) bool {
+				return scored[i].score > scored[j].score
+			})
+			for i := 0; i < len(scored) && (limit <= 0 || len(results) < limit); i++ {
+				results = append(results, scored[i].item)
+				seen[scored[i].item.ID] = true
+			}
+		}
+	}
+
+	// 2. TF-IDF 稀疏向量搜索
+	if len(results) < limit || limit == 0 {
+		if ids, scores := m.vecIndex.Search(query, limit*2); len(ids) > 0 {
+			_ = scores
+			for _, id := range ids {
+				if seen[id] {
+					continue
+				}
+				if item, ok := m.items[id]; ok {
+					if level >= 0 && item.Level != level {
+						continue
+					}
+					results = append(results, item)
+					seen[id] = true
+					if limit > 0 && len(results) >= limit {
+						break
+					}
 				}
 			}
 		}
 	}
 
-	// 2. 文本匹配回退
+	// 3. 文本匹配回退
 	if len(results) < limit || limit == 0 {
 		queryLower := strings.ToLower(query)
 		for _, item := range m.items {
@@ -296,6 +351,8 @@ func (m *Manager) loadAll() error {
 		}
 
 		m.items[item.ID] = &item
+		// 重建向量索引
+		m.vecIndex.Add(item.ID, item.Content)
 	}
 
 	return nil
@@ -381,6 +438,11 @@ func (f *FileMemory) Search(ctx context.Context, query string, limit int) ([]ker
 	}
 
 	return messages, 0.8, nil
+}
+
+// SetEmbedder 设置向量嵌入器
+func (f *FileMemory) SetEmbedder(e llm.Embedder) {
+	f.manager.SetEmbedder(e)
 }
 
 // Compress 压缩记忆

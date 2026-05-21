@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 
 	"openaide/backend/internal/auth"
@@ -41,6 +42,7 @@ func NewServer(orch *orchestration.Orchestrator, addr string, authSvc *auth.Serv
 	mux.HandleFunc("/api/v1/memory/search", s.handleMemorySearch)
 	mux.HandleFunc("/api/v1/tools", s.handleTools)
 	mux.HandleFunc("/api/v1/stats", s.handleStats)
+	mux.HandleFunc("/api/v1/state", s.handleState)
 	mux.HandleFunc("/api/v1/auth/", authSvc.AuthHandler)
 	mux.HandleFunc("/ws", s.handleWebSocket)
 	mux.HandleFunc("/health", s.handleHealth)
@@ -147,21 +149,42 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for chunk := range stream {
-		if chunk.Error != nil {
-			data, _ := json.Marshal(StreamEvent{Type: "error", Error: chunk.Error.Error()})
+		event := StreamEvent{
+			Type:        string(chunk.Type),
+			Content:     chunk.Content,
+			ToolCallID:  chunk.ToolCallID,
+			ToolName:    chunk.ToolName,
+			Round:       chunk.Round,
+			TotalRounds: chunk.TotalRounds,
+		}
+
+		// 推理内容通过 thinking 类型传递
+		if chunk.Type == kernel.ChunkTypeThinking && chunk.ReasoningContent != "" {
+			event.Content = chunk.ReasoningContent
+		}
+
+		switch chunk.Type {
+		case kernel.ChunkTypeError:
+			if chunk.Error != nil {
+				event.Error = chunk.Error.Error()
+			}
+			data, _ := json.Marshal(event)
 			fmt.Fprintf(w, "data: %s\n\n", data)
 			flusher.Flush()
 			return
-		}
 
-		event := StreamEvent{
-			Type:    "chunk",
-			Content: chunk.Content,
-		}
-		if chunk.Done {
-			event.Type = "done"
+		case kernel.ChunkTypeDone:
 			if chunk.Usage != nil {
 				event.TokensUsed = chunk.Usage.TotalTokens
+			}
+			data, _ := json.Marshal(event)
+			fmt.Fprintf(w, "data: %s\n\n", data)
+			flusher.Flush()
+			return
+
+		case kernel.ChunkTypeToolDone:
+			if chunk.ToolResult != nil {
+				event.ToolResult = chunk.ToolResult.Content
 			}
 		}
 
@@ -177,8 +200,20 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		// 列出会话
 		userID := r.URL.Query().Get("user_id")
 		projectID := r.URL.Query().Get("project_id")
+		limit := 10
+		offset := 0
+		if l := r.URL.Query().Get("limit"); l != "" {
+			if v, err := strconv.Atoi(l); err == nil && v > 0 && v <= 100 {
+				limit = v
+			}
+		}
+		if o := r.URL.Query().Get("offset"); o != "" {
+			if v, err := strconv.Atoi(o); err == nil && v >= 0 {
+				offset = v
+			}
+		}
 
-		sessions, err := s.orchestrator.ListSessions(r.Context(), projectID, userID, 10)
+		sessions, err := s.orchestrator.ListSessions(r.Context(), projectID, userID, limit, offset)
 		if err != nil {
 			s.writeError(w, http.StatusInternalServerError, err)
 			return
@@ -186,11 +221,7 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 
 		var result []SessionInfo
 		for _, sess := range sessions {
-			result = append(result, SessionInfo{
-				ID:        sess.ID,
-				ProjectID: sess.ProjectID,
-				UserID:    sess.UserID,
-			})
+			result = append(result, sessionToInfo(sess))
 		}
 		s.writeJSON(w, http.StatusOK, result)
 
@@ -201,11 +232,12 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 			s.writeError(w, http.StatusBadRequest, err)
 			return
 		}
-		s.writeJSON(w, http.StatusCreated, SessionInfo{
-			ID:        "new-session-id",
-			ProjectID: req.ProjectID,
-			UserID:    req.UserID,
-		})
+		session, err := s.orchestrator.CreateSession(r.Context(), req.ProjectID, req.UserID)
+		if err != nil {
+			s.writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		s.writeJSON(w, http.StatusCreated, sessionToInfo(session))
 
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -221,24 +253,31 @@ func (s *Server) handleSessionDetail(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
-		// 获取会话历史
-		messages, err := s.orchestrator.GetSessionHistory(r.Context(), sessionID, 50)
+		// 获取会话详情（元数据 + 消息列表）
+		session, err := s.orchestrator.GetSession(r.Context(), sessionID)
 		if err != nil {
-			s.writeError(w, http.StatusInternalServerError, err)
+			s.writeError(w, http.StatusNotFound, err)
 			return
 		}
 
-		var result []MessageInfo
-		for _, msg := range messages {
-			result = append(result, MessageInfo{
+		var messages []MessageInfo
+		for _, msg := range session.Messages {
+			messages = append(messages, MessageInfo{
 				Role:    msg.Role,
 				Content: msg.Content,
 			})
 		}
-		s.writeJSON(w, http.StatusOK, result)
+		s.writeJSON(w, http.StatusOK, map[string]interface{}{
+			"session": sessionToInfo(session),
+			"messages": messages,
+		})
 
 	case http.MethodDelete:
 		// 删除会话
+		if err := s.orchestrator.DeleteSession(r.Context(), sessionID); err != nil {
+			s.writeError(w, http.StatusInternalServerError, err)
+			return
+		}
 		s.writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 
 	default:
@@ -285,8 +324,8 @@ func (s *Server) handleTools(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stats := s.orchestrator.GetStats()
-	s.writeJSON(w, http.StatusOK, stats)
+	defs := s.orchestrator.GetToolDefinitions()
+	s.writeJSON(w, http.StatusOK, defs)
 }
 
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
@@ -297,6 +336,14 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 
 	stats := s.orchestrator.GetStats()
 	s.writeJSON(w, http.StatusOK, stats)
+}
+
+func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	s.writeJSON(w, http.StatusOK, s.orchestrator.GetStats())
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -359,17 +406,41 @@ type ChatResponse struct {
 
 // StreamEvent 流式事件
 type StreamEvent struct {
-	Type       string `json:"type"`
-	Content    string `json:"content,omitempty"`
-	TokensUsed int    `json:"tokens_used,omitempty"`
-	Error      string `json:"error,omitempty"`
+	Type        string      `json:"type"`
+	Content     string      `json:"content,omitempty"`
+	TokensUsed  int         `json:"tokens_used,omitempty"`
+	Error       string      `json:"error,omitempty"`
+	ToolCallID  string      `json:"tool_call_id,omitempty"`
+	ToolName    string      `json:"tool_name,omitempty"`
+	ToolResult  interface{} `json:"tool_result,omitempty"`
+	Round       int         `json:"round,omitempty"`
+	TotalRounds int         `json:"total_rounds,omitempty"`
 }
 
 // SessionInfo 会话信息
 type SessionInfo struct {
-	ID        string `json:"id"`
-	ProjectID string `json:"project_id"`
-	UserID    string `json:"user_id"`
+	ID           string `json:"id"`
+	ProjectID    string `json:"project_id"`
+	UserID       string `json:"user_id"`
+	MessageCount int    `json:"message_count"`
+	CreatedAt    string `json:"created_at,omitempty"`
+	UpdatedAt    string `json:"updated_at,omitempty"`
+}
+
+func sessionToInfo(s *kernel.Session) SessionInfo {
+	info := SessionInfo{
+		ID:           s.ID,
+		ProjectID:    s.ProjectID,
+		UserID:       s.UserID,
+		MessageCount: len(s.Messages),
+	}
+	if !s.CreatedAt.IsZero() {
+		info.CreatedAt = s.CreatedAt.Format(time.RFC3339)
+	}
+	if !s.UpdatedAt.IsZero() {
+		info.UpdatedAt = s.UpdatedAt.Format(time.RFC3339)
+	}
+	return info
 }
 
 // CreateSessionRequest 创建会话请求
