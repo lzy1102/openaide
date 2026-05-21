@@ -16,6 +16,7 @@ openaide-*
 *.dll
 *.so
 *.dylib
+backend/cli
 backend/assistant
 backend/openaide-*
 backend/openaide[0-9]*
@@ -35,6 +36,11 @@ backend/src/*.py
 backend/src/*.log
 backend/src/*.err
 backend/config.server.json
+
+# 日志
+*.log
+logs/
+backend/logs/
 
 # 测试备份文件
 *.disabled
@@ -60,6 +66,21 @@ model.json
 
 # Go
 vendor/
+*.test
+*.test.exe
+*.out
+*.prof
+*.cov
+coverage.*
+profile.*
+go.work
+go.work.sum
+**/go.work
+**/go.work.sum
+
+# 运行时数据
+backend/data/
+data/
 
 # IDE
 .idea/
@@ -67,6 +88,7 @@ vendor/
 *.swp
 *.swo
 *~
+.omo/
 .claude/
 .trae/
 
