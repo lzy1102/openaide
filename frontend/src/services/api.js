@@ -1,174 +1,293 @@
 // API服务，用于与后端API进行通信
+// 后端 Go API server 默认运行在 localhost:8080
 
-// 使用相对路径，自动匹配当前域名和端口
-const API_BASE_URL = '/api';
+const API_BASE_URL = 'http://localhost:8080/api/v1';
 
-// 通用请求函数
+// ============ 通用请求函数 ============
+
 async function request(endpoint, options = {}) {
     const url = `${API_BASE_URL}${endpoint}`;
-    
-    const defaultOptions = {
-        headers: {
-            'Content-Type': 'application/json',
-        },
-    };
-    
-    const mergedOptions = {
-        ...defaultOptions,
-        ...options,
-        headers: {
-            ...defaultOptions.headers,
-            ...options.headers,
-        },
-    };
-    
-    try {
-        const response = await fetch(url, mergedOptions);
-        
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        const json = await response.json();
-        if (json.code === 0 && json.data !== undefined) {
-            return json.data;
-        }
-        return json;
-    } catch (error) {
-        console.error('API request error:', error);
-        throw error;
+    const headers = { 'Content-Type': 'application/json' };
+    const token = localStorage.getItem('openaide_token');
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
     }
+    const mergedOptions = {
+        ...options,
+        headers: { ...headers, ...options.headers },
+    };
+    const response = await fetch(url, mergedOptions);
+    if (!response.ok) {
+        let errMsg = `HTTP ${response.status}`;
+        try {
+            const errBody = await response.json();
+            errMsg = errBody.error || errBody.message || errMsg;
+        } catch (_) {}
+        throw new Error(errMsg);
+    }
+    return response.json();
 }
 
-// 项目相关API
-export const projectAPI = {
-    listProjects: () => request('/projects'),
+// ============ 认证相关 API ============
+// 后端: POST /auth/login, POST /auth/register (JWT auth 默认关闭)
 
-    createProject: (data) => request('/projects', {
-        method: 'POST',
-        body: JSON.stringify(data),
-    }),
+export const authAPI = {
+    login: (credentials) =>
+        request('/auth/login', {
+            method: 'POST',
+            body: JSON.stringify(credentials),
+        }).then((res) => {
+            if (res.token) localStorage.setItem('openaide_token', res.token);
+            return res;
+        }),
 
-    getProject: (id) => request(`/projects/${id}`),
+    register: (data) =>
+        request('/auth/register', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        }),
 
-    updateProject: (id, data) => request(`/projects/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify(data),
-    }),
-
-    deleteProject: (id) => request(`/projects/${id}`, {
-        method: 'DELETE',
-    }),
-};
-
-// 对话相关API
-export const dialogueAPI = {
-    // 获取所有对话
-    listDialogues: (projectId) => {
-        const query = projectId ? `?project_id=${projectId}` : '';
-        return request(`/dialogues${query}`);
+    logout: () => {
+        localStorage.removeItem('openaide_token');
     },
 
-    // 创建新对话
-    createDialogue: (userID, title, projectId) => request('/dialogues', {
-        method: 'POST',
-        body: JSON.stringify({ user_id: userID, title, project_id: projectId || '' }),
-    }),
+    getUserInfo: () => {
+        const token = localStorage.getItem('openaide_token');
+        return { authenticated: !!token, token };
+    },
+};
 
-    // 获取对话详情
-    getDialogue: (id) => request(`/dialogues/${id}`),
+// ============ 项目相关 API (后端无独立项目端点，本地存根) ============
 
-    // 更新对话
-    updateDialogue: (id, title) => request(`/dialogues/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify({ title }),
-    }),
+export const projectAPI = {
+    listProjects: () => Promise.resolve([]),
 
-    // 删除对话
-    deleteDialogue: (id) => request(`/dialogues/${id}`, {
-        method: 'DELETE',
-    }),
+    createProject: (data) =>
+        Promise.resolve({
+            id: 'project-' + Date.now(),
+            name: data.name || 'Default',
+            is_default: true,
+        }),
 
-    // 保存流式消息内容
-    saveStreamMessage: (id, content, reasoningContent) => request(`/dialogues/${id}/save-stream`, {
-        method: 'POST',
-        body: JSON.stringify({ content, reasoning_content: reasoningContent || '' }),
-    }),
+    getProject: () => Promise.resolve(null),
 
-    // 获取对话消息
-    getMessages: (id) => request(`/dialogues/${id}/messages`),
+    updateProject: () => Promise.resolve(),
 
-    // 发送消息到对话
-    sendMessage: (id, userID, content, modelID, options = {}) => request(`/dialogues/${id}/messages`, {
-        method: 'POST',
-        body: JSON.stringify({ user_id: userID, content, model_id: modelID, options }),
-    }),
+    deleteProject: () => Promise.resolve(),
+};
 
-    // 流式发送消息
-    sendMessageStream: (id, userID, content, modelID, options = {}, onChunk) => {
-        const url = `${API_BASE_URL}/dialogues/${id}/stream`;
+// ============ 对话/会话相关 API ============
+// 后端: GET/POST /sessions, GET/DELETE /sessions/{id}
+// 每次对话在前端生成唯一 ID 并作为 user_id 传给后端，后端据此关联消息
+
+const STORAGE_KEY_DIALOGUES = 'openaide_dialogues';
+
+function loadLocalDialogues() {
+    try {
+        const stored = localStorage.getItem(STORAGE_KEY_DIALOGUES);
+        return stored ? JSON.parse(stored) : [];
+    } catch { return []; }
+}
+
+function saveLocalDialogues(dialogues) {
+    try {
+        localStorage.setItem(STORAGE_KEY_DIALOGUES, JSON.stringify(dialogues));
+    } catch {}
+}
+
+export const dialogueAPI = {
+    // 获取所有对话 (本地 localStorage + 后端最佳同步)
+    listDialogues: (projectId) => {
+        // 尝试从后端同步(静默)
+        request(
+            `/sessions?user_id=user-001${projectId ? '&project_id=' + projectId : ''}`
+        )
+            .then((sessions) => {
+                if (!Array.isArray(sessions)) return;
+                const local = loadLocalDialogues();
+                const localIds = new Set(local.map((d) => d.id));
+                let changed = false;
+                for (const s of sessions) {
+                    if (!localIds.has(s.id)) {
+                        local.push({
+                            id: s.id,
+                            title: s.id === 'new-session-id' ? 'New Chat' : s.id,
+                            projectId: s.project_id,
+                            messages: [],
+                        });
+                        changed = true;
+                    }
+                }
+                if (changed) saveLocalDialogues(local);
+            })
+            .catch(() => {});
+
+        return Promise.resolve(loadLocalDialogues());
+    },
+
+    // 创建新对话 (前端生成唯一ID，后端告知)
+    createDialogue: (userID, title, projectId) => {
+        const id =
+            'session-' +
+            Date.now() +
+            '-' +
+            Math.random().toString(36).slice(2, 8);
+        const dialogue = {
+            id,
+            title: title || 'New Chat',
+            projectId: projectId || '',
+            messages: [],
+        };
+        // 同步保存到本地
+        const local = loadLocalDialogues();
+        local.unshift(dialogue);
+        saveLocalDialogues(local);
+        // 可选：同步通知后端
+        request('/sessions', {
+            method: 'POST',
+            body: JSON.stringify({ user_id: id, project_id: projectId || '' }),
+        }).catch(() => {});
+        return Promise.resolve(dialogue);
+    },
+
+    // 获取对话详情 (从后端加载历史消息)
+    getDialogue: (id) =>
+        request(`/sessions/${id}`)
+            .then((messages) => ({
+                id,
+                title: id.startsWith('session-') ? 'Chat' : id,
+                messages: (messages || []).map((m) => ({
+                    sender: m.role === 'user' ? 'user' : 'assistant',
+                    content: m.content || '',
+                })),
+            }))
+            .catch(() => ({
+                id,
+                title: id.startsWith('session-') ? 'Chat' : id,
+                messages: [],
+            })),
+
+    // 删除对话 (本地 + 后端)
+    deleteDialogue: (id) => {
+        const local = loadLocalDialogues();
+        saveLocalDialogues(local.filter((d) => d.id !== id));
+        return request(`/sessions/${id}`, { method: 'DELETE' }).catch(
+            () => ({})
+        );
+    },
+
+    // 更新对话 (后端不支持)
+    updateDialogue: () => Promise.resolve(),
+
+    // 保存流式消息内容 (后端在chat/stream中自动保存)
+    saveStreamMessage: () => Promise.resolve(),
+
+    // 获取对话消息 (通过getDialogue统一获取)
+    getMessages: () => Promise.resolve([]),
+
+    // ============ 流式发送消息 (SSE) ============
+    // 后端 POST /chat/stream 返回 SSE:
+    //   data: {"type":"content","content":"..."}
+    //   data: {"type":"thinking","content":"..."}
+    //   data: {"type":"tool_call","tool_call_id":"...","tool_name":"..."}
+    //   data: {"type":"tool_done","tool_call_id":"...","tool_name":"...","tool_result":...}
+    //   data: {"type":"progress","round":1,"total_rounds":10}
+    //   data: {"type":"done","tokens_used":123}
+    //   data: {"type":"error","error":"..."}
+    sendMessageStream: (dialogueId, userID, content, modelID, options = {}, onChunk) => {
+        const url = `${API_BASE_URL}/chat/stream`;
+        const headers = { 'Content-Type': 'application/json' };
+        const token = localStorage.getItem('openaide_token');
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        const body = {
+            message: content,
+            user_id: dialogueId, // 对话ID作为会话标识传给后端
+            model: modelID || undefined,
+        };
+
         return fetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user_id: userID, content, model_id: modelID, options }),
-        }).then(response => {
+            headers,
+            body: JSON.stringify(body),
+        }).then((response) => {
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let buffer = '';
 
             return new Promise((resolve, reject) => {
                 function read() {
-                    reader.read().then(({ done, value }) => {
-                        if (done) {
-                            if (buffer.trim()) {
-                                processSSELines(buffer);
+                    reader
+                        .read()
+                        .then(({ done, value }) => {
+                            if (done) {
+                                if (buffer.trim()) processSSELines(buffer);
+                                resolve();
+                                return;
                             }
-                            resolve();
-                            return;
-                        }
-                        buffer += decoder.decode(value, { stream: true });
-                        const lines = buffer.split('\n');
-                        buffer = lines.pop() || '';
-                        processSSELines(lines.join('\n'));
-                        read();
-                    }).catch(reject);
+                            buffer += decoder.decode(value, { stream: true });
+                            const lines = buffer.split('\n');
+                            buffer = lines.pop() || '';
+                            processSSELines(lines.join('\n'));
+                            read();
+                        })
+                        .catch(reject);
                 }
 
                 function processSSELines(text) {
-                    let currentEvent = null;
                     const lines = text.split('\n');
                     for (const line of lines) {
-                        const trimmedLine = line.trim();
-                        if (trimmedLine.startsWith('event:')) {
-                            currentEvent = trimmedLine.slice(6).trim();
-                        } else if (trimmedLine.startsWith('data:')) {
+                        const trimmed = line.trim();
+                        if (trimmed.startsWith('data:')) {
                             try {
-                                const dataStr = trimmedLine.slice(5).trim();
-                                const data = JSON.parse(dataStr);
-                                if (data.type === 'content') {
-                                    onChunk({ content: data.content });
-                                } else if (data.type === 'thinking') {
-                                    onChunk({ thinking: data.content });
-                                } else if (data.type === 'tool_call') {
-                                    onChunk({ toolCall: { tool: data.tool, params: data.params } });
-                                } else if (data.type === 'tool_done') {
-                                    onChunk({ toolDone: { tool: data.tool, result: data.result } });
-                                } else if (data.type === 'context_compact') {
-                                    onChunk({ contextCompact: data });
-                                } else if (data.type === 'progress') {
-                                    onChunk({ progress: data.content });
-                                } else if (data.type === 'error') {
-                                    onChunk({ error: data.content });
-                                } else if (data.type === 'done') {
-                                    onChunk({ done: true, model: data.model, usage: data.usage });
-                                } else {
-                                    onChunk(data);
-                                }
-                            } catch (e) {
+                                const data = JSON.parse(trimmed.slice(5).trim());
+								switch (data.type) {
+									case 'content':
+										onChunk({ content: data.content || '' });
+										break;
+									case 'thinking':
+										onChunk({ thinking: data.content || '' });
+										break;
+									case 'tool_call':
+										onChunk({
+											toolCall: {
+												tool: data.tool_name,
+												params: data.tool_call_id,
+												status: 'running',
+											},
+										});
+										break;
+									case 'tool_done':
+										onChunk({
+											toolDone: {
+												tool: data.tool_name,
+												result: data.tool_result,
+											},
+										});
+										break;
+									case 'progress':
+										onChunk({
+											progress: `Round ${data.round || '?'}/${data.total_rounds || '?'}`,
+										});
+										break;
+									case 'done':
+										onChunk({
+											done: true,
+											model: data.model,
+											usage: data.tokens_used
+												? { total_tokens: data.tokens_used }
+												: undefined,
+										});
+										break;
+									case 'error':
+										onChunk({ error: data.error || 'Unknown error' });
+										break;
+								}
+                            } catch (_) {
+                                // skip malformed JSON
                             }
-                        } else if (trimmedLine === '') {
-                            currentEvent = null;
                         }
                     }
                 }
@@ -179,289 +298,181 @@ export const dialogueAPI = {
     },
 };
 
-// 工作流相关API
+// ============ 工作流相关 API (后端无端点，本地存根) ============
+
 export const workflowAPI = {
-    listWorkflows: () => request('/workflows'),
-    createWorkflow: (data) => request('/workflows', {
-        method: 'POST',
-        body: JSON.stringify(data),
-    }),
-    getWorkflow: (id) => request(`/workflows/${id}`),
-    updateWorkflow: (id, data) => request(`/workflows/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify(data),
-    }),
-    deleteWorkflow: (id) => request(`/workflows/${id}`, {
-        method: 'DELETE',
-    }),
-    createWorkflowInstance: (id) => request(`/workflows/${id}/instances`, {
-        method: 'POST',
-    }),
-    executeWorkflowInstance: (id) => request(`/workflows/instances/${id}/execute`, {
-        method: 'POST',
-    }),
+    listWorkflows: () => Promise.resolve([]),
+    createWorkflow: () => Promise.resolve({ id: 'wf-' + Date.now() }),
+    getWorkflow: () => Promise.resolve(null),
+    updateWorkflow: () => Promise.resolve(),
+    deleteWorkflow: () => Promise.resolve(),
+    createWorkflowInstance: () => Promise.resolve({ id: 'wfi-' + Date.now() }),
+    executeWorkflowInstance: () => Promise.resolve({}),
 };
 
-// 技能相关API
+// ============ 技能相关 API (后端无端点，本地存根) ============
+
 export const skillAPI = {
-    listSkills: () => request('/skills'),
-    createSkill: (data) => request('/skills', {
-        method: 'POST',
-        body: JSON.stringify(data),
-    }),
-    getSkill: (id) => request(`/skills/${id}`),
-    updateSkill: (id, data) => request(`/skills/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify(data),
-    }),
-    deleteSkill: (id) => request(`/skills/${id}`, {
-        method: 'DELETE',
-    }),
-    createSkillInstance: (id) => request(`/skills/${id}/instances`, {
-        method: 'POST',
-    }),
-    executeSkillInstance: (id) => request(`/skills/instances/${id}/execute`, {
-        method: 'POST',
-    }),
+    listSkills: () => Promise.resolve([]),
+    createSkill: () => Promise.resolve({ id: 'skill-' + Date.now() }),
+    getSkill: () => Promise.resolve(null),
+    updateSkill: () => Promise.resolve(),
+    deleteSkill: () => Promise.resolve(),
+    createSkillInstance: () => Promise.resolve({ id: 'ski-' + Date.now() }),
+    executeSkillInstance: () => Promise.resolve({}),
 };
 
-// 插件相关API
+// ============ 插件相关 API (后端无端点，本地存根) ============
+
 export const pluginAPI = {
-    listPlugins: () => request('/plugins'),
-    createPlugin: (data) => request('/plugins', {
-        method: 'POST',
-        body: JSON.stringify(data),
-    }),
-    getPlugin: (id) => request(`/plugins/${id}`),
-    updatePlugin: (id, data) => request(`/plugins/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify(data),
-    }),
-    deletePlugin: (id) => request(`/plugins/${id}`, {
-        method: 'DELETE',
-    }),
-    installPlugin: (data) => request('/plugins/install', {
-        method: 'POST',
-        body: JSON.stringify(data),
-    }),
-    enablePlugin: (id) => request(`/plugins/${id}/enable`, {
-        method: 'POST',
-    }),
-    disablePlugin: (id) => request(`/plugins/${id}/disable`, {
-        method: 'POST',
-    }),
-    createPluginInstance: (id) => request(`/plugins/${id}/instances`, {
-        method: 'POST',
-    }),
-    executePluginInstance: (id) => request(`/plugins/instances/${id}/execute`, {
-        method: 'POST',
-    }),
+    listPlugins: () => Promise.resolve([]),
+    createPlugin: () => Promise.resolve({ id: 'plugin-' + Date.now() }),
+    getPlugin: () => Promise.resolve(null),
+    updatePlugin: () => Promise.resolve(),
+    deletePlugin: () => Promise.resolve(),
+    installPlugin: () => Promise.resolve({}),
+    enablePlugin: () => Promise.resolve(),
+    disablePlugin: () => Promise.resolve(),
+    createPluginInstance: () => Promise.resolve({ id: 'pli-' + Date.now() }),
+    executePluginInstance: () => Promise.resolve({}),
 };
 
-// 模型相关API
+// ============ 模型相关 API (后端无独立 CRUD 端点，可尝试从 stats 获取基础模型) ============
+
+let _cachedModels = null;
+
 export const modelAPI = {
-    listModels: () => request('/models'),
-    createModel: (data) => request('/models', {
-        method: 'POST',
-        body: JSON.stringify(data),
-    }),
-    getModel: (id) => request(`/models/${id}`),
-    updateModel: (id, data) => request(`/models/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify(data),
-    }),
-    deleteModel: (id) => request(`/models/${id}`, {
-        method: 'DELETE',
-    }),
-    enableModel: (id) => request(`/models/${id}/enable`, {
-        method: 'POST',
-    }),
-    disableModel: (id) => request(`/models/${id}/disable`, {
-        method: 'POST',
-    }),
-    createModelInstance: (id) => request(`/models/${id}/instances`, {
-        method: 'POST',
-    }),
-    executeModelInstance: (id) => request(`/models/instances/${id}/execute`, {
-        method: 'POST',
-    }),
+    listModels: async () => {
+        if (_cachedModels) return _cachedModels;
+        try {
+            const stats = await request('/stats');
+            const model = stats?.model || stats?.models?.[0] || null;
+            _cachedModels = model
+                ? [{ id: model, name: model, status: 'enabled' }]
+                : [{ id: 'default-model', name: 'Default Model', status: 'enabled' }];
+        } catch {
+            _cachedModels = [
+                { id: 'default-model', name: 'Default Model', status: 'enabled' },
+            ];
+        }
+        return _cachedModels;
+    },
+
+    createModel: () => Promise.resolve({ id: 'model-' + Date.now() }),
+    getModel: () => Promise.resolve(null),
+    updateModel: () => Promise.resolve(),
+    deleteModel: () => Promise.resolve(),
+    enableModel: () => Promise.resolve(),
+    disableModel: () => Promise.resolve(),
+    createModelInstance: () => Promise.resolve({ id: 'mi-' + Date.now() }),
+    executeModelInstance: () => Promise.resolve({}),
 };
 
-// 自动化相关API
+// ============ 自动化相关 API (后端无端点，本地存根) ============
+
 export const automationAPI = {
-    listExecutions: () => request('/automation/executions'),
-    createExecution: (data) => request('/automation/executions', {
-        method: 'POST',
-        body: JSON.stringify(data),
-    }),
-    getExecution: (id) => request(`/automation/executions/${id}`),
-    deleteExecution: (id) => request(`/automation/executions/${id}`, {
-        method: 'DELETE',
-    }),
-    execute: (id) => request(`/automation/executions/${id}/execute`, {
-        method: 'POST',
-    }),
+    listExecutions: () => Promise.resolve([]),
+    createExecution: () => Promise.resolve({ id: 'exec-' + Date.now() }),
+    getExecution: () => Promise.resolve(null),
+    deleteExecution: () => Promise.resolve(),
+    execute: () => Promise.resolve({}),
 };
 
-// 代码执行相关API
+// ============ 代码执行相关 API (后端无端点，本地存根) ============
+
 export const codeAPI = {
-    listExecutions: () => request('/code/executions'),
-    createExecution: (data) => request('/code/executions', {
-        method: 'POST',
-        body: JSON.stringify(data),
-    }),
-    getExecution: (id) => request(`/code/executions/${id}`),
-    deleteExecution: (id) => request(`/code/executions/${id}`, {
-        method: 'DELETE',
-    }),
-    execute: (id) => request(`/code/executions/${id}/execute`, {
-        method: 'POST',
-    }),
+    listExecutions: () => Promise.resolve([]),
+    createExecution: () => Promise.resolve({ id: 'code-exec-' + Date.now() }),
+    getExecution: () => Promise.resolve(null),
+    deleteExecution: () => Promise.resolve(),
+    execute: () => Promise.resolve({}),
 };
 
-// 确认相关API
+// ============ 确认相关 API (后端无端点，本地存根) ============
+
 export const confirmationAPI = {
-    listConfirmations: () => request('/confirmations'),
-    createConfirmation: (data) => request('/confirmations', {
-        method: 'POST',
-        body: JSON.stringify(data),
-    }),
-    getConfirmation: (id) => request(`/confirmations/${id}`),
-    deleteConfirmation: (id) => request(`/confirmations/${id}`, {
-        method: 'DELETE',
-    }),
-    confirm: (id) => request(`/confirmations/${id}/confirm`, {
-        method: 'POST',
-    }),
-    reject: (id) => request(`/confirmations/${id}/reject`, {
-        method: 'POST',
-    }),
+    listConfirmations: () => Promise.resolve([]),
+    createConfirmation: () => Promise.resolve({ id: 'conf-' + Date.now() }),
+    getConfirmation: () => Promise.resolve(null),
+    deleteConfirmation: () => Promise.resolve(),
+    confirm: () => Promise.resolve({}),
+    reject: () => Promise.resolve({}),
 };
 
-// 输入相关API
+// ============ 输入相关 API (后端无端点，本地存根) ============
+
 export const inputAPI = {
-    listActions: () => request('/input/actions'),
-    createAction: (data) => request('/input/actions', {
-        method: 'POST',
-        body: JSON.stringify(data),
-    }),
-    getAction: (id) => request(`/input/actions/${id}`),
-    updateAction: (id, data) => request(`/input/actions/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify(data),
-    }),
-    deleteAction: (id) => request(`/input/actions/${id}`, {
-        method: 'DELETE',
-    }),
-    disableAction: (id) => request(`/input/actions/${id}/disable`, {
-        method: 'POST',
-    }),
-    enableAction: (id) => request(`/input/actions/${id}/enable`, {
-        method: 'POST',
-    }),
-    createInstance: (id) => request(`/input/actions/${id}/instances`, {
-        method: 'POST',
-    }),
-    executeAction: (id) => request(`/input/instances/${id}/execute`, {
-        method: 'POST',
-    }),
+    listActions: () => Promise.resolve([]),
+    createAction: () => Promise.resolve({ id: 'action-' + Date.now() }),
+    getAction: () => Promise.resolve(null),
+    updateAction: () => Promise.resolve(),
+    deleteAction: () => Promise.resolve(),
+    disableAction: () => Promise.resolve(),
+    enableAction: () => Promise.resolve(),
+    createInstance: () => Promise.resolve({ id: 'inst-' + Date.now() }),
+    executeAction: () => Promise.resolve({}),
 };
 
-// 思考相关API
+// ============ 思考相关 API (后端无端点，本地存根) ============
+
 export const thinkingAPI = {
-    listThoughts: () => request('/thinking/thoughts'),
-    createThought: (data) => request('/thinking/thoughts', {
-        method: 'POST',
-        body: JSON.stringify(data),
-    }),
-    getThought: (id) => request(`/thinking/thoughts/${id}`),
-    deleteThought: (id) => request(`/thinking/thoughts/${id}`, {
-        method: 'DELETE',
-    }),
-    createCorrection: (id, data) => request(`/thinking/thoughts/${id}/corrections`, {
-        method: 'POST',
-        body: JSON.stringify(data),
-    }),
-    listCorrections: (id) => request(`/thinking/thoughts/${id}/corrections`),
-    resolveCorrection: (id) => request(`/thinking/corrections/${id}/resolve`, {
-        method: 'POST',
-    }),
-    deleteCorrection: (id) => request(`/thinking/corrections/${id}`, {
-        method: 'DELETE',
-    }),
+    listThoughts: () => Promise.resolve([]),
+    createThought: () => Promise.resolve({ id: 'thought-' + Date.now() }),
+    getThought: () => Promise.resolve(null),
+    deleteThought: () => Promise.resolve(),
+    createCorrection: () => Promise.resolve({ id: 'corr-' + Date.now() }),
+    listCorrections: () => Promise.resolve([]),
+    resolveCorrection: () => Promise.resolve({}),
+    deleteCorrection: () => Promise.resolve(),
 };
 
-// 提示词模板相关API
+// ============ 提示词模板相关 API (后端无端点，本地存根) ============
+
 export const templateAPI = {
-    listTemplates: () => request('/templates'),
-    createTemplate: (data) => request('/templates', {
-        method: 'POST',
-        body: JSON.stringify(data),
-    }),
-    getTemplate: (id) => request(`/templates/${id}`),
-    updateTemplate: (id, data) => request(`/templates/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify(data),
-    }),
-    deleteTemplate: (id) => request(`/templates/${id}`, {
-        method: 'DELETE',
-    }),
-    renderTemplate: (id, variables) => request(`/templates/${id}/render`, {
-        method: 'POST',
-        body: JSON.stringify({ variables }),
-    }),
+    listTemplates: () => Promise.resolve([]),
+    createTemplate: () => Promise.resolve({ id: 'tpl-' + Date.now() }),
+    getTemplate: () => Promise.resolve(null),
+    updateTemplate: () => Promise.resolve(),
+    deleteTemplate: () => Promise.resolve(),
+    renderTemplate: () => Promise.resolve(''),
 };
 
-// 使用量统计相关API
+// ============ 使用量统计相关 API ============
+// 后端: GET /stats 返回系统统计 (可能不包含前端指标，使用混合模式：后端 + 模拟回退)
+
 export const dashboardAPI = {
-    getUsageStats: (timeRange) => request(`/dashboard/usage?range=${timeRange}`),
-    getCostStats: (timeRange) => request(`/dashboard/costs?range=${timeRange}`),
-    getBudgetStatus: () => request('/dashboard/budget'),
-    updateBudget: (data) => request('/dashboard/budget', {
-        method: 'PUT',
-        body: JSON.stringify(data),
-    }),
-    getRecentActivity: (limit = 10) => request(`/dashboard/activity?limit=${limit}`),
-    getModelUsage: () => request('/dashboard/models'),
+    getUsageStats: (timeRange) =>
+        request('/stats').catch(() => null),
+
+    getCostStats: () => Promise.resolve(null),
+    getBudgetStatus: () => Promise.resolve(null),
+    updateBudget: () => Promise.resolve(),
+    getRecentActivity: () => Promise.resolve([]),
+    getModelUsage: () => Promise.resolve([]),
 };
 
-// 定时任务相关API
+// ============ 定时任务相关 API (后端无端点，本地存根) ============
+
 export const scheduledTaskAPI = {
-    listTasks: () => request('/scheduled-tasks'),
-    createTask: (data) => request('/scheduled-tasks', {
-        method: 'POST',
-        body: JSON.stringify(data),
-    }),
-    getTask: (id) => request(`/scheduled-tasks/${id}`),
-    updateTask: (id, data) => request(`/scheduled-tasks/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify(data),
-    }),
-    deleteTask: (id) => request(`/scheduled-tasks/${id}`, {
-        method: 'DELETE',
-    }),
-    executeTask: (id) => request(`/scheduled-tasks/${id}/execute`, {
-        method: 'POST',
-    }),
-    pauseTask: (id) => request(`/scheduled-tasks/${id}/pause`, {
-        method: 'POST',
-    }),
-    resumeTask: (id) => request(`/scheduled-tasks/${id}/resume`, {
-        method: 'POST',
-    }),
-    getExecutionHistory: (id, limit = 20) => request(`/scheduled-tasks/${id}/history?limit=${limit}`),
-    validateCron: (expression) => request('/scheduled-tasks/validate-cron', {
-        method: 'POST',
-        body: JSON.stringify({ expression }),
-    }),
+    listTasks: () => Promise.resolve([]),
+    createTask: () => Promise.resolve({ id: 'task-' + Date.now() }),
+    getTask: () => Promise.resolve(null),
+    updateTask: () => Promise.resolve(),
+    deleteTask: () => Promise.resolve(),
+    executeTask: () => Promise.resolve({}),
+    pauseTask: () => Promise.resolve(),
+    resumeTask: () => Promise.resolve(),
+    getExecutionHistory: () => Promise.resolve([]),
+    validateCron: () => Promise.resolve({ valid: true }),
 };
 
-// 工具调用相关API
+// ============ 工具调用相关 API ============
+// 后端: GET /tools 返回工具统计数据
+
 export const toolCallAPI = {
-    listToolCalls: () => request('/tool-calls'),
-    getToolCall: (id) => request(`/tool-calls/${id}`),
-    executeTool: (data) => request('/tool-calls/execute', {
-        method: 'POST',
-        body: JSON.stringify(data),
-    }),
+    listToolCalls: () =>
+        request('/tools').catch(() => []),
+
+    getToolCall: () => Promise.resolve(null),
+    executeTool: () => Promise.resolve({}),
 };
