@@ -183,7 +183,7 @@ git push origin v1.0.0
 - **模型智能路由**: 按任务类型自动选择provider/model（代码/搜索/翻译/对话）
 - **Planner + DAG**: 复杂请求自动拆分+DAG并行执行（function calling驱动，纯文本回退）
 - **多Agent Team**: 分析员→程序员→审查员→执行者角色委派
-- **LLM反思**: LLM驱动的结构化反思(function calling输出)，规则评估降级，insights持久化
+- **LLM反思+跨会话学习**: 每轮LLM结构化反思(function calling)→eval→insights持久化→后续对话自动注入历史经验
 - **知识库**: 质量门控自动抽取(score>0.6)+提示词注入 + LLM Embedding语义搜索
 - **3级记忆**: L1/L2/L3 + LLM Embedding语义搜索 + TF-IDF向量搜索 + 文本匹配三级降级
 - **LLM上下文压缩**: LLM驱动的语义摘要 + 待解决问题提取，NovelCompressor降级

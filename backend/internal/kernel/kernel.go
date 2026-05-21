@@ -22,6 +22,8 @@ type AgentKernel struct {
 
 	// 增强能力（可选）
 	reflection       Reflection
+	learner          Learner
+	patternDetector  PatternDetector
 	knowledgeCollector KnowledgeCollector
 	qualityGate      QualityGate
 	skillManager     *SkillManager
@@ -108,6 +110,16 @@ func (k *AgentKernel) SetContextCompressor(c ContextCompressor) {
 // SetReflection 设置反思能力
 func (k *AgentKernel) SetReflection(r Reflection) {
 	k.reflection = r
+}
+
+// SetLearner 设置学习能力
+func (k *AgentKernel) SetLearner(l Learner) {
+	k.learner = l
+}
+
+// SetPatternDetector 设置模式检测器
+func (k *AgentKernel) SetPatternDetector(pd PatternDetector) {
+	k.patternDetector = pd
 }
 
 // SetKnowledgeCollector 设置知识收集器
@@ -844,6 +856,17 @@ func (k *AgentKernel) buildMessages(session *Session, query *Query) []Message {
 		}
 	}
 
+	// 注入跨会话学习洞察
+	if k.learner != nil {
+		insights, err := k.learner.GetInsights(context.Background(), query.Content)
+		if err == nil && len(insights) > 0 {
+			messages = append(messages, Message{
+				Role:    "system",
+				Content: "[历史学习] " + strings.Join(insights, " | "),
+			})
+		}
+	}
+
 	// 注入相关知识库上下文
 	if k.knowledgeCollector != nil {
 		ctx := context.Background()
@@ -954,6 +977,28 @@ func (k *AgentKernel) doReflection(ctx context.Context, sessionID, query, respon
 			}
 			session.Metadata["reflection"] = result
 			k.sessionStore.Update(ctx, session)
+		}
+	}
+
+	// 持久化学习洞察
+	if k.learner != nil {
+		if err := k.learner.Learn(ctx, record); err != nil {
+			slog.Warn("Learner failed", "error", err)
+		}
+	}
+
+	// 检测对话模式
+	if k.patternDetector != nil && k.sessionStore != nil {
+		session, err := k.sessionStore.Get(ctx, sessionID)
+		if err == nil && session != nil {
+			patterns, pErr := k.patternDetector.Detect(ctx, sessionID, session.Messages)
+			if pErr == nil && len(patterns) > 0 {
+				if session.Metadata == nil {
+					session.Metadata = make(map[string]interface{})
+				}
+				session.Metadata["patterns"] = patterns
+				k.sessionStore.Update(ctx, session)
+			}
 		}
 	}
 

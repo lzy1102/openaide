@@ -203,6 +203,13 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 	// 接入增强能力 — LLM Reflection（降级到 SimpleReflection）
 	agentKernel.SetReflection(kernel.NewLLMReflection(gateway, kernel.NewSimpleReflection()))
 	agentKernel.SetSkillManager(kernel.NewSkillManager(cfg.Storage.DataDir + "/skills"))
+	if learner, err := kernel.NewSimpleLearner(cfg.Storage.DataDir + "/insights"); err == nil {
+		agentKernel.SetLearner(learner)
+		slog.Info("Learner enabled", "dir", cfg.Storage.DataDir+"/insights")
+	} else {
+		slog.Warn("Failed to create learner, learning disabled", "error", err)
+	}
+	agentKernel.SetPatternDetector(kernel.NewSimplePatternDetector())
 	approver := kernel.NewAutoApprover()
 	approver.UnsafeMode = true // 保留本地便利模式；设为 false 启用危险工具拦截
 	agentKernel.SetApprover(approver)
