@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -175,6 +176,11 @@ func main() {
 		return
 	}
 
+	if flags.noTUI {
+		runTextMode(app)
+		return
+	}
+
 	m := initModel(app, flags.continueSess)
 	p := tea.NewProgram(m,
 		tea.WithAltScreen(),
@@ -184,6 +190,44 @@ func main() {
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
+	}
+}
+
+func runTextMode(app *infra.Application) {
+	fmt.Println("OpenAIDE — text mode (Ctrl+C to exit)")
+	fmt.Println()
+	scanner := bufio.NewScanner(os.Stdin)
+	for {
+		fmt.Print("> ")
+		if !scanner.Scan() {
+			break
+		}
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		if line == "/exit" || line == "/quit" {
+			break
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
+		ch, err := app.Orchestrator.ProcessQueryStream(ctx, "cli-user", "default", line, kernel.QueryOptions{})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			cancel()
+			continue
+		}
+		for chunk := range ch {
+			if chunk.Type == kernel.ChunkTypeError {
+				fmt.Fprintf(os.Stderr, "\nError: %s\n", chunk.Content)
+				break
+			}
+			if chunk.Type == kernel.ChunkTypeContent {
+				fmt.Print(chunk.Content)
+			}
+		}
+		fmt.Println()
+		cancel()
 	}
 }
 
