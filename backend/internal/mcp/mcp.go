@@ -225,6 +225,17 @@ func (m *Manager) ConnectServer(id, command string, args ...string) error {
 	return nil
 }
 
+// GetServerTools 获取指定MCP Server的工具列表
+func (m *Manager) GetServerTools(id string) []Tool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	c, ok := m.clients[id]
+	if !ok {
+		return nil
+	}
+	return c.ListTools()
+}
+
 // GetAllTools 获取所有MCP Server的工具
 func (m *Manager) GetAllTools() []Tool {
 	m.mu.RLock()

@@ -40,16 +40,16 @@ OpenAIDE 安装在用户目录 `~/.openaide`，每个用户完全独立：
 
 ```bash
 # 使用 curl
-curl -fsSL https://raw.githubusercontent.com/lzy1102/openaide/master/scripts/deploy.sh | bash
+curl -fsSL https://raw.githubusercontent.com/lzy1102/openaide/master/install.sh | bash
 
 # 或使用 wget
-wget -qO- https://raw.githubusercontent.com/lzy1102/openaide/master/scripts/deploy.sh | bash
+wget -qO- https://raw.githubusercontent.com/lzy1102/openaide/master/install.sh | bash
 ```
 
 ### 2.2 指定版本安装
 
 ```bash
-VERSION=v1.0.0 curl -fsSL https://raw.githubusercontent.com/lzy1102/openaide/master/scripts/deploy.sh | bash
+VERSION=v1.0.0 curl -fsSL https://raw.githubusercontent.com/lzy1102/openaide/master/install.sh | bash
 ```
 
 ### 2.3 安装后配置
@@ -74,7 +74,7 @@ git clone https://github.com/lzy1102/openaide.git ~/.openaide
 cd ~/.openaide
 
 # 2. 运行安装脚本（本地编译模式）
-bash scripts/deploy.sh --local
+bash install.sh --local
 ```
 
 ---

@@ -1,12 +1,15 @@
 package plugin
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"openaide/backend/internal/kernel"
 )
 
 // Plugin 可插拔扩展
@@ -17,26 +20,26 @@ type Plugin struct {
 	Version     string `json:"version"`
 	Enabled     bool   `json:"enabled"`
 
-	// 插件提供的额外工具
-	Tools []ToolDef `json:"tools,omitempty"`
-
 	// 插件注入的提示词
 	SystemPrompt string `json:"system_prompt,omitempty"`
 }
 
-// ToolDef 插件工具定义
-type ToolDef struct {
-	Name        string                 `json:"name"`
-	Description string                 `json:"description"`
-	Parameters  map[string]interface{} `json:"parameters"`
-}
+// MessageHook 消息拦截钩子
+// 在渠道消息进入Kernel之前调用，可修改或拦截消息
+type MessageHook func(ctx context.Context, msg *kernel.Message) (*kernel.Message, error)
+
+// EventHook 事件钩子
+// Kernel事件发布时调用（如 toolcall, thinking 等）
+type EventHook func(ctx context.Context, event kernel.Event)
 
 // Manager 插件管理器
 type Manager struct {
-	mu      sync.RWMutex
-	dir     string
-	plugins map[string]*Plugin
-	onLoad  []func(*Plugin)
+	mu          sync.RWMutex
+	dir         string
+	plugins     map[string]*Plugin
+	onLoad      []func(*Plugin)
+	messageHooks []MessageHook
+	eventHooks   []EventHook
 }
 
 // NewManager 创建插件管理器
@@ -114,17 +117,52 @@ func (m *Manager) List() []*Plugin {
 	return result
 }
 
-// GetTools 获取所有启用插件的工具
-func (m *Manager) GetTools() []ToolDef {
+// OnMessage 注册消息钩子
+func (m *Manager) OnMessage(hook MessageHook) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.messageHooks = append(m.messageHooks, hook)
+}
+
+// OnEvent 注册事件钩子
+func (m *Manager) OnEvent(hook EventHook) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.eventHooks = append(m.eventHooks, hook)
+}
+
+// RunMessageHooks 依次执行所有消息钩子
+// 任一钩子返回 error 将中止后续钩子并返回错误
+func (m *Manager) RunMessageHooks(ctx context.Context, msg *kernel.Message) (*kernel.Message, error) {
 	m.mu.RLock()
-	defer m.mu.RUnlock()
-	var tools []ToolDef
-	for _, p := range m.plugins {
-		if p.Enabled {
-			tools = append(tools, p.Tools...)
+	hooks := make([]MessageHook, len(m.messageHooks))
+	copy(hooks, m.messageHooks)
+	m.mu.RUnlock()
+
+	current := msg
+	for _, hook := range hooks {
+		var err error
+		current, err = hook(ctx, current)
+		if err != nil {
+			return nil, err
+		}
+		if current == nil {
+			return nil, fmt.Errorf("message hook returned nil, message intercepted")
 		}
 	}
-	return tools
+	return current, nil
+}
+
+// RunEventHooks 依次执行所有事件钩子
+func (m *Manager) RunEventHooks(ctx context.Context, event kernel.Event) {
+	m.mu.RLock()
+	hooks := make([]EventHook, len(m.eventHooks))
+	copy(hooks, m.eventHooks)
+	m.mu.RUnlock()
+
+	for _, hook := range hooks {
+		hook(ctx, event)
+	}
 }
 
 // GetPrompt 获取所有启用插件的提示词注入

@@ -117,5 +117,4 @@ var DangerousTools = map[string]string{
 	"execute_command": "执行任意系统命令，可能造成不可逆损害",
 	"write_file":      "写入文件可能覆盖重要内容",
 	"diff_edit":       "搜索替换可能错误匹配",
-	"diff_edit_lines": "按行替换可能破坏代码结构",
 }

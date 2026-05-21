@@ -55,8 +55,7 @@ jobs:
           # 复制安装脚本
           cp install.sh dist/
           cp scripts/update.sh dist/scripts/
-          cp scripts/deploy.sh dist/scripts/
-          cp scripts/uninstall.sh dist/scripts/
+          cp uninstall.sh dist/scripts/
 
           # 复制配置示例
           cp backend/config.example.yaml dist/

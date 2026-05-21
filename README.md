@@ -12,10 +12,10 @@
 
 ```bash
 # 使用 curl
-curl -fsSL https://raw.githubusercontent.com/lzy1102/openaide/master/scripts/deploy.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/lzy1102/openaide/master/install.sh | sudo bash
 
 # 或使用 wget
-wget -qO- https://raw.githubusercontent.com/lzy1102/openaide/master/scripts/deploy.sh | sudo bash
+wget -qO- https://raw.githubusercontent.com/lzy1102/openaide/master/install.sh | sudo bash
 ```
 
 部署完成后：
@@ -31,8 +31,8 @@ wget -qO- https://raw.githubusercontent.com/lzy1102/openaide/master/scripts/depl
 git clone https://github.com/lzy1102/openaide.git ~/.openaide
 cd ~/.openaide
 
-# 运行部署脚本（本地编译模式）
-bash scripts/deploy.sh --local
+# 运行安装脚本（本地编译模式）
+bash install.sh --local
 ```
 
 ### 3. Docker 部署
@@ -86,7 +86,6 @@ docker-compose up -d
 | `llm.default_provider` | 默认 LLM 提供商名称 | `""` |
 | `llm.providers` | 提供商列表 | `[]` |
 | `memory.data_dir` | 记忆数据目录 | `./data/memory` |
-| `tools.dangerous_tools` | 危险工具列表 | `["execute_command", "write_file"]` |
 | `kernel.max_rounds` | 最大 ReAct 轮数 | `10` |
 | `log.level` | 日志级别：`debug`/`info`/`warn`/`error` | `info` |
 
@@ -96,9 +95,11 @@ docker-compose up -d
 |--------|------|--------------|
 | OpenAI | `openai` | `https://api.openai.com/v1` |
 | Anthropic | `anthropic` | `https://api.anthropic.com` |
-| DeepSeek | `openai-compatible` | `https://api.deepseek.com/v1` |
-| 阿里云百炼 | `openai-compatible` | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
-| 本地 Ollama | `openai-compatible` | `http://localhost:11434/v1` |
+| DeepSeek | `openai` | `https://api.deepseek.com/v1` |
+| 阿里云百炼 | `openai` | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
+| 本地 Ollama | `openai` | `http://localhost:11434/v1` |
+
+> 所有 OpenAI 兼容接口统一使用 `type: "openai"`。`type: "openai-compatible"` 仍可向后兼容。|
 
 ---
 
@@ -107,7 +108,7 @@ docker-compose up -d
 | 方式 | 适用场景 | 命令 |
 |------|----------|------|
 | **一键脚本** | 快速部署，生产环境 | `curl ... \| sudo bash` |
-| **本地编译** | 开发调试，定制修改 | `sudo bash scripts/deploy.sh --local` |
+| **本地编译** | 开发调试，定制修改 | `sudo bash install.sh --local` |
 | **GitHub Release** | 指定版本，离线环境 | `VERSION=v1.0.0 curl ... \| bash` |
 | **Docker** | 容器化部署 | `docker-compose up -d` |
 
@@ -116,17 +117,14 @@ docker-compose up -d
 ## 服务管理
 
 ```bash
-# 启动服务
-~/.openaide/start.sh
-
-# 停止服务
-~/.openaide/stop.sh
-
 # 查看日志
 tail -f ~/.openaide/logs/server.log
 
 # 使用 CLI
 openaide-cli
+
+# 启动/停止服务（systemd 或手动运行 openaide-server）
+openaide-server
 ```
 
 ---
@@ -144,15 +142,14 @@ openaide-cli
 │   ├── sessions/            # 会话
 │   └── knowledge/           # 知识库
 ├── logs/                    # 日志
-├── start.sh                 # 启动脚本
-├── stop.sh                  # 停止脚本
 ├── backend/                 # 源代码 (如本地编译)
 │   ├── cmd/
 │   ├── internal/
 │   └── ...
 ├── docs/                    # 文档
 ├── scripts/
-│   └── deploy.sh            # 安装脚本
+│   └── update.sh            # 更新脚本
+├── install.sh               # 安装脚本
 └── README.md
 ```
 
@@ -186,16 +183,17 @@ git push origin v1.0.0
 - **模型智能路由**: 按任务类型自动选择provider/model（代码/搜索/翻译/对话）
 - **Planner + DAG**: 复杂请求自动拆分+DAG并行执行（function calling驱动，纯文本回退）
 - **多Agent Team**: 分析员→程序员→审查员→执行者角色委派
-- **LLM反思+学习**: LLM驱动的结构化反思(function calling输出)，规则评估降级，insights持久化
+- **LLM反思**: LLM驱动的结构化反思(function calling输出)，规则评估降级，insights持久化
 - **知识库**: 质量门控自动抽取(score>0.6)+提示词注入 + LLM Embedding语义搜索
 - **3级记忆**: L1/L2/L3 + LLM Embedding语义搜索 + TF-IDF向量搜索 + 文本匹配三级降级
 - **LLM上下文压缩**: LLM驱动的语义摘要 + 待解决问题提取，NovelCompressor降级
-- **会话持久化**: 文件JSON，死机重启恢复
-- **LLM网关**: OpenAI+Anthropic原生+DeepSeek(thinking/FIM)+文本向量化(Embedding)+故障转移
+- **会话检查点**: 文件JSON，崩溃可恢复会话进度
+- **事件持久化**: 事件总线持久化到磁盘，支持回放
+- **LLM网关**: OpenAI+Anthropic原生+DeepSeek(thinking)+文本向量化(Embedding)+故障转移
 - **Embedder接口**: 可扩展的文本向量化接口，支持配置独立 embedding model
 - **MCP协议**: JSON-RPC stdio，外部工具生态接入
 - **WebSocket**: 双向流式+心跳
-- **插件系统**: 可插拔扩展，提示词+工具注入
+- **插件系统**: 可插拔扩展，提示词注入+消息/事件钩子
 - **TUI**: Bubbletea (AltScreen可选) + 流式渲染 + 思考过程显示
 - **认证**: JWT默认关闭，OPENAIDE_AUTH=true开启
 

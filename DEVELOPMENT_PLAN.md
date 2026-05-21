@@ -40,7 +40,7 @@ assistant/
 ├── scripts/              # 脚本文件
 │   ├── build.sh          # 构建脚本
 │   ├── test.sh           # 测试脚本
-│   └── deploy.sh         # 部署脚本
+│   └── update.sh         # 更新脚本
 └── README.md             # 项目说明
 ```
 

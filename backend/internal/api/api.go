@@ -10,16 +10,19 @@ import (
 	"time"
 
 	"openaide/backend/internal/auth"
+	"openaide/backend/internal/channel"
 	"openaide/backend/internal/kernel"
 	"openaide/backend/internal/orchestration"
 )
 
 // Server API 服务器
 type Server struct {
-	orchestrator *orchestration.Orchestrator
-	authService  *auth.Service
-	addr         string
-	server       *http.Server
+	orchestrator    *orchestration.Orchestrator
+	authService     *auth.Service
+	addr            string
+	server          *http.Server
+	mux             *http.ServeMux
+	channelRegistry *channel.Registry
 }
 
 // NewServer 创建 API 服务器
@@ -43,9 +46,11 @@ func NewServer(orch *orchestration.Orchestrator, addr string, authSvc *auth.Serv
 	mux.HandleFunc("/api/v1/tools", s.handleTools)
 	mux.HandleFunc("/api/v1/stats", s.handleStats)
 	mux.HandleFunc("/api/v1/state", s.handleState)
+	mux.HandleFunc("/api/v1/channels", s.handleChannels)
 	mux.HandleFunc("/api/v1/auth/", authSvc.AuthHandler)
 	mux.HandleFunc("/ws", s.handleWebSocket)
 	mux.HandleFunc("/health", s.handleHealth)
+	s.mux = mux
 
 	// 应用中间件链: CORS → Auth
 	var handler http.Handler = mux
@@ -344,6 +349,41 @@ func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.writeJSON(w, http.StatusOK, s.orchestrator.GetStats())
+}
+
+// SetChannelRegistry 设置渠道注册表
+func (s *Server) SetChannelRegistry(registry *channel.Registry) {
+	s.channelRegistry = registry
+}
+
+// RegisterHandler 返回HTTP处理器注册函数
+// Channel在Start时通过此回调注册Webhook端点
+func (s *Server) RegisterHandler() channel.HTTPHandler {
+	return func(pattern string, handler http.HandlerFunc) {
+		s.mux.HandleFunc(pattern, handler)
+	}
+}
+
+func (s *Server) handleChannels(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		var result []map[string]string
+		if s.channelRegistry != nil {
+			for _, ch := range s.channelRegistry.List() {
+				result = append(result, map[string]string{
+					"id":   ch.ID(),
+					"name": ch.Name(),
+					"type": string(ch.Type()),
+				})
+			}
+		}
+		if result == nil {
+			result = []map[string]string{}
+		}
+		s.writeJSON(w, http.StatusOK, result)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {

@@ -429,23 +429,17 @@ func (f *FileMemory) Search(ctx context.Context, query string, limit int) ([]ker
 		return nil, 0, err
 	}
 
-	messages := make([]kernel.Message, len(items))
-	for i, item := range items {
-		messages[i] = kernel.Message{
+	messages := make([]kernel.Message, 0, len(items))
+	for _, item := range items {
+		messages = append(messages, kernel.Message{
 			Role:    "system",
-			Content: fmt.Sprintf("[记忆] %s", item.Content),
-		}
+			Content: item.Content,
+		})
 	}
-
-	return messages, 0.8, nil
+	return messages, 0, nil
 }
 
 // SetEmbedder 设置向量嵌入器
 func (f *FileMemory) SetEmbedder(e llm.Embedder) {
 	f.manager.SetEmbedder(e)
-}
-
-// Compress 压缩记忆
-func (f *FileMemory) Compress(ctx context.Context, sessionID string) error {
-	return f.manager.Compress(ctx, sessionID)
 }

@@ -48,10 +48,10 @@ backend/logs/
 
 # 部署脚本 (根目录下的旧脚本)
 deploy*.sh
-!scripts/deploy.sh
 fix_config.py
 update_config.py
 test*.sh
+test*.py
 
 # 敏感配置（包含 API Key、密码等）
 server_config.json
@@ -63,6 +63,10 @@ model.json
 !.openaide.example
 !**/config.example.json
 !*example*.json
+
+# 编译二进制
+backend/cli
+backend/server
 
 # Go
 vendor/

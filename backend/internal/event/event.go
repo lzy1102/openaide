@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -148,7 +149,7 @@ func (b *Bus) loadEvents() error {
 	}
 
 	for _, entry := range entries {
-		if entry.IsDir() || !filepath.IsAbs(entry.Name()) {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 			continue
 		}
 

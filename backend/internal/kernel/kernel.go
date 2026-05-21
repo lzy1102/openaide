@@ -22,8 +22,6 @@ type AgentKernel struct {
 
 	// 增强能力（可选）
 	reflection       Reflection
-	learner          Learner
-	patternDetector  PatternDetector
 	knowledgeCollector KnowledgeCollector
 	qualityGate      QualityGate
 	skillManager     *SkillManager
@@ -110,16 +108,6 @@ func (k *AgentKernel) SetContextCompressor(c ContextCompressor) {
 // SetReflection 设置反思能力
 func (k *AgentKernel) SetReflection(r Reflection) {
 	k.reflection = r
-}
-
-// SetLearner 设置学习能力
-func (k *AgentKernel) SetLearner(l Learner) {
-	k.learner = l
-}
-
-// SetPatternDetector 设置模式检测器
-func (k *AgentKernel) SetPatternDetector(pd PatternDetector) {
-	k.patternDetector = pd
 }
 
 // SetKnowledgeCollector 设置知识收集器
@@ -816,10 +804,14 @@ func (k *AgentKernel) buildMessages(session *Session, query *Query) []Message {
 	messages := make([]Message, 0)
 
 	// 系统提示词
-	if k.systemPrompt != "" {
+	systemPrompt := k.systemPrompt
+	if k.skillManager != nil {
+		systemPrompt = k.skillManager.InjectPrompt(query.Content, systemPrompt)
+	}
+	if systemPrompt != "" {
 		messages = append(messages, Message{
 			Role:    "system",
-			Content: k.systemPrompt,
+			Content: systemPrompt,
 		})
 	}
 

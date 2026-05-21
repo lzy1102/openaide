@@ -39,6 +39,12 @@ type Config struct {
 	// 浏览器配置
 	Browser BrowserConfig `json:"browser" yaml:"browser"`
 
+	// MCP 配置
+	MCP MCPConfig `json:"mcp" yaml:"mcp"`
+
+	// 渠道配置
+	Channels ChannelsConfig `json:"channels" yaml:"channels"`
+
 	// 日志配置
 	Log LogConfig `json:"log" yaml:"log"`
 }
@@ -54,7 +60,6 @@ type ServerConfig struct {
 type LLMConfig struct {
 	DefaultProvider string           `json:"default_provider" yaml:"default_provider"`
 	Providers       []ProviderConfig `json:"providers" yaml:"providers"`
-	FallbackEnabled bool             `json:"fallback_enabled" yaml:"fallback_enabled"`
 }
 
 // ProviderConfig 提供商配置
@@ -77,16 +82,12 @@ type ProviderConfig struct {
 
 // MemoryConfig 记忆配置
 type MemoryConfig struct {
-	DataDir           string `json:"data_dir" yaml:"data_dir"`
-	MaxItems          int    `json:"max_items" yaml:"max_items"`
-	CompressThreshold int    `json:"compress_threshold" yaml:"compress_threshold"`
+	DataDir string `json:"data_dir" yaml:"data_dir"`
 }
 
 // ToolsConfig 工具配置
 type ToolsConfig struct {
-	Enabled          []string `json:"enabled" yaml:"enabled"`
-	DangerousTools   []string `json:"dangerous_tools" yaml:"dangerous_tools"`
-	MaxExecutionTime int      `json:"max_execution_time" yaml:"max_execution_time"`
+	DangerousTools []string `json:"dangerous_tools" yaml:"dangerous_tools"`
 }
 
 // KernelConfig 内核配置
@@ -98,13 +99,64 @@ type KernelConfig struct {
 
 // StorageConfig 存储配置
 type StorageConfig struct {
-	DataDir  string `json:"data_dir" yaml:"data_dir"`
-	IndexDir string `json:"index_dir" yaml:"index_dir"`
+	DataDir string `json:"data_dir" yaml:"data_dir"`
 }
 
 // BrowserConfig 浏览器配置
 type BrowserConfig struct {
 	Enabled bool `json:"enabled" yaml:"enabled"`
+}
+
+// MCPConfig MCP 配置
+type MCPConfig struct {
+	Enabled bool             `json:"enabled" yaml:"enabled"`
+	Servers []MCPServerEntry `json:"servers" yaml:"servers"`
+}
+
+// MCPServerEntry MCP 服务器配置
+type MCPServerEntry struct {
+	ID      string   `json:"id" yaml:"id"`
+	Command string   `json:"command" yaml:"command"`
+	Args    []string `json:"args" yaml:"args"`
+}
+
+// ChannelsConfig 渠道配置
+type ChannelsConfig struct {
+	Webhooks []WebhookChannelConfig `json:"webhooks" yaml:"webhooks"`
+	Feishu   []FeishuChannelConfig  `json:"feishu" yaml:"feishu"`
+	Telegram []TelegramChannelConfig `json:"telegram" yaml:"telegram"`
+	TaskQueue QueueConfig            `json:"task_queue" yaml:"task_queue"`
+}
+
+// WebhookChannelConfig Webhook渠道配置
+type WebhookChannelConfig struct {
+	ID          string `json:"id" yaml:"id"`
+	Name        string `json:"name" yaml:"name"`
+	SecretToken string `json:"secret_token" yaml:"secret_token"`
+	CallbackURL string `json:"callback_url" yaml:"callback_url"`
+}
+
+// FeishuChannelConfig 飞书机器人配置
+type FeishuChannelConfig struct {
+	ID          string `json:"id" yaml:"id"`
+	Name        string `json:"name" yaml:"name"`
+	AppID       string `json:"app_id" yaml:"app_id"`
+	AppSecret   string `json:"app_secret" yaml:"app_secret"`
+	VerifyToken string `json:"verify_token" yaml:"verify_token"`
+	AESKey      string `json:"aes_key" yaml:"aes_key"`
+}
+
+// TelegramChannelConfig Telegram机器人配置
+type TelegramChannelConfig struct {
+	ID    string `json:"id" yaml:"id"`
+	Name  string `json:"name" yaml:"name"`
+	Token string `json:"token" yaml:"token"`
+}
+
+// QueueConfig 任务队列配置
+type QueueConfig struct {
+	WorkerCount int `json:"worker_count" yaml:"worker_count"`
+	QueueSize   int `json:"queue_size" yaml:"queue_size"`
 }
 
 // LogConfig 日志配置
@@ -124,28 +176,35 @@ func DefaultConfig() *Config {
 		LLM: LLMConfig{
 			DefaultProvider: "",
 			Providers:       []ProviderConfig{},
-			FallbackEnabled: true,
 		},
 		Memory: MemoryConfig{
-			DataDir:           "./data/memory",
-			MaxItems:          10000,
-			CompressThreshold: 100,
+			DataDir: "./data/memory",
 		},
 		Tools: ToolsConfig{
-			Enabled:          []string{},
-			DangerousTools:   []string{"execute_command", "write_file"},
-			MaxExecutionTime: 30,
+			DangerousTools: []string{"execute_command", "write_file"},
 		},
 		Kernel: KernelConfig{
 			MaxRounds: 10,
 			MaxTokens: 4000,
 		},
 		Storage: StorageConfig{
-			DataDir:  "./data",
-			IndexDir: "./data/index",
+			DataDir: "./data",
 		},
 		Browser: BrowserConfig{
-			Enabled: false, // 默认关闭，需手动开启
+			Enabled: false,
+		},
+		MCP: MCPConfig{
+			Enabled: false,
+			Servers: []MCPServerEntry{},
+		},
+		Channels: ChannelsConfig{
+			Webhooks: []WebhookChannelConfig{},
+			Feishu:   []FeishuChannelConfig{},
+			Telegram: []TelegramChannelConfig{},
+			TaskQueue: QueueConfig{
+				WorkerCount: 4,
+				QueueSize:   128,
+			},
 		},
 		Log: LogConfig{
 			Level:  "info",
@@ -174,6 +233,7 @@ func Load(path string) (*Config, error) {
 		}
 	}
 
+	config.resolvePaths()
 	return config, nil
 }
 
@@ -223,6 +283,27 @@ func (c *Config) GetEnabledProviders() []ProviderConfig {
 		}
 	}
 	return result
+}
+
+// resolvePaths 将所有路径中的 ~ 展开为 home 目录
+func (c *Config) resolvePaths() {
+	home, _ := os.UserHomeDir()
+	if home == "" {
+		return
+	}
+
+	c.Memory.DataDir = expandPath(c.Memory.DataDir, home)
+	c.Storage.DataDir = expandPath(c.Storage.DataDir, home)
+}
+
+func expandPath(p, home string) string {
+	if strings.HasPrefix(p, "~/") {
+		return filepath.Join(home, p[2:])
+	}
+	if p == "~" {
+		return home
+	}
+	return p
 }
 
 // IsToolDangerous 检查工具是否为危险工具

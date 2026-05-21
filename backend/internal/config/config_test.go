@@ -18,9 +18,6 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Kernel.MaxRounds != 10 {
 		t.Errorf("Expected max rounds 10, got %d", cfg.Kernel.MaxRounds)
 	}
-	if cfg.Memory.MaxItems != 10000 {
-		t.Errorf("Expected max items 10000, got %d", cfg.Memory.MaxItems)
-	}
 }
 
 func TestConfig_SaveAndLoad(t *testing.T) {

@@ -196,80 +196,49 @@ init_config() {
 
     log_info "创建默认配置文件..."
 
-    cat > "$CONFIG_FILE" << 'EOF'
-# ============================================
-# OpenAIDE 配置文件
-# 格式: YAML (支持注释，一目了然)
-# 文档: https://github.com/lzy1102/openaide/blob/master/docs/DEPLOYMENT.md
-# ============================================
+    cat > "$CONFIG_FILE" << EOF
+# 只需修改下面 llm 的 api_key 即可使用，其他均有默认值
 
-# 服务器配置
 server:
-  host: 0.0.0.0          # 监听地址，0.0.0.0 表示所有网卡
-  port: 8080             # 服务端口
-  mode: server           # 运行模式: server(服务端) / direct(直连) / tui(终端)
+  host: "0.0.0.0"
+  port: 8080
 
-# LLM 大模型配置
 llm:
-  default_provider: deepseek   # 默认使用的提供商
-  fallback_enabled: true       # 是否启用故障自动切换
-
+  default_provider: "deepseek"
   providers:
-    # DeepSeek 示例配置 (OpenAI 兼容格式)
-    - name: deepseek
-      type: openai-compatible
-      base_url: https://api.deepseek.com/v1
-      api_key: "sk-请替换为你的DeepSeek API Key"   # <-- 必填: 替换为你的 API Key
-      default_model: deepseek-v4-pro
-      timeout: 60
+    - name: "deepseek"
+      type: "openai"
+      base_url: "https://api.deepseek.com/v1"
+      api_key: "sk-请替换为你的API Key"     # ← 必填
+      default_model: "deepseek-v4-pro"
       enabled: true
+    # - name: "openai"
+    #   type: "openai"
+    #   base_url: "https://api.openai.com/v1"
+    #   api_key: "sk-xxx"
+    #   default_model: "gpt-4o-mini"
+    #   enabled: true
+    # - name: "claude"
+    #   type: "anthropic"
+    #   base_url: "https://api.anthropic.com"
+    #   api_key: "sk-ant-xxx"
+    #   default_model: "claude-sonnet-4-20250514"
+    #   enabled: true
 
-    # 其他提供商示例 (需要时取消注释)
-    # - name: openai
-    #   type: openai-compatible
-    #   base_url: https://api.openai.com/v1
-    #   api_key: "sk-你的OpenAI-Key"
-    #   default_model: gpt-4o
-    #   timeout: 60
-    #   enabled: false
-
-    # - name: ollama
-    #   type: openai-compatible
-    #   base_url: http://localhost:11434/v1
-    #   api_key: "ollama"      # Ollama 不需要真实 key，但需占位
-    #   default_model: qwen2.5
-    #   timeout: 120
-    #   enabled: false
-
-# 记忆系统配置
 memory:
-  data_dir: ./data/memory      # 记忆数据存储目录
-  max_items: 10000             # 最大记忆条目数
-  compress_threshold: 100      # 触发压缩的上下文轮数
+  data_dir: "$INSTALL_DIR/data/memory"
 
-# 工具系统配置
-tools:
-  enabled: []                  # 启用的工具列表，空数组表示全部启用
-  dangerous_tools:             # 危险工具列表，执行前会要求确认
-    - execute_command
-    - write_file
-  max_execution_time: 30       # 工具最大执行时间(秒)
-
-# AI Agent 内核配置
 kernel:
-  max_rounds: 10               # 单次对话最大 ReAct 轮数
-  max_tokens: 4000             # 单次请求最大 Token 数
-  system_prompt: "You are a helpful AI assistant."
+  max_rounds: 10
 
-# 存储配置
 storage:
-  data_dir: ./data             # 数据根目录
-  index_dir: ./data/index      # 代码索引目录
+  data_dir: "$INSTALL_DIR/data"
 
-# 日志配置
+browser:
+  enabled: false
+
 log:
-  level: info                  # 日志级别: debug / info / warn / error
-  format: json                 # 日志格式: json / text
+  level: "info"
 EOF
 
     log_ok "配置文件创建完成: $CONFIG_FILE"
