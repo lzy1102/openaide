@@ -3,7 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -344,6 +349,18 @@ func (m *model) updateChat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m *model) addSystemMsg(content string) {
+	m.messages = append(m.messages, chatMsg{role: "system", content: content})
+	m.renderViewport()
+	m.viewport.GotoBottom()
+}
+
+func (m *model) addErrorMsg(content string) {
+	m.messages = append(m.messages, chatMsg{role: "error", content: content})
+	m.renderViewport()
+	m.viewport.GotoBottom()
+}
+
 func (m *model) handleCommand(cmd string) (tea.Model, tea.Cmd) {
 	parts := strings.Fields(cmd)
 	switch parts[0] {
@@ -380,11 +397,142 @@ func (m *model) handleCommand(cmd string) (tea.Model, tea.Cmd) {
 		m.input.Blur()
 		m.selSession = 0
 		return m, m.loadSessionList()
+	case "/model":
+		if len(parts) < 2 {
+			model := m.app.LLMGateway.GetModelID()
+			providers := strings.Join(m.app.LLMGateway.GetProviders(), ", ")
+			m.addSystemMsg(fmt.Sprintf("Current model: %s\nAvailable providers: %s\nUsage: /model <provider>:<model>", model, providers))
+		} else {
+			m.app.SetModel(parts[1])
+			m.addSystemMsg(fmt.Sprintf("Switched model to: %s", parts[1]))
+		}
+		m.input.SetValue("")
+		return m, nil
+	case "/cost":
+		m.addSystemMsg(fmt.Sprintf("Session stats:\n  Messages: %d\n  Tokens used: %d\n  Tool calls: %d\n  Session ID: %s",
+			len(m.messages), m.tokens, m.tools,
+			mapStr(m.currentSess, func(s *kernel.Session) string { return s.ID })))
+		m.input.SetValue("")
+		return m, nil
+	case "/diff":
+		out, err := exec.Command("git", "diff", "--stat").CombinedOutput()
+		if err != nil {
+			m.addSystemMsg(fmt.Sprintf("Git error: %v", err))
+		} else if len(out) == 0 {
+			m.addSystemMsg("No uncommitted changes.")
+		} else {
+			m.addSystemMsg(fmt.Sprintf("Changes:\n%s\n\nRun /git diff to see full diff.", strings.TrimSpace(string(out))))
+		}
+		m.input.SetValue("")
+		return m, nil
+	case "/add":
+		if len(parts) < 2 {
+			m.addSystemMsg("Usage: /add <filepath>")
+		} else {
+			data, err := os.ReadFile(parts[1])
+			if err != nil {
+				m.addErrorMsg(fmt.Sprintf("Cannot read %s: %v", parts[1], err))
+			} else {
+				m.addSystemMsg(fmt.Sprintf("Added %s (%d bytes) to context.", parts[1], len(data)))
+				m.messages = append(m.messages, chatMsg{role: "user", content: fmt.Sprintf("Content of %s:\n---\n%s\n---", parts[1], string(data))})
+				m.renderViewport()
+				m.viewport.GotoBottom()
+			}
+		}
+		m.input.SetValue("")
+		return m, nil
+	case "/compact":
+		if m.currentSess == nil {
+			m.addSystemMsg("No active session to compress.")
+		} else {
+			ctx := context.Background()
+			err := m.app.Orchestrator.CompressSession(ctx, m.currentSess.ID)
+			if err != nil {
+				m.addErrorMsg(fmt.Sprintf("Compression failed: %v", err))
+			} else {
+				m.addSystemMsg("Session compressed (older messages summarized).")
+			}
+		}
+		m.input.SetValue("")
+		return m, nil
+	case "/export":
+		var sb strings.Builder
+		if m.currentSess != nil {
+			fmt.Fprintf(&sb, "# Session: %s\n\n", m.currentSess.ID)
+		}
+		for _, msg := range m.messages {
+			switch msg.role {
+			case "user":
+				fmt.Fprintf(&sb, "## User\n\n%s\n\n", msg.content)
+			case "assistant":
+				fmt.Fprintf(&sb, "## Assistant\n\n%s\n\n", msg.content)
+			case "system":
+				fmt.Fprintf(&sb, "## System\n\n%s\n\n", msg.content)
+			}
+		}
+		fmt.Fprintln(&sb, "---")
+		fmt.Fprintf(&sb, "Tokens: %d | Tool calls: %d\n", m.tokens, m.tools)
+
+		outPath := fmt.Sprintf("openaide-session-%s.md", time.Now().Format("20060102-150405"))
+		if err := os.WriteFile(outPath, []byte(sb.String()), 0644); err != nil {
+			m.addErrorMsg(fmt.Sprintf("Export failed: %v", err))
+		} else {
+			m.addSystemMsg(fmt.Sprintf("Exported to %s (%d bytes)", outPath, len(sb.String())))
+		}
+		m.input.SetValue("")
+		return m, nil
+	case "/git":
+		if len(parts) < 2 {
+			m.addSystemMsg("Usage: /git <git-args...>\nExample: /git status, /git diff, /git log --oneline -5")
+		} else {
+			cmd := exec.Command("git", parts[1:]...)
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				m.addSystemMsg(fmt.Sprintf("$ git %s\n%s\nError: %v", strings.Join(parts[1:], " "), strings.TrimSpace(string(out)), err))
+			} else {
+				m.addSystemMsg(fmt.Sprintf("$ git %s\n%s", strings.Join(parts[1:], " "), strings.TrimSpace(string(out))))
+			}
+		}
+		m.input.SetValue("")
+		return m, nil
+	case "/web":
+		if len(parts) < 2 {
+			m.addSystemMsg("Usage: /web <url>")
+		} else {
+			url := parts[1]
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+			if err != nil {
+				m.addErrorMsg(fmt.Sprintf("Request error: %v", err))
+			} else {
+				resp, err := http.DefaultClient.Do(req)
+				if err != nil {
+					m.addErrorMsg(fmt.Sprintf("Fetch error: %v", err))
+				} else {
+					defer resp.Body.Close()
+					body, _ := io.ReadAll(resp.Body)
+					m.addSystemMsg(fmt.Sprintf("Fetched %s (%d bytes, status %d)", url, len(body), resp.StatusCode))
+					m.messages = append(m.messages, chatMsg{role: "user", content: fmt.Sprintf("Content from %s:\n---\n%s\n---", url, string(body))})
+					m.renderViewport()
+					m.viewport.GotoBottom()
+				}
+			}
+		}
+		m.input.SetValue("")
+		return m, nil
 	default:
 		m.err = fmt.Errorf("unknown command: %s (try /help)", parts[0])
 		m.input.SetValue("")
 		return m, nil
 	}
+}
+
+func mapStr[T any](v *T, fn func(*T) string) string {
+	if v == nil {
+		return ""
+	}
+	return fn(v)
 }
 
 func (m *model) updateSessionList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -636,6 +784,14 @@ func (m *model) helpText() string {
   /clear             Clear chat messages
   /new               Create new session
   /sessions          Open session list
+  /model [name]      Show/set current model
+  /cost              Show session stats
+  /diff              Show git diff summary
+  /add <file>        Add file to context
+  /compact           Compress conversation
+  /export            Export session to markdown
+  /git <args>        Run git command
+  /web <url>         Fetch URL into context
 
   %s
   Type a message and press Enter to chat.
@@ -652,9 +808,14 @@ func (m *model) renderViewport() {
 		if i > 0 && m.messages[i-1].role != msg.role {
 			sb.WriteString(separatorStyle.Render("─") + "\n")
 		}
-		if msg.role == "user" {
+		switch msg.role {
+		case "user":
 			sb.WriteString(userStyle.Render("▸ " + msg.content))
-		} else {
+		case "error":
+			sb.WriteString(errStyle.Render("✗ " + msg.content))
+		case "system":
+			sb.WriteString("[sys] " + msg.content)
+		default:
 			sb.WriteString(msg.content)
 		}
 		sb.WriteString("\n")

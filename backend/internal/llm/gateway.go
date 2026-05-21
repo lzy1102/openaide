@@ -27,6 +27,7 @@ type Provider interface {
 	Embed(ctx context.Context, text string) ([]float32, error)
 	EmbedBatch(ctx context.Context, texts []string) ([][]float32, error)
 	GetModelID() string
+	SetModelID(model string)
 	HealthCheck(ctx context.Context) error
 }
 
@@ -210,6 +211,19 @@ func (g *Gateway) ChatStreamWithProvider(ctx context.Context, providerName strin
 	}
 
 	return provider.ChatStream(ctx, messages, tools, options)
+}
+
+// SetDefaultModel 设置默认提供商的模型
+func (g *Gateway) SetDefaultModel(model string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	if provider, ok := g.providers[g.defaultProvider]; ok {
+		provider.SetModelID(model)
+	}
+	if config, ok := g.configs[g.defaultProvider]; ok {
+		config.DefaultModel = model
+	}
 }
 
 // GetModelID 获取当前模型 ID

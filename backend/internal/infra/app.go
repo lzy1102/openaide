@@ -484,3 +484,10 @@ func (a *Application) SetAutoApprove(on bool) {
 		k.SetApprover(approver)
 	}
 }
+
+// SetModel switches the default provider's model at runtime.
+func (a *Application) SetModel(model string) {
+	if a.LLMGateway != nil {
+		a.LLMGateway.SetDefaultModel(model)
+	}
+}

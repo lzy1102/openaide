@@ -182,6 +182,10 @@ func (p *AnthropicProvider) GetModelID() string {
 	return p.modelID
 }
 
+func (p *AnthropicProvider) SetModelID(model string) {
+	p.modelID = model
+}
+
 func (p *AnthropicProvider) HealthCheck(ctx context.Context) error {
 	_, err := p.Chat(ctx, []kernel.Message{
 		{Role: "user", Content: "hi"},

@@ -236,6 +236,11 @@ func (p *OpenAIProvider) GetModelID() string {
 	return p.modelID
 }
 
+// SetModelID 设置模型 ID（运行时切换）
+func (p *OpenAIProvider) SetModelID(model string) {
+	p.modelID = model
+}
+
 // Embed 文本向量化
 func (p *OpenAIProvider) Embed(ctx context.Context, text string) ([]float32, error) {
 	return p.embeddingRequest(ctx, []string{text})
