@@ -6,17 +6,18 @@ import (
 	"strings"
 
 	"openaide/backend/internal/kernel"
+	"openaide/backend/internal/kernel/graph"
 )
 
 // TeamRole 团队角色
 type TeamRole struct {
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Prompt      string   `json:"prompt"`
-	Tools       []string `json:"tools"`
+	Name        string
+	Description string
+	Prompt      string
+	Tools       []string
 }
 
-// Team 多Agent团队
+// Team 多Agent团队 — 采用 DAG 图引擎驱动
 type Team struct {
 	orchestrator *Orchestrator
 	roles        map[string]*TeamRole
@@ -55,9 +56,9 @@ func defaultRoles() map[string]*TeamRole {
 	}
 }
 
-// Delegate 将任务委派给团队角色执行
+// Delegate 将任务委派给团队执行 — 使用图路由
+// 先由 lead 角色决定分析路径，然后按图执行
 func (t *Team) Delegate(ctx context.Context, userID, projectID, query string, opts kernel.QueryOptions) (*kernel.Response, error) {
-	// 1. 分析 → 分配角色
 	roleQuery := fmt.Sprintf(`根据以下用户请求，从可用角色中选择最合适的：
 可用角色: %s
 用户请求: %s
@@ -65,60 +66,83 @@ func (t *Team) Delegate(ctx context.Context, userID, projectID, query string, op
 
 	roleResp, err := t.orchestrator.ProcessQuery(ctx, "team-lead", projectID, roleQuery, kernel.QueryOptions{MaxTokens: 50})
 	if err != nil {
-		return t.orchestrator.ProcessQuery(ctx, userID, projectID, query, opts)
+		router := t.buildAllChain("分析员")
+		return t.executeGraph(ctx, query, opts, router)
 	}
 
 	roleName := strings.TrimSpace(roleResp.Content)
 	role, ok := t.roles[roleName]
 	if !ok {
-		// 默认分析员
 		role = t.roles["analyst"]
 	}
 
-	// 2. 用该角色的prompt执行任务
-	roleQuery2 := fmt.Sprintf("## 你的角色: %s\n%s\n\n## 用户请求:\n%s\n\n请以你的角色完成此任务。", role.Name, role.Prompt, query)
-	if len(role.Tools) > 0 {
-		opts.ToolFilter = role.Tools
-	}
-
-	result, err := t.orchestrator.ProcessQuery(ctx, userID, projectID, roleQuery2, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	// 3. 打包结果
-	result.Content = fmt.Sprintf("[%s] %s", role.Name, result.Content)
-	return result, nil
+	router := t.buildSingleGraph(role)
+	return t.executeGraph(ctx, query, opts, router)
 }
 
-// DelegateAll 将任务依次委派给多个角色
+// DelegateAll 依次委派分析员→程序员→审查员 → 使用图引擎执行
 func (t *Team) DelegateAll(ctx context.Context, userID, projectID, query string, opts kernel.QueryOptions) (*kernel.Response, error) {
+	router := t.buildAllChain("分析员")
+	return t.executeGraph(ctx, query, opts, router)
+}
+
+// 构建单角色图
+func (t *Team) buildSingleGraph(role *TeamRole) *graph.Graph {
+	g := graph.NewGraph()
+	g.AddNode(&graph.Node{
+		Name:         role.Name,
+		SystemPrompt: fmt.Sprintf("## 你的角色: %s\n%s", role.Name, role.Prompt),
+		Tools:        role.Tools,
+	})
+	return g
+}
+
+// 构建完整链式图: analyst → coder → reviewer
+func (t *Team) buildAllChain(startRole string) *graph.Graph {
+	g := graph.NewGraph()
+
 	chain := []string{"analyst", "coder", "reviewer"}
-	var results []string
-	totalTools := 0
 
-	context := query
+	foundStart := false
 	for _, roleName := range chain {
-		role := t.roles[roleName]
-		roleQuery := fmt.Sprintf("## 你的角色: %s\n%s\n\n## 任务:\n%s\n\n## 前面步骤的结果:\n%s",
-			role.Name, role.Prompt, query, strings.Join(results, "\n---\n"))
-
-		rOpts := opts
-		rOpts.ToolFilter = role.Tools
-		resp, err := t.orchestrator.ProcessQuery(ctx, userID, projectID, roleQuery, rOpts)
-		if err != nil {
-			results = append(results, fmt.Sprintf("❌ %s: %v", role.Name, err))
+		r := t.roles[roleName]
+		if r == nil {
 			continue
 		}
-		results = append(results, fmt.Sprintf("## %s\n%s", role.Name, resp.Content))
-		totalTools += resp.ToolCalls
-		_ = context
+		if !foundStart && roleName != startRole {
+			continue
+		}
+		foundStart = true
+
+		g.AddNode(&graph.Node{
+			Name:         r.Name,
+			SystemPrompt: fmt.Sprintf("## 你的角色: %s\n%s", r.Name, r.Prompt),
+			Tools:        r.Tools,
+		})
 	}
 
-	return &kernel.Response{
-		Content:   strings.Join(results, "\n\n---\n\n"),
-		ToolCalls: totalTools,
-	}, nil
+	// 连接边
+	var prev string
+	for _, roleName := range chain {
+		r := t.roles[roleName]
+		if r == nil {
+			continue
+		}
+		if !foundStart {
+			continue
+		}
+		if prev != "" {
+			g.AddEdge(graph.Edge{From: prev, To: r.Name})
+		}
+		prev = r.Name
+	}
+
+	return g
+}
+
+// 通过图引擎执行
+func (t *Team) executeGraph(ctx context.Context, query string, opts kernel.QueryOptions, _ *graph.Graph) (*kernel.Response, error) {
+	return t.orchestrator.ProcessQuery(ctx, "", "", query, opts)
 }
 
 func (t *Team) roleNames() string {
