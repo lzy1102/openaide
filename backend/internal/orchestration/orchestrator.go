@@ -57,9 +57,9 @@ func (o *Orchestrator) SetKnowledgeCollector(kc kernel.KnowledgeCollector) {
 
 // ProcessQuery 处理用户查询 — 自动检测复杂任务并使用规划器
 func (o *Orchestrator) ProcessQuery(ctx context.Context, userID, projectID, content string, opts kernel.QueryOptions) (*kernel.Response, error) {
-	// 复杂任务先规划再执行
 	planner := NewPlanner(o.llmGateway)
-	if planner.needsPlanning(content) {
+	needsPlan := opts.ForcePlan || planner.needsPlanning(content)
+	if needsPlan {
 		plan, err := planner.Plan(ctx, content)
 		if err == nil && len(plan.Subtasks) > 1 {
 			return o.executePlan(ctx, userID, projectID, content, plan, opts)

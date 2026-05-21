@@ -140,6 +140,7 @@ type QueryOptions struct {
 	MaxTokens      int             `json:"max_tokens,omitempty"`
 	ToolFilter     []string        `json:"tool_filter,omitempty"`
 	EnableStream   bool            `json:"enable_stream,omitempty"`
+	ForcePlan      bool            `json:"force_plan,omitempty"`      // 强制规划模式
 	SkillID        string          `json:"skill_id,omitempty"`
 	ResponseFormat *ResponseFormat `json:"response_format,omitempty"` // 结构化输出格式
 }

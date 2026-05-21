@@ -29,6 +29,24 @@ type cliFlags struct {
 	noStream     bool
 	noTUI        bool
 	outputFormat string
+	git          bool
+	architect    bool
+}
+
+func isExistingFile(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
+}
+
+func detectFiles(args []string) (files []string, promptParts []string) {
+	for _, a := range args {
+		if isExistingFile(a) {
+			files = append(files, a)
+		} else {
+			promptParts = append(promptParts, a)
+		}
+	}
+	return
 }
 
 func parseFlags(args []string) cliFlags {
@@ -36,6 +54,7 @@ func parseFlags(args []string) cliFlags {
 		configPath:   os.Getenv("HOME") + "/.openaide/config.yaml",
 		outputFormat: "text",
 	}
+	var positional []string
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch {
@@ -49,6 +68,10 @@ func parseFlags(args []string) cliFlags {
 			f.noStream = true
 		case a == "--no-tui":
 			f.noTUI = true
+		case a == "--git":
+			f.git = true
+		case a == "--architect":
+			f.architect = true
 		case a == "-f" || a == "--file":
 			if i+1 < len(args) {
 				i++
@@ -81,10 +104,20 @@ func parseFlags(args []string) cliFlags {
 			cmdSessions(args[i+1:])
 			os.Exit(0)
 		case !strings.HasPrefix(a, "-"):
-			f.prompt = strings.Join(args[i:], " ")
-			return f
+			positional = append(positional, a)
 		}
 	}
+
+	if len(positional) > 0 {
+		files, promptParts := detectFiles(positional)
+		f.contextFiles = append(f.contextFiles, files...)
+		if len(promptParts) > 0 {
+			f.prompt = strings.Join(promptParts, " ")
+		}
+	} else if len(f.contextFiles) > 0 {
+		f.prompt = ""
+	}
+
 	return f
 }
 
@@ -93,7 +126,7 @@ func buildPrompt(files []string, prompt string) string {
 	for _, path := range files {
 		data, err := os.ReadFile(path)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: cannot read file %s: %v\n", path, err)
+			fmt.Fprintf(os.Stderr, "Warning: cannot read %s: %v\n", path, err)
 			continue
 		}
 		parts = append(parts, fmt.Sprintf("Content of %s:\n---\n%s\n---", path, string(data)))
@@ -105,6 +138,40 @@ func buildPrompt(files []string, prompt string) string {
 		return strings.Join(parts, "\n\n") + "\n\n" + prompt
 	}
 	return prompt
+}
+
+func doGitCommit(prompt string) {
+	if _, err := os.Stat(".git"); os.IsNotExist(err) {
+		fmt.Fprintln(os.Stderr, "Warning: not a git repository, skip auto-commit")
+		return
+	}
+	msg := prompt
+	if msg == "" {
+		msg = "openaide auto-commit"
+	}
+	if len(msg) > 72 {
+		msg = msg[:72]
+	}
+
+	cmd := exec.Command("git", "add", "-A")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: git add failed: %v\n", err)
+		return
+	}
+
+	out, _ := exec.Command("git", "diff", "--cached", "--quiet").CombinedOutput()
+	if len(out) > 0 || exec.Command("git", "diff", "--cached", "--quiet").Run() != nil {
+		cmd = exec.Command("git", "commit", "-m", msg)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: git commit failed: %v\n", err)
+		}
+	} else {
+		fmt.Println("No changes to commit.")
+	}
 }
 
 func main() {
@@ -143,14 +210,18 @@ func main() {
 		ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
 		defer cancel()
 
-		opts := kernel.QueryOptions{}
+		opts := kernel.QueryOptions{ForcePlan: flags.architect}
 		if flags.noStream {
 			resp, err := app.Orchestrator.ProcessQuery(ctx, "cli-user", "default", prompt, opts)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				os.Exit(1)
 			}
-			outputResult(flags.outputFormat, resp.Content)
+			if flags.outputFormat == "json" {
+				outputResult("json", resp.Content)
+			} else {
+				fmt.Println(resp.Content)
+			}
 		} else {
 			ch, err := app.Orchestrator.ProcessQueryStream(ctx, "cli-user", "default", prompt, opts)
 			if err != nil {
@@ -173,6 +244,10 @@ func main() {
 				outputResult("json", full.String())
 			}
 		}
+
+		if flags.git {
+			doGitCommit(flags.prompt)
+		}
 		return
 	}
 
@@ -194,8 +269,7 @@ func main() {
 }
 
 func runTextMode(app *infra.Application) {
-	fmt.Println("OpenAIDE — text mode (Ctrl+C to exit)")
-	fmt.Println()
+	fmt.Println("OpenAIDE -- text mode (Ctrl+C to exit /exit to quit)")
 	scanner := bufio.NewScanner(os.Stdin)
 	for {
 		fmt.Print("> ")
@@ -242,38 +316,42 @@ func outputResult(format, content string) {
 }
 
 func printHelp() {
-	fmt.Println("OpenAIDE CLI — AI Agent terminal")
+	fmt.Println("OpenAIDE CLI -- AI Agent terminal")
 	fmt.Println()
 	fmt.Println("Usage:")
-	fmt.Println("  openaide                     Interactive chat (TUI)")
-	fmt.Println("  openaide <prompt>            One-shot mode")
-	fmt.Println("  openaide -f <file> <prompt>  One-shot with file context")
-	fmt.Println("  openaide -c                  Continue last session")
-	fmt.Println("  openaide -y                  Auto-approve all actions")
-	fmt.Println("  openaide --model <name>      Override model")
-	fmt.Println("  openaide --config <path>     Custom config path")
-	fmt.Println("  openaide --verbose           Debug logging")
-	fmt.Println("  openaide --no-stream         Non-streaming output")
-	fmt.Println("  openaide --no-tui            Non-interactive text mode")
-	fmt.Println("  openaide --output json       JSON output")
-	fmt.Println("  openaide sessions [cmd]      Manage sessions")
-	fmt.Println("  openaide update              Update")
-	fmt.Println("  openaide version             Version")
+	fmt.Println("  openaide                          Interactive chat (TUI)")
+	fmt.Println("  openaide <prompt>                 One-shot mode")
+	fmt.Println("  openaide <file.go>                Auto-detect file, add to context")
+	fmt.Println("  openaide <file.go> <prompt>       File + prompt (files auto-detected)")
+	fmt.Println("  openaide -f <file> <prompt>       Explicit file context")
+	fmt.Println("  openaide -c                       Continue last session")
+	fmt.Println("  openaide -y                       Auto-approve all actions")
+	fmt.Println("  openaide --model <name>           Override model")
+	fmt.Println("  openaide --config <path>          Custom config path")
+	fmt.Println("  openaide --verbose                Debug logging")
+	fmt.Println("  openaide --no-stream              Non-streaming output")
+	fmt.Println("  openaide --no-tui                 Text mode (readline)")
+	fmt.Println("  openaide --output json            JSON output")
+	fmt.Println("  openaide --git                    Auto-commit after execution")
+	fmt.Println("  openaide --architect              Force planning mode")
+	fmt.Println("  openaide sessions [cmd]           Manage sessions")
+	fmt.Println("  openaide update                   Update")
+	fmt.Println("  openaide version                  Version")
 	fmt.Println()
 	fmt.Println("Session commands:")
-	fmt.Println("  openaide sessions            List all sessions")
-	fmt.Println("  openaide sessions delete <id> Delete session")
-	fmt.Println("  openaide sessions resume <id> Resume specific session")
+	fmt.Println("  openaide sessions                 List all sessions")
+	fmt.Println("  openaide sessions delete <id>     Delete session")
+	fmt.Println("  openaide sessions resume <id>     Resume specific session")
 	fmt.Println()
 	fmt.Println("Examples:")
 	fmt.Println("  openaide fix this bug")
-	fmt.Println("  openaide -f main.go review this function")
-	fmt.Println("  openaide -f main.go -f utils.go refactor both")
+	fmt.Println("  openaide main.go review this")
+	fmt.Println("  openaide main.go utils.go refactor")
+	fmt.Println("  openaide --git create a README")
+	fmt.Println("  openaide --architect design the auth system")
 	fmt.Println("  openaide -c -y")
-	fmt.Println("  openaide --model claude-3-opus explain this")
+	fmt.Println("  openaide --model claude-3-opus explain")
 	fmt.Println("  openaide --output json find the bug")
-	fmt.Println("  openaide sessions")
-	fmt.Println("  openaide sessions delete abc123")
 }
 
 func cmdSessions(args []string) {
