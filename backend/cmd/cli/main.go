@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -15,15 +14,18 @@ import (
 
 func main() {
 	args := os.Args[1:]
+	continueSess := false
 
-	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-		switch args[0] {
+	for _, a := range args {
+		switch a {
+		case "-c", "--continue":
+			continueSess = true
 		case "update", "upgrade":
 			cmdUpdate(args[1:])
 			return
 		case "version", "-v", "--version":
 			fmt.Println("OpenAIDE CLI dev")
-			fmt.Println("Usage: openaide [update|version|help]")
+			printHelp()
 			return
 		case "help", "-h", "--help":
 			printHelp()
@@ -45,7 +47,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	m := initModel(app)
+	m := initModel(app, continueSess)
 	p := tea.NewProgram(m,
 		tea.WithAltScreen(),
 		tea.WithMouseCellMotion(),
@@ -61,7 +63,8 @@ func printHelp() {
 	fmt.Println("OpenAIDE CLI")
 	fmt.Println()
 	fmt.Println("Usage:")
-	fmt.Println("  openaide          Start interactive chat (default)")
+	fmt.Println("  openaide          Start new interactive chat (default)")
+	fmt.Println("  openaide -c       Continue last session")
 	fmt.Println("  openaide update   Update to latest version")
 	fmt.Println("  openaide version  Show version info")
 	fmt.Println("  openaide help     Show this help")

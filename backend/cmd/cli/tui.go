@@ -84,7 +84,7 @@ type model struct {
 	deleteTargetID string
 }
 
-func initModel(app *infra.Application) *model {
+func initModel(app *infra.Application, continueSess bool) *model {
 	ti := textinput.New()
 	ti.Placeholder = "Type a message... (/help for commands)"
 	ti.Prompt = "❯ "
@@ -106,11 +106,13 @@ func initModel(app *infra.Application) *model {
 		selSession: -1,
 	}
 
-	ctx := context.Background()
-	sessions, err := app.Orchestrator.ListSessions(ctx, "default", "cli-user", 1, 0)
-	if err == nil && len(sessions) > 0 {
-		m.currentSess = sessions[0]
-		m.loadChatHistory()
+	if continueSess {
+		ctx := context.Background()
+		sessions, err := app.Orchestrator.ListSessions(ctx, "default", "cli-user", 1, 0)
+		if err == nil && len(sessions) > 0 {
+			m.currentSess = sessions[0]
+			m.loadChatHistory()
+		}
 	}
 
 	return m
