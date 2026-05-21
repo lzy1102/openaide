@@ -71,14 +71,33 @@ type ThinkingConfig struct {
 	Type string `json:"type"` // enabled / disabled
 }
 
+// StreamChunkType 流式块类型
+type StreamChunkType string
+
+const (
+	ChunkTypeContent  StreamChunkType = "content"   // 文本内容块
+	ChunkTypeThinking StreamChunkType = "thinking"  // 推理内容块
+	ChunkTypeToolCall StreamChunkType = "tool_call" // 工具调用
+	ChunkTypeToolDone StreamChunkType = "tool_done" // 工具执行完成
+	ChunkTypeProgress StreamChunkType = "progress"  // 多轮进度
+	ChunkTypeDone     StreamChunkType = "done"      // 流结束
+	ChunkTypeError    StreamChunkType = "error"     // 错误
+)
+
 // StreamChunk 流式响应块
 type StreamChunk struct {
-	Content          string `json:"content,omitempty"`
-	ReasoningContent string `json:"reasoning_content,omitempty"`
-	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`
-	Done             bool   `json:"done"`
-	Usage            *TokenUsage `json:"usage,omitempty"`
-	Error            error  `json:"-"`
+	Type             StreamChunkType `json:"type"`
+	Content          string          `json:"content,omitempty"`
+	ReasoningContent string          `json:"reasoning_content,omitempty"`
+	ToolCalls        []ToolCall      `json:"tool_calls,omitempty"`
+	ToolCallID       string          `json:"tool_call_id,omitempty"`
+	ToolName         string          `json:"tool_name,omitempty"`
+	ToolResult       *ToolResult     `json:"tool_result,omitempty"`
+	Round            int             `json:"round,omitempty"`
+	TotalRounds      int             `json:"total_rounds,omitempty"`
+	Done             bool            `json:"done"`
+	Usage            *TokenUsage     `json:"usage,omitempty"`
+	Error            error           `json:"-"`
 }
 
 // Session 对话会话
@@ -101,14 +120,28 @@ type Query struct {
 	Options   QueryOptions `json:"options,omitempty"`
 }
 
+// ResponseFormat 结构化输出格式
+type ResponseFormat struct {
+	Type       string      `json:"type"`                  // "json_object" | "json_schema" | "text"
+	JSONSchema *JSONSchema `json:"json_schema,omitempty"` // json_schema 模式的 Schema 定义
+}
+
+// JSONSchema JSON Schema 定义
+type JSONSchema struct {
+	Name   string                 `json:"name"`
+	Schema map[string]interface{} `json:"schema"`
+	Strict bool                   `json:"strict,omitempty"`
+}
+
 // QueryOptions 查询选项
 type QueryOptions struct {
-	ModelID      string   `json:"model_id,omitempty"`
-	Temperature  float64  `json:"temperature,omitempty"`
-	MaxTokens    int      `json:"max_tokens,omitempty"`
-	ToolFilter   []string `json:"tool_filter,omitempty"`
-	EnableStream bool     `json:"enable_stream,omitempty"`
-	SkillID      string   `json:"skill_id,omitempty"`
+	ModelID        string          `json:"model_id,omitempty"`
+	Temperature    float64         `json:"temperature,omitempty"`
+	MaxTokens      int             `json:"max_tokens,omitempty"`
+	ToolFilter     []string        `json:"tool_filter,omitempty"`
+	EnableStream   bool            `json:"enable_stream,omitempty"`
+	SkillID        string          `json:"skill_id,omitempty"`
+	ResponseFormat *ResponseFormat `json:"response_format,omitempty"` // 结构化输出格式
 }
 
 // Response 内核响应

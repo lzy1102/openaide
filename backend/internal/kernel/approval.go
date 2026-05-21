@@ -66,38 +66,48 @@ func (a *InteractiveApprover) Respond(id string, approved bool, reason string) {
 	a.response <- &ApprovalResult{Approved: approved, Reason: reason}
 }
 
-// AutoApprover 自动审批器 — 低风险自动通过
+// AutoApprover 自动审批器
+//   UnsafeMode=true:  放行所有工具（本地信任模式，原行为）
+//   UnsafeMode=false: 检查 DangerousTools + ApprovedTools 白名单
 type AutoApprover struct {
 	ApprovedTools map[string]bool
+	UnsafeMode    bool
 }
 
-// NewAutoApprover 创建自动审批器
+// NewAutoApprover 创建自动审批器（默认安全模式）
 func NewAutoApprover() *AutoApprover {
 	return &AutoApprover{
+		UnsafeMode: false,
 		ApprovedTools: map[string]bool{
-			"read_file":       true,
-			"list_directory":  true,
-			"search_files":    true,
-			"search_symbols":  true,
+			"read_file":        true,
+			"list_directory":   true,
+			"search_files":     true,
+			"search_symbols":   true,
 			"search_knowledge": true,
-			"git_status":      true,
-			"git_diff":        true,
-			"git_log":         true,
-			"git_blame":       true,
-			// 本地Agent默认放行
-			"write_file":        true,
-			"execute_command":   true,
-			"add_knowledge":     true,
-			"read_image":        true,
-			"diff_edit":         true,
-			"diff_edit_lines":   true,
+			"git_status":       true,
+			"git_diff":         true,
+			"git_log":          true,
+			"git_blame":        true,
+			"add_knowledge":    true,
+			"read_image":       true,
 		},
 	}
 }
 
 func (a *AutoApprover) RequestApproval(ctx context.Context, req *ApprovalRequest) *ApprovalResult {
+	if a.UnsafeMode {
+		return &ApprovalResult{Approved: true, Reason: "auto-approved (unsafe mode)"}
+	}
+
+	if _, dangerous := DangerousTools[req.Tool]; dangerous {
+		return &ApprovalResult{
+			Approved: false,
+			Reason:   fmt.Sprintf("高危工具 '%s' 被安全模式拦截，请关闭 UnsafeMode 后重试", req.Tool),
+		}
+	}
+
 	if approved, ok := a.ApprovedTools[req.Tool]; ok && approved {
-		return &ApprovalResult{Approved: true, Reason: "auto-approved (low risk)"}
+		return &ApprovalResult{Approved: true, Reason: "auto-approved"}
 	}
 	return &ApprovalResult{Approved: false, Reason: fmt.Sprintf("tool '%s' requires manual approval", req.Tool)}
 }

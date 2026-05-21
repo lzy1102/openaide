@@ -110,7 +110,10 @@ type SessionStore interface {
 	Update(ctx context.Context, session *Session) error
 
 	// List 列出会话
-	List(ctx context.Context, projectID, userID string, limit int) ([]*Session, error)
+	List(ctx context.Context, projectID, userID string, limit, offset int) ([]*Session, error)
+
+	// Delete 删除会话
+	Delete(ctx context.Context, sessionID string) error
 }
 
 // ContextCompressor 上下文压缩接口

@@ -93,21 +93,27 @@ func (s *FileSessionStore) Update(ctx context.Context, session *Session) error {
 	return s.save(session)
 }
 
-func (s *FileSessionStore) List(ctx context.Context, projectID, userID string, limit int) ([]*Session, error) {
+func (s *FileSessionStore) List(ctx context.Context, projectID, userID string, limit, offset int) ([]*Session, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	var result []*Session
+	var matched []*Session
 	for _, session := range s.sessions {
 		if (projectID == "" || session.ProjectID == projectID) &&
 			(userID == "" || session.UserID == userID) {
-			result = append(result, session)
-			if limit > 0 && len(result) >= limit {
-				break
-			}
+			matched = append(matched, session)
 		}
 	}
-	return result, nil
+
+	if offset >= len(matched) {
+		return nil, nil
+	}
+	matched = matched[offset:]
+
+	if limit > 0 && len(matched) > limit {
+		matched = matched[:limit]
+	}
+	return matched, nil
 }
 
 // Count 返回会话总数
@@ -115,6 +121,19 @@ func (s *FileSessionStore) Count() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return len(s.sessions)
+}
+
+// Delete 删除会话
+func (s *FileSessionStore) Delete(ctx context.Context, sessionID string) error {
+	s.mu.Lock()
+	delete(s.sessions, sessionID)
+	s.mu.Unlock()
+
+	path := s.sessionPath(sessionID)
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove session file failed: %w", err)
+	}
+	return nil
 }
 
 // ============ 持久化 ============
@@ -195,16 +214,27 @@ func (s *SessionStoreAdapter) Update(ctx context.Context, session *Session) erro
 	return nil
 }
 
-func (s *SessionStoreAdapter) List(ctx context.Context, projectID, userID string, limit int) ([]*Session, error) {
-	var result []*Session
+func (s *SessionStoreAdapter) Delete(ctx context.Context, sessionID string) error {
+	delete(s.sessions, sessionID)
+	return nil
+}
+
+func (s *SessionStoreAdapter) List(ctx context.Context, projectID, userID string, limit, offset int) ([]*Session, error) {
+	var matched []*Session
 	for _, session := range s.sessions {
 		if (projectID == "" || session.ProjectID == projectID) &&
 			(userID == "" || session.UserID == userID) {
-			result = append(result, session)
-			if len(result) >= limit {
-				break
-			}
+			matched = append(matched, session)
 		}
 	}
-	return result, nil
+
+	if offset >= len(matched) {
+		return nil, nil
+	}
+	matched = matched[offset:]
+
+	if limit > 0 && len(matched) > limit {
+		matched = matched[:limit]
+	}
+	return matched, nil
 }

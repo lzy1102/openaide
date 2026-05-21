@@ -8,8 +8,10 @@ import (
 
 // MockLLMProvider 模拟 LLM 提供商
 type MockLLMProvider struct {
-	responses []LLMResponse
-	index     int
+	responses       []LLMResponse
+	index           int
+	streamChunks    [][]StreamChunk
+	streamIndex     int
 }
 
 func (m *MockLLMProvider) Chat(ctx context.Context, messages []Message, tools []ToolDefinition, options map[string]interface{}) (*LLMResponse, error) {
@@ -22,6 +24,15 @@ func (m *MockLLMProvider) Chat(ctx context.Context, messages []Message, tools []
 }
 
 func (m *MockLLMProvider) ChatStream(ctx context.Context, messages []Message, tools []ToolDefinition, options map[string]interface{}) (<-chan StreamChunk, error) {
+	if m.streamIndex < len(m.streamChunks) {
+		ch := make(chan StreamChunk, len(m.streamChunks[m.streamIndex]))
+		for _, chunk := range m.streamChunks[m.streamIndex] {
+			ch <- chunk
+		}
+		m.streamIndex++
+		close(ch)
+		return ch, nil
+	}
 	ch := make(chan StreamChunk, 1)
 	ch <- StreamChunk{Content: "流式响应", Done: true}
 	close(ch)
@@ -175,7 +186,7 @@ func TestSessionStoreAdapter(t *testing.T) {
 	}
 
 	// 列出会话
-	sessions, err := store.List(ctx, "proj1", "user1", 10)
+	sessions, err := store.List(ctx, "proj1", "user1", 10, 0)
 	if err != nil {
 		t.Fatalf("List failed: %v", err)
 	}
@@ -183,3 +194,226 @@ func TestSessionStoreAdapter(t *testing.T) {
 		t.Errorf("Expected 1 session, got %d", len(sessions))
 	}
 }
+
+func TestAgentKernel_ProcessStream_Basic(t *testing.T) {
+	llm := &MockLLMProvider{
+		streamChunks: [][]StreamChunk{
+			{
+				{Content: "Hello", Done: false},
+				{Content: " world", Done: false},
+				{Done: true},
+			},
+		},
+	}
+	tools := &MockToolExecutor{}
+	mem := &MockMemory{}
+	store := NewSessionStoreAdapter()
+
+	kernel := NewAgentKernel(llm, tools, mem, store, DefaultConfig())
+
+	ctx := context.Background()
+	ch, err := kernel.ProcessStream(ctx, &Query{Content: "hi", ProjectID: "test"})
+	if err != nil {
+		t.Fatalf("ProcessStream failed: %v", err)
+	}
+
+	var gotContent string
+	var gotDone bool
+	for chunk := range ch {
+		if chunk.Type == ChunkTypeContent {
+			gotContent += chunk.Content
+		}
+		if chunk.Type == ChunkTypeDone {
+			gotDone = true
+		}
+	}
+
+	if gotContent != "Hello world" {
+		t.Errorf("expected 'Hello world', got '%s'", gotContent)
+	}
+	if !gotDone {
+		t.Error("expected Done chunk")
+	}
+}
+
+func TestAgentKernel_ProcessStream_ToolCallRound(t *testing.T) {
+	llm := &MockLLMProvider{
+		streamChunks: [][]StreamChunk{
+			{
+				{Content: "I need to look that up", Done: false},
+				{ToolCalls: []ToolCall{
+					{ID: "call_1", Type: "function", Function: FunctionCall{Name: "search", Arguments: `{"q": "test"}`}},
+				}, Done: false},
+				{Done: true},
+			},
+			{
+				{Content: "The answer is 42", Done: false},
+				{Done: true},
+			},
+		},
+	}
+	tools := &MockToolExecutor{
+		defs: []ToolDefinition{
+			{Type: "function", Function: FunctionDef{Name: "search"}},
+		},
+	}
+	mem := &MockMemory{}
+	store := NewSessionStoreAdapter()
+
+	kernel := NewAgentKernel(llm, tools, mem, store, DefaultConfig())
+
+	ctx := context.Background()
+	ch, err := kernel.ProcessStream(ctx, &Query{Content: "find answer", ProjectID: "test"})
+	if err != nil {
+		t.Fatalf("ProcessStream failed: %v", err)
+	}
+
+	var gotContent string
+	var gotDone bool
+	var toolCalls []string
+	var toolDone []string
+	for chunk := range ch {
+		switch chunk.Type {
+		case ChunkTypeContent:
+			gotContent += chunk.Content
+		case ChunkTypeToolCall:
+			toolCalls = append(toolCalls, chunk.ToolName)
+		case ChunkTypeToolDone:
+			toolDone = append(toolDone, chunk.ToolName)
+		case ChunkTypeDone:
+			gotDone = true
+		case ChunkTypeError:
+			t.Fatalf("unexpected error: %v", chunk.Error)
+		}
+	}
+
+	if len(toolCalls) != 1 || toolCalls[0] != "search" {
+		t.Errorf("expected 1 search tool call, got %v", toolCalls)
+	}
+	if len(toolDone) != 1 || toolDone[0] != "search" {
+		t.Errorf("expected 1 search tool done, got %v", toolDone)
+	}
+	if gotContent != "I need to look that upThe answer is 42" {
+		t.Errorf("expected 'I need to look that upThe answer is 42', got '%s'", gotContent)
+	}
+	if !gotDone {
+		t.Error("expected Done chunk")
+	}
+}
+
+func TestAgentKernel_ProcessStream_Cancel(t *testing.T) {
+	blockingLLM := &MockLLMProvider{
+		streamChunks: [][]StreamChunk{
+			{
+				{Content: "starting..."},
+			},
+		},
+	}
+	tools := &MockToolExecutor{}
+	mem := &MockMemory{}
+	store := NewSessionStoreAdapter()
+
+	kernel := NewAgentKernel(blockingLLM, tools, mem, store, DefaultConfig())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	ch, err := kernel.ProcessStream(ctx, &Query{Content: "test", ProjectID: "test"})
+	if err != nil {
+		t.Fatalf("ProcessStream failed: %v", err)
+	}
+
+	readCount := 0
+	for range ch {
+		readCount++
+		if readCount == 3 {
+			cancel()
+		}
+	}
+
+	if readCount == 0 {
+		t.Error("expected at least some chunks before cancel")
+	}
+}
+
+func TestAgentKernel_ProcessStream_Error(t *testing.T) {
+	errLLM := &MockLLMProvider{
+		streamChunks: [][]StreamChunk{
+			{
+				{Error: assertAnError("connection refused"), Done: true},
+			},
+		},
+	}
+	tools := &MockToolExecutor{}
+	mem := &MockMemory{}
+	store := NewSessionStoreAdapter()
+
+	kernel := NewAgentKernel(errLLM, tools, mem, store, DefaultConfig())
+
+	ch, err := kernel.ProcessStream(context.Background(), &Query{Content: "test", ProjectID: "test"})
+	if err != nil {
+		t.Fatalf("ProcessStream failed: %v", err)
+	}
+
+	var gotErr error
+	for chunk := range ch {
+		if chunk.Type == ChunkTypeError {
+			gotErr = chunk.Error
+		}
+	}
+
+	if gotErr == nil {
+		t.Error("expected error chunk")
+	}
+	if gotErr.Error() != "connection refused" {
+		t.Errorf("expected 'connection refused', got '%v'", gotErr)
+	}
+}
+
+func TestAgentKernel_ProcessStream_Thinking(t *testing.T) {
+	llm := &MockLLMProvider{
+		streamChunks: [][]StreamChunk{
+			{
+				{ReasoningContent: "Let me think about this step by step...", Done: false},
+				{Content: "The answer is 42", Done: false},
+				{Done: true},
+			},
+		},
+	}
+	tools := &MockToolExecutor{}
+	mem := &MockMemory{}
+	store := NewSessionStoreAdapter()
+
+	kernel := NewAgentKernel(llm, tools, mem, store, DefaultConfig())
+
+	ch, err := kernel.ProcessStream(context.Background(), &Query{Content: "test", ProjectID: "test"})
+	if err != nil {
+		t.Fatalf("ProcessStream failed: %v", err)
+	}
+
+	var thinkingContent string
+	var finalContent string
+	for chunk := range ch {
+		if chunk.Type == ChunkTypeThinking && chunk.ReasoningContent != "" {
+			thinkingContent += chunk.ReasoningContent
+		}
+		if chunk.Type == ChunkTypeContent {
+			finalContent += chunk.Content
+		}
+	}
+
+	if thinkingContent != "Let me think about this step by step..." {
+		t.Errorf("expected thinking content, got '%s'", thinkingContent)
+	}
+	if finalContent != "The answer is 42" {
+		t.Errorf("expected 'The answer is 42', got '%s'", finalContent)
+	}
+}
+
+func assertAnError(msg string) error {
+	return &testError{msg: msg}
+}
+
+type testError struct {
+	msg string
+}
+
+func (e *testError) Error() string { return e.msg }

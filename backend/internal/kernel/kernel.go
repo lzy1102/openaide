@@ -30,6 +30,13 @@ type AgentKernel struct {
 	approver         Approver
 	adaptiveRounds   *AdaptiveRounds
 
+	// 跟踪系统
+	tracer  Tracer
+	traceMu sync.Mutex
+
+	// 检查点系统
+	checkpointer Checkpointer
+
 	// 事件系统
 	eventHandlers []EventHandler
 	eventMu       sync.RWMutex
@@ -129,6 +136,45 @@ type QualityGate interface {
 func (k *AgentKernel) SetApprover(a Approver) { k.approver = a }
 func (k *AgentKernel) SetAdaptiveRounds(ar *AdaptiveRounds) { k.adaptiveRounds = ar }
 
+func (k *AgentKernel) SetTracer(t Tracer) {
+	k.tracer = t
+}
+
+func (k *AgentKernel) SetCheckpointer(cp Checkpointer) {
+	k.checkpointer = cp
+}
+
+// ResumeSession 从最新的检查点恢复会话
+// 返回恢复后的消息列表、已完成的轮数、以及是否找到有效检查点
+func (k *AgentKernel) ResumeSession(ctx context.Context, sessionID string) (messages []Message, completedRounds int, found bool, err error) {
+	if k.checkpointer == nil {
+		return nil, 0, false, nil
+	}
+	cp, err := k.checkpointer.LoadLatest(ctx, sessionID)
+	if err != nil {
+		return nil, 0, false, fmt.Errorf("load checkpoint: %w", err)
+	}
+	if cp == nil || len(cp.Messages) == 0 {
+		return nil, 0, false, nil
+	}
+
+	slog.Info("Resumed session from checkpoint",
+		"session_id", sessionID,
+		"round", cp.Round,
+		"messages", len(cp.Messages),
+	)
+
+	if k.tracer != nil {
+		k.tracer.Record(ctx, &TraceEvent{
+			Type: TraceCheckpoint, Name: "checkpoint_restore", SessionID: sessionID,
+			Input:  map[string]interface{}{"round": cp.Round, "messages": len(cp.Messages)},
+			Status: TraceStatusOK,
+		})
+	}
+
+	return cp.Messages, cp.Round, true, nil
+}
+
 func (k *AgentKernel) SetSkillManager(sm *SkillManager) {
 	k.skillManager = sm
 }
@@ -141,6 +187,11 @@ func (k *AgentKernel) SetQualityGate(gate QualityGate) {
 func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, error) {
 	start := time.Now()
 
+	if k.tracer != nil {
+		ctx = k.tracer.StartSpan(ctx, query.SessionID, TraceSession, "process")
+		defer k.tracer.EndSpan(ctx, nil, nil)
+	}
+
 	// 1. 发布查询接收事件
 	k.publishEvent(Event{
 		Type:      EventQueryReceived,
@@ -149,9 +200,22 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 		Timestamp: time.Now(),
 	})
 
+	if k.tracer != nil {
+		k.tracer.Record(ctx, &TraceEvent{
+			Type:      TraceSession,
+			Name:      "query_received",
+			SessionID: query.SessionID,
+			Input:     map[string]interface{}{"content": query.Content, "options": query.Options},
+			Status:    TraceStatusOK,
+		})
+	}
+
 	// 2. 获取或创建会话
 	session, err := k.getOrCreateSession(ctx, query)
 	if err != nil {
+		if k.tracer != nil {
+			k.tracer.EndSpan(ctx, nil, err)
+		}
 		return nil, fmt.Errorf("session error: %w", err)
 	}
 
@@ -187,7 +251,15 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 		}
 
 		// 调用 LLM
+		var llmCtx context.Context
+		if k.tracer != nil {
+			llmCtx = k.tracer.StartSpan(ctx, session.ID, TraceLLM, fmt.Sprintf("chat_round_%d", round))
+		}
 		llmResp, err := k.llmProvider.Chat(ctx, messages, tools, k.buildOptions(query.Options))
+		if k.tracer != nil {
+			output := map[string]interface{}{"model": llmResp.Model, "usage": llmResp.Usage}
+			k.tracer.EndSpan(llmCtx, output, err)
+		}
 		if err != nil {
 			k.setState(StateError)
 			return nil, fmt.Errorf("llm error: %w", err)
@@ -215,6 +287,7 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 			// 更新会话
 			session.Messages = messages
 			session.UpdatedAt = time.Now()
+			ensureSessionTitle(session)
 			k.sessionStore.Update(ctx, session)
 
 			// 触发反思（如果启用）
@@ -247,21 +320,63 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 			content string
 			err     string
 		}
-		results := make([]toolResult, len(llmResp.ToolCalls))
+
+		type toolCallTask struct {
+			ToolCall
+			skip   bool
+			reason string
+		}
+		tasks := make([]toolCallTask, len(llmResp.ToolCalls))
+		for i, tc := range llmResp.ToolCalls {
+			tasks[i] = toolCallTask{ToolCall: tc}
+			if tc.Function.Name == "" {
+				tasks[i].skip = true
+				tasks[i].reason = "工具名称为空，已跳过"
+			} else if tc.ID == "" {
+				tc.ID = fmt.Sprintf("call_auto_%d_%d", round, i)
+				tasks[i] = toolCallTask{ToolCall: tc}
+			}
+		}
+
+		results := make([]toolResult, len(tasks))
 		var wg sync.WaitGroup
 
-		for i, tc := range llmResp.ToolCalls {
+		for i, task := range tasks {
+			if task.skip {
+				results[i] = toolResult{
+					id:      task.ID,
+					name:    "",
+					content: task.reason,
+					err:     task.reason,
+				}
+				continue
+			}
+
 			k.publishEvent(Event{
 				Type:      EventToolCallStarted,
 				Source:    "kernel",
-				Data:      map[string]interface{}{"tool": tc.Function.Name, "session_id": session.ID},
+				Data:      map[string]interface{}{"tool": task.Function.Name, "session_id": session.ID},
 				Timestamp: time.Now(),
 			})
 
 			wg.Add(1)
 			go func(idx int, call ToolCall) {
 				defer wg.Done()
+				var toolCtx context.Context
+				if k.tracer != nil {
+					toolCtx = k.tracer.StartSpan(ctx, session.ID, TraceTool, call.Function.Name)
+				}
 				r := k.executeTool(ctx, call, session.ID)
+				if k.tracer != nil {
+					var toolErr error
+					if r.Error != "" {
+						toolErr = fmt.Errorf("tool error: %s", r.Error)
+					}
+					k.tracer.EndSpan(toolCtx, map[string]interface{}{
+						"tool":    call.Function.Name,
+						"content": r.Content,
+					}, toolErr)
+				}
 				content := fmt.Sprintf("%v", r.Content)
 				errStr := ""
 				if r.Error != "" {
@@ -280,18 +395,40 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 					Data:      map[string]interface{}{"tool": call.Function.Name, "success": r.Error == "", "session_id": session.ID},
 					Timestamp: time.Now(),
 				})
-			}(i, tc)
+			}(i, task.ToolCall)
 		}
 		wg.Wait()
 		totalToolCalls += len(results)
 
 		// 按原始顺序添加 tool 结果
 		for _, r := range results {
+			if r.id == "" {
+				r.id = fmt.Sprintf("result_auto_%d", totalToolCalls)
+			}
 			messages = append(messages, Message{
 				Role:       "tool",
 				Content:    r.content,
 				ToolCallID: r.id,
 			})
+		}
+
+		// 每轮结束后保存检查点
+		if k.checkpointer != nil {
+			cp := &Checkpoint{
+				SessionID: session.ID,
+				Round:     round + 1,
+				Messages:  messages,
+			}
+			if err := k.checkpointer.Save(ctx, session.ID, cp); err != nil {
+				slog.Warn("Failed to save checkpoint", "round", round, "error", err)
+			}
+			if k.tracer != nil {
+				k.tracer.Record(ctx, &TraceEvent{
+					Type: TraceCheckpoint, Name: "checkpoint_save", SessionID: session.ID,
+					Input: map[string]interface{}{"round": round + 1, "messages": len(messages)},
+					Status: TraceStatusOK,
+				})
+			}
 		}
 	}
 
@@ -307,11 +444,12 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 	}, nil
 }
 
-// ProcessStream 处理用户查询（流式）
+// ProcessStream 处理用户查询（流式 ReAct 循环）
 func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan StreamChunk, error) {
-	start := time.Now()
+	if k.tracer != nil {
+		ctx = k.tracer.StartSpan(ctx, query.SessionID, TraceSession, "process_stream")
+	}
 
-	// 1. 发布查询接收事件
 	k.publishEvent(Event{
 		Type:      EventQueryReceived,
 		Source:    "kernel",
@@ -319,28 +457,16 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 		Timestamp: time.Now(),
 	})
 
-	// 2. 获取或创建会话
 	session, err := k.getOrCreateSession(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("session error: %w", err)
 	}
 
-	// 3. 构建消息列表
 	messages := k.buildMessages(session, query)
 
-	// 4. 获取工具定义
 	tools := k.toolExecutor.GetDefinitions()
 	if len(query.Options.ToolFilter) > 0 {
 		tools = k.toolExecutor.GetDefinitionsByNames(query.Options.ToolFilter)
-	}
-
-	// 5. 调用 LLM 流式接口
-	k.setState(StateThinking)
-
-	llmStream, err := k.llmProvider.ChatStream(ctx, messages, tools, k.buildOptions(query.Options))
-	if err != nil {
-		k.setState(StateError)
-		return nil, fmt.Errorf("llm stream error: %w", err)
 	}
 
 	resultChan := make(chan StreamChunk, 100)
@@ -348,70 +474,294 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 	go func() {
 		defer close(resultChan)
 
-		var fullContent strings.Builder
-		var reasoningContent strings.Builder
-		var totalTokens int
-		k.setState(StateResponding)
+		var traceCtx context.Context
+		if k.tracer != nil {
+			traceCtx = k.tracer.StartSpan(ctx, session.ID, TraceSession, "process_stream_loop")
+			defer k.tracer.EndSpan(traceCtx, nil, nil)
+		}
 
-		for chunk := range llmStream {
-			if chunk.Error != nil {
-				resultChan <- StreamChunk{Error: chunk.Error, Done: true}
+		maxRounds := k.maxRounds
+		if k.adaptiveRounds != nil {
+			maxRounds = k.adaptiveRounds.Calculate(query.Content, len(session.Messages))
+		}
+		totalTokens := 0
+		totalToolCalls := 0
+
+		for round := 0; round < maxRounds; round++ {
+			// 检查上下文长度，必要时压缩
+			if k.compressor != nil {
+				tokenCount := k.compressor.EstimateTokens(messages)
+				if tokenCount > k.maxTokens {
+					compressed, saved, err := k.compressor.Compress(messages, k.maxTokens)
+					if err == nil {
+						messages = compressed
+						slog.Debug("Context compressed", "saved_tokens", saved)
+					}
+				}
+			}
+
+			// 发送 thinking 事件
+			k.setState(StateThinking)
+			resultChan <- StreamChunk{
+				Type:   ChunkTypeThinking,
+				Round:  round,
+				TotalRounds: maxRounds,
+			}
+
+			llmStream, err := k.llmProvider.ChatStream(ctx, messages, tools, k.buildOptions(query.Options))
+			if err != nil {
+				if k.tracer != nil {
+					k.tracer.Record(ctx, &TraceEvent{
+						Type: TraceError, Name: "llm_stream", SessionID: session.ID,
+						Error: err.Error(), Status: TraceStatusError,
+					})
+				}
 				k.setState(StateError)
+				resultChan <- StreamChunk{Type: ChunkTypeError, Error: err, Done: true}
 				return
 			}
 
-			if chunk.Done {
-				break
+			k.setState(StateResponding)
+			var fullContent, reasoningContent strings.Builder
+			var lastToolCalls []ToolCall
+			var lastUsage *TokenUsage
+
+			for chunk := range llmStream {
+				if chunk.Error != nil {
+					resultChan <- StreamChunk{Type: ChunkTypeError, Error: chunk.Error, Done: true}
+					k.setState(StateError)
+					return
+				}
+
+				if chunk.Done {
+					break
+				}
+
+				// 累积内容
+				if chunk.Content != "" {
+					fullContent.WriteString(chunk.Content)
+					select {
+					case resultChan <- StreamChunk{Type: ChunkTypeContent, Content: chunk.Content}:
+					case <-ctx.Done():
+						return
+					}
+				}
+
+				// 推理内容 -> thinking 事件
+				if chunk.ReasoningContent != "" {
+					reasoningContent.WriteString(chunk.ReasoningContent)
+					select {
+					case resultChan <- StreamChunk{Type: ChunkTypeThinking, ReasoningContent: chunk.ReasoningContent}:
+					case <-ctx.Done():
+						return
+					}
+				}
+
+				// 工具调用（累积，取最后一个完整块）
+				if len(chunk.ToolCalls) > 0 {
+					lastToolCalls = chunk.ToolCalls
+				}
+
+				if chunk.Usage != nil {
+					lastUsage = chunk.Usage
+					totalTokens = chunk.Usage.TotalTokens
+				}
 			}
 
-			// 累积内容
-			if chunk.Content != "" {
-				fullContent.WriteString(chunk.Content)
-			}
-			if chunk.ReasoningContent != "" {
-				reasoningContent.WriteString(chunk.ReasoningContent)
-			}
-			if chunk.Usage != nil {
-				totalTokens = chunk.Usage.TotalTokens
+			// 添加 assistant 消息
+			messages = append(messages, Message{
+				Role:             "assistant",
+				Content:          fullContent.String(),
+				ReasoningContent: reasoningContent.String(),
+				ToolCalls:        lastToolCalls,
+			})
+
+			// 无工具调用 -> 返回结果
+			if len(lastToolCalls) == 0 {
+				k.saveToMemory(ctx, session.ID, messages)
+				session.Messages = messages
+				session.UpdatedAt = time.Now()
+				ensureSessionTitle(session)
+				k.sessionStore.Update(ctx, session)
+
+				if k.reflection != nil {
+					go k.doReflection(ctx, session.ID, query.Content, fullContent.String(), totalToolCalls)
+				}
+
+				k.setState(StateIdle)
+				k.publishEvent(Event{
+					Type:      EventResponseEnded,
+					Source:    "kernel",
+					Data:      map[string]interface{}{"session_id": session.ID, "tokens": totalTokens},
+					Timestamp: time.Now(),
+				})
+
+				resultChan <- StreamChunk{
+					Type:  ChunkTypeDone,
+					Done:  true,
+					Usage: lastUsage,
+				}
+				return
 			}
 
-			// 转发流式块
+			// === 工具调用轮次 ===
+			k.setState(StateToolCalling)
+
+			type streamToolTask struct {
+				ToolCall
+				skip   bool
+				reason string
+			}
+			tasks := make([]streamToolTask, len(lastToolCalls))
+			for i, tc := range lastToolCalls {
+				tasks[i] = streamToolTask{ToolCall: tc}
+				if tc.Function.Name == "" {
+					tasks[i].skip = true
+					tasks[i].reason = "工具名称为空，已跳过"
+				} else if tc.ID == "" {
+					tc.ID = fmt.Sprintf("call_auto_%d_%d", round, i)
+					tasks[i] = streamToolTask{ToolCall: tc}
+				}
+			}
+
+			// 发送 tool_call 事件（跳过无效的）
+			for _, task := range tasks {
+				if task.skip {
+					continue
+				}
+				select {
+				case resultChan <- StreamChunk{
+					Type:       ChunkTypeToolCall,
+					ToolCallID: task.ID,
+					ToolName:   task.Function.Name,
+				}:
+				case <-ctx.Done():
+					return
+				}
+			}
+
+			// 并行执行工具
+			type toolResult struct {
+				id    string
+				name  string
+				msg   Message
+			}
+			results := make([]toolResult, len(tasks))
+			var wg sync.WaitGroup
+
+			for i, task := range tasks {
+				if task.skip {
+					results[i] = toolResult{
+						id:   task.ID,
+						name: "",
+						msg: Message{
+							Role:       "tool",
+							Content:    task.reason,
+							ToolCallID: task.ID,
+						},
+					}
+					continue
+				}
+
+				k.publishEvent(Event{
+					Type:      EventToolCallStarted,
+					Source:    "kernel",
+					Data:      map[string]interface{}{"tool": task.Function.Name, "session_id": session.ID},
+					Timestamp: time.Now(),
+				})
+
+				wg.Add(1)
+				go func(idx int, call ToolCall) {
+					defer wg.Done()
+					var toolCtx context.Context
+					if k.tracer != nil {
+						toolCtx = k.tracer.StartSpan(ctx, session.ID, TraceTool, call.Function.Name)
+					}
+					r := k.executeTool(ctx, call, session.ID)
+					if k.tracer != nil {
+						var toolErr error
+						if r.Error != "" {
+							toolErr = fmt.Errorf("tool error: %s", r.Error)
+						}
+						k.tracer.EndSpan(toolCtx, map[string]interface{}{
+							"tool":    call.Function.Name,
+							"content": r.Content,
+						}, toolErr)
+					}
+					content := fmt.Sprintf("%v", r.Content)
+					if r.Error != "" {
+						content = fmt.Sprintf("Error: %s", r.Error)
+					}
+					results[idx] = toolResult{
+						id:   call.ID,
+						name: call.Function.Name,
+						msg: Message{
+							Role:       "tool",
+							Content:    content,
+							ToolCallID: call.ID,
+						},
+					}
+					k.publishEvent(Event{
+						Type:      EventToolCallEnded,
+						Source:    "kernel",
+						Data:      map[string]interface{}{"tool": call.Function.Name, "success": r.Error == "", "session_id": session.ID},
+						Timestamp: time.Now(),
+					})
+				}(i, task.ToolCall)
+			}
+			wg.Wait()
+			totalToolCalls += len(results)
+
+			// 发送 tool_done 事件 + 添加到消息列表
+			for _, r := range results {
+				select {
+				case resultChan <- StreamChunk{
+					Type:       ChunkTypeToolDone,
+					ToolCallID: r.id,
+					ToolName:   r.name,
+					ToolResult: &ToolResult{Content: r.msg.Content},
+				}:
+				case <-ctx.Done():
+					return
+				}
+				messages = append(messages, r.msg)
+			}
+
+			// 发送进度事件
 			select {
-			case resultChan <- chunk:
+			case resultChan <- StreamChunk{
+				Type:        ChunkTypeProgress,
+				Round:       round + 1,
+				TotalRounds: maxRounds,
+			}:
 			case <-ctx.Done():
 				return
 			}
+
+			// 每轮结束后保存检查点
+			if k.checkpointer != nil {
+				cp := &Checkpoint{
+					SessionID: session.ID,
+					Round:     round + 1,
+					Messages:  messages,
+				}
+				if err := k.checkpointer.Save(ctx, session.ID, cp); err != nil {
+					slog.Warn("Failed to save checkpoint", "round", round, "error", err)
+				}
+			}
 		}
 
-		// 保存到记忆
-		messages = append(messages, Message{
-			Role:             "assistant",
-			Content:          fullContent.String(),
-			ReasoningContent: reasoningContent.String(),
-		})
-		k.saveToMemory(ctx, session.ID, messages)
-
-		// 更新会话
-		session.Messages = messages
-		session.UpdatedAt = time.Now()
-		k.sessionStore.Update(ctx, session)
-
+		// 超出最大轮次
 		k.setState(StateIdle)
-		k.publishEvent(Event{
-			Type:      EventResponseEnded,
-			Source:    "kernel",
-			Data:      map[string]interface{}{"session_id": session.ID, "tokens": totalTokens},
-			Timestamp: time.Now(),
-		})
-
-		// 发送结束标记
+		lastMsg := messages[len(messages)-1]
 		resultChan <- StreamChunk{
+			Type:  ChunkTypeDone,
 			Done:  true,
 			Usage: &TokenUsage{TotalTokens: totalTokens},
+			Content: lastMsg.Content,
 		}
 	}()
 
-	_ = start // 避免未使用变量警告，实际统计在 goroutine 中处理
 	return resultChan, nil
 }
 
@@ -532,6 +882,9 @@ func (k *AgentKernel) buildOptions(opts QueryOptions) map[string]interface{} {
 	}
 	if opts.MaxTokens > 0 {
 		options["max_tokens"] = opts.MaxTokens
+	}
+	if opts.ResponseFormat != nil {
+		options["response_format"] = opts.ResponseFormat
 	}
 	return options
 }
@@ -675,6 +1028,31 @@ func (k *AgentKernel) publishEvent(event Event) {
 
 	for _, h := range handlers {
 		go h.HandleEvent(event)
+	}
+}
+
+// ensureSessionTitle 从第一条 user 消息提取会话标题
+func ensureSessionTitle(session *Session) {
+	if session.Metadata == nil {
+		session.Metadata = make(map[string]interface{})
+	}
+	if _, ok := session.Metadata["title"]; ok {
+		return // 已有标题
+	}
+
+	for _, msg := range session.Messages {
+		if msg.Role == "user" && msg.Content != "" {
+			rs := []rune(strings.TrimSpace(msg.Content))
+			if len(rs) == 0 {
+				return
+			}
+			title := string(rs[:min(len(rs), 25)])
+			if len(rs) > 25 {
+				title += "…"
+			}
+			session.Metadata["title"] = title
+			return
+		}
 	}
 }
 
