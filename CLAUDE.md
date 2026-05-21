@@ -78,9 +78,26 @@ cmd/server (API server)          cmd/cli (interactive CLI)
 ### Kernel enhancements (optional, via interfaces)
 
 - **`kernel/reflection.go`** — `SimpleReflection`: evaluates execution quality, detects excessive tool calls, short responses, error keywords.
+- **`kernel/llm_reflection.go`** — `LLMReflection`: LLM-driven reflection with function calling for structured output; falls back to `SimpleReflection` on failure.
 - **`kernel/learner.go`** — `SimpleLearner`: learns patterns, preferences, and error types; persists to `insights.json`.
 - **`kernel/pattern.go`** — `SimplePatternDetector`: detects repeated queries, frequent tool usage, tool sequences, response styles, error patterns.
 - **`kernel/compress.go`** — `SimpleCompressor`: keeps system prompt + last 4 messages, summarizes older messages.
+
+### Embedding & Semantic Search
+
+- **`llm/embedder.go`** — `Embedder` interface (`Embed`, `EmbedBatch`, `Dimension`), `NoopEmbedder`, `EmbedderFunc` adapter, `CosineSimilarity` helper.
+- **`llm/gateway.go`** — Gateway adds `Embed`/`EmbedBatch`/`FallbackEmbed` methods, delegates to `Provider.Embed`. `ProviderConfig.EmbeddingModel` for per-provider embedding model config.
+- **`llm/openai_provider.go`** — OpenAIProvider implements `Embed` via `POST /embeddings`; reuses existing HTTP client/auth.
+- **`memory/memory.go`** — `MemoryItem.Embedding []float32` persisted to JSON. `Manager.SetEmbedder()` injection. Semantic search (cosine similarity) → TF-IDF → text match fallback chain.
+- **`knowledge/knowledge.go`** — `Document.Embedding []float32` persisted to JSON. `Base.SetEmbedder()` injection. Same 3-tier search fallback.
+
+### LLM Context Compression
+
+- **`compress/llm_compressor.go`** — `LLMCompressor`: LLM-generated semantic summaries + pending-questions extraction; falls back to `NovelCompressor`.
+
+### Function Calling Planner
+
+- **`orchestration/planner.go`** — `Plan` method tries function calling first (`create_plan` tool with structured schema), falls back to text prompt + JSON extraction.
 
 ### Frontend
 
