@@ -65,10 +65,12 @@ func (se *SkillEvolution) createSkillFromPattern(p Pattern) {
 		return // 已存在，跳过
 	}
 
+	keywords := extractKeywords(desc)
 	skill := &Skill{
 		ID:          name,
 		Name:        fmt.Sprintf("自动技能: %s", name),
 		Description: desc,
+		Keywords:    keywords,
 		Prompt: fmt.Sprintf(`## 自动技能: %s
 根据历史对话模式总结的技能:
 - 用户经常询问此类问题
@@ -97,10 +99,12 @@ func (se *SkillEvolution) createSkillFromToolSequence(p Pattern) {
 		tools = []string{"execute_command", "read_file"}
 	}
 
+	keywords := extractKeywords(desc)
 	skill := &Skill{
 		ID:          name,
 		Name:        fmt.Sprintf("工作流: %s", name),
 		Description: desc,
+		Keywords:    keywords,
 		Prompt: fmt.Sprintf(`## 工作流: %s
 根据历史成功经验总结的工作流:
 1. 按已验证的顺序执行工具
@@ -129,6 +133,7 @@ func (se *SkillEvolution) createSkillFromErrorPattern(p Pattern) {
 		ID:          name,
 		Name:        "错误恢复",
 		Description: p.Description,
+		Keywords:    []string{"error", "失败", "错误", "timeout", "报错"},
 		Prompt: `## 错误恢复模式
 系统检测到频繁错误。请按以下步骤排查:
 1. 检查上一步操作的输入/参数是否正确
@@ -183,6 +188,29 @@ func extractSkillName(desc, prefix string) string {
 		result = fmt.Sprintf("auto-%s-%d", prefix, time.Now().UnixNano()%1000)
 	}
 	return result
+}
+
+func extractKeywords(desc string) []string {
+	// 从描述中提取关键词作为 skill 匹配关键字
+	cleaned := strings.TrimPrefix(desc, "常见工具序列: ")
+	cleaned = strings.TrimPrefix(cleaned, "用户重复询问相似问题: ")
+	cleaned = strings.TrimPrefix(cleaned, "对话中频繁出现错误")
+	cleaned = strings.TrimPrefix(cleaned, "频繁使用工具: ")
+	cleaned = strings.TrimSpace(cleaned)
+
+	// 从 cleaned 中拆分出单词作为关键词
+	var kws []string
+	for _, word := range strings.Fields(cleaned) {
+		word = strings.Trim(word, ":,;.!?\"'")
+		if len(word) >= 2 {
+			kws = append(kws, strings.ToLower(word))
+		}
+	}
+	if len(kws) == 0 {
+		// fallback: 用 "帮助" 作为通用关键词
+		kws = []string{"帮助", "help"}
+	}
+	return kws
 }
 
 func extractToolNames(desc string) []string {

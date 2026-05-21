@@ -10,12 +10,13 @@ import (
 
 // Skill 可插拔的能力模块
 type Skill struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Prompt      string `json:"prompt"`  // 注入 system prompt 的内容
-	Tools       []string `json:"tools"` // 该 skill 需要启用的额外工具
-	Enabled     bool   `json:"enabled"`
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Prompt      string   `json:"prompt"`     // 注入 system prompt 的内容
+	Keywords    []string `json:"keywords"`   // 意图检测关键词（命中任一即激活）
+	Tools       []string `json:"tools"`      // 激活后推荐启用的工具
+	Enabled     bool     `json:"enabled"`
 }
 
 // SkillManager 技能管理器
@@ -44,6 +45,7 @@ func (sm *SkillManager) loadBuiltins() {
 		{
 			ID: "code-review", Name: "代码审查",
 			Description: "审查代码质量、安全问题、最佳实践",
+			Keywords:    []string{"review", "审查", "检查代码", "code review", "安全漏洞", "代码质量"},
 			Prompt: `## 代码审查模式
 你是代码审查专家。审查时关注:
 1. 安全问题 (SQL注入、XSS、命令注入)
@@ -58,6 +60,7 @@ func (sm *SkillManager) loadBuiltins() {
 		{
 			ID: "git-commit", Name: "Git提交助手",
 			Description: "分析改动并生成规范的commit message",
+			Keywords:    []string{"commit", "提交", "git add", "git commit", "暂存"},
 			Prompt: `## Git 提交模式
 1. 先 git_status 查看改动
 2. 分析改动内容
@@ -71,6 +74,7 @@ func (sm *SkillManager) loadBuiltins() {
 		{
 			ID: "debug", Name: "调试助手",
 			Description: "系统化的问题排查和调试",
+			Keywords:    []string{"debug", "调试", "报错", "error", "失败", "不工作", "bug", "修复", "fix"},
 			Prompt: `## 调试模式
 按以下步骤系统排查:
 1. 复现问题: 执行相关命令，确认错误信息
@@ -84,6 +88,7 @@ func (sm *SkillManager) loadBuiltins() {
 		{
 			ID: "refactor", Name: "代码重构",
 			Description: "安全地重构代码，保持功能不变",
+			Keywords:    []string{"refactor", "重构", "重写", "整理代码", "优化结构"},
 			Prompt: `## 重构模式
 重构原则:
 1. 先理解现有代码的功能和测试
@@ -97,6 +102,7 @@ func (sm *SkillManager) loadBuiltins() {
 		{
 			ID: "explain", Name: "代码解释",
 			Description: "详细解释代码逻辑和设计意图",
+			Keywords:    []string{"explain", "解释", "说明", "这段代码", "什么意思", "做什么的"},
 			Prompt: `## 代码解释模式
 解释代码时包含:
 1. 整体目的: 这段代码做什么
@@ -159,39 +165,33 @@ func (sm *SkillManager) EnabledSkills() []*Skill {
 }
 
 // DetectSkill 自动检测用户意图并匹配技能
+// 遍历所有已启用技能，用每个技能的 Keywords 做匹配，返回命中数最多的
 func (sm *SkillManager) DetectSkill(query string) *Skill {
 	if !sm.autoDetect {
 		return nil
 	}
 
 	lower := strings.ToLower(query)
-	keywords := map[string]string{
-		"code-review": "review,审查,检查代码,code review,安全漏洞,代码质量",
-		"git-commit":  "commit,提交,git add,git commit,暂存",
-		"debug":       "debug,调试,报错,error,失败,不工作,bug,修复,fix",
-		"refactor":    "refactor,重构,重写,整理代码,优化结构",
-		"explain":     "explain,解释,说明,这段代码,什么意思,做什么的",
-	}
-
-	bestMatch := ""
+	var bestSkill *Skill
 	bestScore := 0
-	for skillID, kwStr := range keywords {
+
+	for _, skill := range sm.skills {
+		if !skill.Enabled || len(skill.Keywords) == 0 {
+			continue
+		}
 		score := 0
-		for _, kw := range strings.Split(kwStr, ",") {
-			if strings.Contains(lower, strings.TrimSpace(kw)) {
+		for _, kw := range skill.Keywords {
+			if strings.Contains(lower, strings.ToLower(kw)) {
 				score++
 			}
 		}
 		if score > bestScore {
 			bestScore = score
-			bestMatch = skillID
+			bestSkill = skill
 		}
 	}
 
-	if bestScore > 0 {
-		return sm.Get(bestMatch)
-	}
-	return nil
+	return bestSkill
 }
 
 // InjectPrompt 将技能提示词注入系统消息

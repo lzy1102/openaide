@@ -230,6 +230,11 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 	tools := k.toolExecutor.GetDefinitions()
 	if len(query.Options.ToolFilter) > 0 {
 		tools = k.toolExecutor.GetDefinitionsByNames(query.Options.ToolFilter)
+	} else if k.skillManager != nil {
+		// 技能激活时，限制工具为技能推荐的工具集
+		if skillTools := k.skillManager.GetTools(query.Content); len(skillTools) > 0 {
+			tools = k.toolExecutor.GetDefinitionsByNames(skillTools)
+		}
 	}
 
 	// 5. ReAct 循环
