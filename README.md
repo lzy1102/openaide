@@ -179,12 +179,12 @@ git push origin v1.0.0
 - **浏览器自动化**: Headless Chrome (browser_navigate/extract/screenshot/click/fill)
 - **Diff编辑**: 精确search/replace + 行号替换
 - **多模态Vision**: base64图片→Vision API格式 (OpenAI+Anthropic)
-- **5个Skill**: 代码审查/Git提交/调试/重构/解释（自动检测触发）
+- **5个内置Skill + 自动进化**: 代码审查/Git提交/调试/重构/解释（自动检测触发），重复模式自动生成新技能
 - **模型智能路由**: 按任务类型自动选择provider/model（代码/搜索/翻译/对话）
 - **Planner + DAG**: 复杂请求自动拆分+DAG并行执行（function calling驱动，纯文本回退）
 - **多Agent Team**: 分析员→程序员→审查员→执行者角色委派
 - **LLM反思+跨会话学习**: 每轮LLM结构化反思(function calling)→eval→insights持久化→后续对话自动注入历史经验
-- **知识库**: 质量门控自动抽取(score>0.6)+提示词注入 + LLM Embedding语义搜索
+- **知识库**: 质量门控自动抽取(score>0.6)+提示词注入 + LLM Embedding语义搜索 + 使用反馈闭环(自动评估有效性)
 - **3级记忆**: L1/L2/L3 + LLM Embedding语义搜索 + TF-IDF向量搜索 + 文本匹配三级降级
 - **LLM上下文压缩**: LLM驱动的语义摘要 + 待解决问题提取，NovelCompressor降级
 - **会话检查点**: 文件JSON，崩溃可恢复会话进度

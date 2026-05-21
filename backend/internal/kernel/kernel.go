@@ -27,6 +27,7 @@ type AgentKernel struct {
 	knowledgeCollector KnowledgeCollector
 	qualityGate      QualityGate
 	skillManager     *SkillManager
+	skillEvolution   *SkillEvolution
 	approver         Approver
 	adaptiveRounds   *AdaptiveRounds
 
@@ -179,6 +180,10 @@ func (k *AgentKernel) SetSkillManager(sm *SkillManager) {
 	k.skillManager = sm
 }
 
+func (k *AgentKernel) SetSkillEvolution(se *SkillEvolution) {
+	k.skillEvolution = se
+}
+
 func (k *AgentKernel) SetQualityGate(gate QualityGate) {
 	k.qualityGate = gate
 }
@@ -221,7 +226,6 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 
 	// 3. 构建消息列表
 	messages := k.buildMessages(session, query)
-
 	// 4. 获取工具定义
 	tools := k.toolExecutor.GetDefinitions()
 	if len(query.Options.ToolFilter) > 0 {
@@ -870,12 +874,19 @@ func (k *AgentKernel) buildMessages(session *Session, query *Query) []Message {
 	// 注入相关知识库上下文
 	if k.knowledgeCollector != nil {
 		ctx := context.Background()
-		kbCtx, err := k.knowledgeCollector.InjectContext(ctx, query.Content, 500)
+		kbCtx, docIDs, err := k.knowledgeCollector.InjectContext(ctx, query.Content, 500)
 		if err == nil && kbCtx != "" {
 			messages = append(messages, Message{
 				Role:    "system",
 				Content: kbCtx,
 			})
+			// 记录被注入的知识文档ID到会话，后续用于反馈
+			if len(docIDs) > 0 {
+				if session.Metadata == nil {
+					session.Metadata = make(map[string]interface{})
+				}
+				session.Metadata["knowledge_doc_ids"] = docIDs
+			}
 		}
 	}
 
@@ -968,7 +979,7 @@ func (k *AgentKernel) doReflection(ctx context.Context, sessionID, query, respon
 		return
 	}
 
-	// 存储反思结果到会话
+	// 存储反思结果到会话 + 知识使用反馈
 	if result != nil && k.sessionStore != nil {
 		session, err := k.sessionStore.Get(ctx, sessionID)
 		if err == nil && session != nil {
@@ -977,6 +988,15 @@ func (k *AgentKernel) doReflection(ctx context.Context, sessionID, query, respon
 			}
 			session.Metadata["reflection"] = result
 			k.sessionStore.Update(ctx, session)
+
+			// 反馈：本次使用的知识质量如何
+			if k.knowledgeCollector != nil {
+				if docIDsRaw, ok := session.Metadata["knowledge_doc_ids"]; ok {
+					if docIDs, ok := docIDsRaw.([]string); ok && len(docIDs) > 0 {
+						k.knowledgeCollector.RecordKnowledgeUsage(ctx, docIDs, float64(result.Quality)/10.0)
+					}
+				}
+			}
 		}
 	}
 
@@ -998,6 +1018,11 @@ func (k *AgentKernel) doReflection(ctx context.Context, sessionID, query, respon
 				}
 				session.Metadata["patterns"] = patterns
 				k.sessionStore.Update(ctx, session)
+
+				// 技能自动进化：从检测到的模式中创建新技能
+				if k.skillEvolution != nil {
+					go k.skillEvolution.Evolve(ctx, patterns, nil)
+				}
 			}
 		}
 	}

@@ -192,8 +192,11 @@ type KnowledgeCollector interface {
 	// SearchKnowledge 搜索知识库
 	SearchKnowledge(ctx context.Context, query string, limit int) ([]KnowledgeItem, error)
 
-	// InjectContext 将相关知识注入为提示词片段
-	InjectContext(ctx context.Context, query string, maxTokens int) (string, error)
+	// InjectContext 将相关知识注入为提示词片段，返回 (contextText, docIDs, error)
+	InjectContext(ctx context.Context, query string, maxTokens int) (string, []string, error)
+
+	// RecordKnowledgeUsage 记录知识被使用后的质量反馈
+	RecordKnowledgeUsage(ctx context.Context, docIDs []string, qualityScore float64)
 }
 
 // KnowledgeItem 知识条目

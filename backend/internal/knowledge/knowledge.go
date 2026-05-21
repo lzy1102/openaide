@@ -25,6 +25,10 @@ type Document struct {
 	Embedding []float32 `json:"embedding,omitempty"` // LLM embedding 向量，用于语义搜索
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+
+	// 使用反馈 — 用于评估知识有效性
+	UsesCount        int     `json:"uses_count"`          // 被检索/注入次数
+	TotalQualityScore float64 `json:"total_quality_score"` // 累计使用后质量分，avg = total / uses
 }
 
 // loadContent 从文件读取完整文档内容（Search 返回的 doc.Content 为空，需要时主动加载）
@@ -217,19 +221,20 @@ func (kb *Base) List(ctx context.Context, limit int) ([]*Document, error) {
 	return results, nil
 }
 
-// InjectToPrompt 将相关知识注入提示词
-func (kb *Base) InjectToPrompt(ctx context.Context, query string, maxTokens int) (string, error) {
+// InjectToPrompt 将相关知识注入提示词，返回 (contextText, docIDs, error)
+func (kb *Base) InjectToPrompt(ctx context.Context, query string, maxTokens int) (string, []string, error) {
 	docs, err := kb.Search(ctx, query, 3)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 
 	if len(docs) == 0 {
-		return "", nil
+		return "", nil, nil
 	}
 
 	var parts []string
 	parts = append(parts, "## 相关知识")
+	docIDs := make([]string, 0, len(docs))
 
 	for _, doc := range docs {
 		// 搜索返回的 doc.Content 为空，需要从文件加载完整内容
@@ -237,6 +242,7 @@ func (kb *Base) InjectToPrompt(ctx context.Context, query string, maxTokens int)
 			kb.loadContent(doc)
 		}
 		parts = append(parts, fmt.Sprintf("### %s\n%s", doc.Title, doc.Content))
+		docIDs = append(docIDs, doc.ID)
 	}
 
 	result := strings.Join(parts, "\n\n")
@@ -246,7 +252,7 @@ func (kb *Base) InjectToPrompt(ctx context.Context, query string, maxTokens int)
 		result = result[:maxTokens*4] + "..."
 	}
 
-	return result, nil
+	return result, docIDs, nil
 }
 
 // ImportFromFile 从文件导入知识
@@ -435,7 +441,30 @@ func (kb *Base) SearchKnowledge(ctx context.Context, query string, limit int) ([
 	return items, nil
 }
 
-// InjectContext 将相关知识注入提示词
-func (kb *Base) InjectContext(ctx context.Context, query string, maxTokens int) (string, error) {
+// RecordUsage 记录知识被使用后的质量反馈
+// 用于评估知识有效性：高频+高质量 = 好知识；高频+低质量 = 需优化
+func (kb *Base) RecordUsage(ctx context.Context, docIDs []string, qualityScore float64) {
+	kb.mu.Lock()
+	defer kb.mu.Unlock()
+
+	for _, id := range docIDs {
+		doc, ok := kb.docs[id]
+		if !ok {
+			continue
+		}
+		doc.UsesCount++
+		doc.TotalQualityScore += qualityScore
+		doc.UpdatedAt = time.Now()
+		kb.saveDoc(doc)
+	}
+}
+
+// RecordKnowledgeUsage 记录知识被使用后的质量反馈
+func (kb *Base) RecordKnowledgeUsage(ctx context.Context, docIDs []string, qualityScore float64) {
+	kb.RecordUsage(ctx, docIDs, qualityScore)
+}
+
+// InjectContext 将相关知识注入提示词，返回 (contextText, docIDs, error)
+func (kb *Base) InjectContext(ctx context.Context, query string, maxTokens int) (string, []string, error) {
 	return kb.InjectToPrompt(ctx, query, maxTokens)
 }
