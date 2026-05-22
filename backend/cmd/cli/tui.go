@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -608,27 +609,27 @@ func (m *model) chatView() string {
 			rs := []rune(title)
 			title = string(rs[:18]) + "…"
 		}
-		statusParts = append(statusParts, fmt.Sprintf("📁 %s", title))
+		statusParts = append(statusParts, fmt.Sprintf(icons.folder+" %s", title))
 	}
 	if m.streaming {
-		statusParts = append(statusParts, "◉ "+lang.T("mode.thinking"))
+		statusParts = append(statusParts, icons.thinking+" "+lang.T("mode.thinking"))
 	}
 	if m.tools > 0 {
-		statusParts = append(statusParts, fmt.Sprintf("🔧 %d", m.tools))
+		statusParts = append(statusParts, fmt.Sprintf(icons.tools+" %d", m.tools))
 	}
 	if m.tokens > 0 {
-		statusParts = append(statusParts, fmt.Sprintf("⚡ %d", m.tokens))
+		statusParts = append(statusParts, fmt.Sprintf(icons.tokens+" %d", m.tokens))
 	}
 	if len(statusParts) > 0 {
 		sb.WriteString(statusBarStyle.Render(strings.Join(statusParts, " │ ")) + "\n")
 	}
 
 	if m.err != nil {
-		sb.WriteString(errStyle.Render("✗ "+m.err.Error()) + "\n")
+		sb.WriteString(errStyle.Render(icons.err+" "+m.err.Error()) + "\n")
 	}
 
 	if m.streaming {
-		sb.WriteString(inputStyle.Render("⏳ " + lang.T("mode.streaming")))
+		sb.WriteString(inputStyle.Render(icons.busy+" " + lang.T("mode.streaming")))
 	} else {
 		sb.WriteString(inputStyle.Render(m.input.View()))
 	}
@@ -659,7 +660,7 @@ func (m *model) sessionListView() string {
 		for i, s := range m.sessions {
 			var prefix string
 			if i == m.selSession {
-				prefix = "▸ "
+				prefix = icons.user+" "
 			} else {
 				prefix = "  "
 			}
@@ -713,7 +714,7 @@ func (m *model) modelListView() string {
 		for i, p := range m.providers {
 			prefix := "  "
 			if i == m.selProvider {
-				prefix = "▸ "
+				prefix = icons.user+" "
 			}
 			def := ""
 			if p.Default {
@@ -797,13 +798,13 @@ func (m *model) renderViewport() {
 		}
 		switch msg.role {
 		case "user":
-			sb.WriteString(userStyle.Render("▸ " + msg.content))
+			sb.WriteString(userStyle.Render(icons.user+" " + msg.content))
 		case "error":
 			sb.WriteString(errStyle.Render("✗ " + msg.content))
 		case "system":
-			sb.WriteString(sysStyle.Render("[sys] " + msg.content))
+			sb.WriteString(sysStyle.Render(icons.system+" " + msg.content))
 		case "tool_call":
-			sb.WriteString(toolStyle.Render("⚙ " + msg.content))
+			sb.WriteString(toolStyle.Render(icons.gear+" " + msg.content))
 		case "tool":
 			sb.WriteString(toolOutStyle.Render("  → " + trunc(msg.content, 200)))
 		default:
@@ -863,7 +864,7 @@ func doStream(ctx context.Context, p *tea.Program, app *infra.Application, sessi
 		case kernel.ChunkTypeToolDone:
 			if chunk.ToolResult != nil {
 				summary := fmt.Sprintf("%v", chunk.ToolResult.Content)
-				p.Send(chunkMsg{toolCall: true, toolName: "→ " + trunc(summary, 200)})
+				p.Send(chunkMsg{toolCall: true, toolName: icons.result+" " + trunc(summary, 200)})
 			}
 		default:
 			p.Send(chunkMsg{content: chunk.Content, thinking: chunk.ReasoningContent})
@@ -871,7 +872,23 @@ func doStream(ctx context.Context, p *tea.Program, app *infra.Application, sessi
 	}
 }
 
-// theme defines the TUI color scheme.
+// iconSet provides Unicode symbols with ASCII fallback for terminal compatibility.
+type iconSet struct {
+	folder, thinking, tools, tokens, err, busy, user, system, gear, result string
+}
+
+var icons iconSet
+
+func init() {
+	term := strings.ToLower(os.Getenv("TERM"))
+	noColor := os.Getenv("NO_COLOR") != "" || os.Getenv("OPENAIDE_NO_EMOJI") != ""
+	dumb := term == "" || term == "dumb" || noColor
+	if dumb {
+		icons = iconSet{"[", "*", "#", "~", "x", "...", ">", "[sys]", ">", "->"}
+	} else {
+		icons = iconSet{"📁", "◉", "🔧", "⚡", "✗", "⏳", "▸", "[sys]", "⚙", "→"}
+	}
+}
 type tuiTheme struct {
 	user, ai, think, err, tool, toolOut, sys                lipgloss.Style
 	statusBar, input, sessionTitle, sel, helpKey, helpTitle lipgloss.Style
