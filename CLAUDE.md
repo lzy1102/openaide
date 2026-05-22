@@ -65,7 +65,7 @@ cmd/server (API server)          cmd/cli (interactive CLI)
 
 6. **`backend/internal/llm/openai_provider.go`** — The only concrete provider. Handles all OpenAI-compatible APIs (OpenAI, DeepSeek, Ollama, Qwen, etc.). Includes DeepSeek-specific features: `isDeepSeek()` detection gates `thinking` and `reasoning_effort` parameters; `CompleteWithPrefix()` for prefix continuation; `FIMComplete()` for fill-in-the-middle. Also handles JSON mode and streaming via SSE.
 
-7. **`backend/internal/tools/registry.go`** — Tool registration and execution. `BuiltinTools()` defines 6 tools (read_file, write_file, execute_command, list_directory, search_files, git_status). Tool handlers are currently stubs.
+7. **`backend/internal/tools/registry.go`** — Tool registration and execution. `BuiltinTools()` defines 22 tools across 7 source files (registry.go, diff_edit.go, git_deep.go, web.go, browser.go, multimodal.go). All handlers are fully implemented.
 
 8. **`backend/internal/memory/memory.go`** — File-based JSON memory with 3 levels (L1 working, L2 short-term, L3 long-term). `FileMemory` adapts to `kernel.Memory` interface. Search is simple text matching.
 
@@ -116,5 +116,5 @@ Config file: `~/.openaide/config.yaml` (or `.json`). Provider types: `openai` or
 - All inter-module communication uses interfaces defined in `kernel/interfaces.go`
 - The LLM Gateway implements `kernel.LLMProvider` so it can be passed directly to the kernel
 - Session store is in-memory (`SessionStoreAdapter`); not persistent across restarts
-- Tool handlers in `tools/registry.go` are stubs marked with `// TODO`
+- All 22 tool handlers are fully implemented across 7 files in `internal/tools/`; no stubs
 - DeepSeek-specific behavior is gated by `isDeepSeek()` which checks the base URL and provider name for "deepseek"
