@@ -37,6 +37,7 @@ func NewFileSessionStore(dataDir string) (*FileSessionStore, error) {
 
 // SessionStoreAdapter 内存会话存储（兼容旧代码，重启丢失）
 type SessionStoreAdapter struct {
+	mu       sync.RWMutex
 	sessions map[string]*Session
 }
 
@@ -190,6 +191,8 @@ func (s *FileSessionStore) recover() {
 // ============ SessionStoreAdapter 实现（内存，兼容旧代码） ============
 
 func (s *SessionStoreAdapter) Create(ctx context.Context, projectID, userID string) (*Session, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	session := &Session{
 		ID:        uuid.New().String(),
 		ProjectID: projectID,
@@ -203,6 +206,8 @@ func (s *SessionStoreAdapter) Create(ctx context.Context, projectID, userID stri
 }
 
 func (s *SessionStoreAdapter) Get(ctx context.Context, sessionID string) (*Session, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	if session, ok := s.sessions[sessionID]; ok {
 		return session, nil
 	}
@@ -210,16 +215,22 @@ func (s *SessionStoreAdapter) Get(ctx context.Context, sessionID string) (*Sessi
 }
 
 func (s *SessionStoreAdapter) Update(ctx context.Context, session *Session) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.sessions[session.ID] = session
 	return nil
 }
 
 func (s *SessionStoreAdapter) Delete(ctx context.Context, sessionID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	delete(s.sessions, sessionID)
 	return nil
 }
 
 func (s *SessionStoreAdapter) List(ctx context.Context, projectID, userID string, limit, offset int) ([]*Session, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	var matched []*Session
 	for _, session := range s.sessions {
 		if (projectID == "" || session.ProjectID == projectID) &&

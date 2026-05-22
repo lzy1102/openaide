@@ -42,12 +42,17 @@ func (b *Bus) EnablePersistence(dataDir string) error {
 	return b.loadEvents()
 }
 
+const maxEvents = 10000
+
 // Publish 发布事件
 func (b *Bus) Publish(event kernel.Event) {
 	// 持久化
 	if b.persistEnabled {
 		b.eventsMu.Lock()
 		b.events = append(b.events, event)
+		if len(b.events) > maxEvents {
+			b.events = b.events[len(b.events)-maxEvents:]
+		}
 		b.eventsMu.Unlock()
 		go b.persistEvent(event)
 	}

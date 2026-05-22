@@ -175,6 +175,14 @@ func main() {
 		}
 	}
 
+	promptsDir := cfg.Storage.DataDir + "/prompts"
+	firstRun := kernel.IsFirstRun(promptsDir) && flags.prompt == ""
+
+	// 首次运行：模板引导（不需要 LLM）
+	if firstRun {
+		runOnboarding(promptsDir)
+	}
+
 	app, err := infra.NewApplication(cfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s\n", lang.T("err.start_failed", err))
@@ -182,6 +190,11 @@ func main() {
 	}
 	if flags.yes {
 		app.SetAutoApprove(true)
+	}
+
+	// 首次运行：LLM 深度引导（需要内核就绪）
+	if firstRun {
+		runLLMOnboarding(app, promptsDir)
 	}
 
 	// One-shot: prompt from positional args

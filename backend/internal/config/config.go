@@ -305,13 +305,3 @@ func expandPath(p, home string) string {
 	}
 	return p
 }
-
-// IsToolDangerous 检查工具是否为危险工具
-func (c *Config) IsToolDangerous(toolName string) bool {
-	for _, t := range c.Tools.DangerousTools {
-		if t == toolName {
-			return true
-		}
-	}
-	return false
-}

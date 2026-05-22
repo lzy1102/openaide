@@ -38,8 +38,8 @@ cmd/server (API server)          cmd/cli (interactive CLI)
          \_________________________/
                      |
               infra/Application    ← DI container, wires everything
-               /      |       \
-         api/    orchestration/   (HTTP handlers, SSE streaming)
+              /    |    |     \
+         api/  orchestration/  channel/   (HTTP, SSE, WebSocket, webhook/Feishu/Telegram)
                      |
               kernel/AgentKernel   ← ReAct loop, the core of the agent
               /    |    |     \
@@ -49,72 +49,107 @@ cmd/server (API server)          cmd/cli (interactive CLI)
 ### Entry points
 
 - **`backend/cmd/server/main.go`** — Production server. Loads config from `~/.openaide/config.yaml`, starts the HTTP API server.
-- **`backend/cmd/cli/main.go`** — Interactive CLI with raw terminal mode, streaming output, and color formatting. Forces `direct` mode (no API server).
+- **`backend/cmd/cli/main.go`** — Interactive CLI. Forces `direct` mode. On first run, triggers interactive onboarding (`onboard.go`): template-guided setup → kernel start → LLM-powered interview → TUI. One-shot mode: `openaide "fix this bug"`.
+- **`backend/cmd/cli/onboard.go`** — First-run onboarding. Template questions (role/style/language) → `NewApplication()` → LLM interview (2-round open-ended dialogue) → generates custom `system.md` → hot-reloads via `SetSystemPrompt()`.
 
 ### Layered design
 
-1. **`backend/internal/infra/app.go`** — Application container. Creates all components in order: LLM Gateway → Tool Registry → Memory Manager → Session Store → Kernel → Orchestrator → API Server. This is the wiring diagram — start here to understand dependencies.
+1. **`backend/internal/infra/`** (4 files) — Application container, split by concern:
+   - `app.go` — `Application` struct, `NewApplication` (~100 lines of high-level wiring), `Start`, `Stop` (calls `ShutdownBrowser`, MCP shutdown, task queue stop)
+   - `app_llm.go` — `createLLMGateway()` — provider registration, router, prompt cache
+   - `app_kernel.go` — `createKernel()` — kernel + all enhancements (reflection, learner, skills, checkpointer, tracer, plugins, knowledge base, event bus, compressor)
+   - `app_channels.go` — `setupChannels()` — MCP connections, webhook/Feishu/Telegram, task queue
 
-2. **`backend/internal/kernel/kernel.go`** — `AgentKernel` implements the ReAct loop. It takes `LLMProvider`, `ToolExecutor`, `Memory`, and `SessionStore` as interfaces (no concrete imports). Handles tool calling, context compression, event publishing, and optional reflection/learning. Two paths: `Process()` (sync) and `ProcessStream()` (streaming).
+2. **`backend/internal/kernel/`** (split from single monolithic file):
+   - `kernel.go` — `AgentKernel` struct, Config, constructor, all Set* methods, state management, event system, session/message/tool helpers. Includes `SetSystemPrompt()` for hot-reloading prompts at runtime.
+   - `kernel_process.go` — `Process()` sync path + `doReflection()` + `autoSaveKnowledge()`
+   - `kernel_stream.go` — `ProcessStream()` streaming path (now has skill manager tool filter parity with Process)
+   - `kernel_prompt.go` — `defaultSystemPrompt{EN,ZH}()` hardcoded defaults, `LoadSystemPrompt(dir)` file-based loading with language suffix (`system.zh.md`/`system.en.md`), `IsFirstRun()`, `WriteSystemPrompt()`, `IsZhEnv()`
+   - `interfaces.go` — All kernel-level interfaces
+   - `types.go` — Shared types: `Message`, `ToolCall`, `Query`, `Response`, `StreamChunk`, `Event`, `Session`
+   - Other files: `reflection.go`, `llm_reflection.go`, `learner.go`, `pattern.go`, `compress.go`, `checkpoint.go`, `approval.go`, `adaptive.go`, `session_store.go`, `skill.go`, `skill_evolution.go`, `tracer.go`
 
-3. **`backend/internal/kernel/interfaces.go`** — All kernel-level interfaces: `Kernel`, `LLMProvider`, `ToolExecutor`, `Memory`, `SessionStore`, `ContextCompressor`, `PermissionChecker`, `Reflection`, `Learner`, `PatternDetector`. These are the contracts everything else implements against.
+3. **`backend/internal/tools/`** (10 files) — Tool definitions and handlers split by domain:
+   - `registry.go` — `Registry` framework, `BuiltinTools()` concatenates domain-specific defs, `BuiltinHandlers()`, `RegisterBuiltins()`, `safeAbsPath()`, `formatBytes()`
+   - `tools_filesystem.go` — read_file (with offset/limit), write_file, execute_command, list_directory, search_files
+   - `tools_knowledge.go` — search_knowledge, add_knowledge, `KnowledgeAccessor` interface, `WithKnowledge()`
+   - `tools_symbol.go` — search_symbols
+   - `diff_edit.go` — diff_edit, diff_edit_lines
+   - `git_deep.go` — git_status, git_diff, git_log, git_blame
+   - `web.go` — web_search, web_fetch, ai_search
+   - `browser.go` — 5 browser tools + `ShutdownBrowser()` + `SetBrowserEnabled()`
+   - `multimodal.go` — read_image
+   - `registry_test.go`
 
-4. **`backend/internal/kernel/types.go`** — Shared types: `Message`, `ToolCall`, `Query`, `Response`, `StreamChunk`, `Event`, `Session`. Includes DeepSeek-specific `ThinkingConfig` and `ReasoningContent` field on messages.
+4. **`backend/internal/llm/`** (7 files):
+   - `gateway.go` — Multi-provider router. `LLMProvider` interface. `Router` for task-type-based provider selection. `PromptCache`. `Embedder` adapter.
+   - `openai_provider.go` — OpenAI-compatible APIs (OpenAI, DeepSeek, Ollama, Qwen, etc.)
+   - `anthropic_provider.go` — Anthropic Claude API. Stream goroutine has `ctx.Done()` guard on channel sends.
+   - `embedder.go` — Embedding interface + helpers
+   - `cache.go` — 24h TTL prompt cache with hourly cleanup goroutine
 
-5. **`backend/internal/llm/gateway.go`** — Multi-provider router. Implements `kernel.LLMProvider`. Supports fallback across enabled providers. All providers registered via `RegisterProvider()`.
+5. **`backend/internal/memory/`** — File-based JSON memory. 3 levels (L1/L2/L3). Semantic search (cosine similarity) → TF-IDF → text match. `Embedding` persisted in JSON.
 
-6. **`backend/internal/llm/openai_provider.go`** — The only concrete provider. Handles all OpenAI-compatible APIs (OpenAI, DeepSeek, Ollama, Qwen, etc.). Includes DeepSeek-specific features: `isDeepSeek()` detection gates `thinking` and `reasoning_effort` parameters; `CompleteWithPrefix()` for prefix continuation; `FIMComplete()` for fill-in-the-middle. Also handles JSON mode and streaming via SSE.
+6. **`backend/internal/config/`** — JSON + YAML config. `Storage.DataDir` defaults to `./data`. All data (prompts, sessions, memory, knowledge, skills, plugins, checkpoints, traces, events, cache) stored under this directory.
 
-7. **`backend/internal/tools/registry.go`** — Tool registration and execution. `BuiltinTools()` defines 22 tools across 7 source files (registry.go, diff_edit.go, git_deep.go, web.go, browser.go, multimodal.go). All handlers are fully implemented.
+7. **`backend/internal/api/`** — HTTP REST API + WebSocket. Routes: `POST /api/v1/chat`, `POST /api/v1/chat/stream` (SSE), `GET /api/v1/sessions`, etc. WebSocket heartbeat uses `done` channel for clean shutdown.
 
-8. **`backend/internal/memory/memory.go`** — File-based JSON memory with 3 levels (L1 working, L2 short-term, L3 long-term). `FileMemory` adapts to `kernel.Memory` interface. Search is simple text matching.
+8. **`backend/internal/orchestration/`** — `Orchestrator` wraps kernel with pre/post processing. `Planner` uses function calling + text prompt fallback. DAG execution with data-race-safe `completed` map reads. `Team` multi-agent delegation (analyst → coder → reviewer → executor).
 
-9. **`backend/internal/config/config.go`** — Supports both JSON and YAML config via file extension detection. Config includes: server, LLM providers (with DeepSeek-specific fields), memory, tools, kernel, storage, and log settings.
+### Concurrency safety (audited and fixed)
 
-10. **`backend/internal/api/api.go`** — HTTP REST API. Routes: `POST /api/v1/chat`, `POST /api/v1/chat/stream` (SSE), `GET /api/v1/sessions`, `GET /api/v1/sessions/{id}`, `GET /api/v1/memory/search?q=`, `GET /api/v1/tools`, `GET /api/v1/stats`, `GET /health`. CORS middleware on all routes.
+- **`session_store.go`** — `SessionStoreAdapter` has `sync.RWMutex` protecting all 5 map-access methods (was missing, would fatal-panic under concurrent access).
+- **`dag.go`** — `completed` map read moved inside `mu.Lock()` to prevent data race with concurrent writes.
+- **`event.go`** — `events` slice capped at 10,000 via FIFO eviction (was unbounded, would memory-leak on long-running servers).
+- **`browser.go`** — `allocCancel` stored instead of discarded. `ShutdownBrowser()` added and called from `Application.Stop()` (was leaking Chrome processes).
+- **`mcp.go`** — `stdout.Scan()` wrapped in goroutine with 30s timeout + `Process.Kill()` on timeout (was holding mutex across blocking I/O, could deadlock).
+- **`kernel.go`** — `publishEvent()` handler goroutines have 5s timeout (was fire-and-forget, could accumulate).
+- **`anthropic_provider.go`** — Stream goroutine channel sends guarded by `select { case <-resultChan: case <-ctx.Done() }` (was missing, could block forever).
+- **`websocket.go`** — Heartbeat goroutine uses `done` channel for clean exit (was relying on write failure alone).
+- **`indexer.go`** — All `Lock/Unlock` pairs use `defer` (3 places were manual, could leak on panic).
 
-11. **`backend/internal/orchestration/orchestrator.go`** — Wraps the kernel with pre/post processing: session management, permission checks, memory saving. `EnhancedOrchestrator` adds async reflection, learning, and pattern detection.
+### Prompt system
 
-### Kernel enhancements (optional, via interfaces)
+- **Default prompt**: Bilingual (Chinese/English), auto-detected from `LANG` env var.
+- **File-based loading**: `LoadSystemPrompt(dir)` → `system.{lang}.md` > `system.md` > hardcoded default.
+- **First-run onboarding**: Template questions → kernel start → LLM-powered 2-round interview → profile generation → `system.md` written → `SetSystemPrompt()` hot-reload.
+- **Runtime hot-reload**: `AgentKernel.SetSystemPrompt()` allows prompt changes without kernel restart.
+- **Config override**: `kernel.system_prompt` in `config.yaml` has highest priority.
+- **Plugin prompts**: Injected into system prompt at startup via `pluginMgr.GetPrompt()`.
+- **Skill prompts**: Injected per-query when keywords match, via `skillManager.InjectPrompt()`.
 
-- **`kernel/reflection.go`** — `SimpleReflection`: evaluates execution quality, detects excessive tool calls, short responses, error keywords.
-- **`kernel/llm_reflection.go`** — `LLMReflection`: LLM-driven reflection with function calling for structured output; falls back to `SimpleReflection` on failure.
-- **`kernel/learner.go`** — `SimpleLearner`: learns patterns, preferences, and error types; persists to `insights.json`.
-- **`kernel/pattern.go`** — `SimplePatternDetector`: detects repeated queries, frequent tool usage, tool sequences, response styles, error patterns.
-- **`kernel/compress.go`** — `SimpleCompressor`: keeps system prompt + last 4 messages, summarizes older messages.
+### Configuration & data layout
 
-### Embedding & Semantic Search
-
-- **`llm/embedder.go`** — `Embedder` interface (`Embed`, `EmbedBatch`, `Dimension`), `NoopEmbedder`, `EmbedderFunc` adapter, `CosineSimilarity` helper.
-- **`llm/gateway.go`** — Gateway adds `Embed`/`EmbedBatch`/`FallbackEmbed` methods, delegates to `Provider.Embed`. `ProviderConfig.EmbeddingModel` for per-provider embedding model config.
-- **`llm/openai_provider.go`** — OpenAIProvider implements `Embed` via `POST /embeddings`; reuses existing HTTP client/auth.
-- **`memory/memory.go`** — `MemoryItem.Embedding []float32` persisted to JSON. `Manager.SetEmbedder()` injection. Semantic search (cosine similarity) → TF-IDF → text match fallback chain.
-- **`knowledge/knowledge.go`** — `Document.Embedding []float32` persisted to JSON. `Base.SetEmbedder()` injection. Same 3-tier search fallback.
-
-### LLM Context Compression
-
-- **`compress/llm_compressor.go`** — `LLMCompressor`: LLM-generated semantic summaries + pending-questions extraction; falls back to `NovelCompressor`.
-
-### Function Calling Planner
-
-- **`orchestration/planner.go`** — `Plan` method tries function calling first (`create_plan` tool with structured schema), falls back to text prompt + JSON extraction.
-
-### Frontend
-
-`frontend/index.html` — Single-page vanilla JS app. ES module imports from `frontend/src/`. Pages: chat, templates, dashboard, scheduled tasks, models. Components: ThinkingVisualizer, CorrectionPanel, ToolCallDisplay. Served via `frontend/serve.py` (Python HTTP server on port 8000).
-
-### Configuration
-
-Config file: `~/.openaide/config.yaml` (or `.json`). Provider types: `openai` or `openai-compatible`. The `server.mode` field controls whether the API server starts: `server` starts it, `direct` skips it (for CLI usage).
-
-### CI/CD
-
-`.github/workflows/build-deploy.yml` — Triggers on push to `master` and `v*` tags. Builds static Go binaries with `CGO_ENABLED=0`, runs tests, packages release tarball with self-extracting installer. On `v*` tags: creates GitHub Release. Optional deploy over SSH with health check.
+```
+~/.openaide/config.yaml       ← global config (LLM providers, keys, server port)
+./data/                        ← project-local data (cfg.Storage.DataDir, default "./data")
+├── prompts/
+│   ├── system.zh.md / system.en.md  ← system prompt (auto-generated, user-editable)
+├── sessions/                  ← file-persisted (crash-recoverable)
+├── memory/                    ← L1/L2/L3 JSON memory
+├── knowledge/                 ← knowledge base + embeddings
+├── skills/                    ← custom skills (JSON)
+├── plugins/                   ← plugin configs
+├── checkpoints/               ← session checkpoints
+├── traces.jsonl               ← execution traces
+├── events/                    ← persisted events
+└── cache/                     ← prompt cache
+```
 
 ### Key patterns
 
 - All inter-module communication uses interfaces defined in `kernel/interfaces.go`
 - The LLM Gateway implements `kernel.LLMProvider` so it can be passed directly to the kernel
-- Session store is in-memory (`SessionStoreAdapter`); not persistent across restarts
-- All 22 tool handlers are fully implemented across 7 files in `internal/tools/`; no stubs
+- File session store is the default (crash-recoverable); in-memory `SessionStoreAdapter` is the fallback
+- All 22 tool handlers are fully implemented across 9 source files + 1 test file in `internal/tools/`
 - DeepSeek-specific behavior is gated by `isDeepSeek()` which checks the base URL and provider name for "deepseek"
+- Prompt is loaded from file with hardcoded fallback; supports both Chinese and English via `$LANG` detection
+- First-run onboarding is interactive: template + LLM interview before TUI starts
+
+### Frontend
+
+`frontend/index.html` — Single-page vanilla JS app. ES module imports from `frontend/src/`. Pages: chat, templates, dashboard, scheduled tasks, models. Components: ThinkingVisualizer, CorrectionPanel, ToolCallDisplay. Served via `frontend/serve.py` (Python HTTP server on port 8000).
+
+### CI/CD
+
+`.github/workflows/build-deploy.yml` — Triggers on push to `master` and `v*` tags. Builds static Go binaries with `CGO_ENABLED=0`, runs tests, packages release tarball with self-extracting installer. On `v*` tags: creates GitHub Release. Optional deploy over SSH with health check.

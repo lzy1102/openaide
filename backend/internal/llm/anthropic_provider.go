@@ -146,6 +146,7 @@ func (p *AnthropicProvider) ChatStream(ctx context.Context, messages []kernel.Me
 		defer close(resultChan)
 		defer resp.Body.Close()
 
+		done := ctx.Done()
 		scanner := bufio.NewScanner(resp.Body)
 		for scanner.Scan() {
 			line := scanner.Text()
@@ -154,7 +155,10 @@ func (p *AnthropicProvider) ChatStream(ctx context.Context, messages []kernel.Me
 			}
 			data := strings.TrimPrefix(line, "data: ")
 			if data == "[DONE]" {
-				resultChan <- kernel.StreamChunk{Done: true}
+				select {
+				case resultChan <- kernel.StreamChunk{Done: true}:
+				case <-done:
+				}
 				return
 			}
 
@@ -166,10 +170,17 @@ func (p *AnthropicProvider) ChatStream(ctx context.Context, messages []kernel.Me
 			switch event.Type {
 			case "content_block_delta":
 				if event.Delta != nil && event.Delta.Text != "" {
-					resultChan <- kernel.StreamChunk{Content: event.Delta.Text}
+					select {
+					case resultChan <- kernel.StreamChunk{Content: event.Delta.Text}:
+					case <-done:
+						return
+					}
 				}
 			case "message_stop":
-				resultChan <- kernel.StreamChunk{Done: true}
+				select {
+				case resultChan <- kernel.StreamChunk{Done: true}:
+				case <-done:
+				}
 				return
 			}
 		}

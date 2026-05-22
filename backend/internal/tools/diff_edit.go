@@ -10,6 +10,27 @@ import (
 	"openaide/backend/internal/kernel"
 )
 
+func fileEditToolDefs() []kernel.ToolDefinition {
+	return []kernel.ToolDefinition{
+		{
+			Type: "function",
+			Function: kernel.FunctionDef{
+				Name:        "diff_edit",
+				Description: "精确搜索替换编辑文件（只修改匹配部分）",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"path": map[string]interface{}{"type": "string", "description": "文件路径"},
+						"search_text": map[string]interface{}{"type": "string", "description": "要搜索的文本（必须唯一）"},
+						"replace_text": map[string]interface{}{"type": "string", "description": "替换后的文本"},
+					},
+					"required": []string{"path", "search_text", "replace_text"},
+				},
+			},
+		},
+	}
+}
+
 // handleDiffEdit 精确搜索替换编辑 — 只修改匹配部分，保持其他内容不变
 func handleDiffEdit(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
 	var args struct {

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os/exec"
 	"sync"
+	"time"
 )
 
 // MCP协议版本: 2024-11-05
@@ -158,7 +159,6 @@ func (c *Client) Close() error {
 
 func (c *Client) call(method string, params interface{}) (json.RawMessage, error) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 
 	c.idSeq++
 	req := jsonrpcRequest{
@@ -175,17 +175,45 @@ func (c *Client) call(method string, params interface{}) (json.RawMessage, error
 	data = append(data, '\n')
 
 	if _, err := c.stdin.Write(data); err != nil {
+		c.mu.Unlock()
 		return nil, err
 	}
 
-	if !c.stdout.Scan() {
-		return nil, fmt.Errorf("no response from MCP server")
+	// 在 goroutine 中读取响应，加超时保护
+	type scanResult struct {
+		data []byte
+		err  error
+	}
+	ch := make(chan scanResult, 1)
+	go func() {
+		if !c.stdout.Scan() {
+			ch <- scanResult{err: fmt.Errorf("no response from MCP server")}
+			return
+		}
+		ch <- scanResult{data: c.stdout.Bytes()}
+	}()
+
+	var respData []byte
+	select {
+	case result := <-ch:
+		if result.err != nil {
+			c.mu.Unlock()
+			return nil, result.err
+		}
+		respData = result.data
+	case <-time.After(30 * time.Second):
+		c.mu.Unlock()
+		c.cmd.Process.Kill() // 超时杀进程，释放阻塞的 Scan() goroutine
+		return nil, fmt.Errorf("MCP server timeout")
 	}
 
 	var resp jsonrpcResponse
-	if err := json.Unmarshal(c.stdout.Bytes(), &resp); err != nil {
+	if err := json.Unmarshal(respData, &resp); err != nil {
+		c.mu.Unlock()
 		return nil, fmt.Errorf("invalid JSON response: %w", err)
 	}
+
+	c.mu.Unlock()
 
 	if resp.Error != nil {
 		return nil, fmt.Errorf("MCP error %d: %s", resp.Error.Code, resp.Error.Message)

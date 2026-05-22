@@ -111,6 +111,7 @@ func (i *Indexer) IndexFile(path string) (*FileIndex, error) {
 	}
 
 	i.mu.Lock()
+	defer i.mu.Unlock()
 	i.index.Files[path] = fileIndex
 
 	// 更新符号索引和包索引
@@ -122,7 +123,6 @@ func (i *Indexer) IndexFile(path string) (*FileIndex, error) {
 	}
 
 	i.index.UpdatedAt = time.Now()
-	i.mu.Unlock()
 
 	return fileIndex, nil
 }
@@ -218,8 +218,8 @@ func (i *Indexer) GetStats() map[string]interface{} {
 // Save 保存索引到磁盘
 func (i *Indexer) Save() error {
 	i.mu.RLock()
+	defer i.mu.RUnlock()
 	data, err := json.MarshalIndent(i.index, "", "  ")
-	i.mu.RUnlock()
 
 	if err != nil {
 		return err
@@ -244,8 +244,8 @@ func (i *Indexer) load() error {
 	}
 
 	i.mu.Lock()
+	defer i.mu.Unlock()
 	i.index = &index
-	i.mu.Unlock()
 	return nil
 }
 

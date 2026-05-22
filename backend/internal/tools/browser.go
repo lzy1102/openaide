@@ -16,11 +16,87 @@ import (
 	"openaide/backend/internal/kernel"
 )
 
+func browserToolDefs() []kernel.ToolDefinition {
+	return []kernel.ToolDefinition{
+		{
+			Type: "function",
+			Function: kernel.FunctionDef{
+				Name:        "browser_navigate",
+				Description: "浏览器导航到URL，等待页面加载",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"url": map[string]interface{}{"type": "string", "description": "目标URL"},
+						"wait_ms": map[string]interface{}{"type": "integer", "description": "等待时间毫秒（默认3000）"},
+					},
+					"required": []string{"url"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: kernel.FunctionDef{
+				Name:        "browser_extract",
+				Description: "提取当前页面文本内容（支持JS渲染后的页面）",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"selector": map[string]interface{}{"type": "string", "description": "CSS选择器（默认body）"},
+					},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: kernel.FunctionDef{
+				Name:        "browser_screenshot",
+				Description: "截取当前页面，返回base64图片",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"full_page": map[string]interface{}{"type": "boolean", "description": "是否全页截图"},
+					},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: kernel.FunctionDef{
+				Name:        "browser_click",
+				Description: "点击页面元素（CSS选择器）",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"selector": map[string]interface{}{"type": "string", "description": "CSS选择器，如 #submit, .btn, button"},
+					},
+					"required": []string{"selector"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: kernel.FunctionDef{
+				Name:        "browser_fill",
+				Description: "在输入框中填写文本",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"selector": map[string]interface{}{"type": "string", "description": "输入框CSS选择器"},
+						"value": map[string]interface{}{"type": "string", "description": "要填写的文本"},
+					},
+					"required": []string{"selector", "value"},
+				},
+			},
+		},
+	}
+}
+
 // ============ Browser Manager ============
 
 var (
 	browserCtx    context.Context
 	browserCancel context.CancelFunc
+	allocCancel   context.CancelFunc
 	browserMu     sync.Mutex
 	browserReady  bool
 )
@@ -61,6 +137,22 @@ func SetBrowserEnabled(enabled bool) {
 	browserGlobalEnabled = enabled
 }
 
+// ShutdownBrowser 关闭浏览器，释放资源
+func ShutdownBrowser() {
+	browserMu.Lock()
+	defer browserMu.Unlock()
+	if !browserReady {
+		return
+	}
+	if browserCancel != nil {
+		browserCancel()
+	}
+	if allocCancel != nil {
+		allocCancel()
+	}
+	browserReady = false
+}
+
 // browserEnabled 检查浏览器功能是否启用
 func browserEnabled() bool {
 	return browserGlobalEnabled || os.Getenv("OPENAIDE_BROWSER") == "true"
@@ -93,7 +185,9 @@ func initBrowser() error {
 		chromedp.WindowSize(1920, 1080),
 	)
 
-	allocCtx, _ := chromedp.NewExecAllocator(context.Background(), opts...)
+	var aCancel context.CancelFunc
+	allocCtx, aCancel := chromedp.NewExecAllocator(context.Background(), opts...)
+	allocCancel = aCancel
 	browserCtx, browserCancel = chromedp.NewContext(allocCtx)
 
 	// 验证浏览器可用（导航到空白页）

@@ -86,15 +86,3 @@ func TestConfig_GetEnabledProviders(t *testing.T) {
 		t.Errorf("Expected 2 enabled providers, got %d", len(enabled))
 	}
 }
-
-func TestConfig_IsToolDangerous(t *testing.T) {
-	cfg := DefaultConfig()
-	cfg.Tools.DangerousTools = []string{"execute_command", "write_file"}
-
-	if !cfg.IsToolDangerous("execute_command") {
-		t.Error("Expected execute_command to be dangerous")
-	}
-	if cfg.IsToolDangerous("read_file") {
-		t.Error("Expected read_file to not be dangerous")
-	}
-}

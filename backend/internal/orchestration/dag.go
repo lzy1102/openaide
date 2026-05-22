@@ -74,7 +74,6 @@ func (e *WorkflowEngine) Execute(ctx context.Context, userID, projectID string, 
 	completed := make(map[string]string) // nodeID → result
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	errCh := make(chan error, len(dag.Nodes))
 
 	for len(completed) < len(dag.Nodes) {
 		ready := e.readyNodes(dag.Nodes, completed)
@@ -84,12 +83,19 @@ func (e *WorkflowEngine) Execute(ctx context.Context, userID, projectID string, 
 			wg.Add(1)
 			go func(n *DAGNode) {
 				defer wg.Done()
-				// 构建包含依赖结果的上下文
-				contextParts := []string{n.Prompt}
+				// 持锁读取 completed，避免与 write goroutine 数据竞争
+				mu.Lock()
+				depResults := make([]string, 0, len(n.DependsOn))
 				for _, depID := range n.DependsOn {
 					if result, ok := completed[depID]; ok {
-						contextParts = append(contextParts, fmt.Sprintf("[上一步结果] %s", result))
+						depResults = append(depResults, result)
 					}
+				}
+				mu.Unlock()
+
+				contextParts := []string{n.Prompt}
+				for _, result := range depResults {
+					contextParts = append(contextParts, fmt.Sprintf("[上一步结果] %s", result))
 				}
 
 				rOpts := opts
@@ -102,7 +108,6 @@ func (e *WorkflowEngine) Execute(ctx context.Context, userID, projectID string, 
 				if err != nil {
 					n.Status = "failed"
 					n.Result = err.Error()
-					errCh <- err
 				} else {
 					n.Status = "done"
 					n.Result = resp.Content

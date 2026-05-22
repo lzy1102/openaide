@@ -13,6 +13,56 @@ import (
 	"openaide/backend/internal/kernel"
 )
 
+func webToolDefs() []kernel.ToolDefinition {
+	return []kernel.ToolDefinition{
+		{
+			Type: "function",
+			Function: kernel.FunctionDef{
+				Name:        "web_search",
+				Description: "联网搜索，获取最新信息",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"query": map[string]interface{}{"type": "string", "description": "搜索关键词"},
+						"limit": map[string]interface{}{"type": "integer", "description": "结果数量（默认5）"},
+					},
+					"required": []string{"query"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: kernel.FunctionDef{
+				Name:        "web_fetch",
+				Description: "抓取网页内容，提取正文文本",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"url": map[string]interface{}{"type": "string", "description": "网页URL"},
+						"max_length": map[string]interface{}{"type": "integer", "description": "最大返回长度"},
+					},
+					"required": []string{"url"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: kernel.FunctionDef{
+				Name:        "ai_search",
+				Description: "AI增强搜索：搜索+抓取+分析一步到位",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"query": map[string]interface{}{"type": "string", "description": "搜索查询"},
+						"fetch_pages": map[string]interface{}{"type": "boolean", "description": "是否抓取页面内容"},
+					},
+					"required": []string{"query"},
+				},
+			},
+		},
+	}
+}
+
 // handleWebSearch 联网搜索
 func handleWebSearch(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
 	var args struct {
