@@ -154,6 +154,66 @@ OpenAIDE is fully compatible with the [Claude Code official plugin specification
 - Bridge to OpenCode/Codex/Cursor via `acplugin` conversion tool
 - MCP: universal standard across all 5 major coding agents
 
+### Installing plugins
+
+**Method 1: Claude official plugins**
+
+```bash
+# Clone the official repository
+git clone https://github.com/anthropics/claude-plugins-official.git /tmp/claude-plugins
+
+# Copy any plugin you want into your project's plugins directory
+cp -r /tmp/claude-plugins/plugins/code-review ./data/plugins/
+
+# Or install globally (shared across all projects)
+cp -r /tmp/claude-plugins/plugins/code-review ~/.openaide/plugins/
+```
+
+**Method 2: Any Claude-compatible plugin from the community**
+
+```bash
+# Plugins from GitHub, npm, or any source — just copy the directory
+cp -r ~/Downloads/some-plugin ./data/plugins/
+```
+
+**Method 3: One-liner install from GitHub**
+
+```bash
+# Clone a plugin repo directly into the plugins directory
+git clone https://github.com/user/some-plugin.git ./data/plugins/some-plugin
+```
+
+**Where to find plugins:**
+- [Claude Plugins Official](https://github.com/anthropics/claude-plugins-official) — 30+ internal + 15+ partner plugins (LSP, Git, PR review, Firebase, Linear, Terraform, etc.)
+- [Superpowers](https://github.com/obra/superpowers) — most popular cross-agent skill framework (15k+ stars), supports Claude Code + OpenCode + Codex
+- npm: `npx acplugin convert` — converts Claude plugins to OpenCode/Codex/Cursor formats (and vice versa)
+- Search GitHub: [`claude-plugin` topic](https://github.com/topics/claude-plugin)
+
+**Verification:**
+
+```bash
+# Start OpenAIDE, check logs for plugin discovery
+openaide --verbose 2>&1 | grep -i "claude\|plugin\|hook"
+
+# Skills appear as slash commands: type / in the TUI to see registered skills
+```
+
+**Plugin directory structure recognized by OpenAIDE:**
+
+```
+./data/plugins/
+├── my-json-plugin.json              ← Legacy JSON format
+└── code-review/                     ← Claude format (directory)
+    ├── .claude-plugin/
+    │   └── plugin.json              ← Required: {name, version, description}
+    ├── skills/
+    │   └── review/
+    │       └── SKILL.md             ← YAML frontmatter + Markdown body
+    ├── .mcp.json                    ← Optional: MCP server config
+    └── hooks/
+        └── hooks.json               ← Optional: event-driven shell commands
+```
+
 ### Configuration & data layout
 
 ```
