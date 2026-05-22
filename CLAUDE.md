@@ -55,10 +55,10 @@ cmd/server (API server)          cmd/cli (interactive CLI)
 ### Layered design
 
 1. **`backend/internal/infra/`** (4 files) — Application container, split by concern:
-   - `app.go` — `Application` struct, `NewApplication` (~100 lines of high-level wiring), `Start`, `Stop` (calls `ShutdownBrowser`, MCP shutdown, task queue stop)
+   - `app.go` — `Application` struct, `NewApplication` (~150 lines), `Start`, `Stop`. MCP wiring from both `config.yaml` and Claude `.mcp.json` plugins.
    - `app_llm.go` — `createLLMGateway()` — provider registration, router, prompt cache
-   - `app_kernel.go` — `createKernel()` — kernel + all enhancements (reflection, learner, skills, checkpointer, tracer, plugins, knowledge base, event bus, compressor)
-   - `app_channels.go` — `setupChannels()` — MCP connections, webhook/Feishu/Telegram, task queue
+   - `app_kernel.go` — `createKernel()` — kernel + all enhancements. Claude skills injection (`DiscoverClaudeSkills()` → `AddClaudeSkill()`). Claude hooks wiring (`DiscoverClaudeHooks()` → `agentKernel.Subscribe()` with shell execution).
+   - `app_channels.go` — `setupChannels()` — webhook/Feishu/Telegram, task queue
 
 2. **`backend/internal/kernel/`** (split from single monolithic file):
    - `kernel.go` — `AgentKernel` struct, Config, constructor, all Set* methods, state management, event system, session/message/tool helpers. Includes `SetSystemPrompt()` for hot-reloading prompts at runtime.
@@ -128,6 +128,31 @@ cmd/server (API server)          cmd/cli (interactive CLI)
 - **Config override**: `kernel.system_prompt` in `config.yaml` has highest priority.
 - **Plugin prompts**: Injected into system prompt at startup via `pluginMgr.GetPrompt()`.
 - **Skill prompts**: Injected per-query when keywords match, via `skillManager.InjectPrompt()`.
+
+### Plugin system (Claude Code compatible)
+
+OpenAIDE is fully compatible with the [Claude Code official plugin specification](https://github.com/anthropics/claude-plugins-official). Drop a Claude plugin directory into `./data/plugins/` and it is auto-discovered.
+
+**Supported plugin components:**
+
+| Component | File | Phase | Description |
+|-----------|------|-------|-------------|
+| Manifest | `.claude-plugin/plugin.json` | Phase 1 | Plugin metadata (name, version, description) |
+| Skills | `skills/*/SKILL.md` | Phase 1 | YAML frontmatter + Markdown body. Auto-discovered, registered as slash commands (`/skill-name`). Keywords auto-generated from name + description (Chinese + English). Claude tool names mapped to OpenAIDE equivalents (Read→read_file, Bash→execute_command, etc.) |
+| MCP Servers | `.mcp.json` | Phase 2 | Declarative MCP server config: `{name: {type, command, args, url}}`. Stdio servers auto-connected, tools auto-registered. SSE/HTTP logged and skipped (limited to stdio transport). |
+| Hooks | `hooks/hooks.json` | Phase 2 | Event-driven shell commands: `[{event, command, tools}]`. Claude events mapped to OpenAIDE: `PreToolUse→tool_call_started`, `PostToolUse→tool_call_ended`, `Stop→session_ended`, `SessionStart→session_created`. 30s timeout per hook, non-blocking goroutine. Tool name filter support with reverse mapping. |
+
+**Code locations:**
+- `plugin/plugin.go` — Manager: JSON format plugins + Claude format discovery via `loadClaudeFromDisk()`
+- `plugin/plugin_claude.go` — All Claude format parsing: `DiscoverClaudePlugins()`, `DiscoverClaudeSkills()`, `DiscoverClaudeMCP()`, `DiscoverClaudeHooks()`, YAML frontmatter parsing, tool name mapping, keyword generation, event mapping
+- `kernel/skill.go` — `AddClaudeSkill()` external injection, `GetSlashCommands()`, `autoKeywords()`
+- `infra/app.go` — MCP wiring: `DiscoverClaudeMCP()` → `mcpManager.ConnectServer()` → register tools
+- `infra/app_kernel.go` — Skills wiring: `DiscoverClaudeSkills()` → `sm.AddClaudeSkill()`; Hooks wiring: `DiscoverClaudeHooks()` → `agentKernel.Subscribe()` with shell execution
+
+**Ecosystem compatibility:**
+- Full Claude Code plugin format support
+- Bridge to OpenCode/Codex/Cursor via `acplugin` conversion tool
+- MCP: universal standard across all 5 major coding agents
 
 ### Configuration & data layout
 
