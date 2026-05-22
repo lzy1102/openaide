@@ -125,21 +125,52 @@ func (c *LLMCompressor) generateSummary(ctx context.Context, messages []kernel.M
 		parts = append(parts, prefix+": "+content)
 	}
 
-	input := fmt.Sprintf(`Compress the following conversation into a concise summary (2-3 sentences).
-Keep all key facts, decisions, code patterns, and user preferences.
-Do NOT lose technical details.
+	input := fmt.Sprintf(`Compress the conversation below into a structured summary. The summary replaces the full history in the LLM's context window, so you must preserve everything needed for future reasoning.
 
-Conversation:
+## Priority order (must keep, from most important)
+
+1. **User requests & intents** — What did the user ask for? Include ALL explicit requests, even if already completed (the LLM may need to refer back).
+2. **Decisions & agreements** — What was decided? "Use PostgreSQL instead of MySQL", "Agreed on 3-phase plan", "User prefers concise answers".
+3. **Technical facts & findings** — File paths read, error messages seen, command outputs, code patterns identified, test results.
+4. **Current task state** — What is the in-progress task? Which step are we on? What remains to be done?
+5. **Tool call results** — Only keep results that changed state or returned important data. Skip trivial outputs (ls results, small reads with no findings).
+
+## What to discard (waste, not worth keeping)
+
+- Greetings, politeness, acknowledgments ("got it", "thanks", "will do")
+- Boilerplate tool output (long ls listings, large file reads with no relevant content)
+- Redundant confirmations (asking "shall I proceed?" after user already said yes)
+- Failed attempts that were already corrected (keep only the final successful approach)
+
+## Output format
+
+Output a plain text summary structured as:
+
+[用户意图] What the user ultimately wants to achieve
+[关键事实] File paths, error messages, data, decisions (as bullet list if multiple)
+[当前状态] Current step, what's done, what remains
+[注意事项] Any user preferences, constraints, or pitfalls to avoid
+
+Keep the total under 200 words. Write in the same language the user used (Chinese/English).
+
+## Conversation
 %s
 
-Summary:`, strings.Join(parts, "\n"))
+## Summary`, strings.Join(parts, "\n"))
 
 	resp, err := c.llm.Chat(ctx, []kernel.Message{
-		{Role: "system", Content: "You are a conversation compression expert. Produce concise, information-dense summaries."},
+		{Role: "system", Content: `You are a context compression expert for an AI coding agent. Your summaries replace the full conversation history in the agent's context window. The agent must be able to continue working from your summary alone.
+
+Rules:
+- Preserve: user intents, decisions, technical facts, current task state
+- Discard: greetings, boilerplate output, redundant confirmations, failed attempts
+- Be specific: "read main.go:42-58, found login handler with SQL injection risk" not "read some code"
+- Match the user's language (Chinese or English)
+- Under 200 words`},
 		{Role: "user", Content: input},
 	}, nil, map[string]interface{}{
-		"max_tokens":  300,
-		"temperature": 0.3,
+		"max_tokens":  400,
+		"temperature": 0.2,
 	})
 	if err != nil {
 		slog.Debug("LLM compression failed", "error", err)

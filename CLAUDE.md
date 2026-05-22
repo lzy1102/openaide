@@ -108,6 +108,17 @@ cmd/server (API server)          cmd/cli (interactive CLI)
 - **`websocket.go`** — Heartbeat goroutine uses `done` channel for clean exit (was relying on write failure alone).
 - **`indexer.go`** — All `Lock/Unlock` pairs use `defer` (3 places were manual, could leak on panic).
 
+### LLM Context Compression
+
+- **`kernel/compress.go`** — `SimpleCompressor`: separates system messages from history, keeps last 4 messages verbatim, compresses older messages into a `[历史对话摘要]` by truncating each to 50 chars + joining with `;`. Falls back when LLM compression fails.
+- **`compress/llm_compressor.go`** — `LLMCompressor`: triggered each ReAct round when `EstimateTokens(messages) > maxTokens`. Sends old messages to LLM for semantic compression with a structured prompt:
+  - **Retention priorities** (ordered): user intents → decisions/agreements → technical facts (file paths, errors, code patterns) → current task state → tool call results
+  - **Explicit discard rules**: greetings, boilerplate tool output, redundant confirmations, already-corrected failed attempts
+  - **Output format**: structured `[用户意图] [关键事实] [当前状态] [注意事项]`, under 200 words, matching user's language
+  - **Parameters**: `max_tokens=400`, `temperature=0.2` for deterministic summaries
+  - `extractPendingQuestions()`: detects unanswered user queries in compressed messages, re-injects as `[待解决问题]` to prevent information loss
+  - **Fallback chain**: LLM call fails → `SimpleCompressor` → returns original messages if everything fails
+
 ### Prompt system
 
 - **Default prompt**: Bilingual (Chinese/English), auto-detected from `LANG` env var.
