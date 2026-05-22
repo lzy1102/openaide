@@ -302,3 +302,129 @@ func buildPromptFromSkills(pluginDir string) string {
 
 	return strings.Join(parts, "\n\n---\n\n")
 }
+
+// ============ .mcp.json 支持 ============
+
+// MCPServerEntry .mcp.json 中的单个 MCP 服务器配置
+type MCPServerEntry struct {
+	Type    string            `json:"type"`
+	Command string            `json:"command,omitempty"`
+	Args    []string          `json:"args,omitempty"`
+	URL     string            `json:"url,omitempty"`
+	Env     map[string]string `json:"env,omitempty"`
+}
+
+// DiscoverClaudeMCP 从 Claude 插件目录中发现 .mcp.json
+func DiscoverClaudeMCP(dir string) map[string]MCPServerEntry {
+	result := make(map[string]MCPServerEntry)
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return result
+	}
+
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		pluginDir := filepath.Join(dir, e.Name())
+		// 只处理 Claude 格式插件
+		if _, err := os.Stat(filepath.Join(pluginDir, ".claude-plugin", "plugin.json")); os.IsNotExist(err) {
+			continue
+		}
+
+		mcpPath := filepath.Join(pluginDir, ".mcp.json")
+		data, err := os.ReadFile(mcpPath)
+		if err != nil {
+			continue
+		}
+
+		var servers map[string]MCPServerEntry
+		if err := json.Unmarshal(data, &servers); err != nil {
+			continue
+		}
+
+		for name, srv := range servers {
+			key := e.Name() + "/" + name
+			result[key] = srv
+		}
+	}
+
+	return result
+}
+
+// ============ hooks/hooks.json 支持 ============
+
+// HookEntry hooks.json 中的单个 hook
+type HookEntry struct {
+	Event   string   `json:"event"`
+	Command string   `json:"command"`
+	Tools   []string `json:"tools,omitempty"`
+}
+
+// HookConfig hooks.json 格式
+type HookConfig struct {
+	Hooks []HookEntry `json:"hooks"`
+}
+
+// Claude event → OpenAIDE event
+var claudeToOpenAIDEEvent = map[string]string{
+	"PreToolUse":   "tool_call_started",
+	"PostToolUse":  "tool_call_ended",
+	"Stop":         "session_ended",
+	"SessionStart": "session_created",
+	"UserPromptSubmit": "query_received",
+}
+
+// DiscoverClaudeHooks 从 Claude 插件目录中发现 hooks/hooks.json
+func DiscoverClaudeHooks(dir string) []HookEntry {
+	var result []HookEntry
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return result
+	}
+
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		pluginDir := filepath.Join(dir, e.Name())
+		if _, err := os.Stat(filepath.Join(pluginDir, ".claude-plugin", "plugin.json")); os.IsNotExist(err) {
+			continue
+		}
+
+		hookPath := filepath.Join(pluginDir, "hooks", "hooks.json")
+		data, err := os.ReadFile(hookPath)
+		if err != nil {
+			continue
+		}
+
+		var cfg HookConfig
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			continue
+		}
+
+		result = append(result, cfg.Hooks...)
+	}
+
+	return result
+}
+
+// MapClaudeToolReverse 将 OpenAIDE 工具名反向映射回 Claude 工具名（用于 hook 匹配）
+func MapClaudeToolReverse(openaideName string) string {
+	for c, o := range claudeToolMap {
+		if o == openaideName {
+			return c
+		}
+	}
+	return ""
+}
+
+// MapClaudeEvent 将 Claude 事件名映射到 OpenAIDE 事件名
+func MapClaudeEvent(claudeEvent string) string {
+	if mapped, ok := claudeToOpenAIDEEvent[claudeEvent]; ok {
+		return mapped
+	}
+	return ""
+}

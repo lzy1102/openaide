@@ -103,6 +103,68 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 			}
 		}
 	}
+	// Claude 插件中的 .mcp.json
+	if cfg.MCP.Enabled {
+		for name, srv := range plugin.DiscoverClaudeMCP(cfg.Storage.DataDir + "/plugins") {
+			if srv.Type != "stdio" && srv.Type != "" {
+				slog.Debug("MCP server type not supported, skipping", "name", name, "type", srv.Type)
+				continue
+			}
+			cmd := srv.Command
+			if cmd == "" {
+				slog.Warn("MCP server missing command, skipping", "name", name)
+				continue
+			}
+			slog.Info("Connecting MCP server (Claude plugin)", "name", name, "command", cmd)
+			if err := mcpManager.ConnectServer(name, cmd, srv.Args...); err != nil {
+				slog.Warn("Failed to connect Claude MCP server, skipping", "name", name, "error", err)
+				continue
+			}
+			for _, mcpTool := range mcpManager.GetServerTools(name) {
+				def := kernel.ToolDefinition{
+					Type: "function",
+					Function: kernel.FunctionDef{
+						Name:        mcpTool.Name,
+						Description: mcpTool.Description,
+						Parameters:  mcpTool.InputSchema,
+					},
+				}
+				serverID, toolName := name, mcpTool.Name
+				handler := kernel.ToolHandler(func(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
+					var args map[string]interface{}
+					if arguments != "" {
+						if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+							return &kernel.ToolResult{Error: fmt.Sprintf("invalid args: %v", err)}, nil
+						}
+					}
+					result, err := mcpManager.CallTool(serverID, toolName, args)
+					if err != nil {
+						return &kernel.ToolResult{Error: err.Error()}, nil
+					}
+					var content string
+					for _, item := range result.Content {
+						if item.Type == "text" && item.Text != "" {
+							if content != "" {
+								content += "\n"
+							}
+							content += item.Text
+						}
+					}
+					errStr := ""
+					if result.IsError {
+						errStr = content
+					}
+					return &kernel.ToolResult{Content: content, Error: errStr}, nil
+				})
+				if err := toolRegistry.Register(def, handler); err != nil {
+					slog.Warn("Claude MCP tool registration skipped, duplicate", "tool", mcpTool.Name, "error", err)
+				} else {
+					slog.Info("Claude MCP tool registered", "server", name, "tool", mcpTool.Name)
+				}
+			}
+		}
+	}
+
 	app.MCPManager = mcpManager
 
 	// 4. 记忆管理器

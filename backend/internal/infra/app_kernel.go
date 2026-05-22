@@ -3,6 +3,9 @@ package infra
 import (
 	"context"
 	"log/slog"
+	"os"
+	"os/exec"
+	"time"
 
 	"openaide/backend/internal/compress"
 	"openaide/backend/internal/config"
@@ -106,5 +109,45 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 		eventBus.Publish(evt)
 	}))
 
+	// Claude hooks.json: 事件 → shell 命令
+	for _, hook := range plugin.DiscoverClaudeHooks(cfg.Storage.DataDir + "/plugins") {
+		hook := hook
+		oevt := plugin.MapClaudeEvent(hook.Event)
+		if oevt == "" {
+			slog.Debug("Unknown Claude hook event, skipping", "event", hook.Event)
+			continue
+		}
+		agentKernel.Subscribe(kernel.EventHandlerFunc(func(evt kernel.Event) {
+			if evt.Type != oevt {
+				return
+			}
+			if len(hook.Tools) > 0 {
+				toolName, _ := evt.Data["tool"].(string)
+				if !contains(hook.Tools, toolName) && !contains(hook.Tools, plugin.MapClaudeToolReverse(toolName)) {
+					return
+				}
+			}
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				cmd := exec.CommandContext(ctx, "sh", "-c", hook.Command)
+				cmd.Env = append(os.Environ(), "OPENAIDE_EVENT="+evt.Type)
+				if out, err := cmd.CombinedOutput(); err != nil {
+					slog.Debug("Hook command failed", "event", hook.Event, "error", err, "output", string(out))
+				}
+			}()
+		}))
+		slog.Info("Claude hook registered", "event", hook.Event, "openaide_event", oevt)
+	}
+
 	return agentKernel, kb, pluginMgr
+}
+
+func contains(slice []string, s string) bool {
+	for _, item := range slice {
+		if item == s {
+			return true
+		}
+	}
+	return false
 }
