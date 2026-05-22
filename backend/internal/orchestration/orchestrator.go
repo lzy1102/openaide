@@ -55,17 +55,20 @@ func (o *Orchestrator) SetKnowledgeCollector(kc kernel.KnowledgeCollector) {
 	o.knowledge = kc
 }
 
-// ProcessQuery 处理用户查询 — 自动检测复杂任务并使用规划器
+// ProcessQuery 处理用户查询 — LLM 自动判断是否需要拆分任务
 func (o *Orchestrator) ProcessQuery(ctx context.Context, userID, projectID, content string, opts kernel.QueryOptions) (*kernel.Response, error) {
-	planner := NewPlanner(o.llmGateway)
-	needsPlan := opts.ForcePlan || planner.needsPlanning(content)
-	if needsPlan {
-		plan, err := planner.Plan(ctx, content)
-		if err == nil && len(plan.Subtasks) > 1 {
-			return o.executePlan(ctx, userID, projectID, content, plan, opts)
-		}
+	// 极短查询直接执行，不浪费 LLM 调用
+	if !opts.ForcePlan && len([]rune(content)) < 15 {
+		return o.processSingle(ctx, userID, projectID, content, opts)
 	}
 
+	planner := NewPlanner(o.llmGateway)
+	plan, err := planner.Plan(ctx, content)
+	if err == nil && len(plan.Subtasks) > 1 {
+		return o.executePlan(ctx, userID, projectID, content, plan, opts)
+	}
+
+	// LLM 判断不需要拆分（返回1个子任务）→ 直接执行
 	return o.processSingle(ctx, userID, projectID, content, opts)
 }
 

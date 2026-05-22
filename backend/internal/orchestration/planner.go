@@ -34,14 +34,20 @@ func NewPlanner(llm kernel.LLMProvider) *Planner {
 	return &Planner{llm: llm}
 }
 
-var planningPrompt = `你是一个任务规划专家。将用户的复杂请求拆分为可执行的子任务。
+var planningPrompt = `你是一个任务规划专家。分析用户请求，自行判断是否需要拆分为子任务。
+
+## 何时拆分
+- 请求涉及多个独立步骤 → 拆分
+- 请求需要先分析再行动 → 拆分
+- 请求包含多个文件/模块 → 拆分
+- 请求是单一明确操作 → **不拆分**，返回1个子任务
+- 请求是简单问答 → **不拆分**，返回1个子任务
 
 ## 规则
-1. 每个子任务应该是独立的、可执行的一步操作
+1. 每个子任务应该是独立可执行的一步
 2. 子任务数不超过5个
-3. 如果请求很简单（单步可完成），返回1个子任务即可
-4. 每个子任务描述要具体，包含"做什么"和"怎么做"
-5. 标注建议使用的工具：read_file/write_file/execute_command/list_directory/search_files/git_status/search_knowledge/add_knowledge
+3. 简单请求返回1个子任务（title和description都用原始请求）
+4. 标注建议工具：read_file/write_file/execute_command/list_directory/search_files/git_status/search_knowledge/add_knowledge
 
 ## 输出格式（严格JSON）
 {
@@ -94,18 +100,14 @@ var planTool = kernel.ToolDefinition{
 	},
 }
 
-// Plan 分析请求并生成任务规划
-// 优先使用 function calling 获取结构化输出，失败则回退到文本 JSON 解析
+// Plan 通过 LLM 分析请求并生成任务规划。
+// LLM 自主判断是否需要拆分：简单请求返回 1 个子任务，复杂请求返回多个。
 func (p *Planner) Plan(ctx context.Context, query string) (*Plan, error) {
 	defaultPlan := &Plan{
 		Goal: query,
 		Subtasks: []SubTask{{
 			ID: 1, Title: query, Description: query,
 		}},
-	}
-
-	if !p.needsPlanning(query) {
-		return defaultPlan, nil
 	}
 
 	// 1. 尝试 function calling 规划
@@ -126,7 +128,7 @@ func (p *Planner) Plan(ctx context.Context, query string) (*Plan, error) {
 // planWithFunctionCall 使用 function calling 获取结构化规划
 func (p *Planner) planWithFunctionCall(ctx context.Context, query string) (*Plan, error) {
 	messages := []kernel.Message{
-		{Role: "system", Content: "You are a task planner. Analyze the user's request and create a structured plan."},
+		{Role: "system", Content: "You are a task planner. Analyze the user's request. For simple single-step requests, return exactly 1 subtask. Only split into multiple subtasks when the request genuinely requires multiple steps."},
 		{Role: "user", Content: query},
 	}
 
@@ -164,29 +166,6 @@ func (p *Planner) planWithTextPrompt(ctx context.Context, query string) (*Plan, 
 	return parsePlan(resp.Content)
 }
 
-// needsPlanning 判断是否需要任务规划（简单问题跳过）
-func (p *Planner) needsPlanning(query string) bool {
-	// 短问题不需要规划
-	if len([]rune(query)) < 30 {
-		return false
-	}
-
-	// 包含多步骤关键词
-	multiStep := []string{
-		"然后", "再", "并且", "同时", "分别",
-		"先", "接着", "最后", "之后", "全部",
-		"所有", "每个", "逐个", "依次",
-		"first", "then", "and", "also", "all",
-		"each", "every", "both",
-	}
-	for _, kw := range multiStep {
-		if strings.Contains(strings.ToLower(query), kw) {
-			return true
-		}
-	}
-
-	return len([]rune(query)) > 100 // 超长问题也需要规划
-}
 
 func parsePlanFromFC(arguments string) (*Plan, error) {
 	var plan Plan
