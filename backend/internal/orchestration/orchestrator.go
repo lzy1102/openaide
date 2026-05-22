@@ -11,6 +11,9 @@ import (
 	"openaide/backend/internal/tools"
 )
 
+// PlanApprover 规划审批回调：返回 true 表示批准执行
+type PlanApprover func(plan *Plan) bool
+
 // Orchestrator 编排器 - 协调内核与外部系统
 type Orchestrator struct {
 	kernel      kernel.Kernel
@@ -21,6 +24,8 @@ type Orchestrator struct {
 	compressor  kernel.ContextCompressor
 	permission  kernel.PermissionChecker
 	knowledge   kernel.KnowledgeCollector
+	approver    PlanApprover // 规划审批回调（nil = 自动批准）
+	team        *Team        // 多 Agent 团队（可选）
 }
 
 // NewOrchestrator 创建编排器
@@ -55,6 +60,16 @@ func (o *Orchestrator) SetKnowledgeCollector(kc kernel.KnowledgeCollector) {
 	o.knowledge = kc
 }
 
+// SetPlanApprover 设置规划审批回调（用于交互式确认）
+func (o *Orchestrator) SetPlanApprover(approver PlanApprover) {
+	o.approver = approver
+}
+
+// SetTeam 设置多 Agent 团队
+func (o *Orchestrator) SetTeam(t *Team) {
+	o.team = t
+}
+
 // ProcessQuery 处理用户查询 — LLM 自动判断是否需要拆分任务
 func (o *Orchestrator) ProcessQuery(ctx context.Context, userID, projectID, content string, opts kernel.QueryOptions) (*kernel.Response, error) {
 	// 极短查询直接执行，不浪费 LLM 调用
@@ -65,6 +80,13 @@ func (o *Orchestrator) ProcessQuery(ctx context.Context, userID, projectID, cont
 	planner := NewPlanner(o.llmGateway)
 	plan, err := planner.Plan(ctx, content)
 	if err == nil && len(plan.Subtasks) > 1 {
+		// 审批门：需要用户确认规划
+		if o.approver != nil && !o.approver(plan) {
+			return &kernel.Response{
+				Content:   "规划已取消。",
+				ToolCalls: 0,
+			}, nil
+		}
 		return o.executePlan(ctx, userID, projectID, content, plan, opts)
 	}
 
@@ -352,15 +374,21 @@ func (e *EnhancedOrchestrator) enhance(ctx context.Context, userID, projectID, q
 	}
 }
 
-// executePlan 完整任务生命周期：执行 → 测试 → 验收
+// executePlan 完整任务生命周期：执行(TDD) → 测试 → 验收（多 Agent 角色分工）
 func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, content string, plan *Plan, opts kernel.QueryOptions) (*kernel.Response, error) {
 	var results []string
 	totalTools := 0
 
-	// Phase 1: 执行 — 逐个完成子任务
+	// 角色提示词注入
+	coderPrompt := o.rolePrompt("coder")
+	reviewerPrompt := o.rolePrompt("reviewer")
+	executorPrompt := o.rolePrompt("executor")
+
+	// Phase 1: 执行 — 逐个完成子任务（程序员角色 + TDD）
 	for i, st := range plan.Subtasks {
-		subQuery := fmt.Sprintf("## 总体目标: %s\n## 当前步骤 (%d/%d): %s\n## 具体要求: %s\n\n请完成此步骤的任务。",
-			plan.Goal, i+1, len(plan.Subtasks), st.Title, st.Description)
+		tddInstruction := "\n\n## TDD 原则：请先编写测试用例，确认测试失败后再实现功能。实现后运行测试确认通过。"
+		subQuery := fmt.Sprintf("%s## 总体目标: %s\n## 当前步骤 (%d/%d): %s\n## 具体要求: %s\n%s\n\n请完成此步骤的任务。",
+			coderPrompt, plan.Goal, i+1, len(plan.Subtasks), st.Title, st.Description, tddInstruction)
 
 		if i > 0 {
 			subQuery += fmt.Sprintf("\n\n## 已完成的步骤结果:\n%s", strings.Join(results, "\n"))
@@ -377,19 +405,19 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 
 	execSummary := strings.Join(results, "\n\n---\n\n")
 
-	// Phase 2: 测试验证 — 检查结果是否正确
-	testQuery := fmt.Sprintf(`## 总体目标: %s
+	// Phase 2: 测试验证（执行者角色）
+	testQuery := fmt.Sprintf(`%s## 总体目标: %s
 
 ## 已完成的工作:
 %s
 
 ## 你的任务：验证以上工作是否完整正确
-1. 检查代码是否能编译通过（如果有编译错误，请修复）
-2. 检查逻辑是否正确（如果有 bug，请修复）
-3. 检查是否遗漏了任何需求
-4. 如果有问题，请直接修复；如果一切正常，报告"验证通过"
+1. 运行编译/构建命令，确认无报错
+2. 运行测试，确认全部通过
+3. 检查逻辑正确性和需求覆盖率
+4. 发现问题请直接修复
 
-请开始验证。`, plan.Goal, execSummary)
+请开始验证。`, executorPrompt, plan.Goal, execSummary)
 
 	testResp, testErr := o.processSingle(ctx, userID, projectID, testQuery, opts)
 	var testReport string
@@ -400,8 +428,8 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 		totalTools += testResp.ToolCalls
 	}
 
-	// Phase 3: 验收报告 — 生成最终总结
-	reviewQuery := fmt.Sprintf(`## 总体目标: %s
+	// Phase 3: 验收报告（审查者角色）
+	reviewQuery := fmt.Sprintf(`%s## 总体目标: %s
 
 ## 执行结果:
 %s
@@ -416,7 +444,7 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 3. **验证状态** — 是否通过测试
 4. **遗留问题** — 如果没有就写"无"
 
-输出格式：Markdown，不要用代码块包裹。`, plan.Goal, execSummary, testReport)
+输出格式：Markdown，不要用代码块包裹。`, reviewerPrompt, plan.Goal, execSummary, testReport)
 
 	reviewResp, reviewErr := o.processSingle(ctx, userID, projectID, reviewQuery, opts)
 	var finalReport string
@@ -435,4 +463,17 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 		TokensUsed: 0,
 		Duration:   0,
 	}, nil
+}
+
+// rolePrompt 获取指定角色的系统提示词（用于多 Agent 分工）
+func (o *Orchestrator) rolePrompt(roleName string) string {
+	if o.team == nil {
+		return ""
+	}
+	role := o.team.GetRole(roleName)
+	if role == nil {
+		return ""
+	}
+	return fmt.Sprintf("## 你的角色: %s\n%s\n\n## 可用工具: %s\n",
+		role.Name, role.Prompt, strings.Join(role.Tools, ", "))
 }

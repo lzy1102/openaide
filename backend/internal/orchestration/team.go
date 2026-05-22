@@ -31,6 +31,14 @@ func NewTeam(o *Orchestrator) *Team {
 	}
 }
 
+// GetRole 获取指定角色
+func (t *Team) GetRole(name string) *TeamRole {
+	if t == nil {
+		return nil
+	}
+	return t.roles[name]
+}
+
 func defaultRoles() map[string]*TeamRole {
 	return map[string]*TeamRole{
 		"analyst": {

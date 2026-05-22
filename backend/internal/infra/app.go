@@ -196,6 +196,8 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 	if kb != nil {
 		orch.SetKnowledgeCollector(kb)
 	}
+	// 接入多 Agent 团队（分析/编码/审查/执行角色分工）
+	orch.SetTeam(orchestration.NewTeam(orch))
 	app.Orchestrator = orch
 
 	// 8. API 服务器
