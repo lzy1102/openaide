@@ -3,12 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"io"
-	"net/http"
-	"os"
-	"os/exec"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -17,6 +12,7 @@ import (
 
 	"openaide/backend/internal/infra"
 	"openaide/backend/internal/kernel"
+	"openaide/backend/internal/lang"
 	"openaide/backend/internal/llm"
 )
 
@@ -92,13 +88,11 @@ type model struct {
 
 	providers   []llm.ProviderInfo
 	selProvider int
-
-	architectMode bool
 }
 
 func initModel(app *infra.Application, continueSess bool) *model {
 	ti := textinput.New()
-	ti.Placeholder = "Type a message... (/help for commands)"
+	ti.Placeholder = lang.T("tui.placeholder")
 	ti.Prompt = "❯ "
 	ti.Focus()
 	ti.CharLimit = 4000
@@ -313,7 +307,7 @@ func (m *model) updateChat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.currentSess != nil {
 			sessionID = m.currentSess.ID
 		}
-		go doStream(m.program, m.app, sessionID, query, m.architectMode)
+		go doStream(m.program, m.app, sessionID, query)
 		return m, nil
 
 	case "up":
@@ -388,7 +382,7 @@ func (m *model) handleCommand(cmd string) (tea.Model, tea.Cmd) {
 	case "/model":
 		if len(parts) >= 2 {
 			m.app.SetModel(parts[1])
-			m.addSystemMsg(fmt.Sprintf("Switched model to: %s", parts[1]))
+			m.addSystemMsg(lang.T("tui.model_switched", parts[1]))
 		} else {
 			m.providers = m.app.LLMGateway.GetProviderInfos()
 			m.selProvider = 0
@@ -403,146 +397,11 @@ func (m *model) handleCommand(cmd string) (tea.Model, tea.Cmd) {
 		}
 		m.input.SetValue("")
 		return m, nil
-	case "/cost":
-		m.addSystemMsg(fmt.Sprintf("Session stats:\n  Messages: %d\n  Tokens used: %d\n  Tool calls: %d\n  Session ID: %s",
-			len(m.messages), m.tokens, m.tools,
-			mapStr(m.currentSess, func(s *kernel.Session) string { return s.ID })))
-		m.input.SetValue("")
-		return m, nil
-	case "/diff":
-		out, err := exec.Command("git", "diff", "--stat").CombinedOutput()
-		if err != nil {
-			m.addSystemMsg(fmt.Sprintf("Git error: %v", err))
-		} else if len(out) == 0 {
-			m.addSystemMsg("No uncommitted changes.")
-		} else {
-			m.addSystemMsg(fmt.Sprintf("Changes:\n%s\n\nRun /git diff to see full diff.", strings.TrimSpace(string(out))))
-		}
-		m.input.SetValue("")
-		return m, nil
-	case "/add":
-		if len(parts) < 2 {
-			m.addSystemMsg("Usage: /add <filepath>")
-		} else {
-			data, err := os.ReadFile(parts[1])
-			if err != nil {
-				m.addErrorMsg(fmt.Sprintf("Cannot read %s: %v", parts[1], err))
-			} else {
-				m.addSystemMsg(fmt.Sprintf("Added %s (%d bytes) to context.", parts[1], len(data)))
-				m.messages = append(m.messages, chatMsg{role: "user", content: fmt.Sprintf("Content of %s:\n---\n%s\n---", parts[1], string(data))})
-				m.renderViewport()
-				m.viewport.GotoBottom()
-			}
-		}
-		m.input.SetValue("")
-		return m, nil
-	case "/compact":
-		if m.currentSess == nil {
-			m.addSystemMsg("No active session to compress.")
-		} else {
-			ctx := context.Background()
-			err := m.app.Orchestrator.CompressSession(ctx, m.currentSess.ID)
-			if err != nil {
-				m.addErrorMsg(fmt.Sprintf("Compression failed: %v", err))
-			} else {
-				m.addSystemMsg("Session compressed (older messages summarized).")
-			}
-		}
-		m.input.SetValue("")
-		return m, nil
-	case "/undo":
-		out, err := exec.Command("git", "log", "--oneline", "-1").CombinedOutput()
-		if err != nil || len(out) == 0 {
-			m.addSystemMsg("No commits to undo.")
-		} else {
-			lastCommit := strings.TrimSpace(string(out))
-			exec.Command("git", "revert", "HEAD", "--no-edit").Run()
-			m.addSystemMsg(fmt.Sprintf("Reverted: %s", lastCommit))
-		}
-		m.input.SetValue("")
-		return m, nil
-	case "/drop":
-		if len(parts) < 2 {
-			m.addSystemMsg("Usage: /drop <filename>")
-		} else {
-			target := parts[1]
-			filtered := m.messages[:0]
-			dropped := 0
-			for _, msg := range m.messages {
-				if strings.Contains(msg.content, target) {
-					dropped++
-				} else {
-					filtered = append(filtered, msg)
-				}
-			}
-			m.messages = filtered
-			m.renderViewport()
-			m.viewport.GotoBottom()
-			m.addSystemMsg(fmt.Sprintf("Dropped %d messages containing %q", dropped, target))
-		}
-		m.input.SetValue("")
-		return m, nil
-	case "/architect":
-		m.architectMode = !m.architectMode
-		status := "disabled"
-		if m.architectMode {
-			status = "enabled"
-		}
-		m.addSystemMsg(fmt.Sprintf("Architect mode %s (tasks will be planned before execution)", status))
-		m.input.SetValue("")
-		return m, nil
-	case "/git":
-		if len(parts) < 2 {
-			m.addSystemMsg("Usage: /git <git-args...>\nExample: /git status, /git diff, /git log --oneline -5")
-		} else {
-			cmd := exec.Command("git", parts[1:]...)
-			out, err := cmd.CombinedOutput()
-			if err != nil {
-				m.addSystemMsg(fmt.Sprintf("$ git %s\n%s\nError: %v", strings.Join(parts[1:], " "), strings.TrimSpace(string(out)), err))
-			} else {
-				m.addSystemMsg(fmt.Sprintf("$ git %s\n%s", strings.Join(parts[1:], " "), strings.TrimSpace(string(out))))
-			}
-		}
-		m.input.SetValue("")
-		return m, nil
-	case "/web":
-		if len(parts) < 2 {
-			m.addSystemMsg("Usage: /web <url>")
-		} else {
-			url := parts[1]
-			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-			defer cancel()
-			req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-			if err != nil {
-				m.addErrorMsg(fmt.Sprintf("Request error: %v", err))
-			} else {
-				resp, err := http.DefaultClient.Do(req)
-				if err != nil {
-					m.addErrorMsg(fmt.Sprintf("Fetch error: %v", err))
-				} else {
-					defer resp.Body.Close()
-					body, _ := io.ReadAll(resp.Body)
-					m.addSystemMsg(fmt.Sprintf("Fetched %s (%d bytes, status %d)", url, len(body), resp.StatusCode))
-					m.messages = append(m.messages, chatMsg{role: "user", content: fmt.Sprintf("Content from %s:\n---\n%s\n---", url, string(body))})
-					m.renderViewport()
-					m.viewport.GotoBottom()
-				}
-			}
-		}
-		m.input.SetValue("")
-		return m, nil
 	default:
-		m.err = fmt.Errorf("unknown command: %s (try /help)", parts[0])
+		m.err = fmt.Errorf("%s", lang.T("err.unknown_cmd", parts[0]))
 		m.input.SetValue("")
 		return m, nil
 	}
-}
-
-func mapStr[T any](v *T, fn func(*T) string) string {
-	if v == nil {
-		return ""
-	}
-	return fn(v)
 }
 
 func (m *model) updateSessionList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -625,9 +484,9 @@ func (m *model) updateModelList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.selProvider >= 0 && m.selProvider < len(m.providers) {
 			p := m.providers[m.selProvider]
 			if err := m.app.LLMGateway.SetDefaultProvider(p.Name); err == nil {
-				m.addSystemMsg(fmt.Sprintf("Switched to provider: %s (model: %s)", p.Name, p.Model))
+				m.addSystemMsg(lang.T("tui.provider_switched", p.Name, p.Model))
 			} else {
-				m.addErrorMsg(fmt.Sprintf("Failed to switch: %v", err))
+				m.addErrorMsg(lang.T("tui.switch_failed", err))
 			}
 		}
 		m.state = viewChat
@@ -719,7 +578,7 @@ func (m *model) chatView() string {
 		statusParts = append(statusParts, fmt.Sprintf("📁 %s", title))
 	}
 	if m.streaming {
-		statusParts = append(statusParts, "◉ thinking…")
+		statusParts = append(statusParts, "◉ "+lang.T("mode.thinking"))
 	}
 	if m.tools > 0 {
 		statusParts = append(statusParts, fmt.Sprintf("🔧 %d", m.tools))
@@ -736,7 +595,7 @@ func (m *model) chatView() string {
 	}
 
 	if m.streaming {
-		sb.WriteString(inputStyle.Render("⏳ streaming... (Ctrl+C to stop)"))
+		sb.WriteString(inputStyle.Render("⏳ " + lang.T("mode.streaming")))
 	} else {
 		sb.WriteString(inputStyle.Render(m.input.View()))
 	}
@@ -762,7 +621,7 @@ func (m *model) sessionListView() string {
 	sb.WriteString("\n\n")
 
 	if len(m.sessions) == 0 {
-		sb.WriteString("  No sessions. Press 'n' to create one.")
+		sb.WriteString("  " + lang.T("warn.no_sessions"))
 	} else {
 		for i, s := range m.sessions {
 			var prefix string
@@ -792,9 +651,9 @@ func (m *model) sessionListView() string {
 
 	sb.WriteString("\n")
 	if m.deleteTargetID != "" {
-		sb.WriteString(warnStyle.Render("Press d again to delete this session") + "\n")
+		sb.WriteString(warnStyle.Render(lang.T("warn.delete_confirm")) + "\n")
 	} else {
-		sb.WriteString(helpKeyStyle.Render("↑/↓ navigate · Enter select · n new · d delete · esc/q back") + "\n")
+		sb.WriteString(helpKeyStyle.Render(lang.T("warn.nav_help")) + "\n")
 	}
 	return sb.String()
 }
@@ -816,7 +675,7 @@ func (m *model) modelListView() string {
 	sb.WriteString("\n\n")
 
 	if len(m.providers) == 0 {
-		sb.WriteString("  No providers configured.")
+		sb.WriteString("  " + lang.T("tui.no_providers"))
 	} else {
 		for i, p := range m.providers {
 			prefix := "  "
@@ -837,7 +696,7 @@ func (m *model) modelListView() string {
 	}
 
 	sb.WriteString("\n")
-	sb.WriteString(helpKeyStyle.Render("↑/↓ navigate · Enter select · esc/q back") + "\n")
+	sb.WriteString(helpKeyStyle.Render(lang.T("warn.model_help")) + "\n")
 	return sb.String()
 }
 
@@ -854,7 +713,6 @@ func (m *model) helpOverlayView() string {
 func (m *model) helpText() string {
 	return fmt.Sprintf(`%s
 
-  Keybindings:
   %s
   Ctrl+C / Ctrl+D    Quit (or stop streaming)
   Ctrl+S             Open session list
@@ -862,28 +720,22 @@ func (m *model) helpText() string {
   ↑ / ↓              Input history
   PgUp / PgDown      Scroll chat
 
-  Commands:
   %s
-  /help              Show this help
-  /clear             Clear chat messages
-  /model [name]      Show/set current model
-  /architect         Toggle architect mode (plan before execute)
-  /cost              Show session stats
-  /diff              Show git diff summary
-  /add <file>        Add file to context
-  /drop <file>       Remove file from context
-  /compact           Compress conversation
-  /undo              Revert last AI change
-  /git <args>        Run git command
-  /web <url>         Fetch URL into context
+  /help              %s
+  /clear             %s
+  /model [name]      %s
 
   %s
-  Type a message and press Enter to chat.
-  Press ↑ to recall previous messages.`,
-		helpTitleStyle.Render("📖 Help"),
-		helpSectionStyle.Render("Chat"),
-		helpSectionStyle.Render("Commands"),
-		helpSectionStyle.Render("Tips"))
+  %s`,
+		helpTitleStyle.Render(lang.T("help.title")),
+		helpSectionStyle.Render(lang.T("help.keybindings")),
+		helpSectionStyle.Render(lang.T("help.commands")),
+		lang.T("help.cmd_help_desc"),
+		lang.T("help.cmd_clear_desc"),
+		lang.T("help.cmd_model_desc"),
+		helpSectionStyle.Render(lang.T("help.tips")),
+		lang.T("help.tips_text"),
+	)
 }
 
 func (m *model) renderViewport() {
@@ -915,7 +767,7 @@ func (m *model) renderViewport() {
 	m.viewport.SetContent(sb.String())
 }
 
-func doStream(p *tea.Program, app *infra.Application, sessionID, query string, architectMode bool) {
+func doStream(p *tea.Program, app *infra.Application, sessionID, query string) {
 	ctx := context.Background()
 	if sessionID == "" {
 		sess, err := app.Orchestrator.CreateSession(ctx, "default", "cli-user")
@@ -927,8 +779,7 @@ func doStream(p *tea.Program, app *infra.Application, sessionID, query string, a
 		p.Send(sessionCreatedMsg{session: sess})
 	}
 
-	opts := kernel.QueryOptions{ForcePlan: architectMode}
-	stream, err := app.Orchestrator.ProcessQueryStream(ctx, "cli-user", "default", query, opts)
+	stream, err := app.Orchestrator.ProcessQueryStream(ctx, "cli-user", "default", query, kernel.QueryOptions{})
 	if err != nil {
 		p.Send(chunkMsg{err: err, done: true})
 		return
@@ -978,7 +829,6 @@ var (
 	warnStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("#D4A859")).Bold(true)
 )
 
-// sessionDisplayName 获取会话的显示名称（标题优先，降级到 UUID）
 func sessionDisplayName(s *kernel.Session) string {
 	if s == nil {
 		return ""
@@ -988,7 +838,6 @@ func sessionDisplayName(s *kernel.Session) string {
 			return title
 		}
 	}
-	// fallback: truncated UUID
 	id := s.ID
 	if len(id) > 8 {
 		id = id[:8] + "…"

@@ -15,18 +15,21 @@ import (
 	"openaide/backend/internal/config"
 	"openaide/backend/internal/infra"
 	"openaide/backend/internal/kernel"
+	"openaide/backend/internal/lang"
 )
 
 type cliFlags struct {
-	configPath    string
-	contextFiles  []string
-	prompt        string
-	continueSess  bool
-	resumeID      string
-	yes           bool
-	model         string
-	verbose       bool
-	outputFormat  string
+	contextFiles []string
+	prompt       string
+	continueSess bool
+	yes          bool
+	model        string
+	verbose      bool
+	outputFormat string
+}
+
+func defaultConfigPath() string {
+	return os.Getenv("HOME") + "/.openaide/config.yaml"
 }
 
 func isExistingFile(path string) bool {
@@ -47,7 +50,6 @@ func detectFiles(args []string) (files []string, promptParts []string) {
 
 func parseFlags(args []string) cliFlags {
 	f := cliFlags{
-		configPath:   os.Getenv("HOME") + "/.openaide/config.yaml",
 		outputFormat: "text",
 	}
 	var positional []string
@@ -57,14 +59,6 @@ func parseFlags(args []string) cliFlags {
 		switch {
 		case a == "-c" || a == "--continue":
 			f.continueSess = true
-		case a == "-p" || a == "--prompt":
-			if i+1 < len(args) {
-				i++
-				f.prompt = args[i]
-			}
-		case a == "--resume" && i+1 < len(args):
-			i++
-			f.resumeID = args[i]
 		case a == "-y" || a == "--yes":
 			f.yes = true
 		case a == "--verbose":
@@ -72,9 +66,6 @@ func parseFlags(args []string) cliFlags {
 		case a == "--model" && i+1 < len(args):
 			i++
 			f.model = args[i]
-		case a == "--config" && i+1 < len(args):
-			i++
-			f.configPath = args[i]
 		case a == "--output" && i+1 < len(args):
 			i++
 			switch args[i] {
@@ -114,7 +105,7 @@ func buildPrompt(files []string, prompt string) string {
 	for _, path := range files {
 		data, err := os.ReadFile(path)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: cannot read %s: %v\n", path, err)
+			fmt.Fprintf(os.Stderr, "%s\n", lang.T("warn.read_file", path, err))
 			continue
 		}
 		parts = append(parts, fmt.Sprintf("Content of %s:\n---\n%s\n---", path, string(data)))
@@ -153,7 +144,7 @@ func doAutoCommit(prompt string) {
 func main() {
 	flags := parseFlags(os.Args[1:])
 
-	cfg, err := config.Load(flags.configPath)
+	cfg, err := config.Load(defaultConfigPath())
 	if err != nil {
 		cfg = config.DefaultConfig()
 	}
@@ -174,14 +165,14 @@ func main() {
 
 	app, err := infra.NewApplication(cfg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to start: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%s\n", lang.T("err.start_failed", err))
 		os.Exit(1)
 	}
 	if flags.yes {
 		app.SetAutoApprove(true)
 	}
 
-	// One-shot: prompt from positional args or -p flag (pipe)
+	// One-shot: prompt from positional args
 	if flags.prompt != "" || len(flags.contextFiles) > 0 {
 		prompt := buildPrompt(flags.contextFiles, flags.prompt)
 		ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
@@ -189,13 +180,13 @@ func main() {
 
 		ch, err := app.Orchestrator.ProcessQueryStream(ctx, "cli-user", "default", prompt, kernel.QueryOptions{})
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "%s\n", lang.T("err.process", err))
 			os.Exit(1)
 		}
 		var full strings.Builder
 		for chunk := range ch {
 			if chunk.Type == kernel.ChunkTypeError {
-				fmt.Fprintf(os.Stderr, "\nError: %s\n", chunk.Content)
+				fmt.Fprintf(os.Stderr, "\n%s\n", lang.T("err.process", chunk.Content))
 				os.Exit(1)
 			}
 			if chunk.Type == kernel.ChunkTypeContent {
@@ -214,29 +205,6 @@ func main() {
 		return
 	}
 
-	// Resume specific session
-	if flags.resumeID != "" {
-		ctx := context.Background()
-		sess, err := app.Orchestrator.GetSession(ctx, flags.resumeID)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: session %s not found: %v\n", flags.resumeID, err)
-			os.Exit(1)
-		}
-		m := initModel(app, false)
-		m.currentSess = sess
-		m.loadChatHistory()
-		p := tea.NewProgram(m,
-			tea.WithAltScreen(),
-			tea.WithMouseCellMotion(),
-		)
-		m.program = p
-		if _, err := p.Run(); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-		return
-	}
-
 	m := initModel(app, flags.continueSess)
 	p := tea.NewProgram(m,
 		tea.WithAltScreen(),
@@ -244,47 +212,46 @@ func main() {
 	)
 	m.program = p
 	if _, err := p.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%s\n", lang.T("err.process", err))
 		os.Exit(1)
 	}
 }
 
 func printHelp() {
-	fmt.Println("OpenAIDE CLI")
+	fmt.Println(lang.T("cli.usage"))
 	fmt.Println()
-	fmt.Println("Usage:")
-	fmt.Println("  openaide                          Interactive chat (TUI)")
-	fmt.Println("  openaide <prompt>                 One-shot mode")
-	fmt.Println("  openaide <file.go> <prompt>       File + prompt")
-	fmt.Println("  openaide -p <prompt>              Pipe mode")
-	fmt.Println("  echo \"fix this\" | openaide -p     Pipe from stdin")
-	fmt.Println("  openaide -c                       Continue last session")
-	fmt.Println("  openaide --resume <id>            Resume specific session")
-	fmt.Println("  openaide -y                       Auto-approve all actions")
-	fmt.Println("  openaide --model <name>           Override model")
-	fmt.Println("  openaide --config <path>          Custom config path")
-	fmt.Println("  openaide --verbose                Debug logging")
-	fmt.Println("  openaide --output json            JSON output")
-	fmt.Println("  openaide sessions                 List sessions")
-	fmt.Println("  openaide update                   Update")
-	fmt.Println("  openaide version                  Version")
+	fmt.Println(lang.T("cli.usage_detail"))
+	fmt.Println(lang.T("cli.oneshot"))
+	fmt.Println(lang.T("cli.file_oneshot"))
+	fmt.Println(lang.T("cli.c"))
+	fmt.Println(lang.T("cli.y"))
+	fmt.Println(lang.T("cli.model"))
+	fmt.Println(lang.T("cli.output"))
+	fmt.Println(lang.T("cli.verbose"))
+	fmt.Println(lang.T("cli.sessions"))
+	fmt.Println(lang.T("cli.update"))
 	fmt.Println()
-	fmt.Println("Examples:")
-	fmt.Println("  openaide fix this bug")
-	fmt.Println("  openaide main.go review this")
-	fmt.Println("  openaide -c -y")
-	fmt.Println("  openaide --model claude-3-opus explain")
-	fmt.Println("  echo 'add error handling' | openaide -p")
+	fmt.Println(lang.T("cli.examples"))
+	fmt.Println(lang.T("cli.ex_oneshot"))
+	fmt.Println(lang.T("cli.ex_file"))
+	fmt.Println(lang.T("cli.ex_continue"))
+	fmt.Println(lang.T("cli.ex_model"))
 	fmt.Println()
-	fmt.Println("In-chat commands:")
-	fmt.Println("  /help    /clear   /model    /cost")
-	fmt.Println("  /diff    /add     /drop     /compact")
-	fmt.Println("  /git     /web     /undo     /architect")
+	fmt.Println(lang.T("cli.keybindings"))
+	fmt.Println(lang.T("cli.kb_quit"))
+	fmt.Println(lang.T("cli.kb_sessions"))
+	fmt.Println(lang.T("cli.kb_help"))
+	fmt.Println(lang.T("cli.kb_history"))
+	fmt.Println(lang.T("cli.kb_scroll"))
+	fmt.Println()
+	fmt.Println(lang.T("cli.commands"))
+	fmt.Println(lang.T("cli.cmd_help"))
+	fmt.Println(lang.T("cli.cmd_clear"))
+	fmt.Println(lang.T("cli.cmd_model"))
 }
 
 func cmdSessions(args []string) {
-	cfgPath := os.Getenv("HOME") + "/.openaide/config.yaml"
-	cfg, err := config.Load(cfgPath)
+	cfg, err := config.Load(defaultConfigPath())
 	if err != nil {
 		cfg = config.DefaultConfig()
 	}
@@ -293,20 +260,21 @@ func cmdSessions(args []string) {
 
 	app, err := infra.NewApplication(cfg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to init: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%s\n", lang.T("err.start_failed", err))
 		os.Exit(1)
 	}
 	ctx := context.Background()
 
 	sessions, err := app.Orchestrator.ListSessions(ctx, "default", "cli-user", 100, 0)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%s\n", lang.T("err.process", err))
 		os.Exit(1)
 	}
 	if len(sessions) == 0 {
-		fmt.Println("No sessions found.")
+		fmt.Println(lang.T("sess.none"))
 		return
 	}
+	fmt.Println(lang.T("sess.info"))
 	for _, s := range sessions {
 		msgCount := len(s.Messages)
 		preview := ""
