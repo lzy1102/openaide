@@ -50,7 +50,18 @@ func NewManager(dir string) *Manager {
 		plugins: make(map[string]*Plugin),
 	}
 	m.loadFromDisk()
+	m.loadClaudeFromDisk()
 	return m
+}
+
+// loadClaudeFromDisk 发现 Claude 规范插件
+func (m *Manager) loadClaudeFromDisk() {
+	claudePlugins := DiscoverClaudePlugins(m.dir)
+	for _, p := range claudePlugins {
+		if _, exists := m.plugins[p.ID]; !exists {
+			m.plugins[p.ID] = p
+		}
+	}
 }
 
 // OnLoad 注册加载回调

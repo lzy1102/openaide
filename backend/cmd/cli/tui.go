@@ -88,6 +88,7 @@ type model struct {
 
 	providers    []llm.ProviderInfo
 	selProvider  int
+	skillTrigger string // slash 命令触发的技能 ID
 	cancelStream context.CancelFunc
 }
 
@@ -406,6 +407,15 @@ func (m *model) handleCommand(cmd string) (tea.Model, tea.Cmd) {
 		m.input.SetValue("")
 		return m, nil
 	default:
+		// 检查是否是技能斜杠命令
+		if slashCmds := m.app.Kernel.GetSlashCommands(); slashCmds != nil {
+			if skillID, ok := slashCmds[parts[0]]; ok {
+				m.addSystemMsg(fmt.Sprintf("已激活技能: %s", skillID))
+				m.input.SetValue("")
+				m.skillTrigger = skillID
+				return m, nil
+			}
+		}
 		m.err = fmt.Errorf("%s", lang.T("err.unknown_cmd", parts[0]))
 		m.input.SetValue("")
 		return m, nil

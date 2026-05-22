@@ -39,6 +39,59 @@ func NewSkillManager(skillsDir string) *SkillManager {
 	return sm
 }
 
+// AddClaudeSkill 从 Claude 插件格式添加技能（由外部调用，避免循环导入）
+func (sm *SkillManager) AddClaudeSkill(id, name, description, prompt string, tools, keywords []string) {
+	if _, exists := sm.skills[id]; exists {
+		return
+	}
+	sk := &Skill{
+		ID:          id,
+		Name:        name,
+		Description: description,
+		Prompt:      prompt,
+		Tools:       tools,
+		Keywords:    keywords,
+		Enabled:     true,
+	}
+	// 自动补充关键词：name 的分隔部分 + 常用中文映射
+	if len(sk.Keywords) == 0 {
+		sk.Keywords = autoKeywords(name, description)
+	}
+	sm.skills[sk.ID] = sk
+}
+
+// GetSlashCommands 获取所有技能对应的斜杠命令
+func (sm *SkillManager) GetSlashCommands() map[string]string {
+	cmds := make(map[string]string)
+	for _, s := range sm.skills {
+		if s.Enabled {
+			cmds["/"+s.Name] = s.ID
+			// 也注册 ID 作为命令
+			cmds["/"+s.ID] = s.ID
+		}
+	}
+	return cmds
+}
+
+// autoKeywords 从 name 和 description 自动生成关键词（兜底）
+func autoKeywords(name, description string) []string {
+	var kw []string
+	text := strings.ToLower(name + " " + description)
+	for _, part := range strings.Split(name, "-") {
+		if len(part) > 1 {
+			kw = append(kw, part)
+		}
+	}
+	kw = append(kw, name)
+	for _, term := range []string{"代码", "审查", "安全", "重构", "调试", "测试", "文档",
+		"部署", "提交", "搜索", "解释", "分析", "翻译", "review", "debug", "test", "refactor"} {
+		if strings.Contains(text, term) {
+			kw = append(kw, term)
+		}
+	}
+	return kw
+}
+
 // loadBuiltins 加载内置技能
 func (sm *SkillManager) loadBuiltins() {
 	builtins := []Skill{

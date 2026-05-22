@@ -391,6 +391,14 @@ func (k *AgentKernel) setState(state KernelState) {
 	k.state = state
 }
 
+// GetSlashCommands 获取所有技能对应的斜杠命令
+func (k *AgentKernel) GetSlashCommands() map[string]string {
+	if k.skillManager == nil {
+		return nil
+	}
+	return k.skillManager.GetSlashCommands()
+}
+
 func (k *AgentKernel) publishEvent(event Event) {
 	k.eventMu.RLock()
 	handlers := make([]EventHandler, len(k.eventHandlers))

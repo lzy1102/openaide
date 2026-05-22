@@ -37,6 +37,10 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 	// 接入增强能力 — LLM Reflection（降级到 SimpleReflection）
 	agentKernel.SetReflection(kernel.NewLLMReflection(gateway, kernel.NewSimpleReflection()))
 	sm := kernel.NewSkillManager(cfg.Storage.DataDir + "/skills")
+	// 发现 Claude 格式插件中的 SKILL.md
+	for _, cs := range plugin.DiscoverClaudeSkills(cfg.Storage.DataDir + "/plugins") {
+		sm.AddClaudeSkill(cs.ID, cs.Name, cs.Description, cs.Prompt, cs.AllowedTools, cs.Keywords)
+	}
 	agentKernel.SetSkillManager(sm)
 	if learner, err := kernel.NewSimpleLearner(cfg.Storage.DataDir + "/insights"); err == nil {
 		agentKernel.SetLearner(learner)

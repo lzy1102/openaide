@@ -20,6 +20,9 @@ type Kernel interface {
 
 	// Unsubscribe 取消订阅
 	Unsubscribe(handler EventHandler)
+
+	// GetSlashCommands 获取所有可用的斜杠命令（/name → skillID）
+	GetSlashCommands() map[string]string
 }
 
 // EventHandler 事件处理器
