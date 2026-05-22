@@ -136,6 +136,57 @@ In local mode:
 
 Configuration is loaded from environment variables or config files.
 
+## CLI
+
+### Interactive Chat (TUI)
+
+```bash
+openaide                          # Start interactive chat session
+openaide <prompt>                 # One-shot mode (non-interactive)
+openaide <file.go> <prompt>       # Include file context + prompt
+openaide -c                       # Continue last session
+openaide -y                       # Auto-approve all tool calls
+openaide --model <name>           # Override default model
+openaide --verbose                # Enable debug logging
+openaide -o json                  # Structured JSON output
+```
+
+### Subcommands
+
+```bash
+openaide help                     # Show help
+openaide version                  # Show version
+openaide update                   # Update to latest version
+openaide sessions                 # List sessions
+```
+
+### In-Chat Slash Commands
+
+| Command | Description |
+|---------|-------------|
+| `/help` | Show help |
+| `/clear` | Clear chat messages |
+| `/model [name]` | Show/switch current model |
+
+### Internationalization
+
+Language is auto-detected from `$LANG` / `$LC_MESSAGES` / `$LC_ALL`. Supports:
+- **zh_CN** — Chinese (Simplified)
+- **en_US** — English (fallback)
+
+```bash
+LANG=zh_CN.UTF-8 openaide help   # Chinese output
+LANG=en_US.UTF-8 openaide help   # English output
+```
+
+### Build from Source
+
+```bash
+cd backend
+go build -o openaide ./cmd/cli
+./openaide
+```
+
 ## API Documentation
 
 ### Task Management
