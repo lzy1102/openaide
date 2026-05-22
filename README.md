@@ -193,7 +193,7 @@ git push origin v1.0.0
 - **Embedder接口**: 可扩展的文本向量化接口，支持配置独立 embedding model
 - **MCP协议**: JSON-RPC stdio，外部工具生态接入
 - **WebSocket**: 双向流式+心跳
-- **插件系统**: 可插拔扩展，提示词注入+消息/事件钩子
+- **插件系统**: Claude Code 官方格式兼容 (skills/MCP/hooks)，`./data/plugins/` 即装即用，自动发现 SKILL.md/.mcp.json/hooks.json
 - **TUI**: Bubbletea (AltScreen可选) + 流式渲染 + 思考过程显示
 - **认证**: JWT默认关闭，OPENAIDE_AUTH=true开启
 
@@ -220,6 +220,7 @@ openaide help                     # Show help
   /help           Show help
   /clear          Clear chat messages
   /model [name]   Show/switch current model
+  /<skill-name>   Activate a skill (builtin or from plugins)
 
 # Keybindings (inside TUI)
   Ctrl+C / Ctrl+D    Quit / stop streaming

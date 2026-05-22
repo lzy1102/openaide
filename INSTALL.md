@@ -306,33 +306,23 @@ make docker-stop     # 停止容器
 ```
 backend/
 ├── cmd/
-│   ├── server/main.go     # API 服务器入口
-│   └── cli/main.go        # 交互式 CLI 入口
+│   ├── server/main.go        # API 服务器入口
+│   ├── cli/main.go            # 交互式 CLI 入口
+│   └── cli/onboard.go         # 首次运行引导
 ├── internal/
-│   ├── api/api.go         # HTTP REST API (net/http)
-│   ├── kernel/            # Agent 内核 (ReAct 循环)
-│   │   ├── kernel.go      # AgentKernel 实现
-│   │   ├── interfaces.go  # 全部接口定义
-│   │   ├── types.go       # 共享类型
-│   │   ├── reflection.go  # 反思
-│   │   ├── learner.go     # 学习
-│   │   ├── pattern.go     # 模式检测
-│   │   ├── compress.go    # 上下文压缩
-│   │   └── session_store.go
-│   ├── llm/               # LLM 网关
-│   │   ├── gateway.go     # 多提供商路由
-│   │   └── openai_provider.go  # OpenAI 兼容实现
-│   ├── tools/registry.go  # 工具注册表
-│   ├── memory/memory.go   # 文件记忆系统 (3级)
-│   ├── orchestration/     # 编排器
-│   ├── config/config.go   # 配置管理 (JSON/YAML)
-│   ├── infra/app.go       # DI 容器
-│   ├── event/event.go     # 事件总线 (未集成)
-│   ├── git/git.go         # Git 操作 (未集成)
-│   ├── index/             # 代码索引 (未集成)
-│   ├── identity/          # 身份检测 (未集成)
-│   ├── knowledge/         # 知识库 (未集成)
-│   └── compress/          # 高级压缩器 (未集成)
+│   ├── infra/   (4 files)     # DI 容器
+│   ├── kernel/  (22 files)    # Agent 内核 (ReAct 循环, split into process/stream/prompt)
+│   ├── llm/    (7 files)      # LLM 网关: 多提供商 + Anthropic + OpenAI
+│   ├── tools/  (10 files)     # 22 个工具按领域拆分
+│   ├── memory/                 # 3 级文件记忆 + 语义搜索
+│   ├── orchestration/          # 编排器 + Planner + DAG + Team
+│   ├── api/                    # REST + SSE + WebSocket
+│   ├── plugin/                 # 插件管理 + Claude 格式解析
+│   ├── compress/               # LLM 语义压缩
+│   ├── event/                  # 事件总线
+│   ├── channel/                # 外部消息渠道
+│   ├── mcp/                    # MCP 协议
+│   └── (config, git, index, identity, knowledge, feedback, auth, lang)
 ├── Makefile
 ├── Dockerfile
 └── docker-compose.yml

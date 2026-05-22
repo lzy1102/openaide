@@ -31,23 +31,26 @@
 
 | 模块 | 文件 | 功能 |
 |------|------|------|
-| kernel | 10个 | Agent核心、ReAct、反思、学习、模式、Skill、会话存储 |
-| llm | 3个 | 网关、OpenAI兼容、Anthropic原生 |
-| tools | 2个 | 9个工具注册+实现 |
-| memory | 2个 | 3级记忆、TF-IDF向量搜索 |
-| orchestration | 2个 | 编排器、Planner任务拆分 |
+| kernel | 22个 | Agent核心、ReAct、反思、学习、模式、Skill、会话存储、提示词管理 |
+| llm | 7个 | 网关、OpenAI兼容、Anthropic原生、Embedding、缓存 |
+| tools | 10个 | 22个工具注册+实现（按领域拆分文件） |
+| memory | 3个 | 3级记忆、TF-IDF向量搜索、语义搜索 |
+| orchestration | 5个 | 编排器、Planner任务拆分、DAG、Team多Agent |
 | api | 3个 | REST、SSE、WebSocket、JWT中间件 |
-| infra | 1个 | DI容器、日志 |
+| infra | 4个 | DI容器、LLM网关工厂、Kernel工厂、Channel工厂 |
+| plugin | 2个 | 插件管理、Claude Code格式解析 (.claude-plugin/skills/MCP/hooks) |
 | config | 2个 | JSON/YAML配置 |
 | auth | 1个 | JWT签发/验证/中间件 |
 | knowledge | 1个 | 文档CRUD、搜索、提示词注入 |
 | feedback | 1个 | 质量门控评分 |
-| event | 1个 | 事件总线、持久化 |
-| git | 2个 | git status/diff/log |
+| event | 1个 | 事件总线、持久化 (max 10k events) |
+| git | 2个 | git status/diff/log/blame |
 | index | 3个 | 代码符号索引 |
 | identity | 1个 | 项目类型检测 |
-| compress | 1个 | 小说式上下文压缩 |
-| skill | (kernel内) | 5个内置技能 |
+| compress | 2个 | LLM语义压缩 + SimpleCompressor降级 |
+| channel | 5个 | 外部消息渠道 (Webhook/飞书/Telegram) |
+| mcp | 2个 | MCP协议 (stdio传输, 30s超时) |
+| skill | (kernel内) | 5个内置技能 + Claude SKILL.md兼容 + 自动进化 |
 
 ## 全部完成
 
