@@ -352,16 +352,16 @@ func (e *EnhancedOrchestrator) enhance(ctx context.Context, userID, projectID, q
 	}
 }
 
-// executePlan 执行任务规划 — 逐个执行子任务，结果汇总
+// executePlan 完整任务生命周期：执行 → 测试 → 验收
 func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, content string, plan *Plan, opts kernel.QueryOptions) (*kernel.Response, error) {
 	var results []string
 	totalTools := 0
 
+	// Phase 1: 执行 — 逐个完成子任务
 	for i, st := range plan.Subtasks {
 		subQuery := fmt.Sprintf("## 总体目标: %s\n## 当前步骤 (%d/%d): %s\n## 具体要求: %s\n\n请完成此步骤的任务。",
 			plan.Goal, i+1, len(plan.Subtasks), st.Title, st.Description)
 
-		// 注入前面步骤的结果
 		if i > 0 {
 			subQuery += fmt.Sprintf("\n\n## 已完成的步骤结果:\n%s", strings.Join(results, "\n"))
 		}
@@ -375,12 +375,62 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 		totalTools += resp.ToolCalls
 	}
 
-	// 汇总
-	summary := fmt.Sprintf("## %s\n\n完成 %d/%d 个子任务：\n\n%s",
-		plan.Goal, len(results), len(plan.Subtasks), strings.Join(results, "\n\n---\n\n"))
+	execSummary := strings.Join(results, "\n\n---\n\n")
+
+	// Phase 2: 测试验证 — 检查结果是否正确
+	testQuery := fmt.Sprintf(`## 总体目标: %s
+
+## 已完成的工作:
+%s
+
+## 你的任务：验证以上工作是否完整正确
+1. 检查代码是否能编译通过（如果有编译错误，请修复）
+2. 检查逻辑是否正确（如果有 bug，请修复）
+3. 检查是否遗漏了任何需求
+4. 如果有问题，请直接修复；如果一切正常，报告"验证通过"
+
+请开始验证。`, plan.Goal, execSummary)
+
+	testResp, testErr := o.processSingle(ctx, userID, projectID, testQuery, opts)
+	var testReport string
+	if testErr != nil {
+		testReport = fmt.Sprintf("⚠ 验证阶段出错: %v", testErr)
+	} else {
+		testReport = testResp.Content
+		totalTools += testResp.ToolCalls
+	}
+
+	// Phase 3: 验收报告 — 生成最终总结
+	reviewQuery := fmt.Sprintf(`## 总体目标: %s
+
+## 执行结果:
+%s
+
+## 验证结果:
+%s
+
+## 你的任务：生成最终验收报告
+用简洁的语言总结：
+1. **完成了什么** — 1-2句话
+2. **修改了哪些文件** — 列出文件路径
+3. **验证状态** — 是否通过测试
+4. **遗留问题** — 如果没有就写"无"
+
+输出格式：Markdown，不要用代码块包裹。`, plan.Goal, execSummary, testReport)
+
+	reviewResp, reviewErr := o.processSingle(ctx, userID, projectID, reviewQuery, opts)
+	var finalReport string
+	if reviewErr != nil {
+		finalReport = fmt.Sprintf("## %s\n\n### 执行结果\n%s\n\n### 验证结果\n%s\n\n### 验收报告\n生成失败: %v",
+			plan.Goal, execSummary, testReport, reviewErr)
+	} else {
+		finalReport = fmt.Sprintf("## %s\n\n### 验证结果\n%s\n\n---\n\n### 验收报告\n%s",
+			plan.Goal, testReport, reviewResp.Content)
+		totalTools += reviewResp.ToolCalls
+	}
 
 	return &kernel.Response{
-		Content:    summary,
+		Content:    finalReport,
 		ToolCalls:  totalTools,
 		TokensUsed: 0,
 		Duration:   0,
