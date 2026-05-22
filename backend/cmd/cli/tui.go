@@ -90,8 +90,10 @@ type model struct {
 	err            error
 	deleteTargetID string
 
-	providers  []llm.ProviderInfo
+	providers   []llm.ProviderInfo
 	selProvider int
+
+	architectMode bool
 }
 
 func initModel(app *infra.Application, continueSess bool) *model {
@@ -311,7 +313,7 @@ func (m *model) updateChat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.currentSess != nil {
 			sessionID = m.currentSess.ID
 		}
-		go doStream(m.program, m.app, sessionID, query)
+		go doStream(m.program, m.app, sessionID, query, m.architectMode)
 		return m, nil
 
 	case "up":
@@ -383,27 +385,6 @@ func (m *model) handleCommand(cmd string) (tea.Model, tea.Cmd) {
 		m.input.SetValue("")
 		m.renderViewport()
 		return m, nil
-	case "/new":
-		ctx := context.Background()
-		sess, err := m.app.Orchestrator.CreateSession(ctx, "default", "cli-user")
-		if err != nil {
-			m.err = err
-			m.input.SetValue("")
-			return m, nil
-		}
-		m.currentSess = sess
-		m.messages = nil
-		m.tokens = 0
-		m.tools = 0
-		m.err = nil
-		m.input.SetValue("")
-		m.renderViewport()
-		return m, m.loadSessionList()
-	case "/sessions":
-		m.state = viewSessionList
-		m.input.Blur()
-		m.selSession = 0
-		return m, m.loadSessionList()
 	case "/model":
 		if len(parts) >= 2 {
 			m.app.SetModel(parts[1])
@@ -469,30 +450,45 @@ func (m *model) handleCommand(cmd string) (tea.Model, tea.Cmd) {
 		}
 		m.input.SetValue("")
 		return m, nil
-	case "/export":
-		var sb strings.Builder
-		if m.currentSess != nil {
-			fmt.Fprintf(&sb, "# Session: %s\n\n", m.currentSess.ID)
-		}
-		for _, msg := range m.messages {
-			switch msg.role {
-			case "user":
-				fmt.Fprintf(&sb, "## User\n\n%s\n\n", msg.content)
-			case "assistant":
-				fmt.Fprintf(&sb, "## Assistant\n\n%s\n\n", msg.content)
-			case "system":
-				fmt.Fprintf(&sb, "## System\n\n%s\n\n", msg.content)
-			}
-		}
-		fmt.Fprintln(&sb, "---")
-		fmt.Fprintf(&sb, "Tokens: %d | Tool calls: %d\n", m.tokens, m.tools)
-
-		outPath := fmt.Sprintf("openaide-session-%s.md", time.Now().Format("20060102-150405"))
-		if err := os.WriteFile(outPath, []byte(sb.String()), 0644); err != nil {
-			m.addErrorMsg(fmt.Sprintf("Export failed: %v", err))
+	case "/undo":
+		out, err := exec.Command("git", "log", "--oneline", "-1").CombinedOutput()
+		if err != nil || len(out) == 0 {
+			m.addSystemMsg("No commits to undo.")
 		} else {
-			m.addSystemMsg(fmt.Sprintf("Exported to %s (%d bytes)", outPath, len(sb.String())))
+			lastCommit := strings.TrimSpace(string(out))
+			exec.Command("git", "revert", "HEAD", "--no-edit").Run()
+			m.addSystemMsg(fmt.Sprintf("Reverted: %s", lastCommit))
 		}
+		m.input.SetValue("")
+		return m, nil
+	case "/drop":
+		if len(parts) < 2 {
+			m.addSystemMsg("Usage: /drop <filename>")
+		} else {
+			target := parts[1]
+			filtered := m.messages[:0]
+			dropped := 0
+			for _, msg := range m.messages {
+				if strings.Contains(msg.content, target) {
+					dropped++
+				} else {
+					filtered = append(filtered, msg)
+				}
+			}
+			m.messages = filtered
+			m.renderViewport()
+			m.viewport.GotoBottom()
+			m.addSystemMsg(fmt.Sprintf("Dropped %d messages containing %q", dropped, target))
+		}
+		m.input.SetValue("")
+		return m, nil
+	case "/architect":
+		m.architectMode = !m.architectMode
+		status := "disabled"
+		if m.architectMode {
+			status = "enabled"
+		}
+		m.addSystemMsg(fmt.Sprintf("Architect mode %s (tasks will be planned before execution)", status))
 		m.input.SetValue("")
 		return m, nil
 	case "/git":
@@ -870,14 +866,14 @@ func (m *model) helpText() string {
   %s
   /help              Show this help
   /clear             Clear chat messages
-  /new               Create new session
-  /sessions          Open session list
   /model [name]      Show/set current model
+  /architect         Toggle architect mode (plan before execute)
   /cost              Show session stats
   /diff              Show git diff summary
   /add <file>        Add file to context
+  /drop <file>       Remove file from context
   /compact           Compress conversation
-  /export            Export session to markdown
+  /undo              Revert last AI change
   /git <args>        Run git command
   /web <url>         Fetch URL into context
 
@@ -919,7 +915,7 @@ func (m *model) renderViewport() {
 	m.viewport.SetContent(sb.String())
 }
 
-func doStream(p *tea.Program, app *infra.Application, sessionID, query string) {
+func doStream(p *tea.Program, app *infra.Application, sessionID, query string, architectMode bool) {
 	ctx := context.Background()
 	if sessionID == "" {
 		sess, err := app.Orchestrator.CreateSession(ctx, "default", "cli-user")
@@ -931,7 +927,8 @@ func doStream(p *tea.Program, app *infra.Application, sessionID, query string) {
 		p.Send(sessionCreatedMsg{session: sess})
 	}
 
-	stream, err := app.Orchestrator.ProcessQueryStream(ctx, "cli-user", "default", query, kernel.QueryOptions{})
+	opts := kernel.QueryOptions{ForcePlan: architectMode}
+	stream, err := app.Orchestrator.ProcessQueryStream(ctx, "cli-user", "default", query, opts)
 	if err != nil {
 		p.Send(chunkMsg{err: err, done: true})
 		return
