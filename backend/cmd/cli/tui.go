@@ -34,12 +34,14 @@ type chatMsg struct {
 }
 
 type chunkMsg struct {
-	content  string
-	thinking string
-	done     bool
-	tokens   int
-	toolCnt  int
-	err      error
+	content   string
+	thinking  string
+	done      bool
+	tokens    int
+	toolCnt   int
+	toolName  string // 正在调用的工具名
+	toolCall  bool   // 是否为工具调用通知
+	err       error
 }
 
 type sessionListMsg struct {
@@ -166,6 +168,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.streaming = false
 			m.input.Focus()
 			m.renderViewport()
+			return m, nil
+		}
+		if msg.toolCall {
+			m.messages = append(m.messages, chatMsg{role: "tool_call", content: msg.toolName})
+			m.renderViewport()
+			m.viewport.GotoBottom()
 			return m, nil
 		}
 		if msg.done {
@@ -763,8 +771,14 @@ func (m *model) helpText() string {
 
 func (m *model) renderViewport() {
 	var sb strings.Builder
-	for i, msg := range m.messages {
-		if i > 0 && m.messages[i-1].role != msg.role {
+	// 只渲染最近 maxHistory 条消息
+	start := 0
+	if len(m.messages) > maxHistory {
+		start = len(m.messages) - maxHistory
+	}
+	for i := start; i < len(m.messages); i++ {
+		msg := m.messages[i]
+		if i > start && m.messages[i-1].role != msg.role {
 			sb.WriteString(separatorStyle.Render("─") + "\n")
 		}
 		switch msg.role {
@@ -773,7 +787,11 @@ func (m *model) renderViewport() {
 		case "error":
 			sb.WriteString(errStyle.Render("✗ " + msg.content))
 		case "system":
-			sb.WriteString("[sys] " + msg.content)
+			sb.WriteString(sysStyle.Render("[sys] " + msg.content))
+		case "tool_call":
+			sb.WriteString(toolStyle.Render("⚙ " + msg.content))
+		case "tool":
+			sb.WriteString(toolOutStyle.Render("  → " + trunc(msg.content, 200)))
 		default:
 			sb.WriteString(msg.content)
 		}
@@ -825,7 +843,17 @@ func doStream(ctx context.Context, p *tea.Program, app *infra.Application, sessi
 		if len(chunk.ToolCalls) > 0 {
 			totalTools += len(chunk.ToolCalls)
 		}
-		p.Send(chunkMsg{content: chunk.Content, thinking: chunk.ReasoningContent})
+		switch chunk.Type {
+		case kernel.ChunkTypeToolCall:
+			p.Send(chunkMsg{toolCall: true, toolName: chunk.ToolName})
+		case kernel.ChunkTypeToolDone:
+			if chunk.ToolResult != nil {
+				summary := fmt.Sprintf("%v", chunk.ToolResult.Content)
+				p.Send(chunkMsg{toolCall: true, toolName: "→ " + trunc(summary, 200)})
+			}
+		default:
+			p.Send(chunkMsg{content: chunk.Content, thinking: chunk.ReasoningContent})
+		}
 	}
 }
 
@@ -834,6 +862,9 @@ var (
 	aiStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("#82B74B"))
 	thinkStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Italic(true)
 	errStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF6B6B"))
+	toolStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("#D4A859")).Bold(true)
+	toolOutStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+	sysStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("#AAAAAA")).Italic(true)
 	statusBarStyle = lipgloss.NewStyle().
 			Background(lipgloss.Color("#1a1a2e")).
 			Foreground(lipgloss.Color("#AAAAAA")).
