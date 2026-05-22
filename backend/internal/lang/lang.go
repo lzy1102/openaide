@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 )
 
 type Lang string
@@ -28,7 +29,7 @@ func Detect() Lang {
 	return EN
 }
 
-	var messages = map[Lang]map[string]string{
+var messages = map[Lang]map[string]string{
 	ZH: {
 		"cli.usage":         "OpenAIDE — AI Agent 终端",
 		"cli.usage_detail":  "用法:",
@@ -73,12 +74,16 @@ func Detect() Lang {
 		"sess.none":         "没有会话。",
 		"sess.info":         "会话 | 消息 | 预览",
 		"sess.list_format":  "%-24s  %3d 条消息  %s\n",
+		"sess.tui_row":      "%s%s  [%d 条消息]  %s",
 
 		"tui.placeholder":   "输入消息... (Ctrl+H 帮助)",
 		"tui.model_switched":"已切换模型至: %s",
 		"tui.provider_switched": "已切换至: %s（模型: %s）",
 		"tui.switch_failed": "切换失败: %v",
 		"tui.no_providers":  "没有配置提供商。",
+
+		"model.title":       "选择提供商 / 模型",
+		"model.default":     "（默认）",
 
 		"mode.chat":         "聊天",
 		"mode.thinking":     "思考中…",
@@ -93,12 +98,19 @@ func Detect() Lang {
 		"help.cmd_clear_desc":  "清屏",
 		"help.cmd_model_desc":  "显示/切换当前模型",
 
+		"help.kb_quit":      "退出（或停止流式）",
+		"help.kb_sessions":  "打开会话列表",
+		"help.kb_help":      "显示此帮助",
+		"help.kb_history":   "输入历史",
+		"help.kb_scroll":    "滚动聊天",
+
 		"update.title":           "OpenAIDE 更新",
 		"update.script_not_found":"错误: 更新脚本未找到",
 		"update.failed":          "\n更新失败: %v\n",
 		"update.complete":        "\n更新完成!",
 
 		"git.auto_commit_msg":    "openaide 自动提交",
+		"prompt.file_content":    "内容来源 %s:\n---\n%s\n---",
 	},
 	EN: {
 		"cli.usage":         "OpenAIDE — AI Agent Terminal",
@@ -144,12 +156,16 @@ func Detect() Lang {
 		"sess.none":         "No sessions found.",
 		"sess.info":         "Session | Messages | Preview",
 		"sess.list_format":  "%-24s  %3d msgs  %s\n",
+		"sess.tui_row":      "%s%s  [%d msgs]  %s",
 
 		"tui.placeholder":   "Type a message... (Ctrl+H for help)",
 		"tui.model_switched":"Switched model to: %s",
 		"tui.provider_switched": "Switched to: %s (model: %s)",
 		"tui.switch_failed": "Failed to switch: %v",
 		"tui.no_providers":  "No providers configured.",
+
+		"model.title":       "Select Provider / Model",
+		"model.default":     "(default)",
 
 		"mode.chat":         "Chat",
 		"mode.thinking":     "Thinking…",
@@ -164,34 +180,53 @@ func Detect() Lang {
 		"help.cmd_clear_desc":  "Clear chat messages",
 		"help.cmd_model_desc":  "Show/switch current model",
 
+		"help.kb_quit":      "Quit (or stop streaming)",
+		"help.kb_sessions":  "Open session list",
+		"help.kb_help":      "Show this help",
+		"help.kb_history":   "Input history",
+		"help.kb_scroll":    "Scroll chat",
+
 		"update.title":           "OpenAIDE Update",
 		"update.script_not_found":"Error: update script not found",
 		"update.failed":          "\nUpdate failed: %v\n",
 		"update.complete":        "\nUpdate complete!",
 
 		"git.auto_commit_msg":    "openaide auto-commit",
+		"prompt.file_content":    "Content of %s:\n---\n%s\n---",
 	},
 }
 
-var current Lang
+var (
+	current   Lang
+	currentMu sync.RWMutex
+)
 
 func init() {
 	SetLang(Detect())
 }
 
 func SetLang(l Lang) {
-	current = l
-	if _, ok := messages[current]; !ok {
+	currentMu.Lock()
+	defer currentMu.Unlock()
+	if _, ok := messages[l]; !ok {
 		current = EN
+	} else {
+		current = l
 	}
 }
 
 func GetLang() Lang {
+	currentMu.RLock()
+	defer currentMu.RUnlock()
 	return current
 }
 
 func T(key string, args ...any) string {
-	msg, ok := messages[current]
+	currentMu.RLock()
+	cur := current
+	currentMu.RUnlock()
+
+	msg, ok := messages[cur]
 	if !ok {
 		msg = messages[EN]
 	}

@@ -164,10 +164,10 @@ func TestTruncate(t *testing.T) {
 		want  string
 	}{
 		{"hello", 5, "hello"},
-		{"hello world", 5, "hello..."},
+		{"hello world", 5, "hello…"},
 		{"", 5, ""},
 		{"abc", 10, "abc"},
-		{"你好世界", 2, "你好..."},
+		{"你好世界", 2, "你好…"},
 	}
 	for _, tt := range tests {
 		t.Run("", func(t *testing.T) {

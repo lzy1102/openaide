@@ -110,11 +110,20 @@ func TestT_NewKeys(t *testing.T) {
 	cases := []string{
 		"cli.version",
 		"sess.list_format",
+		"sess.tui_row",
 		"update.title",
 		"update.script_not_found",
 		"update.failed",
 		"update.complete",
 		"git.auto_commit_msg",
+		"prompt.file_content",
+		"model.title",
+		"model.default",
+		"help.kb_quit",
+		"help.kb_sessions",
+		"help.kb_help",
+		"help.kb_history",
+		"help.kb_scroll",
 	}
 	for _, key := range cases {
 		got := T(key)

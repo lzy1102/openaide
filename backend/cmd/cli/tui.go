@@ -86,8 +86,9 @@ type model struct {
 	err            error
 	deleteTargetID string
 
-	providers   []llm.ProviderInfo
-	selProvider int
+	providers    []llm.ProviderInfo
+	selProvider  int
+	cancelStream context.CancelFunc
 }
 
 func initModel(app *infra.Application, continueSess bool) *model {
@@ -158,6 +159,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case chunkMsg:
+		m.cancelStream = nil
 		if msg.err != nil {
 			m.err = msg.err
 			m.streaming = false
@@ -240,6 +242,10 @@ func (m *model) updateChat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c", "ctrl+d":
 		if m.streaming {
+			if m.cancelStream != nil {
+				m.cancelStream()
+				m.cancelStream = nil
+			}
 			m.streaming = false
 			text := m.aiBuf.String()
 			if m.thinkBuf.Len() > 0 {
@@ -307,7 +313,9 @@ func (m *model) updateChat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.currentSess != nil {
 			sessionID = m.currentSess.ID
 		}
-		go doStream(m.program, m.app, sessionID, query)
+		ctx, cancel := context.WithCancel(context.Background())
+		m.cancelStream = cancel
+		go doStream(ctx, m.program, m.app, sessionID, query)
 		return m, nil
 
 	case "up":
@@ -635,7 +643,7 @@ func (m *model) sessionListView() string {
 				rs := []rune(title)
 				title = string(rs[:28]) + "…"
 			}
-			line := fmt.Sprintf("%s%s  [%d msgs] %s",
+			line := lang.T("sess.tui_row",
 				prefix,
 				title,
 				len(s.Messages),
@@ -671,7 +679,7 @@ func (m *model) modelOverlayView() string {
 
 func (m *model) modelListView() string {
 	var sb strings.Builder
-	sb.WriteString(sessionTitleStyle.Render("Select Provider / Model"))
+	sb.WriteString(sessionTitleStyle.Render(lang.T("model.title")))
 	sb.WriteString("\n\n")
 
 	if len(m.providers) == 0 {
@@ -684,7 +692,7 @@ func (m *model) modelListView() string {
 			}
 			def := ""
 			if p.Default {
-				def = " (default)"
+				def = " " + lang.T("model.default")
 			}
 			line := fmt.Sprintf("%s%s%s — %s", prefix, p.Name, def, p.Model)
 			if i == m.selProvider {
@@ -714,11 +722,11 @@ func (m *model) helpText() string {
 	return fmt.Sprintf(`%s
 
   %s
-  Ctrl+C / Ctrl+D    Quit (or stop streaming)
-  Ctrl+S             Open session list
-  F1 / Ctrl+H        Show this help
-  ↑ / ↓              Input history
-  PgUp / PgDown      Scroll chat
+  Ctrl+C / Ctrl+D    %s
+  Ctrl+S             %s
+  F1 / Ctrl+H        %s
+  ↑ / ↓              %s
+  PgUp / PgDown      %s
 
   %s
   /help              %s
@@ -729,6 +737,11 @@ func (m *model) helpText() string {
   %s`,
 		helpTitleStyle.Render(lang.T("help.title")),
 		helpSectionStyle.Render(lang.T("help.keybindings")),
+		lang.T("help.kb_quit"),
+		lang.T("help.kb_sessions"),
+		lang.T("help.kb_help"),
+		lang.T("help.kb_history"),
+		lang.T("help.kb_scroll"),
 		helpSectionStyle.Render(lang.T("help.commands")),
 		lang.T("help.cmd_help_desc"),
 		lang.T("help.cmd_clear_desc"),
@@ -767,8 +780,7 @@ func (m *model) renderViewport() {
 	m.viewport.SetContent(sb.String())
 }
 
-func doStream(p *tea.Program, app *infra.Application, sessionID, query string) {
-	ctx := context.Background()
+func doStream(ctx context.Context, p *tea.Program, app *infra.Application, sessionID, query string) {
 	if sessionID == "" {
 		sess, err := app.Orchestrator.CreateSession(ctx, "default", "cli-user")
 		if err != nil {

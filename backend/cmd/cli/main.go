@@ -29,7 +29,11 @@ type cliFlags struct {
 }
 
 func defaultConfigPath() string {
-	return os.Getenv("HOME") + "/.openaide/config.yaml"
+	home := os.Getenv("HOME")
+	if home == "" {
+		home = "."
+	}
+	return home + "/.openaide/config.yaml"
 }
 
 func isExistingFile(path string) bool {
@@ -68,11 +72,8 @@ func parseFlags(args []string) cliFlags {
 			f.model = args[i]
 		case a == "--output" && i+1 < len(args):
 			i++
-			switch args[i] {
-			case "json":
+			if args[i] == "json" {
 				f.outputFormat = "json"
-			default:
-				f.outputFormat = "text"
 			}
 		case a == "-h" || a == "--help":
 			printHelp()
@@ -81,7 +82,7 @@ func parseFlags(args []string) cliFlags {
 			fmt.Println(lang.T("cli.version"))
 			os.Exit(0)
 		case a == "help":
-			cmdHelp(args[i+1:])
+			cmdHelp()
 			os.Exit(0)
 		case a == "version":
 			fmt.Println(lang.T("cli.version"))
@@ -114,7 +115,7 @@ func buildPrompt(files []string, prompt string) string {
 			fmt.Fprintf(os.Stderr, "%s\n", lang.T("warn.read_file", path, err))
 			continue
 		}
-		parts = append(parts, fmt.Sprintf("Content of %s:\n---\n%s\n---", path, string(data)))
+		parts = append(parts, lang.T("prompt.file_content", path, string(data)))
 	}
 	if len(parts) > 0 && prompt != "" {
 		return strings.Join(parts, "\n\n") + "\n\n" + prompt
@@ -137,13 +138,18 @@ func doAutoCommit(prompt string) {
 		msg = msg[:72]
 	}
 
-	exec.Command("git", "add", "-A").Run()
+	if err := exec.Command("git", "add", "-A").Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: git add failed: %v\n", err)
+		return
+	}
 
 	if exec.Command("git", "diff", "--cached", "--quiet").Run() != nil {
 		cmd := exec.Command("git", "commit", "-m", msg)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
-		cmd.Run()
+		if err := cmd.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: git commit failed: %v\n", err)
+		}
 	}
 }
 
@@ -294,7 +300,7 @@ func cmdSessions(args []string) {
 	}
 }
 
-func cmdHelp(args []string) {
+func cmdHelp() {
 	printHelp()
 	os.Exit(0)
 }
@@ -334,5 +340,5 @@ func truncate(s string, n int) string {
 	if len(runes) <= n {
 		return string(runes)
 	}
-	return string(runes[:n]) + "..."
+	return string(runes[:n]) + "…"
 }
