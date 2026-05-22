@@ -1,10 +1,17 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
+	"time"
 
+	"github.com/alecthomas/chroma/v2"
+	"github.com/alecthomas/chroma/v2/formatters"
+	"github.com/alecthomas/chroma/v2/lexers"
+	"github.com/alecthomas/chroma/v2/styles"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -769,7 +776,14 @@ func (m *model) helpText() string {
 	)
 }
 
+var lastRender time.Time
+
 func (m *model) renderViewport() {
+	// throttle during streaming to ~20fps
+	if m.streaming && time.Since(lastRender) < 50*time.Millisecond {
+		return
+	}
+	lastRender = time.Now()
 	var sb strings.Builder
 	// 只渲染最近 maxHistory 条消息
 	start := 0
@@ -793,7 +807,7 @@ func (m *model) renderViewport() {
 		case "tool":
 			sb.WriteString(toolOutStyle.Render("  → " + trunc(msg.content, 200)))
 		default:
-			sb.WriteString(msg.content)
+			sb.WriteString(highlightCode(msg.content))
 		}
 		sb.WriteString("\n")
 	}
@@ -857,30 +871,100 @@ func doStream(ctx context.Context, p *tea.Program, app *infra.Application, sessi
 	}
 }
 
+// theme defines the TUI color scheme.
+type tuiTheme struct {
+	user, ai, think, err, tool, toolOut, sys                lipgloss.Style
+	statusBar, input, sessionTitle, sel, helpKey, helpTitle lipgloss.Style
+	helpSection, separator, warn, codeBlock                lipgloss.Style
+}
+
+var theme = tuiTheme{
+	user:      lipgloss.NewStyle().Foreground(lipgloss.Color("#6C8EBF")).Bold(true),
+	ai:        lipgloss.NewStyle().Foreground(lipgloss.Color("#82B74B")),
+	think:     lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Italic(true),
+	err:       lipgloss.NewStyle().Foreground(lipgloss.Color("#FF6B6B")),
+	tool:      lipgloss.NewStyle().Foreground(lipgloss.Color("#D4A859")).Bold(true),
+	toolOut:   lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")),
+	sys:       lipgloss.NewStyle().Foreground(lipgloss.Color("#AAAAAA")).Italic(true),
+	statusBar: lipgloss.NewStyle().Background(lipgloss.Color("#1a1a2e")).Foreground(lipgloss.Color("#AAAAAA")).Padding(0, 1),
+	input:        lipgloss.NewStyle().PaddingLeft(1),
+	sessionTitle: lipgloss.NewStyle().Foreground(lipgloss.Color("#6C8EBF")).Bold(true).Underline(true),
+	sel:         lipgloss.NewStyle().Foreground(lipgloss.Color("#D4A859")).Bold(true),
+	helpKey:     lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")),
+	helpTitle:   lipgloss.NewStyle().Foreground(lipgloss.Color("#D4A859")).Bold(true),
+	helpSection: lipgloss.NewStyle().Foreground(lipgloss.Color("#6C8EBF")).Bold(true),
+	separator:   lipgloss.NewStyle().Foreground(lipgloss.Color("#333333")),
+	warn:        lipgloss.NewStyle().Foreground(lipgloss.Color("#D4A859")).Bold(true),
+	codeBlock:   lipgloss.NewStyle().Background(lipgloss.Color("#1a1a2e")).Padding(0, 1),
+}
+
+// shorthand helpers for theme access
 var (
-	userStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("#6C8EBF")).Bold(true)
-	aiStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("#82B74B"))
-	thinkStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Italic(true)
-	errStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF6B6B"))
-	toolStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("#D4A859")).Bold(true)
-	toolOutStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
-	sysStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("#AAAAAA")).Italic(true)
-	statusBarStyle = lipgloss.NewStyle().
-			Background(lipgloss.Color("#1a1a2e")).
-			Foreground(lipgloss.Color("#AAAAAA")).
-			Padding(0, 1)
-	inputStyle        = lipgloss.NewStyle().PaddingLeft(1)
-	sessionTitleStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#6C8EBF")).
-				Bold(true).
-				Underline(true)
-	selStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("#D4A859")).Bold(true)
-	helpKeyStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
-	helpTitleStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#D4A859")).Bold(true)
-	helpSectionStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#6C8EBF")).Bold(true)
-	separatorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#333333"))
-	warnStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("#D4A859")).Bold(true)
+	userStyle      = theme.user
+	aiStyle        = theme.ai
+	thinkStyle     = theme.think
+	errStyle       = theme.err
+	toolStyle      = theme.tool
+	toolOutStyle   = theme.toolOut
+	sysStyle       = theme.sys
+	statusBarStyle = theme.statusBar
+	inputStyle        = theme.input
+	sessionTitleStyle = theme.sessionTitle
+	selStyle         = theme.sel
+	helpKeyStyle     = theme.helpKey
+	helpTitleStyle   = theme.helpTitle
+	helpSectionStyle = theme.helpSection
+	separatorStyle   = theme.separator
+	warnStyle        = theme.warn
 )
+
+
+// highlightCode detects ```language blocks and applies syntax highlighting.
+func highlightCode(text string) string {
+	re := regexp.MustCompile("(?s)```(\\w*)\\n(.+?)\\n```")
+	return re.ReplaceAllStringFunc(text, func(match string) string {
+		parts := re.FindStringSubmatch(match)
+		if len(parts) < 3 {
+			return match
+		}
+		lang := parts[1]
+		code := parts[2]
+		if lang == "" {
+			lang = "go"
+		}
+		return highlightBlock(code, lang)
+	})
+}
+
+var chromaStyle *chroma.Style
+
+func init() {
+	chromaStyle = styles.Get("monokai")
+	if chromaStyle == nil {
+		chromaStyle = styles.Fallback
+	}
+}
+
+func highlightBlock(code, lang string) string {
+	formatter := formatters.TTY256
+	lexer := lexers.Get(lang)
+	if lexer == nil {
+		lexer = lexers.Analyse(code)
+	}
+	if lexer == nil {
+		lexer = lexers.Fallback
+	}
+	lexer = chroma.Coalesce(lexer)
+	iterator, err := lexer.Tokenise(nil, code)
+	if err != nil {
+		return code
+	}
+	var buf bytes.Buffer
+	if err := formatter.Format(&buf, chromaStyle, iterator); err != nil {
+		return code
+	}
+	return theme.codeBlock.Render("\n" + strings.TrimRight(buf.String(), "\n") + "\n")
+}
 
 func sessionDisplayName(s *kernel.Session) string {
 	if s == nil {
