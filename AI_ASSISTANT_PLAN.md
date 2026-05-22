@@ -1,6 +1,31 @@
 # AI助手开发计划
 
-> ⚠️ 本文档为项目初期规划，描述的是目标蓝图。当前实际实现状态见 [INSTALL.md](INSTALL.md) 和 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
+> ⚠️ 本文档为项目初期规划 (2025-05)，描述的是目标蓝图。当前实际实现状态见下方对照表。
+> 
+> ### 规划 vs 实际实现
+> 
+> | 规划 | 状态 | 实际实现 |
+> |------|------|---------|
+> | 对话引擎 + 意图识别 | ✅ | ReAct 循环 (kernel_process.go / kernel_stream.go) |
+> | 记忆系统 + 长期记忆 | ✅ | L1/L2/L3 三级文件记忆 + Embedding 语义搜索 |
+> | 思考推理模块 | ✅ | LLM 反思 (llm_reflection.go) + 跨会话学习 (learner.go) |
+> | 工作流设计+执行 | ✅ | Planner + DAG 并行执行 (orchestration/) |
+> | 纠错系统 | ✅ | 质量门控 (feedback/) + 错误恢复策略 (提示词内) |
+> | 多模型管理+协同 | ✅ | LLM 网关 17+ 提供商 (llm/gateway.go) + Team 多 Agent |
+> | 跨平台自动化 | ✅ | execute_command 跨平台 + 浏览器自动化 (browser.go) |
+> | 终端界面 | ✅ | Bubbletea TUI (cmd/cli/) |
+> | Skill 系统 | ✅ | 5 内置 + Claude SKILL.md 兼容 + 自动进化 (kernel/skill.go) |
+> | 插件系统 | ✅ | Claude Code 官方格式兼容 (plugin/) |
+> | 零配置部署 | ✅ | `make build` → 二进制 + 首次交互引导 (onboard.go) |
+> | 实时代码执行 | ✅ | execute_command 工具 (tools_filesystem.go) |
+> | 任务确认系统 | ✅ | AutoApprover + UnsafeMode (kernel/approval.go) |
+> | 生态集成 | ✅ | MCP 协议 + Claude 插件 + Git 深度集成 |
+> | Web 界面 | ⚠️ | 前端 SPA 框架完成 (frontend/)，未与后端联调 |
+> | 数据库 (SQLite/PG/MySQL) | ❌ | 当前使用文件 JSON + 内存存储 |
+> | Redis 缓存 | ❌ | 使用 24h TTL 内存缓存 (llm/cache.go) |
+> | HNSW 向量存储 | ❌ | 使用 TF-IDF + 余弦相似度 |
+> 
+> 详细实现见 [CLAUDE.md](../CLAUDE.md) 和 [README.md](../README.md)。
 
 ## 1. 核心架构
 

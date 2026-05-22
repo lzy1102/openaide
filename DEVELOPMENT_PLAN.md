@@ -1,6 +1,15 @@
 # AI助手开发计划
 
-> ⚠️ 本文档为项目初期规划，描述的是目标蓝图。当前实际实现状态见 [INSTALL.md](INSTALL.md) 和 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
+> ⚠️ 本文档为项目初期规划 (2025-05)，描述的是目标蓝图。下方结构为初期构想，实际项目已大幅偏离此规划。
+> 
+> **实际项目状态 (2026-05)**：
+> - 后端: Go 1.26, `backend/` 目录, 24 个 internal 包, ~85 个 Go 文件
+> - 前端: `frontend/index.html` vanilla JS SPA (框架完成，未联调)
+> - 终端: `cmd/cli/` Bubbletea TUI + 首次引导
+> - 无 `assistant/` `common/` `terminal/` 目录结构 — 已合并为 `backend/` 单体
+> - 无 Node.js 前端 — 前端是纯 HTML+JS
+> 
+> 详细架构见 [CLAUDE.md](../CLAUDE.md)。
 
 ## 1. 项目结构
 
