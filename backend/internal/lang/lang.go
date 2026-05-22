@@ -28,11 +28,12 @@ func Detect() Lang {
 	return EN
 }
 
-var messages = map[Lang]map[string]string{
+	var messages = map[Lang]map[string]string{
 	ZH: {
 		"cli.usage":         "OpenAIDE — AI Agent 终端",
 		"cli.usage_detail":  "用法:",
 		"cli.help":          "帮助",
+		"cli.version":       "OpenAIDE CLI dev",
 		"cli.oneshot":       "  openaide <prompt>            单次执行",
 		"cli.file_oneshot":  "  openaide <file> <prompt>     传文件 + prompt",
 		"cli.y":             "  openaide -y                  自动批准所有操作",
@@ -71,6 +72,7 @@ var messages = map[Lang]map[string]string{
 
 		"sess.none":         "没有会话。",
 		"sess.info":         "会话 | 消息 | 预览",
+		"sess.list_format":  "%-24s  %3d 条消息  %s\n",
 
 		"tui.placeholder":   "输入消息... (Ctrl+H 帮助)",
 		"tui.model_switched":"已切换模型至: %s",
@@ -90,11 +92,19 @@ var messages = map[Lang]map[string]string{
 		"help.cmd_help_desc":   "显示此帮助",
 		"help.cmd_clear_desc":  "清屏",
 		"help.cmd_model_desc":  "显示/切换当前模型",
+
+		"update.title":           "OpenAIDE 更新",
+		"update.script_not_found":"错误: 更新脚本未找到",
+		"update.failed":          "\n更新失败: %v\n",
+		"update.complete":        "\n更新完成!",
+
+		"git.auto_commit_msg":    "openaide 自动提交",
 	},
 	EN: {
 		"cli.usage":         "OpenAIDE — AI Agent Terminal",
 		"cli.usage_detail":  "Usage:",
 		"cli.help":          "help",
+		"cli.version":       "OpenAIDE CLI dev",
 		"cli.oneshot":       "  openaide <prompt>            One-shot mode",
 		"cli.file_oneshot":  "  openaide <file> <prompt>     File + prompt",
 		"cli.y":             "  openaide -y                  Auto-approve all actions",
@@ -133,6 +143,7 @@ var messages = map[Lang]map[string]string{
 
 		"sess.none":         "No sessions found.",
 		"sess.info":         "Session | Messages | Preview",
+		"sess.list_format":  "%-24s  %3d msgs  %s\n",
 
 		"tui.placeholder":   "Type a message... (Ctrl+H for help)",
 		"tui.model_switched":"Switched model to: %s",
@@ -152,6 +163,13 @@ var messages = map[Lang]map[string]string{
 		"help.cmd_help_desc":   "Show this help",
 		"help.cmd_clear_desc":  "Clear chat messages",
 		"help.cmd_model_desc":  "Show/switch current model",
+
+		"update.title":           "OpenAIDE Update",
+		"update.script_not_found":"Error: update script not found",
+		"update.failed":          "\nUpdate failed: %v\n",
+		"update.complete":        "\nUpdate complete!",
+
+		"git.auto_commit_msg":    "openaide auto-commit",
 	},
 }
 

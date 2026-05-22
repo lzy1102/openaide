@@ -200,9 +200,33 @@ git push origin v1.0.0
 ## CLI
 
 ```bash
-openaide           # Bubbletea TUI（推荐）
-openaide update    # 更新
-openaide version   # 版本
+# Interactive chat
+openaide                          # Bubbletea TUI
+openaide <prompt>                 # One-shot mode
+openaide <file.go> <prompt>       # File + prompt
+openaide -c                       # Continue last session
+openaide -y                       # Auto-approve all tool calls
+openaide --model <name>           # Override model
+openaide --verbose                # Debug logging
+openaide -o json                  # Structured JSON output
+
+# Subcommands
+openaide sessions                 # List sessions
+openaide update                   # Update
+openaide version                  # Version
+openaide help                     # Show help
+
+# Slash commands (inside TUI)
+  /help           Show help
+  /clear          Clear chat messages
+  /model [name]   Show/switch current model
+
+# Keybindings (inside TUI)
+  Ctrl+C / Ctrl+D    Quit / stop streaming
+  Ctrl+S             Open session list
+  F1 / Ctrl+H        Show help
+  ↑ / ↓              Input history
+  PgUp / PgDown      Scroll chat
 ```
 
 ## API 端点

@@ -74,11 +74,17 @@ func parseFlags(args []string) cliFlags {
 			default:
 				f.outputFormat = "text"
 			}
-		case a == "-h" || a == "--help" || a == "help":
+		case a == "-h" || a == "--help":
 			printHelp()
 			os.Exit(0)
-		case a == "-v" || a == "--version" || a == "version":
-			fmt.Println("OpenAIDE CLI dev")
+		case a == "-v" || a == "--version":
+			fmt.Println(lang.T("cli.version"))
+			os.Exit(0)
+		case a == "help":
+			cmdHelp(args[i+1:])
+			os.Exit(0)
+		case a == "version":
+			fmt.Println(lang.T("cli.version"))
 			os.Exit(0)
 		case a == "update" || a == "upgrade":
 			cmdUpdate(args[i+1:])
@@ -125,7 +131,7 @@ func doAutoCommit(prompt string) {
 	}
 	msg := prompt
 	if msg == "" {
-		msg = "openaide auto-commit"
+		msg = lang.T("git.auto_commit_msg")
 	}
 	if len(msg) > 72 {
 		msg = msg[:72]
@@ -284,18 +290,23 @@ func cmdSessions(args []string) {
 				break
 			}
 		}
-		fmt.Printf("%-24s  %3d msgs  %s\n", s.ID, msgCount, preview)
+		fmt.Printf(lang.T("sess.list_format"), s.ID, msgCount, preview)
 	}
 }
 
+func cmdHelp(args []string) {
+	printHelp()
+	os.Exit(0)
+}
+
 func cmdUpdate(args []string) {
-	fmt.Println("OpenAIDE Update")
+	fmt.Println(lang.T("update.title"))
 	installDir := os.Getenv("HOME") + "/.openaide"
 	script := filepath.Join(installDir, "scripts", "update.sh")
 	if _, err := os.Stat(script); os.IsNotExist(err) {
 		script = filepath.Join(installDir, "install.sh")
 		if _, err := os.Stat(script); os.IsNotExist(err) {
-			fmt.Println("Error: update script not found")
+			fmt.Println(lang.T("update.script_not_found"))
 			os.Exit(1)
 		}
 	}
@@ -312,10 +323,10 @@ func cmdUpdate(args []string) {
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
 	if err := cmd.Run(); err != nil {
-		fmt.Printf("\nUpdate failed: %v\n", err)
+		fmt.Printf(lang.T("update.failed"), err)
 		os.Exit(1)
 	}
-	fmt.Println("\nUpdate complete!")
+	fmt.Println(lang.T("update.complete"))
 }
 
 func truncate(s string, n int) string {

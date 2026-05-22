@@ -316,6 +316,7 @@ func TestAgentKernel_ProcessStream_Cancel(t *testing.T) {
 	kernel := NewAgentKernel(blockingLLM, tools, mem, store, DefaultConfig())
 
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	ch, err := kernel.ProcessStream(ctx, &Query{Content: "test", ProjectID: "test"})
 	if err != nil {
 		t.Fatalf("ProcessStream failed: %v", err)
