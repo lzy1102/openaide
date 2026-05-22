@@ -105,6 +105,30 @@ func (g *Gateway) GetProviders() []string {
 	return names
 }
 
+// ProviderInfo 提供商概要信息
+type ProviderInfo struct {
+	Name    string
+	Model   string
+	Default bool
+}
+
+// GetProviderInfos 返回所有提供商及其当前模型
+func (g *Gateway) GetProviderInfos() []ProviderInfo {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	infos := make([]ProviderInfo, 0, len(g.providers))
+	for name, p := range g.providers {
+		info := ProviderInfo{
+			Name:    name,
+			Model:   p.GetModelID(),
+			Default: name == g.defaultProvider,
+		}
+		infos = append(infos, info)
+	}
+	return infos
+}
+
 // GetEnabledProviders 获取启用的提供商
 func (g *Gateway) GetEnabledProviders() []string {
 	g.mu.RLock()

@@ -17,6 +17,7 @@ import (
 
 	"openaide/backend/internal/infra"
 	"openaide/backend/internal/kernel"
+	"openaide/backend/internal/llm"
 )
 
 type ViewState int
@@ -24,6 +25,7 @@ type ViewState int
 const (
 	viewChat ViewState = iota
 	viewSessionList
+	viewModelList
 	viewHelp
 )
 
@@ -87,6 +89,9 @@ type model struct {
 	tools          int
 	err            error
 	deleteTargetID string
+
+	providers  []llm.ProviderInfo
+	selProvider int
 }
 
 func initModel(app *infra.Application, continueSess bool) *model {
@@ -146,6 +151,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch m.state {
 		case viewSessionList:
 			return m.updateSessionList(msg)
+		case viewModelList:
+			return m.updateModelList(msg)
 		case viewHelp:
 			m.state = viewChat
 			m.input.Focus()
@@ -398,13 +405,20 @@ func (m *model) handleCommand(cmd string) (tea.Model, tea.Cmd) {
 		m.selSession = 0
 		return m, m.loadSessionList()
 	case "/model":
-		if len(parts) < 2 {
-			model := m.app.LLMGateway.GetModelID()
-			providers := strings.Join(m.app.LLMGateway.GetProviders(), ", ")
-			m.addSystemMsg(fmt.Sprintf("Current model: %s\nAvailable providers: %s\nUsage: /model <provider>:<model>", model, providers))
-		} else {
+		if len(parts) >= 2 {
 			m.app.SetModel(parts[1])
 			m.addSystemMsg(fmt.Sprintf("Switched model to: %s", parts[1]))
+		} else {
+			m.providers = m.app.LLMGateway.GetProviderInfos()
+			m.selProvider = 0
+			for i, p := range m.providers {
+				if p.Default {
+					m.selProvider = i
+					break
+				}
+			}
+			m.state = viewModelList
+			m.input.Blur()
 		}
 		m.input.SetValue("")
 		return m, nil
@@ -601,6 +615,36 @@ func (m *model) updateSessionList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m *model) updateModelList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if m.selProvider > 0 {
+			m.selProvider--
+		}
+	case "down", "j":
+		if m.selProvider < len(m.providers)-1 {
+			m.selProvider++
+		}
+	case "enter":
+		if m.selProvider >= 0 && m.selProvider < len(m.providers) {
+			p := m.providers[m.selProvider]
+			if err := m.app.LLMGateway.SetDefaultProvider(p.Name); err == nil {
+				m.addSystemMsg(fmt.Sprintf("Switched to provider: %s (model: %s)", p.Name, p.Model))
+			} else {
+				m.addErrorMsg(fmt.Sprintf("Failed to switch: %v", err))
+			}
+		}
+		m.state = viewChat
+		m.input.Focus()
+		m.providers = nil
+	case "esc", "q":
+		m.state = viewChat
+		m.input.Focus()
+		m.providers = nil
+	}
+	return m, nil
+}
+
 func (m *model) loadChatHistory() {
 	if m.currentSess == nil {
 		return
@@ -647,6 +691,8 @@ func (m *model) View() string {
 	switch m.state {
 	case viewSessionList:
 		return m.chatView() + "\n" + m.sessionOverlayView()
+	case viewModelList:
+		return m.chatView() + "\n" + m.modelOverlayView()
 	case viewHelp:
 		return m.chatView() + "\n" + m.helpOverlayView()
 	default:
@@ -754,6 +800,48 @@ func (m *model) sessionListView() string {
 	} else {
 		sb.WriteString(helpKeyStyle.Render("↑/↓ navigate · Enter select · n new · d delete · esc/q back") + "\n")
 	}
+	return sb.String()
+}
+
+func (m *model) modelOverlayView() string {
+	content := m.modelListView()
+	overlay := lipgloss.NewStyle().
+		Width(m.width - 10).
+		Border(lipgloss.DoubleBorder()).
+		BorderForeground(lipgloss.Color("#D4A859")).
+		Padding(0, 1).
+		Render(content)
+	return strings.Repeat("\n", 2) + overlay
+}
+
+func (m *model) modelListView() string {
+	var sb strings.Builder
+	sb.WriteString(sessionTitleStyle.Render("Select Provider / Model"))
+	sb.WriteString("\n\n")
+
+	if len(m.providers) == 0 {
+		sb.WriteString("  No providers configured.")
+	} else {
+		for i, p := range m.providers {
+			prefix := "  "
+			if i == m.selProvider {
+				prefix = "▸ "
+			}
+			def := ""
+			if p.Default {
+				def = " (default)"
+			}
+			line := fmt.Sprintf("%s%s%s — %s", prefix, p.Name, def, p.Model)
+			if i == m.selProvider {
+				sb.WriteString(selStyle.Render(line) + "\n")
+			} else {
+				sb.WriteString("  " + line + "\n")
+			}
+		}
+	}
+
+	sb.WriteString("\n")
+	sb.WriteString(helpKeyStyle.Render("↑/↓ navigate · Enter select · esc/q back") + "\n")
 	return sb.String()
 }
 
