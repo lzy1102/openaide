@@ -476,52 +476,56 @@ func (e *EnhancedOrchestrator) enhance(ctx context.Context, userID, projectID, q
 	}
 }
 
-// executePlan 使用隔离上下文的多 Agent 执行：每个子任务在独立会话中运行
-// 主 Agent 上下文只接收子 Agent 的结果摘要，不被工具调用历史污染
+// executePlan 智能路由多 Agent 执行：LLM 根据任务类型自动选择角色组合
 func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, content string, plan *Plan, opts kernel.QueryOptions) (*kernel.Response, error) {
+	// 智能路由：LLM 根据任务类型和子任务内容选择最佳角色管线
+	pipeline := o.routePipeline(ctx, plan)
 	var results []string
 	totalTools := 0
 
-	// Phase 1: 执行 — 每个子任务作为独立的 coder sub-agent（隔离上下文 + TDD）
+	// Phase 1: 执行 — 每个子任务分配给最合适的角色
 	for i, st := range plan.Subtasks {
-		task := fmt.Sprintf("总体目标: %s\n当前步骤 (%d/%d): %s\n具体要求: %s\n\nTDD 原则：请先编写测试用例，确认测试失败后再实现功能。实现后运行测试确认通过。",
+		roleName := pickRoleForTask(pipeline, st)
+		task := fmt.Sprintf("总体目标: %s\n当前步骤 (%d/%d): %s\n具体要求: %s\n\nTDD 原则：涉及代码修改时请先编写测试用例再实现。",
 			plan.Goal, i+1, len(plan.Subtasks), st.Title, st.Description)
 
-		content, err := o.RunSubAgent(ctx, userID, projectID, "coder", task, results)
+		content, err := o.RunSubAgent(ctx, userID, projectID, roleName, task, results)
 		if err != nil {
 			results = append(results, fmt.Sprintf("❌ 步骤%d(%s)失败: %v", st.ID, st.Title, err))
 			continue
 		}
-		results = append(results, fmt.Sprintf("### 步骤%d: %s\n%s", st.ID, st.Title, content))
+		results = append(results, fmt.Sprintf("### 步骤%d: %s [%s]\n%s", st.ID, st.Title, roleName, content))
 		totalTools++
 	}
 
 	execSummary := strings.Join(results, "\n\n---\n\n")
 
-	// Phase 2: 测试验证 — executor sub-agent（隔离上下文，只读+执行）
-	verifyTask := fmt.Sprintf("总体目标: %s\n\n已完成的工作:\n%s\n\n验证以上工作是否完整正确。\n1. 运行编译/构建命令\n2. 运行测试\n3. 检查逻辑正确性\n4. 发现问题请直接修复。",
-		plan.Goal, execSummary)
+	// Phase 2: 根据管线决定是否需要测试和审查
+	var testReport, finalReport string
 
-	testReport, testErr := o.RunSubAgent(ctx, userID, projectID, "executor", verifyTask, results)
-	if testErr != nil {
-		testReport = fmt.Sprintf("⚠ 验证阶段出错: %v", testErr)
-	} else {
+	if pipelineHas(pipeline, "executor") {
+		verifyTask := fmt.Sprintf("总体目标: %s\n\n已完成的工作:\n%s\n\n验证完整性：编译/构建/测试/逻辑检查。发现问题直接修复。",
+			plan.Goal, execSummary)
+		testReport, _ = o.RunSubAgent(ctx, userID, projectID, "executor", verifyTask, results)
 		totalTools++
 	}
+	if testReport == "" {
+		testReport = "（跳过验证阶段）"
+	}
 
-	// Phase 3: 验收报告 — reviewer sub-agent（隔离上下文，只读）
-	reviewTask := fmt.Sprintf("总体目标: %s\n\n执行结果:\n%s\n\n验证结果:\n%s\n\n生成最终验收报告：\n1. 完成了什么\n2. 修改了哪些文件\n3. 验证状态\n4. 遗留问题\n\n输出 Markdown，不要用代码块包裹。",
-		plan.Goal, execSummary, testReport)
+	if pipelineHas(pipeline, "reviewer") {
+		reviewTask := fmt.Sprintf("总体目标: %s\n\n执行结果:\n%s\n\n验证结果:\n%s\n\n生成验收报告：完成内容、修改文件、验证状态、遗留问题。Markdown 格式。",
+			plan.Goal, execSummary, testReport)
+		reviewContent, err := o.RunSubAgent(ctx, userID, projectID, "reviewer", reviewTask, nil)
+		if err == nil {
+			finalReport = fmt.Sprintf("## %s\n\n### 验证结果\n%s\n\n---\n\n### 验收报告\n%s",
+				plan.Goal, testReport, reviewContent)
+			totalTools++
+		}
+	}
 
-	reviewContent, reviewErr := o.RunSubAgent(ctx, userID, projectID, "reviewer", reviewTask, nil)
-	var finalReport string
-	if reviewErr != nil {
-		finalReport = fmt.Sprintf("## %s\n\n### 执行结果\n%s\n\n### 验证结果\n%s\n\n### 验收报告\n生成失败: %v",
-			plan.Goal, execSummary, testReport, reviewErr)
-	} else {
-		finalReport = fmt.Sprintf("## %s\n\n### 验证结果\n%s\n\n---\n\n### 验收报告\n%s",
-			plan.Goal, testReport, reviewContent)
-		totalTools++
+	if finalReport == "" {
+		finalReport = fmt.Sprintf("## %s\n\n### 执行结果\n%s\n\n### 验证结果\n%s", plan.Goal, execSummary, testReport)
 	}
 
 	return &kernel.Response{
@@ -530,5 +534,97 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 		TokensUsed: 0,
 		Duration:   0,
 	}, nil
+}
+
+// routePipeline 让 LLM 根据任务类型选择需要的角色管线
+func (o *Orchestrator) routePipeline(ctx context.Context, plan *Plan) []string {
+	if o.team == nil {
+		return []string{"coder", "executor", "reviewer"}
+	}
+
+	subtaskDescs := make([]string, len(plan.Subtasks))
+	for i, st := range plan.Subtasks {
+		subtaskDescs[i] = fmt.Sprintf("%d. %s: %s", st.ID, st.Title, st.Description)
+	}
+
+	prompt := fmt.Sprintf(`分析以下任务，选择需要的角色（可多选）。
+
+角色:
+- analyst: 分析代码、研究问题（只读）
+- coder: 编写/修改代码、实现功能
+- executor: 运行测试、执行命令、验证
+- reviewer: 审查代码质量、安全性、生成报告
+
+任务目标: %s
+子任务:
+%s
+
+规则:
+- 纯分析/研究类任务 → analyst
+- 涉及代码修改 → coder + executor
+- 重要功能/安全相关 → coder + executor + reviewer
+- 简单查询 → 单角色
+
+只回复角色名称，逗号分隔。如: analyst,coder,executor,reviewer`, plan.Goal, strings.Join(subtaskDescs, "\n"))
+
+	messages := []kernel.Message{
+		{Role: "system", Content: "你是任务路由器。输出需要的角色名（逗号分隔）。"},
+		{Role: "user", Content: prompt},
+	}
+	resp, err := o.llmGateway.Chat(ctx, messages, nil, map[string]interface{}{"max_tokens": 50, "temperature": 0})
+	if err != nil {
+		return []string{"coder", "executor", "reviewer"}
+	}
+
+	var roles []string
+	for _, r := range strings.Split(strings.TrimSpace(resp.Content), ",") {
+		r = strings.TrimSpace(r)
+		if o.team.GetRole(r) != nil {
+			roles = append(roles, r)
+		}
+	}
+	if len(roles) == 0 {
+		return []string{"analyst"}
+	}
+	return roles
+}
+
+func pickRoleForTask(pipeline []string, st SubTask) string {
+	// 根据子任务类型智能选角色
+	desc := strings.ToLower(st.Title + " " + st.Description)
+	toolHints := strings.ToLower(st.ToolHints)
+
+	// 分析/研究类 → analyst
+	if strings.Contains(desc, "分析") || strings.Contains(desc, "研究") ||
+		strings.Contains(desc, "了解") || strings.Contains(desc, "explore") ||
+		strings.Contains(desc, "调研") || strings.Contains(desc, "review") {
+		if pipelineHas(pipeline, "analyst") {
+			return "analyst"
+		}
+	}
+	// 测试/验证类 → executor
+	if strings.Contains(desc, "测试") || strings.Contains(desc, "验证") ||
+		strings.Contains(desc, "编译") || strings.Contains(desc, "test") ||
+		strings.Contains(desc, "build") || strings.Contains(desc, "运行") {
+		if pipelineHas(pipeline, "executor") {
+			return "executor"
+		}
+	}
+	// 需要写文件的 → coder
+	if strings.Contains(toolHints, "write_file") || strings.Contains(toolHints, "diff_edit") ||
+		pipelineHas(pipeline, "coder") {
+		return "coder"
+	}
+
+	return pipeline[0]
+}
+
+func pipelineHas(pipeline []string, role string) bool {
+	for _, r := range pipeline {
+		if r == role {
+			return true
+		}
+	}
+	return false
 }
 
