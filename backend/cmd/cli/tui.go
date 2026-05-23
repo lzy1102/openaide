@@ -123,7 +123,7 @@ func initModel(app *infra.Application, continueSess bool) *model {
 	ti.Placeholder = lang.T("tui.placeholder")
 	ti.Prompt = "❯ "
 	ti.Focus()
-	ti.CharLimit = 4000
+	ti.CharLimit = 0 // 不限制输入长度，粘贴不受限
 	ti.Width = 60
 
 	vp := viewport.New(80, 20)
