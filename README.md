@@ -121,7 +121,7 @@ docker-compose up -d
 tail -f ~/.openaide/logs/server.log
 
 # 使用 CLI
-openaide-cli
+openaide
 
 # 启动/停止服务（systemd 或手动运行 openaide-server）
 openaide-server
@@ -135,7 +135,7 @@ openaide-server
 ~/.openaide/
 ├── bin/
 │   ├── openaide-server      # API 服务器
-│   └── openaide-cli         # 命令行客户端
+│   └── openaide         # 命令行客户端
 ├── config.json              # 用户配置
 ├── data/                    # 用户数据
 │   ├── memory/              # 记忆
@@ -158,7 +158,7 @@ openaide-server
 ## GitHub Actions
 
 每次推送到 `master` 分支会自动：
-1. 编译 `openaide-server` 和 `openaide-cli`
+1. 编译 `openaide-server` 和 `openaide`
 2. 运行测试
 3. 打包为 `openaide-linux-amd64.tar.gz`
 

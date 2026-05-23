@@ -18,7 +18,7 @@ deps:
 build:
 	@echo "Building..."
 	CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide-server ./cmd/server
-	CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide-cli ./cmd/cli
+	CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide ./cmd/cli
 
 # 运行
 run:

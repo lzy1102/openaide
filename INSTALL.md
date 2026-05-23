@@ -22,11 +22,11 @@ make deps
 
 # Build server and CLI
 make build
-# Output: bin/openaide-server, bin/openaide-cli
+# Output: bin/openaide-server, bin/openaide
 
 # Or build directly
 CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide-server ./cmd/server
-CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide-cli ./cmd/cli
+CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide ./cmd/cli
 ```
 
 ### Run
@@ -40,7 +40,7 @@ cd backend && make run
 ./bin/openaide-server -config ~/.openaide/config.yaml
 
 # Interactive CLI (forces direct mode, no API server)
-./bin/openaide-cli
+./bin/openaide
 ```
 
 ### Configuration
@@ -178,11 +178,11 @@ make deps
 
 # 编译服务端和 CLI
 make build
-# 输出: bin/openaide-server, bin/openaide-cli
+# 输出: bin/openaide-server, bin/openaide
 
 # 或直接编译
 CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide-server ./cmd/server
-CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide-cli ./cmd/cli
+CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide ./cmd/cli
 ```
 
 ### 运行
@@ -196,7 +196,7 @@ cd backend && make run
 ./bin/openaide-server -config ~/.openaide/config.yaml
 
 # 交互式 CLI（强制 direct 模式，不启动 API 服务）
-./bin/openaide-cli
+./bin/openaide
 ```
 
 ### 配置

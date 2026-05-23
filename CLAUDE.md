@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Common commands
 
 ```bash
-# Build both binaries (openaide-server, openaide-cli)
+# Build both binaries (openaide-server, openaide)
 make build
 # or from backend/
 cd backend && make build

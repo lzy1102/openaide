@@ -5,7 +5,7 @@
 ```bash
 cd backend
 make build
-# 输出: bin/openaide-server, bin/openaide-cli
+# 输出: bin/openaide-server, bin/openaide
 ```
 
 ## 2. 配置
@@ -32,16 +32,16 @@ kernel:
 
 ```bash
 # 交互式 TUI（首次运行会进入引导配置身份）
-openaide-cli
+openaide
 
 # 单次执行
-openaide-cli "帮我分析这个项目的代码结构"
+openaide "帮我分析这个项目的代码结构"
 
 # 继续上次会话
-openaide-cli -c
+openaide -c
 
 # One-shot 带文件
-openaide-cli main.go "review this function"
+openaide main.go "review this function"
 ```
 
 ## 4. TUI 内操作
@@ -68,7 +68,7 @@ openaide-cli main.go "review this function"
 cp -r ~/claude-plugins/some-plugin ./data/plugins/
 
 # 启动即发现
-openaide-cli
+openaide
 ```
 
 ## 6. 数据位置
