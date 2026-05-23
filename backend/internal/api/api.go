@@ -117,6 +117,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		Duration:   resp.Duration.Milliseconds(),
 		Model:      resp.Model,
 	})
+	RecordMetrics(resp.TokensUsed, resp.ToolCalls, false)
 }
 
 // sendSSE writes an SSE event, handling marshal errors gracefully.

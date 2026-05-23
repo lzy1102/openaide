@@ -79,6 +79,13 @@ func (fc *FileCheckpointer) Save(ctx context.Context, sessionID string, cp *Chec
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		return fmt.Errorf("write checkpoint: %w", err)
 	}
+
+	// 每个会话最多保留 5 个检查点，删除旧的
+	if checkpoints, err := fc.List(ctx, sessionID); err == nil && len(checkpoints) > 5 {
+		for _, old := range checkpoints[:len(checkpoints)-5] {
+			os.Remove(fc.checkpointPath(sessionID, old.ID))
+		}
+	}
 	return nil
 }
 

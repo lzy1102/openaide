@@ -7,6 +7,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/alecthomas/chroma/v2"
@@ -103,6 +104,7 @@ type model struct {
 	selProvider  int
 	skillTrigger string // slash 命令触发的技能 ID
 	cancelStream context.CancelFunc
+	cancelMu     sync.Mutex
 
 	pendingPlan  *orchestration.Plan // 待确认的任务规划
 	pendingQuery string              // 待确认的查询
