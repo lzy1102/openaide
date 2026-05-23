@@ -317,16 +317,20 @@ func (c *Config) normalize() {
 	if c.LLM.MaxRounds > 0 && c.Kernel.MaxRounds == 30 {
 		c.Kernel.MaxRounds = c.LLM.MaxRounds
 	}
-	// 根据模型自动设置上下文大小
+	// 根据模型名自动推断上下文大小
 	if c.LLM.Model != "" && c.Kernel.MaxTokens == 200000 {
 		model := strings.ToLower(c.LLM.Model)
 		switch {
-		case strings.Contains(model, "v4-pro") || strings.Contains(model, "opus") || strings.Contains(model, "1m"):
-			c.Kernel.MaxTokens = 970000
-		case strings.Contains(model, "sonnet") || strings.Contains(model, "v4-flash"):
-			c.Kernel.MaxTokens = 150000
-		case strings.Contains(model, "haiku") || strings.Contains(model, "flash"):
-			c.Kernel.MaxTokens = 100000
+		case strings.Contains(model, "1m") || strings.Contains(model, "v4-pro") || strings.Contains(model, "v4-flash") || strings.Contains(model, "gemini"):
+			c.Kernel.MaxTokens = 970000 // 1M 上下文
+		case strings.Contains(model, "opus"):
+			c.Kernel.MaxTokens = 190000 // 200K
+		case strings.Contains(model, "sonnet") || strings.Contains(model, "haiku"):
+			c.Kernel.MaxTokens = 190000 // 200K
+		case strings.Contains(model, "gpt-4") || strings.Contains(model, "gpt-5") || strings.Contains(model, "o1") || strings.Contains(model, "o3") || strings.Contains(model, "o4"):
+			c.Kernel.MaxTokens = 120000 // 128K
+		case strings.Contains(model, "gpt-3"):
+			c.Kernel.MaxTokens = 15000  // 16K
 		}
 	}
 }
