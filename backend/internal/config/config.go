@@ -281,26 +281,24 @@ func (c *Config) normalize() {
 		return
 	}
 
-	// 从模型名自动推断一切
+	// 从模型名自动推断 provider；base_url 用户可显式覆盖
 	model := strings.ToLower(c.LLM.Model)
 	provider := "anthropic"
 	baseURL := c.LLM.BaseURL
 
-	if baseURL == "" {
-		switch {
-		case strings.Contains(model, "deepseek"):
-			baseURL = "https://api.deepseek.com/v1"
-			provider = "deepseek"
-		case strings.Contains(model, "claude"):
-			baseURL = "https://api.anthropic.com"
-			provider = "anthropic"
-		case strings.Contains(model, "gpt") || strings.Contains(model, "o1") || strings.Contains(model, "o3") || strings.Contains(model, "o4"):
-			baseURL = "https://api.openai.com/v1"
-			provider = "openai"
-		default:
-			baseURL = "https://api.openai.com/v1"
-			provider = "openai"
-		}
+	switch {
+	case strings.Contains(model, "deepseek"):
+		provider = "deepseek"
+		if baseURL == "" { baseURL = "https://api.deepseek.com/v1" }
+	case strings.Contains(model, "claude"):
+		provider = "anthropic"
+		if baseURL == "" { baseURL = "https://api.anthropic.com" }
+	case strings.Contains(model, "gpt") || strings.Contains(model, "o1") || strings.Contains(model, "o3") || strings.Contains(model, "o4"):
+		provider = "openai"
+		if baseURL == "" { baseURL = "https://api.openai.com/v1" }
+	default:
+		if baseURL == "" { baseURL = "https://api.openai.com/v1" }
+		provider = "openai"
 	}
 
 	providerType := "anthropic"
