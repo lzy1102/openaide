@@ -65,15 +65,11 @@ type LLMConfig struct {
 	Providers       []ProviderConfig `json:"providers" yaml:"providers"`
 	ModelRouting    ModelRoutingCfg  `json:"model_routing" yaml:"model_routing"`
 
-	// 简化配置字段（扁平格式，自动展开为完整格式）
-	Provider       string `json:"provider" yaml:"provider"`               // 等同于 default_provider + providers[0].name
-	APIKey         string `json:"api_key" yaml:"api_key"`                 // 等同于 providers[0].api_key
-	Model          string `json:"model" yaml:"model"`                     // 等同于 providers[0].default_model
-	BaseURL        string `json:"base_url" yaml:"base_url"`               // 等同于 providers[0].base_url
-	ExecutionModel string `json:"execution_model" yaml:"execution_model"` // 等同于 model_routing.execution
-	MaxTokens      int    `json:"max_tokens" yaml:"max_tokens"`           // 等同于 kernel.max_tokens
-	MaxRounds      int    `json:"max_rounds" yaml:"max_rounds"`           // 等同于 kernel.max_rounds
-	ContextSize    string `json:"context_size" yaml:"context_size"`       // "1m" "200k" "128k" "32k"
+	// 扁平格式（用户只需配下面的字段，其余自动推断）
+	APIKey         string `json:"api_key" yaml:"api_key"`                 // 必填：API Key
+	Model          string `json:"model" yaml:"model"`                     // 模型名, 默认自动选
+	BaseURL        string `json:"base_url" yaml:"base_url"`               // API 地址, 从模型名自动推断
+	ExecutionModel string `json:"execution_model" yaml:"execution_model"` // sub-agent 用轻量模型
 }
 
 // ModelRoutingCfg 按能力分配模型
@@ -279,95 +275,61 @@ func Load(path string) (*Config, error) {
 
 // normalize 将扁平简化配置展开为完整内部格式
 func (c *Config) normalize() {
-	if c.LLM.Provider != "" && len(c.LLM.Providers) == 0 {
-		// 扁平格式 → 展开为 providers 数组
-		c.LLM.DefaultProvider = c.LLM.Provider
-		baseURL := c.LLM.BaseURL
-		if baseURL == "" {
-			if strings.Contains(strings.ToLower(c.LLM.Provider), "deepseek") {
-				baseURL = "https://api.deepseek.com/anthropic"
-			} else {
-				baseURL = "https://api.openai.com/v1"
-			}
-		}
-		providerType := "anthropic"
-		if strings.Contains(baseURL, "openai") || strings.Contains(baseURL, "/v1") && !strings.Contains(baseURL, "anthropic") {
-			providerType = "openai"
-		}
-		c.LLM.Providers = []ProviderConfig{{
-			Name:         c.LLM.Provider,
-			Type:         providerType,
-			BaseURL:      baseURL,
-			APIKey:       c.LLM.APIKey,
-			DefaultModel: c.LLM.Model,
-			Timeout:      300,
-			Enabled:      true,
-		}}
+	// 已有完整 providers → 跳过展开
+	if len(c.LLM.Providers) > 0 {
+		return
 	}
-	// 展开执行模型到 model_routing
-	if c.LLM.ExecutionModel != "" && c.LLM.ModelRouting.Execution == "" {
-		c.LLM.ModelRouting.Execution = c.LLM.ExecutionModel
+
+	// 从模型名自动推断一切
+	model := strings.ToLower(c.LLM.Model)
+	provider := "anthropic"
+	baseURL := c.LLM.BaseURL
+
+	if baseURL == "" {
+		switch {
+		case strings.Contains(model, "deepseek"):
+			baseURL = "https://api.deepseek.com/anthropic"
+			provider = "deepseek"
+		case strings.Contains(model, "claude"):
+			baseURL = "https://api.anthropic.com"
+			provider = "anthropic"
+		case strings.Contains(model, "gpt") || strings.Contains(model, "o1") || strings.Contains(model, "o3") || strings.Contains(model, "o4"):
+			baseURL = "https://api.openai.com/v1"
+			provider = "openai"
+		default:
+			baseURL = "https://api.openai.com/v1"
+			provider = "openai"
+		}
 	}
+
+	providerType := "anthropic"
+	if strings.Contains(baseURL, "openai") || (strings.Contains(baseURL, "/v1") && !strings.Contains(baseURL, "anthropic")) {
+		providerType = "openai"
+	}
+
+	c.LLM.DefaultProvider = provider
+	c.LLM.Providers = []ProviderConfig{{
+		Name: provider, Type: providerType, BaseURL: baseURL,
+		APIKey: c.LLM.APIKey, DefaultModel: c.LLM.Model,
+		Timeout: 300, Enabled: true,
+	}}
+
+	// model_routing
 	if c.LLM.Model != "" && c.LLM.ModelRouting.Reasoning == "" {
 		c.LLM.ModelRouting.Reasoning = c.LLM.Model
 	}
-	// 平坦字段 → kernel
-	if c.LLM.MaxTokens > 0 && c.Kernel.MaxTokens == 200000 {
-		c.Kernel.MaxTokens = c.LLM.MaxTokens
+	if c.LLM.ExecutionModel != "" && c.LLM.ModelRouting.Execution == "" {
+		c.LLM.ModelRouting.Execution = c.LLM.ExecutionModel
+	} else if c.LLM.ModelRouting.Execution == "" {
+		c.LLM.ModelRouting.Execution = c.LLM.Model
 	}
-	if c.LLM.MaxRounds > 0 && c.Kernel.MaxRounds == 30 {
-		c.Kernel.MaxRounds = c.LLM.MaxRounds
-	}
-	// 根据模型名自动推断上下文大小
-	if c.LLM.Model != "" && c.Kernel.MaxTokens == 200000 {
-		model := strings.ToLower(c.LLM.Model)
-		switch {
-		case strings.Contains(model, "1m") || strings.Contains(model, "v4-pro") || strings.Contains(model, "v4-flash") || strings.Contains(model, "gemini"):
-			c.Kernel.MaxTokens = 980000 // 1M 上下文，留 20K 给系统开销
-		case strings.Contains(model, "opus"):
-			c.Kernel.MaxTokens = 190000 // 200K
-		case strings.Contains(model, "sonnet") || strings.Contains(model, "haiku"):
-			c.Kernel.MaxTokens = 190000 // 200K
-		case strings.Contains(model, "gpt-4") || strings.Contains(model, "gpt-5") || strings.Contains(model, "o1") || strings.Contains(model, "o3") || strings.Contains(model, "o4"):
-			c.Kernel.MaxTokens = 120000 // 128K
-		case strings.Contains(model, "gpt-3"):
-			c.Kernel.MaxTokens = 15000  // 16K
-		}
+
+	// 上下文自动推断
+	if c.LLM.Model != "" {
+		c.Kernel.MaxTokens = guessContextSize(c.LLM.Model) - 20000
 	}
 }
 
-// parseContextSize 解析 "1m" "200k" "128k" → token 数
-func parseContextSize(s string) int {
-	s = strings.ToLower(strings.TrimSpace(s))
-	s = strings.ReplaceAll(s, "_", "")
-	mult := 1
-	if strings.HasSuffix(s, "k") { mult = 1000; s = strings.TrimSuffix(s, "k") }
-	if strings.HasSuffix(s, "m") { mult = 1000000; s = strings.TrimSuffix(s, "m") }
-	n := 0
-	fmt.Sscanf(s, "%d", &n)
-	if n > 0 { return n * mult }
-	return 200000
-}
-
-// guessContextSize 从模型名推断上下文大小（找不到时返回 200K）
-func guessContextSize(model string) int {
-	m := strings.ToLower(model)
-	switch {
-	case strings.Contains(m, "gemini") || strings.Contains(m, "1m"):
-		return 1000000
-	case strings.Contains(m, "v4") || strings.Contains(m, "v3"):
-		return 1000000
-	case strings.Contains(m, "opus") || strings.Contains(m, "sonnet") || strings.Contains(m, "haiku"):
-		return 200000
-	case strings.Contains(m, "gpt-4") || strings.Contains(m, "gpt-5") || strings.Contains(m, "o"):
-		return 128000
-	default:
-		return 200000
-	}
-}
-
-
-// Save 保存配置到文件（自动根据扩展名选择 JSON 或 YAML）
 func (c *Config) Save(path string) error {
 	// 确保目录存在
 	dir := filepath.Dir(path)
@@ -435,3 +397,21 @@ func expandPath(p, home string) string {
 	}
 	return p
 }
+
+// guessContextSize 从模型名推断上下文大小
+func guessContextSize(model string) int {
+	m := strings.ToLower(model)
+	switch {
+	case strings.Contains(m, "gemini") || strings.Contains(m, "1m"):
+		return 1000000
+	case strings.Contains(m, "v4") || strings.Contains(m, "v3"):
+		return 1000000
+	case strings.Contains(m, "opus") || strings.Contains(m, "sonnet") || strings.Contains(m, "haiku"):
+		return 200000
+	case strings.Contains(m, "gpt-4") || strings.Contains(m, "gpt-5") || strings.Contains(m, "o"):
+		return 128000
+	default:
+		return 200000
+	}
+}
+
