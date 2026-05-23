@@ -11,7 +11,7 @@
 | **LLM** | `internal/llm/` | 7 | 多提供商网关、OpenAI兼容、Anthropic原生、Embedding、Prompt缓存 |
 | **工具** | `internal/tools/` | 10 | 22个工具：按领域拆分(filesystem/knowledge/symbol/git/web/browser/multimodal) |
 | **记忆** | `internal/memory/` | 3 | L1/L2/L3 三级记忆 + 语义搜索 |
-| **编排** | `internal/orchestration/` | 5 | Orchestrator、Planner、DAG执行、Team多Agent |
+| **编排** | `internal/orchestration/` | 5 | DeepPlan管线、Planner(Research/Propose)、智能路由、隔离子Agent、DAG执行、Team(4角色) |
 | **API** | `internal/api/` | 3 | REST + SSE + WebSocket + JWT认证 |
 | **基础设施** | `internal/infra/` | 4 | DI容器：app + llm/kernel/channels 工厂方法 |
 | **配置** | `internal/config/` | 2 | JSON/YAML配置管理 |

@@ -10,9 +10,9 @@
 |------|--------|------|
 | 内核层 (kernel) | ✅ 100% | ReAct循环、流式、并行工具、反思/学习/模式检测、Skill系统 |
 | LLM 层 (llm) | ✅ 100% | 网关+故障转移、OpenAI兼容、Anthropic原生、DeepSeek特殊支持 |
-| 工具层 (tools) | ✅ 100% | 9个工具真实实现（读写/执行/搜索/Git/知识库/符号索引） |
+| 工具层 (tools) | ✅ 100% | 22个工具（读写/执行/搜索/Git/知识库/符号/浏览器/多模态） |
 | 记忆层 (memory) | ✅ 100% | 3级记忆、文件持久化、TF-IDF向量语义搜索 |
-| 编排层 (orchestration) | ✅ 90% | 基础编排、Planner任务拆分、子任务汇总。缺少Team多Agent |
+| 编排层 (orchestration) | ✅ 100% | DeepPlan管线（研究→方案→选择→计划）、Team多Agent（隔离上下文）、DAG执行、LLM智能路由 |
 | API 层 (api) | ✅ 100% | REST + SSE + WebSocket + JWT认证 + CORS |
 | 基础设施层 (infra) | ✅ 100% | DI容器、JSON/YAML配置、日志、质量门控 |
 | 知识层 (knowledge) | ✅ 100% | 文档CRUD、文本搜索、注入提示词、质量门控自动抽取 |
@@ -58,7 +58,11 @@
 |------|------|
 | 多Agent Team | ✅ analyst/coder/reviewer/executor |
 | DAG工作流 | ✅ 有向无环图并行执行 |
-| 插件系统 | ✅ 可插拔扩展管理器 |
-| 多模态 | ✅ read_image base64 |
+| 插件系统 | ✅ Claude Code 官方格式兼容 (skills/MCP/hooks) |
+| 多模态 | ✅ read_image → OpenAI Vision + Anthropic 自动转换 |
+| 智能路由 | ✅ LLM 自动选择角色管线 + 子任务分配 |
+| 隔离子Agent | ✅ 独立会话执行，主Agent上下文不污染 |
+| 深度规划 | ✅ Research→Propose→Select→Plan→Execute→Test→Review |
+| LLM决策引擎 | ✅ 11项硬编码规则替换为LLM判断 |
 | API限流 | ✅ token bucket 20req/s |
-| 工具沙箱 | ❌ 不需要 |
+| 语法高亮 | ✅ chroma/Monokai TUI代码块渲染 |
