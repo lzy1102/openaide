@@ -117,6 +117,18 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// sendSSE writes an SSE event, handling marshal errors gracefully.
+func sendSSE(w http.ResponseWriter, flusher http.Flusher, event StreamEvent) {
+	data, err := json.Marshal(event)
+	if err != nil {
+		slog.Error("SSE marshal failed", "error", err)
+		fmt.Fprintf(w, "data: {\"error\":\"internal marshal error\"}\n\n")
+	} else {
+		fmt.Fprintf(w, "data: %s\n\n", data)
+	}
+	flusher.Flush()
+}
+
 func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -173,18 +185,14 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 			if chunk.Error != nil {
 				event.Error = chunk.Error.Error()
 			}
-			data, _ := json.Marshal(event)
-			fmt.Fprintf(w, "data: %s\n\n", data)
-			flusher.Flush()
+			sendSSE(w, flusher, event)
 			return
 
 		case kernel.ChunkTypeDone:
 			if chunk.Usage != nil {
 				event.TokensUsed = chunk.Usage.TotalTokens
 			}
-			data, _ := json.Marshal(event)
-			fmt.Fprintf(w, "data: %s\n\n", data)
-			flusher.Flush()
+			sendSSE(w, flusher, event)
 			return
 
 		case kernel.ChunkTypeToolDone:
@@ -193,9 +201,7 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		data, _ := json.Marshal(event)
-		fmt.Fprintf(w, "data: %s\n\n", data)
-		flusher.Flush()
+		sendSSE(w, flusher, event)
 	}
 }
 
@@ -256,12 +262,21 @@ func (s *Server) handleSessionDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 权限检查：验证请求者是否为会话所有者
+	userID := r.URL.Query().Get("user_id")
+	if userID == "" {
+		userID = r.Header.Get("X-User-ID")
+	}
+
 	switch r.Method {
 	case http.MethodGet:
-		// 获取会话详情（元数据 + 消息列表）
 		session, err := s.orchestrator.GetSession(r.Context(), sessionID)
 		if err != nil {
 			s.writeError(w, http.StatusNotFound, err)
+			return
+		}
+		if userID != "" && session.UserID != userID {
+			s.writeError(w, http.StatusForbidden, fmt.Errorf("access denied"))
 			return
 		}
 
@@ -273,12 +288,17 @@ func (s *Server) handleSessionDetail(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 		s.writeJSON(w, http.StatusOK, map[string]interface{}{
-			"session": sessionToInfo(session),
+			"session":  sessionToInfo(session),
 			"messages": messages,
 		})
 
 	case http.MethodDelete:
-		// 删除会话
+		// 删除前验证所有权
+		session, err := s.orchestrator.GetSession(r.Context(), sessionID)
+		if err == nil && userID != "" && session.UserID != userID {
+			s.writeError(w, http.StatusForbidden, fmt.Errorf("access denied"))
+			return
+		}
 		if err := s.orchestrator.DeleteSession(r.Context(), sessionID); err != nil {
 			s.writeError(w, http.StatusInternalServerError, err)
 			return

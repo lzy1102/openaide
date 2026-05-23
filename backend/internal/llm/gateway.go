@@ -71,9 +71,17 @@ func (g *Gateway) RegisterProvider(name string, provider Provider, config *Provi
 	}
 }
 
-// SetDefaultProvider 设置默认提供商
+// SetPromptCache 设置提示词缓存
 func (g *Gateway) SetPromptCache(pc *PromptCache) { g.cache = pc }
 
+// Shutdown 优雅关闭网关（停止缓存清理协程等）
+func (g *Gateway) Shutdown() {
+	if g.cache != nil {
+		g.cache.Shutdown()
+	}
+}
+
+// SetDefaultProvider 设置默认提供商
 func (g *Gateway) SetDefaultProvider(name string) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()

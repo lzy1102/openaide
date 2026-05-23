@@ -234,6 +234,9 @@ func (app *Application) Stop(ctx context.Context) error {
 	if app.MCPManager != nil {
 		app.MCPManager.Shutdown()
 	}
+	if app.LLMGateway != nil {
+		app.LLMGateway.Shutdown()
+	}
 	tools.ShutdownBrowser()
 	if app.TaskQueue != nil {
 		if err := app.TaskQueue.Stop(ctx); err != nil {
