@@ -458,6 +458,67 @@ func (m *model) addErrorMsg(content string) {
 }
 
 
+// runSingleRole 使用单个团队角色执行任务
+func (m *model) runSingleRole(role, task string) {
+	m.streaming = true
+	m.thinkBuf.Reset()
+	m.aiBuf.Reset()
+	m.err = nil
+	m.input.Blur()
+	ctx, cancel := context.WithCancel(context.Background())
+	m.cancelMu.Lock()
+	m.cancelStream = cancel
+	m.cancelMu.Unlock()
+	go func() {
+		defer cancel()
+		resp, err := m.app.Orchestrator.RunSubAgent(ctx, "cli-user", "default", role, task, nil)
+		if err != nil {
+			m.program.Send(chunkMsg{err: err, done: true})
+			return
+		}
+		m.program.Send(chunkMsg{content: resp, done: true})
+	}()
+}
+
+// runTeamChain 使用完整团队链执行任务 (analyst→coder→reviewer)
+func (m *model) runTeamChain(task string) {
+	m.streaming = true
+	m.thinkBuf.Reset()
+	m.aiBuf.Reset()
+	m.err = nil
+	m.input.Blur()
+	ctx, cancel := context.WithCancel(context.Background())
+	m.cancelMu.Lock()
+	m.cancelStream = cancel
+	m.cancelMu.Unlock()
+	go func() {
+		defer cancel()
+		// analyst 分析
+		analysis, err := m.app.Orchestrator.RunSubAgent(ctx, "cli-user", "default", "analyst", task, nil)
+		if err != nil {
+			m.program.Send(chunkMsg{err: err, done: true})
+			return
+		}
+		m.program.Send(chunkMsg{thinking: "[分析员] " + trunc(analysis, 200)})
+
+		// coder 实现
+		code, err := m.app.Orchestrator.RunSubAgent(ctx, "cli-user", "default", "coder", task, []string{analysis})
+		if err != nil {
+			m.program.Send(chunkMsg{err: err, done: true})
+			return
+		}
+		m.program.Send(chunkMsg{thinking: "[程序员] " + trunc(code, 200)})
+
+		// reviewer 审查
+		review, err := m.app.Orchestrator.RunSubAgent(ctx, "cli-user", "default", "reviewer", "审查任务: "+task, []string{analysis, code})
+		if err != nil {
+			m.program.Send(chunkMsg{err: err, done: true})
+			return
+		}
+		m.program.Send(chunkMsg{content: fmt.Sprintf("## 团队协作完成\n\n### 分析报告\n%s\n\n### 实现\n%s\n\n### 审查\n%s", analysis, code, review), done: true})
+	}()
+}
+
 func (m *model) startStream(query string) {
 	m.streaming = true
 	m.thinkBuf.Reset()
@@ -642,6 +703,31 @@ func (m *model) handleCommand(cmd string) (tea.Model, tea.Cmd) {
 			m.state = viewModelList
 			m.input.Blur()
 		}
+		m.input.SetValue("")
+		return m, nil
+	case "/analyst", "/coder", "/reviewer", "/executor":
+		role := strings.TrimPrefix(parts[0], "/")
+		task := strings.TrimSpace(strings.TrimPrefix(cmd, parts[0]))
+		if task == "" {
+			m.addSystemMsg(fmt.Sprintf("用法: %s <任务描述>", parts[0]))
+			m.input.SetValue("")
+			return m, nil
+		}
+		m.addSystemMsg(fmt.Sprintf("调用 %s 角色执行任务…", role))
+		m.renderViewport()
+		go m.runSingleRole(role, task)
+		m.input.SetValue("")
+		return m, nil
+	case "/team":
+		task := strings.TrimSpace(strings.TrimPrefix(cmd, "/team"))
+		if task == "" {
+			m.addSystemMsg("用法: /team <任务描述>")
+			m.input.SetValue("")
+			return m, nil
+		}
+		m.addSystemMsg("启动团队协作: 分析员→程序员→审查员…")
+		m.renderViewport()
+		go m.runTeamChain(task)
 		m.input.SetValue("")
 		return m, nil
 	default:

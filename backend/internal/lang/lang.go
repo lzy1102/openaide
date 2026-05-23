@@ -61,6 +61,11 @@ var messages = map[Lang]map[string]string{
 		"cli.cmd_help":      "  /help               显示帮助",
 		"cli.cmd_clear":     "  /clear              清屏",
 		"cli.cmd_model":     "  /model [name]       显示/切换模型",
+		"cli.cmd_analyst":   "  /analyst <task>     分析员角色（只读）",
+		"cli.cmd_coder":     "  /coder <task>       程序员角色（读写）",
+		"cli.cmd_reviewer":  "  /reviewer <task>    审查员角色（只读）",
+		"cli.cmd_executor":  "  /executor <task>    执行者角色（测试）",
+		"cli.cmd_team":      "  /team <task>        团队协作（全角色链）",
 
 		"err.start_failed":  "启动失败: %v",
 		"err.process":       "处理失败: %v",
@@ -143,6 +148,11 @@ var messages = map[Lang]map[string]string{
 		"cli.cmd_help":      "  /help               Show help",
 		"cli.cmd_clear":     "  /clear              Clear chat",
 		"cli.cmd_model":     "  /model [name]       Show/switch model",
+		"cli.cmd_analyst":   "  /analyst <task>     Analyst role (read-only)",
+		"cli.cmd_coder":     "  /coder <task>       Coder role (read-write)",
+		"cli.cmd_reviewer":  "  /reviewer <task>    Reviewer role (read-only)",
+		"cli.cmd_executor":  "  /executor <task>    Executor role (tests)",
+		"cli.cmd_team":      "  /team <task>        Team collaboration (full chain)",
 
 		"err.start_failed":  "Failed to start: %v",
 		"err.process":       "Error: %v",

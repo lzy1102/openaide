@@ -277,6 +277,11 @@ func printHelp() {
 	fmt.Println(lang.T("cli.cmd_help"))
 	fmt.Println(lang.T("cli.cmd_clear"))
 	fmt.Println(lang.T("cli.cmd_model"))
+	fmt.Println(lang.T("cli.cmd_analyst"))
+	fmt.Println(lang.T("cli.cmd_coder"))
+	fmt.Println(lang.T("cli.cmd_reviewer"))
+	fmt.Println(lang.T("cli.cmd_executor"))
+	fmt.Println(lang.T("cli.cmd_team"))
 }
 
 func cmdSessions(args []string) {
