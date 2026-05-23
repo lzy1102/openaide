@@ -709,16 +709,18 @@ func (o *Orchestrator) routePipeline(ctx context.Context, plan *Plan) map[int]st
 		return result
 	}
 
-	// 解析 "1=analyst, 2=coder, 3=executor"
+	// 解析多种格式: "1=analyst, 2=coder" 或 "1:analyst\n2:coder"
+	resp.Content = strings.ReplaceAll(resp.Content, "\n", ",")
+	resp.Content = strings.ReplaceAll(resp.Content, ":", "=")
 	for _, part := range strings.Split(resp.Content, ",") {
 		part = strings.TrimSpace(part)
 		kv := strings.SplitN(part, "=", 2)
 		if len(kv) != 2 { continue }
 		id := 0
-		fmt.Sscanf(kv[0], "%d", &id)
+		fmt.Sscanf(strings.TrimSpace(kv[0]), "%d", &id)
 		role := strings.TrimSpace(kv[1])
 		if o.team.GetRole(role) != nil && id > 0 {
-			result[id-1] = role // id is 1-based, index is 0-based
+			result[id-1] = role
 		}
 	}
 
