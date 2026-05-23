@@ -381,21 +381,35 @@ func (m *model) updateChat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// 规划预览：LLM 自主判断是否需要拆分为多步任务
-		ctx, cancel := context.WithTimeout(context.Background(), m.app.Orchestrator.PreviewTimeout)
-		plan, err := m.app.Orchestrator.PreviewPlan(ctx, query)
-		cancel()
-		if err == nil && plan != nil && len(plan.Subtasks) > 1 {
-			m.pendingPlan = plan
+		// 自适应规划深度：LLM 快速分类任务复杂度
+		level := m.classifyComplexity(query)
+		switch level {
+		case "complex":
+			// 完整 DeepPlan 管线
 			m.pendingQuery = query
-			m.state = viewPlanConfirm
-			m.input.Blur()
+			m.addSystemMsg("检测到复杂任务，开始深度分析…")
 			m.renderViewport()
+			go m.doDeepPlan(query)
+			return m, nil
+		case "moderate":
+			// 浅规划 + 执行
+			ctx, cancel := context.WithTimeout(context.Background(), m.app.Orchestrator.PreviewTimeout)
+			plan, err := m.app.Orchestrator.PreviewPlan(ctx, query)
+			cancel()
+			if err == nil && plan != nil && len(plan.Subtasks) > 1 {
+				m.pendingPlan = plan
+				m.pendingQuery = query
+				m.state = viewPlanConfirm
+				m.input.Blur()
+				m.renderViewport()
+				return m, nil
+			}
+			fallthrough
+		default:
+			// simple: 直接流式执行
+			m.startStream(query)
 			return m, nil
 		}
-
-		m.startStream(query)
-		return m, nil
 
 
 
@@ -451,6 +465,26 @@ func (m *model) addErrorMsg(content string) {
 	m.messages = append(m.messages, chatMsg{role: "error", content: content})
 	m.renderViewport()
 	m.viewport.GotoBottom()
+}
+
+// classifyComplexity 快速 LLM 分类任务复杂度 (simple/moderate/complex)
+func (m *model) classifyComplexity(query string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	resp, err := m.app.Orchestrator.GetLLMProvider().Chat(ctx, []kernel.Message{
+		{Role: "user", Content: fmt.Sprintf("Classify this task: simple_answer, moderate_coding, or complex_multi_step.\nTask: %s\nReply with exactly one word.", query)},
+	}, nil, map[string]interface{}{"max_tokens": 10, "temperature": 0})
+	if err != nil {
+		return "moderate"
+	}
+	switch {
+	case strings.Contains(resp.Content, "complex"):
+		return "complex"
+	case strings.Contains(resp.Content, "simple"):
+		return "simple"
+	default:
+		return "moderate"
+	}
 }
 
 func (m *model) startStream(query string) {

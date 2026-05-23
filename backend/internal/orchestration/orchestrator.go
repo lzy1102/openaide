@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"openaide/backend/internal/kernel"
@@ -30,6 +31,9 @@ type Orchestrator struct {
 	// 可配置参数
 	PreviewTimeout time.Duration
 	DeepTimeout    time.Duration
+
+	// 项目知识缓存（跨子Agent共享，避免重复读取）
+	projectFacts string
 }
 
 // NewOrchestrator 创建编排器
@@ -120,6 +124,11 @@ func (o *Orchestrator) RunSubAgent(ctx context.Context, userID, projectID, roleN
 		}
 		input.WriteString("\n")
 	}
+	if o.projectFacts != "" {
+		input.WriteString("## 项目已知信息（无需重复读取）\n")
+		input.WriteString(o.projectFacts)
+		input.WriteString("\n\n")
+	}
 	input.WriteString(fmt.Sprintf("## 当前任务\n%s\n\n请完成此任务，输出你的工作结果。", task))
 
 	// 使用唯一 userID 创建真正隔离的临时会话
@@ -160,6 +169,9 @@ func (o *Orchestrator) DeepPlan(ctx context.Context, content string) (*DeepPlanR
 	if err != nil {
 		return nil, fmt.Errorf("research phase failed: %w", err)
 	}
+	// 缓存研究发现供后续子Agent共享（避免重复读取）
+	o.projectFacts = fmt.Sprintf("模块: %s\n风险: %s\n发现: %s",
+		research.Modules, research.Risks, research.Findings)
 
 	// Phase 2: Propose alternatives
 	proposals, err := planner.Propose(ctx, content, research)
@@ -502,19 +514,35 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 	var results []string
 	totalTools := 0
 
-	// Phase 1: 执行 — 每个子任务分配给最合适的角色
-	for i, st := range plan.Subtasks {
-		roleName := o.assignRole(ctx, pipeline, st)
-		task := fmt.Sprintf("总体目标: %s\n当前步骤 (%d/%d): %s\n具体要求: %s\n\nTDD 原则：涉及代码修改时请先编写测试用例再实现。",
-			plan.Goal, i+1, len(plan.Subtasks), st.Title, st.Description)
-
-		content, err := o.RunSubAgent(ctx, userID, projectID, roleName, task, results)
-		if err != nil {
-			results = append(results, fmt.Sprintf("❌ 步骤%d(%s)失败: %v", st.ID, st.Title, err))
-			continue
+	// Phase 1: 执行 — 按依赖分组，组内并行、组间串行
+	groups := groupByDependency(plan.Subtasks)
+	results = make([]string, len(plan.Subtasks))
+	for _, group := range groups {
+		var wg sync.WaitGroup
+		for _, st := range group {
+			wg.Add(1)
+			go func(st SubTask) {
+				defer wg.Done()
+				roleName := o.assignRole(ctx, pipeline, st)
+				// 只传递已完成的依赖结果
+				var deps []string
+				for _, depID := range st.DependsOn {
+					if results[depID-1] != "" {
+						deps = append(deps, results[depID-1])
+					}
+				}
+				task := fmt.Sprintf("总体目标: %s\n当前步骤: %s\n具体要求: %s\n\nTDD 原则：涉及代码修改时请先编写测试用例再实现。",
+					plan.Goal, st.Title, st.Description)
+				content, err := o.RunSubAgent(ctx, userID, projectID, roleName, task, deps)
+				if err != nil {
+					results[st.ID-1] = fmt.Sprintf("❌ 步骤%d(%s)失败: %v", st.ID, st.Title, err)
+					return
+				}
+				results[st.ID-1] = fmt.Sprintf("### 步骤%d: %s [%s]\n%s", st.ID, st.Title, roleName, content)
+			}(st)
 		}
-		results = append(results, fmt.Sprintf("### 步骤%d: %s [%s]\n%s", st.ID, st.Title, roleName, content))
-		totalTools++
+		wg.Wait()
+		totalTools += len(group)
 	}
 
 	execSummary := strings.Join(results, "\n\n---\n\n")
@@ -678,5 +706,44 @@ func pipelineHas(pipeline []string, role string) bool {
 		}
 	}
 	return false
+}
+
+// groupByDependency 按依赖关系分组：同一组内的子任务可以并行执行
+func groupByDependency(subtasks []SubTask) [][]SubTask {
+	completed := make(map[int]bool)
+	var groups [][]SubTask
+	remaining := make([]SubTask, len(subtasks))
+	copy(remaining, subtasks)
+
+	for len(remaining) > 0 {
+		var group []SubTask
+		var nextRound []SubTask
+		for _, st := range remaining {
+			ready := true
+			for _, depID := range st.DependsOn {
+				if !completed[depID] {
+					ready = false
+					break
+				}
+			}
+			if ready {
+				group = append(group, st)
+			} else {
+				nextRound = append(nextRound, st)
+			}
+		}
+		if len(group) == 0 {
+			// 防止死循环：有循环依赖时全部作为一组
+			group = remaining
+			remaining = nil
+		} else {
+			for _, st := range group {
+				completed[st.ID] = true
+			}
+		}
+		groups = append(groups, group)
+		remaining = nextRound
+	}
+	return groups
 }
 
