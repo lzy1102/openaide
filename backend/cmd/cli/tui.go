@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/alecthomas/chroma/v2"
+	"github.com/atotto/clipboard"
 	"github.com/alecthomas/chroma/v2/formatters"
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/alecthomas/chroma/v2/styles"
@@ -367,6 +368,15 @@ func (m *model) updateChat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.selSession = -1
 			return m, m.loadSessionList()
 		}
+
+	case "ctrl+v":
+		if !m.streaming {
+			text, err := clipboard.ReadAll()
+			if err == nil && text != "" {
+				m.input.SetValue(m.input.Value() + text)
+			}
+		}
+		return m, nil
 
 	case "f1", "ctrl+h":
 		if !m.streaming {
