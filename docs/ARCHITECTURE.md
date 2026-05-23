@@ -70,4 +70,8 @@
 | OpenCode配置兼容 | ✅ 自动发现opencode.json MCP+instructions |
 | 插件市场 | ✅ openaide plugins list/search/install |
 | API限流 | ✅ token bucket 20req/s |
+| 持续学习(ProjectMind) | ✅ 跨会话代码地图/风险/约定/策略统计 |
+| 知识库+ProjectMind统一 | ✅ 结构化事实自动同步语义搜索知识库 |
+| 自适应规划深度 | ✅ LLM分类任务复杂度→三级分流(simple/moderate/complex) |
+| 并子Agent | ✅ 按依赖分组→组内并行执行 |
 | 语法高亮 | ✅ chroma/Monokai TUI代码块渲染 |

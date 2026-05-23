@@ -175,6 +175,19 @@ OpenAIDE reads and integrates with other agent ecosystems:
 - **MCP protocol**: Universal standard across all major coding agents (stdio transport, 30s timeout).
 - **Plugin marketplace**: CLI command `openaide plugins [list|search|install <url>]`.
 
+### Continuous learning (ProjectMind — gets smarter every task)
+
+OpenAIDE accumulates project knowledge across sessions via `internal/projectmind/`:
+
+- **CodeMap**: file→purpose mapping with confidence scoring. Auto-populated from Research phase discoveries. Confidence decays over time (7d: 0.8×, 30d: 0.5×), triggering re-verification.
+- **RiskMap**: known fragile areas with fix status. Planner injects risks into task decomposition — high-risk files automatically get reviewer attention.
+- **Conventions**: automatically learned from build/test errors. Detects naming patterns (camelCase vs snake_case), import conventions, test frameworks (testify), error handling style. Confidence builds with repeated observation (0.6→1.0). Injected into every sub-agent prompt.
+- **Execution History**: records every task (success, errors, fixes, time, model). Keeps last 50. Feeds `RecentFailures()` into prompts so agents learn from past mistakes.
+- **Strategy Effectiveness**: tracks which approaches succeed for which task types. Propose phase receives historical success rates — LLM makes data-informed choices ("方案C在重构场景成功率100%, 方案B在类似任务失败过").
+- **Discovery signals**: sub-agent output containing `[DISCOVERY: ...]` or `[REPLAN: ...]` automatically captured and persisted.
+- **KnowledgeBase sync**: `SyncToKnowledgeBase()` converts structured facts to searchable KB documents (tagged `projectmind`) — unified RAG injection via `buildMessages`.
+- **Model routing**: `llm.model_routing.reasoning` / `execution` in config.yaml. Analyst/coder/reviewer use reasoning model, executor/classifier use execution model. Enables cost-optimized model selection.
+
 ### Prompt system
 
 - **Default prompt**: Bilingual (Chinese/English), auto-detected from `LANG` env var.

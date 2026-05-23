@@ -179,8 +179,9 @@ git push origin v1.0.0
 - **浏览器自动化**: Headless Chrome (browser_navigate/extract/screenshot/click/fill)
 - **Diff编辑**: 精确search/replace + 行号替换
 - **多模态Vision**: base64图片→Vision API格式 (OpenAI+Anthropic)
-- **5个内置Skill + 自动进化**: 代码审查/Git提交/调试/重构/解释（自动检测触发），重复模式自动生成新技能
-- **模型智能路由**: 按任务类型自动选择provider/model（代码/搜索/翻译/对话）
+- **5个内置Skill + 自动进化**: 代码审查/Git提交/调试/重构/解释（LLM语义匹配触发）
+- **ProjectMind 持续学习**: 跨会话积累项目知识（代码地图/风险地图/约定/策略有效性），越用越聪明
+- **知识库+ProjectMind 统一记忆**: 结构化事实自动同步到语义搜索知识库，统一RAG注入
 - **DeepPlan 深度规划**: 研究→方案对比→选择→计划→TDD执行→测试→验收，自反思闭环（验收不通过自动返工）
 - **多Agent Team + 隔离子Agent**: 分析员→程序员→审查员→执行者，独立会话上下文隔离
 - **LLM全决策引擎**: 17项硬编码规则替换，角色分配/风险评估/技能检测等全部由LLM判断
