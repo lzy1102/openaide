@@ -561,10 +561,16 @@ func (e *EnhancedOrchestrator) enhance(ctx context.Context, userID, projectID, q
 
 // executePlan 智能路由多 Agent 执行：LLM 根据任务类型自动选择角色组合
 func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, content string, plan *Plan, opts kernel.QueryOptions) (*kernel.Response, error) {
-	// 智能路由：LLM 根据任务类型和子任务内容选择最佳角色管线
-	pipeline := o.routePipeline(ctx, plan)
+	// 智能路由：一次 LLM 调用分配所有子任务角色
+	roleMap := o.routePipeline(ctx, plan)
 	var results []string
 	totalTools := 0
+	hasExecutor := false
+	hasReviewer := false
+	for _, role := range roleMap {
+		if role == "executor" { hasExecutor = true }
+		if role == "reviewer" { hasReviewer = true }
+	}
 
 	// Phase 1: 执行 — 按依赖分组，组内并行、组间串行
 	groups := groupByDependency(plan.Subtasks)
@@ -575,7 +581,8 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 			wg.Add(1)
 			go func(st SubTask) {
 				defer wg.Done()
-				roleName := o.assignRole(ctx, pipeline, st)
+				roleName := roleMap[st.ID-1]
+				if roleName == "" { roleName = "coder" }
 				// 只传递已完成的依赖结果
 				var deps []string
 				for _, depID := range st.DependsOn {
@@ -602,7 +609,7 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 	// Phase 2: 根据管线决定是否需要测试和审查
 	var testReport, finalReport string
 
-	if pipelineHas(pipeline, "executor") {
+	if hasExecutor {
 		verifyTask := fmt.Sprintf("总体目标: %s\n\n已完成的工作:\n%s\n\n验证完整性：编译/构建/测试/逻辑检查。发现问题直接修复。",
 			plan.Goal, execSummary)
 		testReport, _ = o.RunSubAgent(ctx, userID, projectID, "executor", verifyTask, results)
@@ -615,7 +622,7 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 	// 自反思闭环：最多重试 2 次
 	const maxRetries = 2
 	for retry := 0; retry <= maxRetries; retry++ {
-		if pipelineHas(pipeline, "reviewer") {
+		if hasReviewer {
 			reviewTask := fmt.Sprintf("总体目标: %s\n\n执行结果:\n%s\n\n验证结果:\n%s\n\n生成验收报告：完成内容、修改文件、验证状态、遗留问题。\n如果存在未解决问题，在报告末尾标注 [需要返工] 并列出需要修复的具体问题。\nMarkdown 格式。",
 				plan.Goal, execSummary, testReport)
 			reviewContent, err := o.RunSubAgent(ctx, userID, projectID, "reviewer", reviewTask, nil)
@@ -646,9 +653,9 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 
 	// 记录执行历史 + 自动学习项目约定
 	if o.mind != nil {
-		o.mind.RecordExecution(plan.Goal, strings.Join(pipeline, "+"), true,
+		o.mind.RecordExecution(plan.Goal, fmt.Sprintf("%v", roleMap), true,
 			nil, nil, nil, 0, o.pickModel("coder"))
-		o.mind.UpdateStrategy(strings.Join(pipeline, "+"), true, plan.Goal)
+		o.mind.UpdateStrategy(fmt.Sprintf("%v", roleMap), true, plan.Goal)
 		// 从测试输出中学习
 		if testReport != "" { o.mind.AnalyzeBuildError(testReport) }
 		o.mind.SessionCount++
@@ -668,102 +675,60 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 }
 
 // routePipeline 让 LLM 根据任务类型选择需要的角色管线
-func (o *Orchestrator) routePipeline(ctx context.Context, plan *Plan) []string {
+// routePipeline 一次性为所有子任务分配角色（一次 LLM 调用替代 N+1 次）
+func (o *Orchestrator) routePipeline(ctx context.Context, plan *Plan) map[int]string {
+	result := make(map[int]string)
 	if o.team == nil {
-		return []string{"coder", "executor", "reviewer"}
+		for i := range plan.Subtasks { result[i] = "coder" }
+		return result
 	}
 
-	subtaskDescs := make([]string, len(plan.Subtasks))
-	for i, st := range plan.Subtasks {
-		subtaskDescs[i] = fmt.Sprintf("%d. %s: %s", st.ID, st.Title, st.Description)
+	// 构建子任务描述
+	var descs strings.Builder
+	for _, st := range plan.Subtasks {
+		fmt.Fprintf(&descs, "%d. %s: %s [tool_hints: %s]\n", st.ID, st.Title, st.Description, st.ToolHints)
 	}
 
-	prompt := fmt.Sprintf(`分析以下任务，选择需要的角色（可多选）。
+	prompt := fmt.Sprintf(`为每个子任务分配最合适的角色。每个子任务恰好一个角色。
 
-角色:
-- analyst: 分析代码、研究问题（只读）
-- coder: 编写/修改代码、实现功能
-- executor: 运行测试、执行命令、验证
-- reviewer: 审查代码质量、安全性、生成报告
+角色: analyst(分析研究), coder(编写代码), executor(测试验证), reviewer(审查报告)
 
 任务目标: %s
 子任务:
 %s
 
-规则:
-- 纯分析/研究类任务 → analyst
-- 涉及代码修改 → coder + executor
-- 重要功能/安全相关 → coder + executor + reviewer
-- 简单查询 → 单角色
-
-只回复角色名称，逗号分隔。如: analyst,coder,executor,reviewer`, plan.Goal, strings.Join(subtaskDescs, "\n"))
+回复格式: 子任务ID=角色, 如 "1=analyst, 2=coder, 3=executor"`, plan.Goal, descs.String())
 
 	messages := []kernel.Message{
-		{Role: "system", Content: "你是任务路由器。输出需要的角色名（逗号分隔）。"},
+		{Role: "system", Content: "你是任务路由器。为每个子任务选择最合适的角色。回复格式: ID=角色,用逗号分隔。"},
 		{Role: "user", Content: prompt},
 	}
-	resp, err := o.llmGateway.Chat(ctx, messages, nil, map[string]interface{}{"max_tokens": 50, "temperature": 0})
+	resp, err := o.llmGateway.Chat(ctx, messages, nil, map[string]interface{}{"max_tokens": 100, "temperature": 0})
 	if err != nil {
-		return []string{"coder", "executor", "reviewer"}
+		for i := range plan.Subtasks { result[i] = "coder" }
+		return result
 	}
 
-	var roles []string
-	for _, r := range strings.Split(strings.TrimSpace(resp.Content), ",") {
-		r = strings.TrimSpace(r)
-		if o.team.GetRole(r) != nil {
-			roles = append(roles, r)
+	// 解析 "1=analyst, 2=coder, 3=executor"
+	for _, part := range strings.Split(resp.Content, ",") {
+		part = strings.TrimSpace(part)
+		kv := strings.SplitN(part, "=", 2)
+		if len(kv) != 2 { continue }
+		id := 0
+		fmt.Sscanf(kv[0], "%d", &id)
+		role := strings.TrimSpace(kv[1])
+		if o.team.GetRole(role) != nil && id > 0 {
+			result[id-1] = role // id is 1-based, index is 0-based
 		}
 	}
-	if len(roles) == 0 {
-		return []string{"analyst"}
-	}
-	return roles
-}
 
-// assignRole 让 LLM 从可用管线中选择最适合子任务的角色
-func (o *Orchestrator) assignRole(ctx context.Context, pipeline []string, st SubTask) string {
-	if len(pipeline) == 1 {
-		return pipeline[0]
-	}
-	if o.team == nil {
-		return pipeline[0]
-	}
-
-	var roleDescs []string
-	for _, rn := range pipeline {
-		if role := o.team.GetRole(rn); role != nil {
-			roleDescs = append(roleDescs, fmt.Sprintf("- %s: %s", rn, role.Description))
+	// 兜底：未分配的子任务用 coder
+	for i := range plan.Subtasks {
+		if _, ok := result[i]; !ok {
+			result[i] = "coder"
 		}
 	}
-	if len(roleDescs) == 0 {
-		return pipeline[0]
-	}
-
-	prompt := fmt.Sprintf(`从以下角色中选择最合适的一个来完成子任务。
-
-可用角色:
-%s
-
-子任务:
-标题: %s
-描述: %s
-建议工具: %s
-
-只回复角色名称（如 analyst/coder/executor/reviewer），不要解释。`, strings.Join(roleDescs, "\n"), st.Title, st.Description, st.ToolHints)
-
-	messages := []kernel.Message{
-		{Role: "user", Content: prompt},
-	}
-	resp, err := o.llmGateway.Chat(ctx, messages, nil, map[string]interface{}{"max_tokens": 20, "temperature": 0})
-	if err != nil {
-		return pipeline[0]
-	}
-
-	choice := strings.TrimSpace(resp.Content)
-	if o.team.GetRole(choice) != nil {
-		return choice
-	}
-	return pipeline[0]
+	return result
 }
 
 func pipelineHas(pipeline []string, role string) bool {
