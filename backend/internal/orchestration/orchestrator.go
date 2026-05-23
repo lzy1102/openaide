@@ -78,11 +78,6 @@ func (o *Orchestrator) PreviewPlan(ctx context.Context, content string) (*Plan, 
 
 // ProcessQuery 处理用户查询 — LLM 自动判断是否需要拆分任务
 func (o *Orchestrator) ProcessQuery(ctx context.Context, userID, projectID, content string, opts kernel.QueryOptions) (*kernel.Response, error) {
-	// 极短查询直接执行，不浪费 LLM 调用
-	if !opts.ForcePlan && len([]rune(content)) < 15 {
-		return o.processSingle(ctx, userID, projectID, content, opts)
-	}
-
 	planner := NewPlanner(o.llmGateway)
 	plan, err := planner.Plan(ctx, content)
 	if err == nil && len(plan.Subtasks) > 1 {

@@ -345,19 +345,17 @@ func (m *model) updateChat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.viewport.GotoBottom()
 		m.input.SetValue("")
 
-		// 规划预览：轻量检查是否需要拆分为多步任务
-		if len([]rune(query)) >= 15 {
-			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-			plan, err := m.app.Orchestrator.PreviewPlan(ctx, query)
-			cancel()
-			if err == nil && plan != nil && len(plan.Subtasks) > 1 {
-				m.pendingPlan = plan
-				m.pendingQuery = query
-				m.state = viewPlanConfirm
-				m.input.Blur()
-				m.renderViewport()
-				return m, nil
-			}
+		// 规划预览：LLM 自主判断是否需要拆分为多步任务
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		plan, err := m.app.Orchestrator.PreviewPlan(ctx, query)
+		cancel()
+		if err == nil && plan != nil && len(plan.Subtasks) > 1 {
+			m.pendingPlan = plan
+			m.pendingQuery = query
+			m.state = viewPlanConfirm
+			m.input.Blur()
+			m.renderViewport()
+			return m, nil
 		}
 
 		m.startStream(query)
