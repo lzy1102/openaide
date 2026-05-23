@@ -486,78 +486,6 @@ func (o *Orchestrator) saveInteraction(ctx context.Context, sessionID, userConte
 	}
 }
 
-// ============ 增强能力集成 ============
-
-// EnhancedOrchestrator 增强编排器（带反思、学习、模式检测）
-type EnhancedOrchestrator struct {
-	*Orchestrator
-	reflection      kernel.Reflection
-	learner         kernel.Learner
-	patternDetector kernel.PatternDetector
-}
-
-// NewEnhancedOrchestrator 创建增强编排器
-func NewEnhancedOrchestrator(base *Orchestrator) *EnhancedOrchestrator {
-	return &EnhancedOrchestrator{Orchestrator: base}
-}
-
-// SetReflection 设置反思能力
-func (e *EnhancedOrchestrator) SetReflection(r kernel.Reflection) {
-	e.reflection = r
-}
-
-// SetLearner 设置学习能力
-func (e *EnhancedOrchestrator) SetLearner(l kernel.Learner) {
-	e.learner = l
-}
-
-// SetPatternDetector 设置模式检测器
-func (e *EnhancedOrchestrator) SetPatternDetector(pd kernel.PatternDetector) {
-	e.patternDetector = pd
-}
-
-// ProcessQuery 处理查询（带增强能力）
-func (e *EnhancedOrchestrator) ProcessQuery(ctx context.Context, userID, projectID, content string, opts kernel.QueryOptions) (*kernel.Response, error) {
-	// 调用基础编排
-	resp, err := e.Orchestrator.ProcessQuery(ctx, userID, projectID, content, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	// 异步执行增强能力
-	go e.enhance(ctx, userID, projectID, content, resp)
-
-	return resp, nil
-}
-
-func (e *EnhancedOrchestrator) enhance(ctx context.Context, userID, projectID, query string, resp *kernel.Response) {
-	// 获取会话历史用于模式检测
-	if e.patternDetector != nil && e.memory != nil {
-		sessions, _ := e.sessions.List(ctx, projectID, userID, 1, 0)
-		if len(sessions) > 0 {
-			messages, _ := e.memory.Load(ctx, sessions[0].ID, 50)
-			if len(messages) > 0 {
-				patterns, _ := e.patternDetector.Detect(ctx, sessions[0].ID, messages)
-				if len(patterns) > 0 {
-					slog.Debug("Patterns detected", "count", len(patterns))
-				}
-			}
-		}
-	}
-
-	// 学习
-	if e.learner != nil {
-		record := kernel.ExecutionRecord{
-			Query:     query,
-			Response:  resp.Content,
-			Success:   resp.Error == "",
-			Duration:  int64(resp.Duration),
-		}
-		if err := e.learner.Learn(ctx, record); err != nil {
-			slog.Warn("Learning failed", "error", err)
-		}
-	}
-}
 
 // Branch 执行分支——从主线分叉出来处理发现的问题，完成后收敛回主线
 type Branch struct {
@@ -864,14 +792,6 @@ func (o *Orchestrator) routePipeline(ctx context.Context, plan *Plan) map[int]st
 	return result
 }
 
-func pipelineHas(pipeline []string, role string) bool {
-	for _, r := range pipeline {
-		if r == role {
-			return true
-		}
-	}
-	return false
-}
 
 // pickModel 根据角色选择对应能力的模型
 func (o *Orchestrator) pickModel(role string) string {

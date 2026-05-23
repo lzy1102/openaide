@@ -1,8 +1,7 @@
 package kernel
 
 import (
-	"encoding/json"
-	"strings"
+		"strings"
 )
 
 // SimpleCompressor 简单上下文压缩器
@@ -95,24 +94,4 @@ func (c *SimpleCompressor) summarize(messages []Message) string {
 	return result
 }
 
-// NoopCompressor 不压缩的压缩器（用于测试）
-type NoopCompressor struct{}
 
-func (c *NoopCompressor) Compress(messages []Message, maxTokens int) ([]Message, int, error) {
-	return messages, 0, nil
-}
-
-func (c *NoopCompressor) EstimateTokens(messages []Message) int {
-	return 0
-}
-
-// JSON 序列化辅助函数
-func (m Message) ToJSON() ([]byte, error) {
-	return json.Marshal(m)
-}
-
-func MessageFromJSON(data []byte) (*Message, error) {
-	var msg Message
-	err := json.Unmarshal(data, &msg)
-	return &msg, err
-}
