@@ -69,7 +69,7 @@ cmd/server (API server)          cmd/cli (interactive CLI)
    - `types.go` — Shared types: `Message`, `ToolCall`, `Query`, `Response`, `StreamChunk`, `Event`, `Session`
    - Other files: `reflection.go`, `llm_reflection.go`, `learner.go`, `pattern.go`, `compress.go`, `checkpoint.go`, `approval.go`, `adaptive.go`, `session_store.go`, `skill.go`, `skill_evolution.go`, `tracer.go`
 
-3. **`backend/internal/tools/`** (10 files) — Tool definitions and handlers split by domain:
+3. **`backend/internal/tools/`** (9 files) — Tool definitions and handlers split by domain:
    - `registry.go` — `Registry` framework, `BuiltinTools()` concatenates domain-specific defs, `BuiltinHandlers()`, `RegisterBuiltins()`, `safeAbsPath()`, `formatBytes()`
    - `tools_filesystem.go` — read_file (with offset/limit), write_file, execute_command, list_directory, search_files
    - `tools_knowledge.go` — search_knowledge, add_knowledge, `KnowledgeAccessor` interface, `WithKnowledge()`
@@ -81,7 +81,7 @@ cmd/server (API server)          cmd/cli (interactive CLI)
    - `multimodal.go` — read_image
    - `registry_test.go`
 
-4. **`backend/internal/llm/`** (7 files):
+4. **`backend/internal/llm/`** (6 files):
    - `gateway.go` — Multi-provider router. `LLMProvider` interface. `Router` for task-type-based provider selection. `PromptCache`. `Embedder` adapter.
    - `openai_provider.go` — OpenAI-compatible APIs (OpenAI, DeepSeek, Ollama, Qwen, etc.)
    - `anthropic_provider.go` — Anthropic Claude API. Stream goroutine has `ctx.Done()` guard on channel sends.

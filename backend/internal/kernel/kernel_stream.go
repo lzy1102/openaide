@@ -77,6 +77,9 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 				TotalRounds: maxRounds,
 			}
 
+			if query.Options.ModelID != "" {
+				k.llmProvider.SetModelID(query.Options.ModelID)
+			}
 			llmStream, err := k.llmProvider.ChatStream(ctx, messages, tools, k.buildOptions(query.Options))
 			if err != nil {
 				if k.tracer != nil {

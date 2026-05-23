@@ -79,7 +79,10 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 			}
 		}
 
-		// 调用 LLM
+		// 调用 LLM（如果指定了模型，临时切换）
+		if query.Options.ModelID != "" {
+			k.llmProvider.SetModelID(query.Options.ModelID)
+		}
 		var llmCtx context.Context
 		if k.tracer != nil {
 			llmCtx = k.tracer.StartSpan(ctx, session.ID, TraceLLM, fmt.Sprintf("chat_round_%d", round))

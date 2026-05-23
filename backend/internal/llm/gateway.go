@@ -246,6 +246,11 @@ func (g *Gateway) ChatStreamWithProvider(ctx context.Context, providerName strin
 }
 
 // SetDefaultModel 设置默认提供商的模型
+// SetModelID 运行时切换默认提供商的模型
+func (g *Gateway) SetModelID(model string) {
+	g.SetDefaultModel(model)
+}
+
 func (g *Gateway) SetDefaultModel(model string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()

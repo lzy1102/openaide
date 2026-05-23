@@ -40,6 +40,7 @@ func (m *MockLLMProvider) ChatStream(ctx context.Context, messages []Message, to
 }
 
 func (m *MockLLMProvider) GetModelID() string { return "mock-model" }
+func (m *MockLLMProvider) SetModelID(model string)  {}
 
 // MockToolExecutor 模拟工具执行器
 type MockToolExecutor struct {

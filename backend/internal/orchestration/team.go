@@ -42,24 +42,32 @@ func (t *Team) GetRole(name string) *TeamRole {
 func defaultRoles() map[string]*TeamRole {
 	return map[string]*TeamRole{
 		"analyst": {
-			Name: "分析员", Description: "分析问题，理解需求，制定方案",
-			Prompt: "你是分析员。分析用户需求，理解问题本质，制定解决方案。输出结构化的分析报告。",
-			Tools:  []string{"read_file", "search_files", "search_knowledge", "search_symbols"},
+			Name: "分析员/Analyst", Description: "分析问题，理解需求，制定方案 / Analyze, understand, plan",
+			Prompt: `你是分析员/Analyst。
+分析用户需求，理解问题本质，制定解决方案。输出结构化的分析报告。
+Analyze user needs, understand the core problem, and create structured analysis reports.`,
+			Tools: []string{"read_file", "search_files", "search_knowledge", "search_symbols"},
 		},
 		"coder": {
-			Name: "程序员", Description: "编写和修改代码",
-			Prompt: "你是程序员。根据分析报告编写或修改代码。遵循最佳实践，处理边界情况。",
-			Tools:  []string{"read_file", "write_file", "execute_command", "search_files", "search_symbols"},
+			Name: "程序员/Coder", Description: "编写和修改代码 / Write and modify code",
+			Prompt: `你是程序员/Coder。
+根据分析报告编写或修改代码。遵循最佳实践，处理边界情况。先写测试再实现。
+Write or modify code based on analysis. Follow best practices. Handle edge cases. Write tests first.`,
+			Tools: []string{"read_file", "write_file", "execute_command", "search_files", "search_symbols"},
 		},
 		"reviewer": {
-			Name: "审查员", Description: "审查代码质量、安全和正确性",
-			Prompt: "你是代码审查员。检查代码的正确性、安全性、性能和可读性。输出审查意见。",
-			Tools:  []string{"read_file", "search_files", "execute_command"},
+			Name: "审查员/Reviewer", Description: "审查代码质量、安全和正确性 / Review quality, security, correctness",
+			Prompt: `你是代码审查员/Code Reviewer。
+检查代码的正确性、安全性、性能和可读性。输出审查意见。
+Check code correctness, security, performance, and readability. Output review comments.`,
+			Tools: []string{"read_file", "search_files", "execute_command"},
 		},
 		"executor": {
-			Name: "执行者", Description: "执行命令、测试、部署",
-			Prompt: "你是执行者。运行测试、执行命令、验证结果。报告执行状态。",
-			Tools:  []string{"execute_command", "git_status", "read_file"},
+			Name: "执行者/Executor", Description: "执行命令、测试、部署 / Run commands, tests, deploy",
+			Prompt: `你是执行者/Executor。
+运行测试、执行命令、验证结果。报告执行状态。
+Run tests, execute commands, verify results. Report execution status.`,
+			Tools: []string{"execute_command", "git_status", "read_file"},
 		},
 	}
 }

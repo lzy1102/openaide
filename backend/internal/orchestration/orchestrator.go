@@ -167,6 +167,9 @@ func (o *Orchestrator) RunSubAgent(ctx context.Context, userID, projectID, roleN
 	if len(role.Tools) > 0 {
 		opts.ToolFilter = role.Tools
 	}
+	if model := o.pickModel(roleName); model != "" {
+		opts.ModelID = model
+	}
 	resp, err := o.processSingle(ctx, sessionID, projectID, input.String(), opts)
 	if err != nil {
 		return "", fmt.Errorf("sub-agent %s failed: %w", roleName, err)

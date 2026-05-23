@@ -39,6 +39,7 @@ func (m *mockLLMProvider) ChatStream(ctx context.Context, messages []kernel.Mess
 	return ch, nil
 }
 func (m *mockLLMProvider) GetModelID() string { return "mock" }
+func (m *mockLLMProvider) SetModelID(model string)  {}
 
 type mockToolExecutor struct {
 	defs []kernel.ToolDefinition

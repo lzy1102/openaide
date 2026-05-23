@@ -47,6 +47,9 @@ type LLMProvider interface {
 
 	// GetModelID 获取当前模型 ID
 	GetModelID() string
+
+	// SetModelID 运行时切换模型
+	SetModelID(model string)
 }
 
 // ToolExecutor 工具执行器接口
