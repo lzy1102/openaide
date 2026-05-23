@@ -63,6 +63,13 @@ type ServerConfig struct {
 type LLMConfig struct {
 	DefaultProvider string           `json:"default_provider" yaml:"default_provider"`
 	Providers       []ProviderConfig `json:"providers" yaml:"providers"`
+	ModelRouting    ModelRoutingCfg  `json:"model_routing" yaml:"model_routing"`
+}
+
+// ModelRoutingCfg 按能力分配模型
+type ModelRoutingCfg struct {
+	Reasoning string `json:"reasoning" yaml:"reasoning"` // analyst/coder/reviewer 使用的模型
+	Execution string `json:"execution" yaml:"execution"` // executor/classifier 使用的模型
 }
 
 // ProviderConfig 提供商配置

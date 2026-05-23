@@ -18,6 +18,7 @@ import (
 	"openaide/backend/internal/memory"
 	"openaide/backend/internal/orchestration"
 	"openaide/backend/internal/plugin"
+	"openaide/backend/internal/projectmind"
 	"openaide/backend/internal/tools"
 )
 
@@ -204,6 +205,13 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 		orch.SetKnowledgeCollector(kb)
 	}
 	orch.SetTeam(orchestration.NewTeam(orch))
+	// 加载项目持久记忆
+	orch.SetProjectMind(projectmind.Load("."))
+	// 配置模型路由
+	orch.ModelRouting = orchestration.ModelRouting{
+		Reasoning: cfg.LLM.ModelRouting.Reasoning,
+		Execution: cfg.LLM.ModelRouting.Execution,
+	}
 	app.Orchestrator = orch
 
 	// 8. API 服务器

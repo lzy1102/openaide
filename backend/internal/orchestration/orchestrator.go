@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"openaide/backend/internal/kernel"
+	"openaide/backend/internal/projectmind"
 	"openaide/backend/internal/tools"
 )
 
@@ -32,8 +33,20 @@ type Orchestrator struct {
 	PreviewTimeout time.Duration
 	DeepTimeout    time.Duration
 
+	// 项目持久记忆（跨会话积累）
+	mind *projectmind.ProjectMind
+
+	// 模型路由配置
+	ModelRouting ModelRouting
+
 	// 项目知识缓存（跨子Agent共享，避免重复读取）
 	projectFacts string
+}
+
+// ModelRouting 按能力分配模型
+type ModelRouting struct {
+	Reasoning string `json:"reasoning" yaml:"reasoning"` // analyst/coder/reviewer
+	Execution string `json:"execution" yaml:"execution"` // executor/classifier
 }
 
 // NewOrchestrator 创建编排器
@@ -78,6 +91,17 @@ func (o *Orchestrator) SetPlanApprover(approver PlanApprover) {
 // SetTeam 设置多 Agent 团队
 func (o *Orchestrator) SetTeam(t *Team) {
 	o.team = t
+}
+
+// SetProjectMind 设置项目持久记忆
+func (o *Orchestrator) SetProjectMind(pm *projectmind.ProjectMind) {
+	o.mind = pm
+	pm.ExpireOldFacts()
+}
+
+// GetProjectMind 获取项目记忆（供外部读取）
+func (o *Orchestrator) GetProjectMind() *projectmind.ProjectMind {
+	return o.mind
 }
 
 // GetToolExecutor 返回工具执行器（供外部规划器使用）
@@ -164,14 +188,29 @@ func (o *Orchestrator) DeepPlan(ctx context.Context, content string) (*DeepPlanR
 	planner := NewPlanner(o.llmGateway)
 	planner.SetToolExecutor(o.toolExec)
 
+	// 注入已有项目知识
+	if o.mind != nil {
+		facts := o.mind.FactsForPrompt()
+		risks := o.mind.RisksForPlanning()
+		if facts != "" {
+			content = facts + "\n\n## 当前任务\n" + content
+		}
+		if risks != "" {
+			content += "\n\n## 已知风险（请在计划中考虑）\n" + risks
+		}
+	}
+
 	// Phase 1: Research
 	research, err := planner.Research(ctx, content)
 	if err != nil {
 		return nil, fmt.Errorf("research phase failed: %w", err)
 	}
-	// 缓存研究发现供后续子Agent共享（避免重复读取）
+	// 缓存研究发现 + 写入 ProjectMind
 	o.projectFacts = fmt.Sprintf("模块: %s\n风险: %s\n发现: %s",
 		research.Modules, research.Risks, research.Findings)
+	if o.mind != nil {
+		o.extractFactsFromResearch(research)
+	}
 
 	// Phase 2: Propose alternatives
 	proposals, err := planner.Propose(ctx, content, research)
@@ -706,6 +745,81 @@ func pipelineHas(pipeline []string, role string) bool {
 		}
 	}
 	return false
+}
+
+// pickModel 根据角色选择对应能力的模型
+func (o *Orchestrator) pickModel(role string) string {
+	if o.ModelRouting.Reasoning == "" { return "" }
+	switch role {
+	case "analyst", "coder", "reviewer":
+		return o.ModelRouting.Reasoning
+	case "executor", "classifier":
+		if o.ModelRouting.Execution != "" {
+			return o.ModelRouting.Execution
+		}
+		return o.ModelRouting.Reasoning
+	}
+	return ""
+}
+
+// extractFactsFromResearch 从研究报告提取关键事实写入 ProjectMind
+func (o *Orchestrator) extractFactsFromResearch(r *ResearchReport) {
+	modules := strings.Split(r.Modules, ",")
+	for _, m := range modules {
+		m = strings.TrimSpace(m)
+		if m != "" {
+			o.mind.AddCodeFact(m, "research discovered", nil, 0.7, "research")
+		}
+	}
+	if r.Risks != "" {
+		for _, risk := range strings.Split(r.Risks, ",") {
+			risk = strings.TrimSpace(risk)
+			if risk != "" {
+				o.mind.AddLearning("pitfall", risk)
+			}
+		}
+	}
+	o.mind.Save()
+}
+
+// handleDiscoveries 处理执行中发现的新信息
+func (o *Orchestrator) handleDiscoveries(content string) (replanNeeded bool) {
+	if o.mind == nil { return false }
+
+	// 检测 DISCOVERY 信号
+	discoveryPattern := "[DISCOVERY:"
+	if idx := strings.Index(content, discoveryPattern); idx >= 0 {
+		end := strings.Index(content[idx:], "]")
+		if end > 0 {
+			discovery := strings.TrimSpace(content[idx+len(discoveryPattern) : idx+end])
+			o.mind.AddLearning("pattern", discovery)
+			o.mind.Save()
+		}
+	}
+
+	// 检测 REPLAN 信号
+	if strings.Contains(content, "[REPLAN:") {
+		return true
+	}
+
+	// 检测关键架构信息 → 自动记录
+	if strings.Contains(content, "PostgreSQL") || strings.Contains(content, "MySQL") || strings.Contains(content, "SQLite") {
+		o.mind.SetArchitecture("", o.mind.Architecture.Framework,
+			extractDBType(content), o.mind.Architecture.KeyModules)
+	}
+	if strings.Contains(content, "framework") || strings.Contains(content, "框架") {
+		if strings.Contains(content, "Gin") { o.mind.SetArchitecture("", "Gin", o.mind.Architecture.Database, nil) }
+		if strings.Contains(content, "net/http") { o.mind.SetArchitecture("", "net/http", o.mind.Architecture.Database, nil) }
+	}
+
+	return false
+}
+
+func extractDBType(content string) string {
+	for _, db := range []string{"PostgreSQL", "MySQL", "SQLite", "MongoDB", "Redis"} {
+		if strings.Contains(content, db) { return db }
+	}
+	return ""
 }
 
 // groupByDependency 按依赖关系分组：同一组内的子任务可以并行执行
