@@ -607,60 +607,118 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 	execSummary := strings.Join(results, "\n\n---\n\n")
 
 	// Phase 2: 根据管线决定是否需要测试和审查
+	// 自修正执行循环：测试→审查→修复→再测试→再审查，直到通过
 	var testReport, finalReport string
+	maxIterations := 5
+	noProgressCount := 0
+	previousIssueCount := -1
 
-	if hasExecutor {
-		verifyTask := fmt.Sprintf("总体目标: %s\n\n已完成的工作:\n%s\n\n验证完整性：编译/构建/测试/逻辑检查。发现问题直接修复。",
-			plan.Goal, execSummary)
-		testReport, _ = o.RunSubAgent(ctx, userID, projectID, "executor", verifyTask, results)
-		totalTools++
-	}
-	if testReport == "" {
-		testReport = "（跳过验证阶段）"
-	}
-
-	// 自反思闭环：最多重试 2 次
-	const maxRetries = 2
-	for retry := 0; retry <= maxRetries; retry++ {
-		if hasReviewer {
-			reviewTask := fmt.Sprintf("总体目标: %s\n\n执行结果:\n%s\n\n验证结果:\n%s\n\n生成验收报告：完成内容、修改文件、验证状态、遗留问题。\n如果存在未解决问题，在报告末尾标注 [需要返工] 并列出需要修复的具体问题。\nMarkdown 格式。",
-				plan.Goal, execSummary, testReport)
-			reviewContent, err := o.RunSubAgent(ctx, userID, projectID, "reviewer", reviewTask, nil)
-			if err == nil {
-				finalReport = fmt.Sprintf("## %s\n\n### 验证结果\n%s\n\n---\n\n### 验收报告\n%s",
-					plan.Goal, testReport, reviewContent)
-				totalTools++
-
-				// 自反思：检查是否需要返工
-				if retry < maxRetries && strings.Contains(reviewContent, "[需要返工]") {
-					fixTask := fmt.Sprintf("验收发现问题，需要修复：\n\n%s\n\n请修复以上问题。", reviewContent)
-					fixContent, fixErr := o.RunSubAgent(ctx, userID, projectID, "coder", fixTask, results)
-					if fixErr == nil {
-						results = append(results, fmt.Sprintf("### 返工修复 (第%d次)\n%s", retry+1, fixContent))
-						execSummary = strings.Join(results, "\n\n---\n\n")
-						totalTools++
-						continue // 重新进入审查
-					}
-				}
-			}
+	for iteration := 0; iteration < maxIterations; iteration++ {
+		// 测试验证
+		if hasExecutor {
+			verifyTask := fmt.Sprintf("总体目标: %s\n\n已完成的工作:\n%s\n\n验证完整性：编译/构建/测试/逻辑检查。\n发现问题直接修复。如果一切正常，报告\"验证通过\"。",
+				plan.Goal, execSummary)
+			testReport, _ = o.RunSubAgent(ctx, userID, projectID, "executor", verifyTask, results)
+			totalTools++
 		}
-		break // 审查通过或达到最大重试
+		if testReport == "" {
+			testReport = "（跳过验证阶段）"
+		}
+
+		// 审查验收
+		if !hasReviewer {
+			finalReport = fmt.Sprintf("## %s\n\n### 执行结果\n%s\n\n### 验证结果\n%s", plan.Goal, execSummary, testReport)
+			break
+		}
+
+		reviewTask := fmt.Sprintf(`总体目标: %s
+
+执行结果:
+%s
+
+验证结果:
+%s
+
+生成验收报告。格式:
+## 验收报告
+**状态**: [通过/需要返工]
+**完成内容**: 1-2句话
+**修改文件**: 列表
+**遗留问题**: 如果没有写"无"
+
+如果存在未解决问题，在报告开头写"**状态**: 需要返工"并列出具体问题。
+如果全部通过，写"**状态**: 通过"。`, plan.Goal, execSummary, testReport)
+
+		reviewContent, err := o.RunSubAgent(ctx, userID, projectID, "reviewer", reviewTask, nil)
+		if err != nil {
+			finalReport = fmt.Sprintf("## %s\n\n### 执行结果\n%s\n\n### 验证结果\n%s\n\n### 验收报告\n生成失败: %v", plan.Goal, execSummary, testReport, err)
+			break
+		}
+		totalTools++
+
+		// 检查是否需要返工
+		if !strings.Contains(reviewContent, "需要返工") && !strings.Contains(reviewContent, "未通过") {
+			finalReport = fmt.Sprintf("## %s\n\n### 验证结果\n%s\n\n---\n\n%s", plan.Goal, testReport, reviewContent)
+			break // 通过了!
+		}
+
+		// 检测是否在进步
+		currentIssueCount := strings.Count(reviewContent, "⚠") + strings.Count(reviewContent, "❌")
+		if currentIssueCount >= previousIssueCount && previousIssueCount >= 0 {
+			noProgressCount++
+		} else {
+			noProgressCount = 0
+		}
+		previousIssueCount = currentIssueCount
+
+		if noProgressCount >= 2 {
+			finalReport = fmt.Sprintf("## %s\n\n### 验证结果\n%s\n\n---\n\n%s\n\n⚠ 连续 %d 次迭代未减少问题，停止尝试。请人工介入。", plan.Goal, testReport, reviewContent, noProgressCount)
+			break
+		}
+
+		// 提取问题 → 分析根因 → 生成修复方案 → 重新执行
+		analyzeTask := fmt.Sprintf("验收发现以下问题，请分析根因并给出修复方案：\n\n%s\n\n之前的尝试如果失败过，请换一种方法。输出：1.根因分析 2.修复步骤(编号列表)", reviewContent)
+		analysisContent, analyzeErr := o.RunSubAgent(ctx, userID, projectID, "analyst", analyzeTask, results)
+		if analyzeErr != nil {
+			continue
+		}
+
+		fixTask := fmt.Sprintf("根据以下分析修复问题：\n\n%s\n\n请逐一修复。如果某个问题无法修复，标注 [BLOCKED: 原因]。", analysisContent)
+		fixContent, fixErr := o.RunSubAgent(ctx, userID, projectID, "coder", fixTask, results)
+		if fixErr != nil {
+			continue
+		}
+
+		// 检测死胡同
+		if strings.Contains(fixContent, "[BLOCKED:") {
+			finalReport = fmt.Sprintf("## %s\n\n### 验证结果\n%s\n\n---\n\n%s\n\n### 阻塞\n%s\n\n任务遇到无法自动解决的问题，需要人工介入。", plan.Goal, testReport, reviewContent, fixContent)
+			break
+		}
+
+		results = append(results, fmt.Sprintf("### 修复迭代 %d\n根因分析:\n%s\n\n修复:\n%s", iteration+1, analysisContent, fixContent))
+		execSummary = strings.Join(results, "\n\n---\n\n")
+		totalTools++
+
+		// 学习: 记录修复经验
+		if o.mind != nil {
+			o.mind.AddLearning("pattern", fmt.Sprintf("修复经验: %s → %s", truncateForLearning(reviewContent), truncateForLearning(fixContent)))
+			o.mind.Save()
+		}
 	}
 
 	if finalReport == "" {
-		finalReport = fmt.Sprintf("## %s\n\n### 执行结果\n%s\n\n### 验证结果\n%s", plan.Goal, execSummary, testReport)
+		finalReport = fmt.Sprintf("## %s\n\n### 执行结果\n%s\n\n### 验证结果\n%s\n\n⚠ 达到最大迭代次数(%d)，请人工检查。", plan.Goal, execSummary, testReport, maxIterations)
 	}
 
-	// 记录执行历史 + 自动学习项目约定
+	// 记录执行历史 + 自动学习
 	if o.mind != nil {
-		o.mind.RecordExecution(plan.Goal, fmt.Sprintf("%v", roleMap), true,
+		success := !strings.Contains(finalReport, "需要返工") && !strings.Contains(finalReport, "人工介入") && !strings.Contains(finalReport, "最大迭代")
+		o.mind.RecordExecution(plan.Goal, fmt.Sprintf("%v", roleMap), success,
 			nil, nil, nil, 0, o.pickModel("coder"))
-		o.mind.UpdateStrategy(fmt.Sprintf("%v", roleMap), true, plan.Goal)
-		// 从测试输出中学习
+		o.mind.UpdateStrategy(fmt.Sprintf("%v", roleMap), success, plan.Goal)
 		if testReport != "" { o.mind.AnalyzeBuildError(testReport) }
 		o.mind.SessionCount++
 		o.mind.Save()
-		// 同步 ProjectMind 事实到知识库（语义搜索可用）
 		if o.knowledge != nil {
 			o.mind.SyncToKnowledgeBase(o.knowledge)
 		}
@@ -672,6 +730,13 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 		TokensUsed: 0,
 		Duration:   0,
 	}, nil
+}
+
+func truncateForLearning(s string) string {
+	if len([]rune(s)) > 100 {
+		return string([]rune(s)[:100]) + "..."
+	}
+	return s
 }
 
 // routePipeline 让 LLM 根据任务类型选择需要的角色管线
