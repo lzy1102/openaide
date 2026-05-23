@@ -650,6 +650,10 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 		if testReport != "" { o.mind.AnalyzeBuildError(testReport) }
 		o.mind.SessionCount++
 		o.mind.Save()
+		// 同步 ProjectMind 事实到知识库（语义搜索可用）
+		if o.knowledge != nil {
+			o.mind.SyncToKnowledgeBase(o.knowledge)
+		}
 	}
 
 	return &kernel.Response{

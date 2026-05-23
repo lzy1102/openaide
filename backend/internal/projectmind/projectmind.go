@@ -1,6 +1,7 @@
 package projectmind
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -378,6 +379,43 @@ func (pm *ProjectMind) RecentFailures() string {
 	}
 	if len(failures) == 0 { return "" }
 	return "## 最近失败记录\n" + strings.Join(failures, "\n")
+}
+
+// SyncToKnowledgeBase 将 ProjectMind 事实同步到知识库，使语义搜索可用
+func (pm *ProjectMind) SyncToKnowledgeBase(kb KnowledgeBaseWriter) {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	// 代码地图 → 短文档
+	for file, entry := range pm.CodeMap {
+		if entry.Confidence < 0.6 { continue }
+		content := fmt.Sprintf("文件: %s\n用途: %s", file, entry.Purpose)
+		if len(entry.Exports) > 0 {
+			content += fmt.Sprintf("\n导出: %s", strings.Join(entry.Exports, ", "))
+		}
+		kb.AddKnowledge(context.Background(), "pm-"+file, content, "projectmind", []string{"projectmind", "code-map"})
+	}
+
+	// 风险 → 短文档
+	for file, r := range pm.RiskMap {
+		status := "未修复"
+		if r.Fixed { status = "已修复" }
+		content := fmt.Sprintf("文件: %s\n风险: %s\n等级: %s\n状态: %s", file, r.Risk, r.Level, status)
+		kb.AddKnowledge(context.Background(), "pm-risk-"+file, content, "projectmind", []string{"projectmind", "risk"})
+	}
+
+	// 约定 → 短文档
+	for _, c := range pm.Conventions {
+		if c.Confidence < 0.6 { continue }
+		kb.AddKnowledge(context.Background(), "pm-conv-"+c.Rule[:min(20, len(c.Rule))],
+			fmt.Sprintf("项目约定: %s\n来源: %s\n置信度: %.0f%%", c.Rule, c.Source, c.Confidence*100),
+			"projectmind", []string{"projectmind", "convention"})
+	}
+}
+
+// KnowledgeBaseWriter ProjectMind 写入知识库所需的最小接口
+type KnowledgeBaseWriter interface {
+	AddKnowledge(ctx context.Context, title, content, source string, tags []string) (string, error)
 }
 
 func dedup(slice []string) []string {
