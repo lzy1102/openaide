@@ -455,7 +455,7 @@ func (m *model) executePlan(query string, plan *orchestration.Plan) {
 	m.cancelStream = cancel
 	go func() {
 		defer cancel()
-		resp, err := m.app.Orchestrator.ProcessQuery(ctx, "cli-user", "default", query, kernel.QueryOptions{ForcePlan: true})
+		resp, err := m.app.Orchestrator.ExecuteWithPlan(ctx, "cli-user", "default", query, plan, kernel.QueryOptions{})
 		if err != nil {
 			m.program.Send(chunkMsg{err: err, done: true})
 			return

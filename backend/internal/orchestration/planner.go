@@ -251,8 +251,9 @@ func (p *Planner) Research(ctx context.Context, query string) (*ResearchReport, 
 		{Role: "user", Content: fmt.Sprintf("研究需求: %s\n\n先分析代码，最后输出JSON报告。", query)},
 	}
 
-	// Mini ReAct loop: 最多 5 轮，只读工具
-	for round := 0; round < 5; round++ {
+	// Mini ReAct loop: LLM 自主决定何时研究完毕（不再调工具 = 准备好输出报告）
+	const maxRounds = 15 // 安全上限，防止无限循环
+	for round := 0; round < maxRounds; round++ {
 		tools := p.readOnlyToolDefs()
 		resp, err := p.llm.Chat(ctx, messages, tools, map[string]interface{}{
 			"temperature": 0.3,
@@ -263,28 +264,28 @@ func (p *Planner) Research(ctx context.Context, query string) (*ResearchReport, 
 		}
 
 		messages = append(messages, kernel.Message{
-			Role:    "assistant",
-			Content: resp.Content,
+			Role:      "assistant",
+			Content:   resp.Content,
 			ToolCalls: resp.ToolCalls,
 		})
 
-		// 无工具调用 → 输出应该是研究报告，解析 JSON
+		// 无工具调用 → LLM 认为研究够了，尝试解析报告
 		if len(resp.ToolCalls) == 0 {
 			if report, err := parseResearch(resp.Content); err == nil {
 				return report, nil
 			}
-			// JSON 解析失败，可能是 LLM 还在思考，继续
-			if round >= 2 {
-				return nil, fmt.Errorf("research did not produce valid JSON after %d rounds", round+1)
-			}
+			// JSON 解析失败，引导 LLM 输出正确格式
+			messages = append(messages, kernel.Message{
+				Role: "user",
+				Content: "请输出 JSON 格式的研究报告。{\"findings\":\"...\", \"modules\":\"...\", \"risks\":\"...\", \"complexity\":\"low/medium/high\"}",
+			})
 			continue
 		}
 
 		// 执行只读工具
 		if p.tools == nil {
-			// 无工具执行器，直接要求 LLM 基于已有知识输出
 			messages = append(messages, kernel.Message{
-				Role: "user", Content: "请基于你的知识直接输出 JSON 研究报告，不需要调用工具。",
+				Role: "user", Content: "无法使用工具。请基于你的知识直接输出 JSON 研究报告。",
 			})
 			continue
 		}
@@ -310,7 +311,7 @@ func (p *Planner) Research(ctx context.Context, query string) (*ResearchReport, 
 		}
 	}
 
-	return nil, fmt.Errorf("research exceeded max rounds")
+	return nil, fmt.Errorf("research exceeded max rounds (%d)", maxRounds)
 }
 
 // readOnlyToolDefs 返回只读工具定义（从 toolExecutor 获取并过滤）

@@ -136,6 +136,11 @@ func (o *Orchestrator) DeepPlanFinalize(ctx context.Context, content string, res
 	return plan, nil
 }
 
+// ExecuteWithPlan 使用已有计划直接执行（跳过重新规划）
+func (o *Orchestrator) ExecuteWithPlan(ctx context.Context, userID, projectID, content string, plan *Plan, opts kernel.QueryOptions) (*kernel.Response, error) {
+	return o.executePlan(ctx, userID, projectID, content, plan, opts)
+}
+
 // ProcessQuery 处理用户查询 — LLM 自动判断是否需要拆分任务
 func (o *Orchestrator) ProcessQuery(ctx context.Context, userID, projectID, content string, opts kernel.QueryOptions) (*kernel.Response, error) {
 	planner := NewPlanner(o.llmGateway)
