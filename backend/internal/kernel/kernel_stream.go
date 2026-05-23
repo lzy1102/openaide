@@ -152,6 +152,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 				session.UpdatedAt = time.Now()
 				ensureSessionTitle(session)
 				k.sessionStore.Update(ctx, session)
+				go k.generateSessionTitle(session, query.Content)
 
 				if k.reflection != nil {
 					go k.doReflection(ctx, session.ID, query.Content, fullContent.String(), totalToolCalls)

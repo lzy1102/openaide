@@ -118,6 +118,7 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 			session.UpdatedAt = time.Now()
 			ensureSessionTitle(session)
 			k.sessionStore.Update(ctx, session)
+			go k.generateSessionTitle(session, query.Content)
 
 			// 触发反思（如果启用）
 			if k.reflection != nil {

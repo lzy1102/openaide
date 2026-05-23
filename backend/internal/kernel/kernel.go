@@ -427,7 +427,7 @@ func ensureSessionTitle(session *Session) {
 		session.Metadata = make(map[string]interface{})
 	}
 	if _, ok := session.Metadata["title"]; ok {
-		return // 已有标题
+		return
 	}
 
 	for _, msg := range session.Messages {
@@ -436,6 +436,7 @@ func ensureSessionTitle(session *Session) {
 			if len(rs) == 0 {
 				return
 			}
+			// 先用截断标题兜底，LLM 标题异步替换
 			title := string(rs[:min(len(rs), 25)])
 			if len(rs) > 25 {
 				title += "…"
@@ -443,5 +444,20 @@ func ensureSessionTitle(session *Session) {
 			session.Metadata["title"] = title
 			return
 		}
+	}
+}
+
+// generateSessionTitle 用 LLM 生成有意义的会话标题（异步，不阻塞）
+func (k *AgentKernel) generateSessionTitle(session *Session, firstQuery string) {
+	resp, err := k.llmProvider.Chat(context.Background(), []Message{
+		{Role: "user", Content: fmt.Sprintf("Generate a SHORT session title (3-5 words) for this query. Reply with ONLY the title, no explanation.\nQuery: %s", firstQuery)},
+	}, nil, map[string]interface{}{"max_tokens": 30, "temperature": 0})
+	if err != nil {
+		return
+	}
+	title := strings.TrimSpace(resp.Content)
+	if title != "" && len([]rune(title)) <= 50 {
+		session.Metadata["title"] = title
+		k.sessionStore.Update(context.Background(), session)
 	}
 }

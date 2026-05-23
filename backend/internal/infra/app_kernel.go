@@ -56,7 +56,9 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 	approver := kernel.NewAutoApprover()
 	approver.UnsafeMode = true // 保留本地便利模式；设为 false 启用危险工具拦截
 	agentKernel.SetApprover(approver)
-	agentKernel.SetAdaptiveRounds(kernel.NewAdaptiveRounds(5, 30))
+	ar := kernel.NewAdaptiveRounds(5, 30)
+	ar.SetLLM(gateway) // LLM 辅助估计任务复杂度
+	agentKernel.SetAdaptiveRounds(ar)
 
 	if cp, err := kernel.NewFileCheckpointer(kernel.FileCheckpointerConfig{
 		Dir: cfg.Storage.DataDir + "/checkpoints",

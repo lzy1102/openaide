@@ -485,7 +485,7 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 
 	// Phase 1: 执行 — 每个子任务分配给最合适的角色
 	for i, st := range plan.Subtasks {
-		roleName := pickRoleForTask(pipeline, st)
+		roleName := o.assignRole(ctx, pipeline, st)
 		task := fmt.Sprintf("总体目标: %s\n当前步骤 (%d/%d): %s\n具体要求: %s\n\nTDD 原则：涉及代码修改时请先编写测试用例再实现。",
 			plan.Goal, i+1, len(plan.Subtasks), st.Title, st.Description)
 
@@ -589,33 +589,49 @@ func (o *Orchestrator) routePipeline(ctx context.Context, plan *Plan) []string {
 	return roles
 }
 
-func pickRoleForTask(pipeline []string, st SubTask) string {
-	// 根据子任务类型智能选角色
-	desc := strings.ToLower(st.Title + " " + st.Description)
-	toolHints := strings.ToLower(st.ToolHints)
-
-	// 分析/研究类 → analyst
-	if strings.Contains(desc, "分析") || strings.Contains(desc, "研究") ||
-		strings.Contains(desc, "了解") || strings.Contains(desc, "explore") ||
-		strings.Contains(desc, "调研") || strings.Contains(desc, "review") {
-		if pipelineHas(pipeline, "analyst") {
-			return "analyst"
-		}
+// assignRole 让 LLM 从可用管线中选择最适合子任务的角色
+func (o *Orchestrator) assignRole(ctx context.Context, pipeline []string, st SubTask) string {
+	if len(pipeline) == 1 {
+		return pipeline[0]
 	}
-	// 测试/验证类 → executor
-	if strings.Contains(desc, "测试") || strings.Contains(desc, "验证") ||
-		strings.Contains(desc, "编译") || strings.Contains(desc, "test") ||
-		strings.Contains(desc, "build") || strings.Contains(desc, "运行") {
-		if pipelineHas(pipeline, "executor") {
-			return "executor"
-		}
-	}
-	// 需要写文件的 → coder
-	if strings.Contains(toolHints, "write_file") || strings.Contains(toolHints, "diff_edit") ||
-		pipelineHas(pipeline, "coder") {
-		return "coder"
+	if o.team == nil {
+		return pipeline[0]
 	}
 
+	var roleDescs []string
+	for _, rn := range pipeline {
+		if role := o.team.GetRole(rn); role != nil {
+			roleDescs = append(roleDescs, fmt.Sprintf("- %s: %s", rn, role.Description))
+		}
+	}
+	if len(roleDescs) == 0 {
+		return pipeline[0]
+	}
+
+	prompt := fmt.Sprintf(`从以下角色中选择最合适的一个来完成子任务。
+
+可用角色:
+%s
+
+子任务:
+标题: %s
+描述: %s
+建议工具: %s
+
+只回复角色名称（如 analyst/coder/executor/reviewer），不要解释。`, strings.Join(roleDescs, "\n"), st.Title, st.Description, st.ToolHints)
+
+	messages := []kernel.Message{
+		{Role: "user", Content: prompt},
+	}
+	resp, err := o.llmGateway.Chat(ctx, messages, nil, map[string]interface{}{"max_tokens": 20, "temperature": 0})
+	if err != nil {
+		return pipeline[0]
+	}
+
+	choice := strings.TrimSpace(resp.Content)
+	if o.team.GetRole(choice) != nil {
+		return choice
+	}
 	return pipeline[0]
 }
 
