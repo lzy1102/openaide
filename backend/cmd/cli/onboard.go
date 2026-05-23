@@ -2,13 +2,11 @@ package main
 
 import (
 	"bufio"
-	"context"
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
-	"openaide/backend/internal/infra"
+	"openaide/backend/internal/config"
 	"openaide/backend/internal/kernel"
 )
 
@@ -67,22 +65,29 @@ var enText = onboardText{
 	editHint:   "You can edit this file anytime to customize me further.",
 }
 
-func runOnboarding(promptsDir string) {
-	fmt.Println(strings.Repeat("─", 60))
-	fmt.Println("  Welcome to OpenAIDE! / 欢迎使用 OpenAIDE！")
-	fmt.Println(strings.Repeat("─", 60))
-	fmt.Println()
+func runOnboarding(cfg *config.Config, promptsDir string) {
+	// 全局语言偏好已设置 → 跳过引导
+	zh := cfg.Log.Lang == "zh"
+	skipLang := cfg.Log.Lang != ""
 
 	reader := bufio.NewReader(os.Stdin)
 
-	// 1. 先选语言（最重要的问题）
-	fmt.Println("1. Language / 语言")
-	fmt.Println("   [1] 中文")
-	fmt.Println("   [2] English")
-	fmt.Print("\n   Choice / 选择 (1-2): ")
-	langChoice := readLine(reader)
+	if !skipLang {
+		fmt.Println(strings.Repeat("─", 60))
+		fmt.Println("  Welcome to OpenAIDE! / 欢迎使用 OpenAIDE！")
+		fmt.Println(strings.Repeat("─", 60))
+		fmt.Println()
 
-	zh := langChoice == "1"
+		fmt.Println("Language / 语言")
+		fmt.Println("  [1] 中文")
+		fmt.Println("  [2] English")
+		fmt.Print("\n  Choice / 选择 (1-2): ")
+		langChoice := readLine(reader)
+		zh = langChoice == "1"
+		if zh { cfg.Log.Lang = "zh" } else { cfg.Log.Lang = "en" }
+		cfg.Save(defaultConfigPath())
+	}
+
 	t := &enText
 	if zh { t = &zhText }
 
@@ -423,91 +428,4 @@ Choose tools based on task type. Follow these principles:
 - For long answers: give the conclusion first, then elaborate.`
 
 // runLLMOnboarding uses the LLM to refine the user's profile through a short interview.
-// Requires the kernel to be already running.
-func runLLMOnboarding(app *infra.Application, promptsDir string) {
-	// 跳过 LLM 面试, 模板引导已足够。用户可在 TUI 中随时调整。
-	return
-}
-
-
-func askLLM(app *infra.Application, promptsDir, systemPrompt, userMsg string) string {
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-
-	// Temporarily swap system prompt for the onboarding interview
-	agentKernel, ok := app.Kernel.(*kernel.AgentKernel)
-	if !ok {
-		return ""
-	}
-
-	// Save original, set onboarding prompt
-	original := kernel.LoadSystemPrompt(promptsDir) // current prompt from file
-	agentKernel.SetSystemPrompt(systemPrompt)
-	defer agentKernel.SetSystemPrompt(original)
-
-	resp, err := app.Orchestrator.ProcessQuery(ctx, "cli-onboard", "default", userMsg, kernel.QueryOptions{MaxTokens: 500})
-	if err != nil || resp == nil {
-		return ""
-	}
-	return strings.TrimSpace(resp.Content)
-}
-
-func onbFirstMsg(zh bool) string {
-	if zh {
-		return "你好，我想设置我的 AI 助手。请问我第一个问题。"
-	}
-	return "Hello, I'd like to set up my AI assistant. Please ask me your first question."
-}
-
-func onboardingSystemPrompt(zh bool) string {
-	if zh {
-		return `你正在帮助一位新用户设置 AI 助手。
-
-请进行简短的入职面试，通过 2 个问题了解用户。规则：
-1. 第一个问题：问用户主要做什么工作，需要什么帮助。用友好的语气，不要太正式。
-2. 第二个问题：根据第一个回答深入问一个具体细节。
-3. 每次只问一个问题，不要同时问多个。
-4. 不要输出其他内容，只输出问题。
-
-今天是第一次对话，用户刚完成了一个快速的多选题配置。现在你需要通过开放式问题了解更深层的需求。`
-	}
-	return `You are onboarding a new user for an AI assistant.
-
-Conduct a brief interview with 2 questions to understand the user. Rules:
-1. First question: ask what kind of work they do and what help they need. Be friendly, not formal.
-2. Second question: ask a specific follow-up based on their first answer.
-3. Ask only ONE question at a time. Never ask multiple questions together.
-4. Output only the question. No other text.
-
-This is a first-time setup. The user just completed a quick multiple-choice profile. Now you should understand their deeper needs through open-ended questions.`
-}
-
-func profileGenPrompt(zh bool, a1, a2 string) string {
-	if zh {
-		return fmt.Sprintf(`根据以下对话，生成一份 AI 助手系统提示词（Markdown 格式），直接放在 system.md 文件中使用。
-
-用户第一个回答: %s
-用户第二个回答: %s
-
-## 要求
-1. 包含"身份"章节——1句话定义助手的核心定位
-2. 包含"回复风格"章节——如何和用户交流
-3. 包含"语言"章节——始终用中文
-4. 保留工具选择策略、停止条件、错误恢复、安全准则等通用章节（可适当精简）
-5. 直接输出 Markdown，不要用代码块包裹
-6. 开头不要写"你是 XXX"，直接输出 system prompt 的内容`, a1, a2)
-	}
-	return fmt.Sprintf(`Based on the following conversation, generate a system prompt (Markdown) for the AI assistant to use directly as its system.md file.
-
-User's first answer: %s
-User's second answer: %s
-
-## Requirements
-1. Include an "Identity" section — 1 sentence defining the assistant's core positioning
-2. Include a "Response Style" section — how to communicate with this user
-3. Include a "Language" section — always respond in English
-4. Keep the tool selection strategy, stop conditions, error recovery, and safety rules sections (can be condensed)
-5. Output Markdown directly, do NOT wrap in code blocks
-6. Do not start with "You are XXX" — output the system prompt content directly`, a1, a2)
-}
-
+func runLLMOnboarding(app interface{}, promptsDir string) {}

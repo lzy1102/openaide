@@ -191,6 +191,7 @@ type QueueConfig struct {
 type LogConfig struct {
 	Level  string `json:"level" yaml:"level"`
 	Format string `json:"format" yaml:"format"`
+	Lang   string `json:"lang" yaml:"lang"` // "zh" / "en" — 全局语言偏好
 }
 
 // DefaultConfig 默认配置

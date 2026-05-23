@@ -182,9 +182,12 @@ func main() {
 	promptsDir := cfg.Storage.DataDir + "/prompts"
 	firstRun := kernel.IsFirstRun(promptsDir) && flags.prompt == ""
 
+	// 加载全局语言偏好
+	loadGlobalLang(cfg)
+
 	// 首次运行：模板引导（不需要 LLM）
 	if firstRun {
-		runOnboarding(promptsDir)
+		runOnboarding(cfg, promptsDir)
 	}
 
 	app, err := infra.NewApplication(cfg)
@@ -356,6 +359,15 @@ func cmdUpdate(args []string) {
 		os.Exit(1)
 	}
 	fmt.Println(lang.T("update.complete"))
+}
+
+// loadGlobalLang 从全局配置加载语言偏好
+func loadGlobalLang(cfg *config.Config) {
+	if cfg.Log.Lang == "zh" {
+		lang.SetLang(lang.ZH)
+	} else if cfg.Log.Lang == "en" {
+		lang.SetLang(lang.EN)
+	}
 }
 
 func truncate(s string, n int) string {
