@@ -104,12 +104,13 @@ func (o *Orchestrator) RunSubAgent(ctx context.Context, userID, projectID, roleN
 	}
 	input.WriteString(fmt.Sprintf("## 当前任务\n%s\n\n请完成此任务，输出你的工作结果。", task))
 
-	// 用独立会话执行（隔离上下文）
+	// 使用唯一 userID 创建真正隔离的临时会话
+	sessionID := fmt.Sprintf("%s-%s-%d", userID, roleName, time.Now().UnixNano())
 	opts := kernel.QueryOptions{}
 	if len(role.Tools) > 0 {
 		opts.ToolFilter = role.Tools
 	}
-	resp, err := o.processSingle(ctx, userID, projectID, input.String(), opts)
+	resp, err := o.processSingle(ctx, sessionID, projectID, input.String(), opts)
 	if err != nil {
 		return "", fmt.Errorf("sub-agent %s failed: %w", roleName, err)
 	}

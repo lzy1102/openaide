@@ -173,6 +173,27 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.state = viewChat
 			m.input.Focus()
 			return m, nil
+		case viewProposalSelect:
+			switch msg.String() {
+			case "1", "2", "3":
+				if m.deepResult != nil {
+					idx := int(msg.String()[0] - '1')
+					if idx < len(m.deepResult.Proposals.Options) {
+						m.addSystemMsg("正在生成详细计划…")
+						m.renderViewport()
+						go m.doDeepPlanFinalize(idx)
+					}
+				}
+			case "esc", "ctrl+c":
+				m.state = viewChat
+				m.deepResult = nil
+				m.input.Focus()
+				m.addSystemMsg("深度分析已取消")
+				m.renderViewport()
+				m.startStream(m.pendingQuery)
+				m.pendingQuery = ""
+			}
+			return m, nil
 		case viewPlanConfirm:
 			switch msg.String() {
 			case "y":
@@ -496,6 +517,7 @@ func (m *model) planConfirmView() string {
 }
 
 func (m *model) doDeepPlan(query string) {
+	m.streaming = true
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
@@ -522,6 +544,7 @@ func (m *model) doDeepPlan(query string) {
 	m.state = viewProposalSelect
 	m.proposalSel = 0
 	m.program.Send(func() tea.Msg { return chunkMsg{thinking: "✓ 方案已生成，请选择（1/2/3）"} })
+	m.streaming = false
 }
 
 func (m *model) doDeepPlanFinalize(idx int) {

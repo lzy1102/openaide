@@ -158,6 +158,7 @@ func main() {
 
 	cfg, err := config.Load(defaultConfigPath())
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: config load failed, using defaults: %v\n", err)
 		cfg = config.DefaultConfig()
 	}
 	cfg.Server.Mode = "direct"
@@ -278,6 +279,7 @@ func printHelp() {
 func cmdSessions(args []string) {
 	cfg, err := config.Load(defaultConfigPath())
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: config load failed, using defaults: %v\n", err)
 		cfg = config.DefaultConfig()
 	}
 	cfg.Server.Mode = "direct"
