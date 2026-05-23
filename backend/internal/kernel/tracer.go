@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -182,7 +183,9 @@ func (t *FileTracer) EndSpan(ctx context.Context, output interface{}, err error)
 		Error:     errStr,
 		Status:    status,
 	}
-	_ = t.Record(context.Background(), event)
+	if err := t.Record(ctx, event); err != nil {
+		slog.Debug("Tracer.Record failed", "event", info.name, "error", err)
+	}
 }
 
 func (t *FileTracer) Flush(ctx context.Context) error {

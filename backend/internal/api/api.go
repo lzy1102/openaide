@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
+	"sync/atomic"
 	"time"
 
 	"openaide/backend/internal/auth"
@@ -45,7 +47,7 @@ func NewServer(orch *orchestration.Orchestrator, addr string, authSvc *auth.Serv
 	mux.HandleFunc("/api/v1/memory/search", s.handleMemorySearch)
 	mux.HandleFunc("/api/v1/tools", s.handleTools)
 	mux.HandleFunc("/api/v1/stats", s.handleStats)
-	mux.HandleFunc("/api/v1/state", s.handleState)
+	mux.HandleFunc("/api/v1/metrics", s.handleMetrics)
 	mux.HandleFunc("/api/v1/channels", s.handleChannels)
 	mux.HandleFunc("/api/v1/auth/", authSvc.AuthHandler)
 	mux.HandleFunc("/ws", s.handleWebSocket)
@@ -209,8 +211,8 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		// 列出会话
-		userID := r.URL.Query().Get("user_id")
-		projectID := r.URL.Query().Get("project_id")
+		userID := sanitizeParam(r.URL.Query().Get("user_id"))
+		projectID := sanitizeParam(r.URL.Query().Get("project_id"))
 		limit := 10
 		offset := 0
 		if l := r.URL.Query().Get("limit"); l != "" {
@@ -363,12 +365,48 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, stats)
 }
 
-func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
+// 全局指标计数器
+var (
+	metricsRequests  atomic.Int64
+	metricsTokens    atomic.Int64
+	metricsToolCalls atomic.Int64
+	metricsErrors    atomic.Int64
+)
+
+// RecordMetrics records a completed request for the /metrics endpoint.
+func RecordMetrics(tokens, toolCalls int, isError bool) {
+	metricsRequests.Add(1)
+	metricsTokens.Add(int64(tokens))
+	metricsToolCalls.Add(int64(toolCalls))
+	if isError {
+		metricsErrors.Add(1)
+	}
+}
+
+func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	s.writeJSON(w, http.StatusOK, s.orchestrator.GetStats())
+	// 收集运行时指标
+	stats := s.orchestrator.GetStats()
+	stats["requests_total"] = metricsRequests.Load()
+	stats["tokens_total"] = metricsTokens.Load()
+	stats["tool_calls_total"] = metricsToolCalls.Load()
+	stats["errors_total"] = metricsErrors.Load()
+	s.writeJSON(w, http.StatusOK, stats)
+}
+
+// sanitizeParam 清理参数，防止路径遍历和注入
+func sanitizeParam(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.ReplaceAll(s, "..", "")
+	s = strings.ReplaceAll(s, "/", "_")
+	s = strings.ReplaceAll(s, "\\", "_")
+	if len(s) > 100 {
+		s = s[:100]
+	}
+	return s
 }
 
 // SetChannelRegistry 设置渠道注册表

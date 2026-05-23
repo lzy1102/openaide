@@ -12,6 +12,7 @@ type RateLimiter struct {
 	buckets  map[string]*tokenBucket
 	rate     int           // tokens per second
 	capacity int           // max tokens
+	stopCh   chan struct{}
 }
 
 type tokenBucket struct {
@@ -31,14 +32,27 @@ func NewRateLimiter(rate, capacity int) *RateLimiter {
 		buckets:  make(map[string]*tokenBucket),
 		rate:     rate,
 		capacity: capacity,
+		stopCh:   make(chan struct{}),
 	}
-	// 定期清理
-	go func() {
-		for range time.Tick(10 * time.Minute) {
+	go rl.cleanupLoop()
+	return rl
+}
+
+func (rl *RateLimiter) Shutdown() {
+	close(rl.stopCh)
+}
+
+func (rl *RateLimiter) cleanupLoop() {
+	ticker := time.NewTicker(10 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-rl.stopCh:
+			return
+		case <-ticker.C:
 			rl.cleanup()
 		}
-	}()
-	return rl
+	}
 }
 
 func (rl *RateLimiter) allow(key string) bool {
