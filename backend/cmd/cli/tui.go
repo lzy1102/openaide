@@ -45,6 +45,12 @@ type chatMsg struct {
 	content string
 }
 
+type previewResultMsg struct {
+	plan  *orchestration.Plan
+	query string
+	err   error
+}
+
 type chunkMsg struct {
 	content   string
 	thinking  string
@@ -224,6 +230,25 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateChat(msg)
 		}
 
+	case previewResultMsg:
+		m.streaming = false
+		if msg.err != nil || msg.plan == nil || len(msg.plan.Subtasks) <= 1 {
+			m.startStream(msg.query)
+			return m, nil
+		}
+		if len(msg.plan.Subtasks) >= 4 {
+			m.pendingQuery = msg.query
+			m.addSystemMsg("检测到复杂任务，开始深度分析…")
+			m.renderViewport()
+			go m.doDeepPlan(msg.query)
+		} else {
+			m.pendingPlan = msg.plan
+			m.pendingQuery = msg.query
+			m.state = viewPlanConfirm
+			m.input.Blur()
+			m.renderViewport()
+		}
+
 	case chunkMsg:
 		m.cancelStream = nil
 		if msg.err != nil {
@@ -384,30 +409,14 @@ func (m *model) updateChat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// 自适应规划深度：LLM 快速分类任务复杂度
 		// PreviewPlan 一次 LLM 调用同时判断复杂度+拆分
 		m.streaming = true
-		m.thinkBuf.WriteString("分析任务复杂度…")
-		m.renderViewport()
-		ctx, cancel := context.WithTimeout(context.Background(), m.app.Orchestrator.PreviewTimeout)
-		plan, err := m.app.Orchestrator.PreviewPlan(ctx, query)
-		cancel()
-		m.streaming = false
-		m.thinkBuf.Reset()
-		m.renderViewport()
-		if err != nil || plan == nil || len(plan.Subtasks) <= 1 {
-			m.startStream(query)
-			return m, nil
-		}
-		if len(plan.Subtasks) >= 4 {
-			m.pendingQuery = query
-			m.addSystemMsg("检测到复杂任务，开始深度分析…")
-			m.renderViewport()
-			go m.doDeepPlan(query)
-		} else {
-			m.pendingPlan = plan
-			m.pendingQuery = query
-			m.state = viewPlanConfirm
-			m.input.Blur()
-			m.renderViewport()
-		}
+		m.addSystemMsg("分析任务中…")
+		m.input.Blur()
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), m.app.Orchestrator.PreviewTimeout)
+			plan, err := m.app.Orchestrator.PreviewPlan(ctx, query)
+			cancel()
+			m.program.Send(previewResultMsg{plan: plan, query: query, err: err})
+		}()
 		return m, nil
 	case "up":
 		if !m.streaming && len(m.history) > 0 {
