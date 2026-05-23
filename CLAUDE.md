@@ -94,9 +94,44 @@ cmd/server (API server)          cmd/cli (interactive CLI)
 
 7. **`backend/internal/api/`** — HTTP REST API + WebSocket. Routes: `POST /api/v1/chat`, `POST /api/v1/chat/stream` (SSE), `GET /api/v1/sessions`, etc. WebSocket heartbeat uses `done` channel for clean shutdown.
 
-8. **`backend/internal/orchestration/`** — `Orchestrator` wraps kernel with pre/post processing. `Planner` uses function calling + text prompt fallback. DAG execution with data-race-safe `completed` map reads. `Team` multi-agent delegation (analyst → coder → reviewer → executor).
+8. **`backend/internal/orchestration/`** — Full task lifecycle management:
+   - `orchestrator.go` — `Orchestrator` wraps kernel with pre/post processing. `ProcessQuery` triggers LLM-based planning via `Planner`. `executePlan` runs full lifecycle (Execute→Test→Review) with context-isolated sub-agents via `RunSubAgent()`. `DeepPlan` pipeline: Research→Propose→Select→Plan. `Smart routing`: LLM auto-selects role pipeline per task. `ExecuteWithPlan` accepts pre-made plans.
+   - `planner.go` — `Planner`: LLM-driven task decomposition (Function Calling → text fallback). Research phase: mini ReAct loop with read-only tools, auto-stops when LLM done. `Propose`: generates 2-3 alternatives with pros/cons/risk/effort. `PlanWithApproach`: detailed plan from chosen approach.
+   - `team.go` — `Team`: 4 roles (analyst/coder/reviewer/executor) each with isolated tool sets. `RunSubAgent`: fresh session per role, prevents context pollution. `Smart routing`: `routePipeline` LLM selects needed roles. `assignRole` LLM picks right role per subtask.
+   - `dag.go` — DAG execution engine with parallel execution and data-race-safe map access.
+
+### LLM-driven decision making (replacing hardcoded rules)
+
+All judgment calls now delegated to LLM, with rule-based fallbacks:
+- **Role assignment** (`assignRole`): LLM picks best team role from task semantics (was 20+ keyword matches)
+- **Pipeline routing** (`routePipeline`): LLM selects needed roles per task (was hardcoded coder→executor→reviewer)
+- **Tool risk assessment** (`AutoApprover.assessWithLLM`): LLM evaluates tool arguments for safety (was hardcoded DangerousTools map)
+- **Skill detection** (`detectWithLLM`): LLM semantic skill matching (was keyword substring scoring)
+- **Round estimation** (`AdaptiveRounds.estimateWithLLM`): LLM judges task complexity (was keyword+length heuristics)
+- **Session titles** (`generateSessionTitle`): LLM generates meaningful 3-5 word titles async (was 25-char truncation)
+- **User preference** (`detectPreferenceWithLLM`): LLM classifies interaction type (was "代码"/"code" substring)
+- **Router complexity**: removed 17-keyword indicator list; orchestrator LLM planning handles complexity
+- **Reflection**: removed keyword-based quality scoring; LLMReflection handles evaluation with neutral fallback
+- **Planner**: removed "≤5 subtasks" limit; LLM decides appropriate count
+- **Compress**: replaced generic "error" substring with specific error markers
 
 ### Concurrency safety (audited and fixed)
+
+- **`session_store.go`** — `SessionStoreAdapter` has `sync.RWMutex` protecting all 5 map-access methods (was missing, would fatal-panic under concurrent access).
+- **`dag.go`** — `completed` map read moved inside `mu.Lock()` to prevent data race with concurrent writes.
+- **`event.go`** — `events` slice capped at 10,000 via FIFO eviction; handler goroutines bounded by semaphore (max 32 concurrent).
+- **`browser.go`** — `allocCancel` stored instead of discarded. `ShutdownBrowser()` added and called from `Application.Stop()` (was leaking Chrome processes).
+- **`mcp.go`** — `stdout.Scan()` wrapped in goroutine with 30s timeout + `Process.Kill()` on timeout (was holding mutex across blocking I/O, could deadlock).
+- **`kernel.go`** — `publishEvent()` handler goroutines have 5s timeout (was fire-and-forget, could accumulate).
+- **`anthropic_provider.go`** — Stream goroutine channel sends guarded by `select { case <-resultChan: case <-ctx.Done() }` (was missing, could block forever).
+- **`websocket.go`** — Heartbeat goroutine uses `done` channel for clean exit (was relying on write failure alone).
+- **`indexer.go`** — All `Lock/Unlock` pairs use `defer` (3 places were manual, could leak on panic).
+- **`cache.go`** — All `json.Marshal`/`os.WriteFile` errors now logged. `Shutdown()` stops cleanup goroutine. `Gateway.Shutdown()` wired to `Application.Stop()`.
+- **`ratelimit.go`** — `time.Tick` replaced with `time.NewTicker` + `Shutdown()` (was unleakable goroutine).
+- **`checkpoint.go`** — Max 5 checkpoints per session, auto-deletes old ones (was unbounded growth).
+- **`tui.go`** — `cancelMu sync.Mutex` protects `cancelStream` from concurrent access races.
+- **`api.go`** — Session authorization: verify `user_id` before GET/DELETE. `sendSSE()` handles marshal errors. `sanitizeParam()` prevents path traversal. Duplicate `/api/v1/state` endpoint removed.
+- **`orchestration/orchestrator.go`** — `RunSubAgent` uses unique userID with nanosecond timestamp for true session isolation.
 
 - **`session_store.go`** — `SessionStoreAdapter` has `sync.RWMutex` protecting all 5 map-access methods (was missing, would fatal-panic under concurrent access).
 - **`dag.go`** — `completed` map read moved inside `mu.Lock()` to prevent data race with concurrent writes.
@@ -232,15 +267,32 @@ openaide --verbose 2>&1 | grep -i "claude\|plugin\|hook"
 └── cache/                     ← prompt cache
 ```
 
+### TUI (Bubble Tea)
+
+- **`cmd/cli/tui.go`** (1205 lines) — Full Bubble Tea TUI:
+  - Streaming LLM output with thinking visualization
+  - Tool call display (`⚙ read_file`, `→ result summary`)
+  - Syntax highlighting (chroma/Monokai) for code blocks
+  - Render throttle (50ms debounce during streaming)
+  - Theme struct (`tuiTheme`) with 18 style fields
+  - Emoji/ASCII dual rendering (auto-detects terminal capability)
+  - Session list, model selector, help overlay, plan confirmation, proposal selection
+  - Deep plan progress indicators (🔍 Research → 💡 Propose → 📋 Plan)
+  - Context-isolated sub-agent execution (fresh sessions)
+
 ### Key patterns
 
 - All inter-module communication uses interfaces defined in `kernel/interfaces.go`
-- The LLM Gateway implements `kernel.LLMProvider` so it can be passed directly to the kernel
-- File session store is the default (crash-recoverable); in-memory `SessionStoreAdapter` is the fallback
-- All 22 tool handlers are fully implemented across 9 source files + 1 test file in `internal/tools/`
-- DeepSeek-specific behavior is gated by `isDeepSeek()` which checks the base URL and provider name for "deepseek"
-- Prompt is loaded from file with hardcoded fallback; supports both Chinese and English via `$LANG` detection
-- First-run onboarding is interactive: template + LLM interview before TUI starts
+- LLM Gateway implements `kernel.LLMProvider` — passed directly to kernel, planner, skill manager
+- File session store default (crash-recoverable); `SessionStoreAdapter` is fallback
+- All 22 tool handlers implemented across 9 source files; no stubs
+- DeepSeek behavior gated by `isDeepSeek()` checking base URL + provider name
+- Prompt: file-based with bilingual fallback; `SetSystemPrompt()` hot-reloads without restart
+- First-run onboarding: template → LLM interview → TUI
+- LLM as decision engine: removed all keyword/rule-based judgment; LLM handles role assignment, risk assessment, skill matching, complexity estimation, task planning
+- Context isolation: sub-agents use unique session IDs; main agent sees only result summaries
+- Read-only Plan Agent: Research phase restricted to 8 read-only tools (OpenCode pattern)
+- Plugin compatibility: full Claude Code official format (skills, MCP, hooks)
 
 ### Frontend
 
