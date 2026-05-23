@@ -76,6 +76,54 @@ func (o *Orchestrator) PreviewPlan(ctx context.Context, content string) (*Plan, 
 	return planner.Plan(ctx, content)
 }
 
+// DeepPlanResult 深度规划完整结果
+type DeepPlanResult struct {
+	Research  *ResearchReport
+	Proposals *Proposals
+	Plan      *Plan
+	Chosen    *Proposal
+}
+
+// DeepPlan 深度规划：研究 → 方案分析 → 生成计划（不含选择，调用方负责选择方案）
+func (o *Orchestrator) DeepPlan(ctx context.Context, content string) (*DeepPlanResult, error) {
+	planner := NewPlanner(o.llmGateway)
+
+	// Phase 1: Research
+	research, err := planner.Research(ctx, content)
+	if err != nil {
+		return nil, fmt.Errorf("research phase failed: %w", err)
+	}
+
+	// Phase 2: Propose alternatives
+	proposals, err := planner.Propose(ctx, content, research)
+	if err != nil {
+		return nil, fmt.Errorf("propose phase failed: %w", err)
+	}
+
+	return &DeepPlanResult{
+		Research:  research,
+		Proposals: proposals,
+	}, nil
+}
+
+// DeepPlanFinalize 用户选择方案后，生成详细计划
+func (o *Orchestrator) DeepPlanFinalize(ctx context.Context, content string, result *DeepPlanResult, choiceIndex int) (*Plan, error) {
+	if choiceIndex < 0 || choiceIndex >= len(result.Proposals.Options) {
+		return nil, fmt.Errorf("invalid choice: %d", choiceIndex)
+	}
+	chosen := &result.Proposals.Options[choiceIndex]
+	result.Chosen = chosen
+
+	planner := NewPlanner(o.llmGateway)
+	plan, err := planner.PlanWithApproach(ctx, content, result.Research, chosen)
+	if err != nil {
+		return nil, fmt.Errorf("plan phase failed: %w", err)
+	}
+
+	result.Plan = plan
+	return plan, nil
+}
+
 // ProcessQuery 处理用户查询 — LLM 自动判断是否需要拆分任务
 func (o *Orchestrator) ProcessQuery(ctx context.Context, userID, projectID, content string, opts kernel.QueryOptions) (*kernel.Response, error) {
 	planner := NewPlanner(o.llmGateway)

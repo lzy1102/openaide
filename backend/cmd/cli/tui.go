@@ -33,6 +33,7 @@ const (
 	viewModelList
 	viewHelp
 	viewPlanConfirm
+	viewProposalSelect
 )
 
 const maxHistory = 50
@@ -105,6 +106,8 @@ type model struct {
 
 	pendingPlan  *orchestration.Plan // 待确认的任务规划
 	pendingQuery string              // 待确认的查询
+	deepResult   *orchestration.DeepPlanResult      // 深度规划结果
+	proposalSel  int                                 // 方案选择游标
 }
 
 func initModel(app *infra.Application, continueSess bool) *model {
@@ -179,6 +182,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				go m.executePlan(m.pendingQuery, m.pendingPlan)
 				m.pendingPlan = nil
 				m.pendingQuery = ""
+			case "d":
+				m.addSystemMsg("正在深度分析…")
+				m.renderViewport()
+				go m.doDeepPlan(m.pendingQuery)
 			case "n", "esc", "ctrl+c":
 				m.state = viewChat
 				q := m.pendingQuery
@@ -482,6 +489,66 @@ func (m *model) planConfirmView() string {
 	return strings.Repeat("\n", 2) + overlay
 }
 
+func (m *model) doDeepPlan(query string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	result, err := m.app.Orchestrator.DeepPlan(ctx, query)
+	if err != nil {
+		m.program.Send(func() tea.Msg { return chunkMsg{err: err, done: true} })
+		return
+	}
+	m.deepResult = result
+	m.state = viewProposalSelect
+	m.proposalSel = 0
+	m.program.Send(func() tea.Msg { return chunkMsg{content: "方案分析完成，请选择方案（1/2/3）", done: true} })
+}
+
+func (m *model) doDeepPlanFinalize(idx int) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	plan, err := m.app.Orchestrator.DeepPlanFinalize(ctx, m.pendingQuery, m.deepResult, idx)
+	if err != nil {
+		m.program.Send(func() tea.Msg { return chunkMsg{err: err, done: true} })
+		return
+	}
+	m.pendingPlan = plan
+	m.state = viewPlanConfirm
+	m.program.Send(func() tea.Msg { return chunkMsg{content: "详细计划已生成，请确认", done: true} })
+}
+
+func (m *model) proposalSelectView() string {
+	if m.deepResult == nil || m.deepResult.Proposals == nil {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString(planTitleStyle.Render("📋 方案选择"))
+	sb.WriteString("\n\n")
+	if m.deepResult.Research != nil {
+		sb.WriteString(fmt.Sprintf("复杂度: %s | 模块: %s\n", m.deepResult.Research.Complexity, m.deepResult.Research.Modules))
+		sb.WriteString(fmt.Sprintf("风险: %s\n\n", m.deepResult.Research.Risks))
+	}
+	for i, opt := range m.deepResult.Proposals.Options {
+		marker := "  "
+		if i == m.proposalSel {
+			marker = "▸ "
+		}
+		sb.WriteString(fmt.Sprintf("%s[%d] %s\n", marker, i+1, opt.Name))
+		sb.WriteString(fmt.Sprintf("    %s\n", opt.Description))
+		sb.WriteString(fmt.Sprintf("    ✅ %s\n", opt.Pros))
+		sb.WriteString(fmt.Sprintf("    ❌ %s\n", opt.Cons))
+		sb.WriteString(fmt.Sprintf("    风险: %s | 工作量: %s\n\n", opt.Risk, opt.Effort))
+	}
+	sb.WriteString(planPromptStyle.Render("按 1/2/3 选择方案  [esc] 取消"))
+
+	overlay := lipgloss.NewStyle().
+		Width(m.width - 10).
+		Border(lipgloss.DoubleBorder()).
+		BorderForeground(lipgloss.Color("#6C8EBF")).
+		Padding(0, 1).
+		Render(sb.String())
+	return strings.Repeat("\n", 2) + overlay
+}
+
 func (m *model) handleCommand(cmd string) (tea.Model, tea.Cmd) {
 	parts := strings.Fields(cmd)
 	switch parts[0] {
@@ -679,6 +746,8 @@ func (m *model) View() string {
 		return m.chatView() + "\n" + m.helpOverlayView()
 	case viewPlanConfirm:
 		return m.chatView() + "\n" + m.planConfirmView()
+	case viewProposalSelect:
+		return m.chatView() + "\n" + m.proposalSelectView()
 	default:
 		return m.chatView()
 	}

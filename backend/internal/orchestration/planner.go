@@ -198,6 +198,187 @@ func parsePlan(content string) (*Plan, error) {
 	return &plan, nil
 }
 
+// ============ 深度规划：研究 → 方案 → 选择 → 计划 ============
+
+// ResearchReport 代码分析报告
+type ResearchReport struct {
+	Findings   string `json:"findings"`   // 现有代码分析
+	Modules    string `json:"modules"`    // 涉及的模块
+	Risks      string `json:"risks"`      // 潜在风险
+	Complexity string `json:"complexity"` // 复杂度评估
+}
+
+// Proposal 一个可选方案
+type Proposal struct {
+	Name        string `json:"name"`        // 方案名称
+	Description string `json:"description"` // 方案描述
+	Pros        string `json:"pros"`        // 优点
+	Cons        string `json:"cons"`        // 缺点
+	Risk        string `json:"risk"`        // 风险等级: low/medium/high
+	Effort      string `json:"effort"`      // 工作量估计
+}
+
+// Proposals 多方案对比
+type Proposals struct {
+	Goal    string     `json:"goal"`
+	Options []Proposal `json:"options"`
+}
+
+// Research 分析现有代码，生成研究报告
+func (p *Planner) Research(ctx context.Context, query string) (*ResearchReport, error) {
+	prompt := fmt.Sprintf(`你是一个资深软件架构师。分析以下需求，先研究现有代码再给出报告。
+
+## 用户需求
+%s
+
+## 你的任务
+1. 用 search_files 和 read_file 分析相关代码
+2. 输出 JSON 格式的研究报告：
+{
+  "findings": "现有代码的架构、关键模块、数据流（2-3句话）",
+  "modules": "涉及的模块和文件列表",
+  "risks": "重构/修改的主要风险点",
+  "complexity": "low/medium/high"
+}
+
+只输出 JSON，不要其他内容。`, query)
+
+	messages := []kernel.Message{
+		{Role: "system", Content: "你是资深软件架构师。先研究代码再输出报告。输出纯JSON。"},
+		{Role: "user", Content: prompt},
+	}
+
+	resp, err := p.llm.Chat(ctx, messages, nil, map[string]interface{}{
+		"temperature": 0.3,
+		"max_tokens":  1000,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return parseResearch(resp.Content)
+}
+
+// Propose 基于研究报告生成多个可选方案
+func (p *Planner) Propose(ctx context.Context, query string, research *ResearchReport) (*Proposals, error) {
+	researchJSON, _ := json.Marshal(research)
+	prompt := fmt.Sprintf(`你是一个资深软件架构师。基于研究报告，提出 2-3 个可选方案。
+
+## 用户需求
+%s
+
+## 研究报告
+%s
+
+## 你的任务
+为每个方案分析优劣。输出 JSON：
+{
+  "goal": "一句话目标",
+  "options": [
+    {
+      "name": "方案A: 名称",
+      "description": "方案简述（1-2句话）",
+      "pros": "优点1; 优点2; 优点3",
+      "cons": "缺点1; 缺点2",
+      "risk": "low/medium/high",
+      "effort": "预估工作量"
+    }
+  ]
+}
+
+方案应该有不同的权衡：比如一个稳妥但慢，一个激进但快，一个折中。
+只输出 JSON。`, query, string(researchJSON))
+
+	messages := []kernel.Message{
+		{Role: "system", Content: "你是资深架构师。输出 2-3 个有区分度的可选方案。输出纯JSON。"},
+		{Role: "user", Content: prompt},
+	}
+
+	resp, err := p.llm.Chat(ctx, messages, nil, map[string]interface{}{
+		"temperature": 0.5,
+		"max_tokens":  1500,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return parseProposals(resp.Content)
+}
+
+// PlanWithApproach 基于选定方案生成详细任务计划
+func (p *Planner) PlanWithApproach(ctx context.Context, query string, research *ResearchReport, chosen *Proposal) (*Plan, error) {
+	researchJSON, _ := json.Marshal(research)
+	chosenJSON, _ := json.Marshal(chosen)
+	prompt := fmt.Sprintf(`基于研究报告和选定方案，生成详细任务计划。
+
+## 用户需求
+%s
+
+## 研究报告
+%s
+
+## 选定方案
+%s
+
+## 输出 JSON 计划
+{
+  "goal": "目标",
+  "subtasks": [
+    {"id": 1, "title": "...", "description": "...", "tool_hints": "read_file, write_file"},
+    {"id": 2, "title": "...", "description": "...", "depends_on": [1], "tool_hints": "execute_command"}
+  ]
+}
+
+规则：子任务 ≤5 个，每个独立可执行，标注依赖和工具。只输出 JSON。`, query, string(researchJSON), string(chosenJSON))
+
+	messages := []kernel.Message{
+		{Role: "system", Content: "你是任务规划专家。基于选定方案生成可执行的详细计划。输出纯JSON。"},
+		{Role: "user", Content: prompt},
+	}
+
+	resp, err := p.llm.Chat(ctx, messages, nil, map[string]interface{}{
+		"temperature": 0.3,
+		"max_tokens":  1000,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return parsePlan(resp.Content)
+}
+
+func parseResearch(content string) (*ResearchReport, error) {
+	start := strings.Index(content, "{")
+	end := strings.LastIndex(content, "}")
+	if start < 0 || end <= start {
+		return nil, fmt.Errorf("no JSON in research response")
+	}
+	var r ResearchReport
+	if err := json.Unmarshal([]byte(content[start:end+1]), &r); err != nil {
+		return nil, err
+	}
+	if r.Findings == "" {
+		return nil, fmt.Errorf("empty research")
+	}
+	return &r, nil
+}
+
+func parseProposals(content string) (*Proposals, error) {
+	start := strings.Index(content, "{")
+	end := strings.LastIndex(content, "}")
+	if start < 0 || end <= start {
+		return nil, fmt.Errorf("no JSON in proposals response")
+	}
+	var p Proposals
+	if err := json.Unmarshal([]byte(content[start:end+1]), &p); err != nil {
+		return nil, err
+	}
+	if len(p.Options) == 0 {
+		return nil, fmt.Errorf("empty proposals")
+	}
+	return &p, nil
+}
+
 // ExecutePlan 执行规划 — 逐个执行子任务，结果汇总
 func (o *Orchestrator) ExecutePlan(ctx context.Context, userID, projectID, content string, opts kernel.QueryOptions) (*kernel.Response, error) {
 	planner := NewPlanner(o.llmGateway)
