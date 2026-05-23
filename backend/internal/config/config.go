@@ -71,6 +71,8 @@ type LLMConfig struct {
 	Model          string `json:"model" yaml:"model"`                     // 等同于 providers[0].default_model
 	BaseURL        string `json:"base_url" yaml:"base_url"`               // 等同于 providers[0].base_url
 	ExecutionModel string `json:"execution_model" yaml:"execution_model"` // 等同于 model_routing.execution
+	MaxTokens      int    `json:"max_tokens" yaml:"max_tokens"`           // 等同于 kernel.max_tokens
+	MaxRounds      int    `json:"max_rounds" yaml:"max_rounds"`           // 等同于 kernel.max_rounds
 }
 
 // ModelRoutingCfg 按能力分配模型
@@ -281,7 +283,6 @@ func (c *Config) normalize() {
 		c.LLM.DefaultProvider = c.LLM.Provider
 		baseURL := c.LLM.BaseURL
 		if baseURL == "" {
-			// 自动推断 base_url
 			if strings.Contains(strings.ToLower(c.LLM.Provider), "deepseek") {
 				baseURL = "https://api.deepseek.com/anthropic"
 			} else {
@@ -289,7 +290,7 @@ func (c *Config) normalize() {
 			}
 		}
 		providerType := "anthropic"
-		if strings.Contains(baseURL, "openai") || strings.Contains(baseURL, "/v1") {
+		if strings.Contains(baseURL, "openai") || strings.Contains(baseURL, "/v1") && !strings.Contains(baseURL, "anthropic") {
 			providerType = "openai"
 		}
 		c.LLM.Providers = []ProviderConfig{{
@@ -308,6 +309,25 @@ func (c *Config) normalize() {
 	}
 	if c.LLM.Model != "" && c.LLM.ModelRouting.Reasoning == "" {
 		c.LLM.ModelRouting.Reasoning = c.LLM.Model
+	}
+	// 平坦字段 → kernel
+	if c.LLM.MaxTokens > 0 && c.Kernel.MaxTokens == 200000 {
+		c.Kernel.MaxTokens = c.LLM.MaxTokens
+	}
+	if c.LLM.MaxRounds > 0 && c.Kernel.MaxRounds == 30 {
+		c.Kernel.MaxRounds = c.LLM.MaxRounds
+	}
+	// 根据模型自动设置上下文大小
+	if c.LLM.Model != "" && c.Kernel.MaxTokens == 200000 {
+		model := strings.ToLower(c.LLM.Model)
+		switch {
+		case strings.Contains(model, "v4-pro") || strings.Contains(model, "opus") || strings.Contains(model, "1m"):
+			c.Kernel.MaxTokens = 800000
+		case strings.Contains(model, "sonnet") || strings.Contains(model, "v4-flash"):
+			c.Kernel.MaxTokens = 150000
+		case strings.Contains(model, "haiku") || strings.Contains(model, "flash"):
+			c.Kernel.MaxTokens = 100000
+		}
 	}
 }
 

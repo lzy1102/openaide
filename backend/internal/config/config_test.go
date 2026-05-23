@@ -15,8 +15,8 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Server.Mode != "direct" {
 		t.Errorf("Expected mode direct, got %s", cfg.Server.Mode)
 	}
-	if cfg.Kernel.MaxRounds != 10 {
-		t.Errorf("Expected max rounds 10, got %d", cfg.Kernel.MaxRounds)
+	if cfg.Kernel.MaxRounds != 30 {
+		t.Errorf("Expected max rounds 30, got %d", cfg.Kernel.MaxRounds)
 	}
 }
 
