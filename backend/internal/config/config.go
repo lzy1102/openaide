@@ -289,7 +289,7 @@ func (c *Config) normalize() {
 	if baseURL == "" {
 		switch {
 		case strings.Contains(model, "deepseek"):
-			baseURL = "https://api.deepseek.com/anthropic"
+			baseURL = "https://api.deepseek.com/v1"
 			provider = "deepseek"
 		case strings.Contains(model, "claude"):
 			baseURL = "https://api.anthropic.com"
