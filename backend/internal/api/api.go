@@ -168,43 +168,52 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	for chunk := range stream {
-		event := StreamEvent{
-			Type:        string(chunk.Type),
-			Content:     chunk.Content,
-			ToolCallID:  chunk.ToolCallID,
-			ToolName:    chunk.ToolName,
-			Round:       chunk.Round,
-			TotalRounds: chunk.TotalRounds,
-		}
-
-		// 推理内容通过 thinking 类型传递
-		if chunk.Type == kernel.ChunkTypeThinking && chunk.ReasoningContent != "" {
-			event.Content = chunk.ReasoningContent
-		}
-
-		switch chunk.Type {
-		case kernel.ChunkTypeError:
-			if chunk.Error != nil {
-				event.Error = chunk.Error.Error()
+	done := ctx.Done()
+	for {
+		select {
+		case <-done:
+			return // 客户端断开，停止消耗流
+		case chunk, ok := <-stream:
+			if !ok {
+				return
 			}
+			event := StreamEvent{
+				Type:        string(chunk.Type),
+				Content:     chunk.Content,
+				ToolCallID:  chunk.ToolCallID,
+				ToolName:    chunk.ToolName,
+				Round:       chunk.Round,
+				TotalRounds: chunk.TotalRounds,
+			}
+
+			// 推理内容通过 thinking 类型传递
+			if chunk.Type == kernel.ChunkTypeThinking && chunk.ReasoningContent != "" {
+				event.Content = chunk.ReasoningContent
+			}
+
+			switch chunk.Type {
+			case kernel.ChunkTypeError:
+				if chunk.Error != nil {
+					event.Error = chunk.Error.Error()
+				}
+				sendSSE(w, flusher, event)
+				return
+
+			case kernel.ChunkTypeDone:
+				if chunk.Usage != nil {
+					event.TokensUsed = chunk.Usage.TotalTokens
+				}
+				sendSSE(w, flusher, event)
+				return
+
+			case kernel.ChunkTypeToolDone:
+				if chunk.ToolResult != nil {
+					event.ToolResult = chunk.ToolResult.Content
+				}
+			}
+
 			sendSSE(w, flusher, event)
-			return
-
-		case kernel.ChunkTypeDone:
-			if chunk.Usage != nil {
-				event.TokensUsed = chunk.Usage.TotalTokens
-			}
-			sendSSE(w, flusher, event)
-			return
-
-		case kernel.ChunkTypeToolDone:
-			if chunk.ToolResult != nil {
-				event.ToolResult = chunk.ToolResult.Content
-			}
 		}
-
-		sendSSE(w, flusher, event)
 	}
 }
 

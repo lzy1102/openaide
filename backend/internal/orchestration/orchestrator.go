@@ -80,6 +80,18 @@ func (o *Orchestrator) GetLLMProvider() kernel.LLMProvider {
 	return o.llmGateway
 }
 
+// CleanupOldSessions 清理过期会话（7天 TTL），防止子Agent会话堆积
+func (o *Orchestrator) CleanupOldSessions(ctx context.Context) {
+	if store, ok := o.sessions.(*kernel.FileSessionStore); ok {
+		deleted, err := store.CleanupOldSessions(ctx, 7*24*time.Hour)
+		if err != nil {
+			slog.Warn("Session cleanup failed", "error", err)
+		} else if deleted > 0 {
+			slog.Info("Cleaned up old sessions", "count", deleted)
+		}
+	}
+}
+
 // RunSubAgent 在隔离的临时会话中运行指定角色，只回传结果摘要
 // 主 Agent 上下文不会被子 Agent 的工具调用污染
 func (o *Orchestrator) RunSubAgent(ctx context.Context, userID, projectID, roleName, task string, previousResults []string) (string, error) {

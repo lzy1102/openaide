@@ -231,6 +231,7 @@ func (app *Application) Start() error {
 
 // Stop 停止应用（优雅关闭所有组件）
 func (app *Application) Stop(ctx context.Context) error {
+	app.Orchestrator.CleanupOldSessions(ctx)
 	if app.MCPManager != nil {
 		app.MCPManager.Shutdown()
 	}

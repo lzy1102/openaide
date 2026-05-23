@@ -143,6 +143,23 @@ func (s *FileSessionStore) sessionPath(id string) string {
 	return filepath.Join(s.dataDir, id+".json")
 }
 
+// CleanupOldSessions 删除超过 ttl 的旧会话
+func (s *FileSessionStore) CleanupOldSessions(ctx context.Context, ttl time.Duration) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	cutoff := time.Now().Add(-ttl)
+	var deleted int
+	for id, session := range s.sessions {
+		if session.UpdatedAt.Before(cutoff) {
+			os.Remove(s.sessionPath(id))
+			delete(s.sessions, id)
+			deleted++
+		}
+	}
+	return deleted, nil
+}
+
 func (s *FileSessionStore) save(session *Session) error {
 	data, err := json.MarshalIndent(session, "", "  ")
 	if err != nil {

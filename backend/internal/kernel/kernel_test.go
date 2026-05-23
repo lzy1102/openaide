@@ -112,21 +112,20 @@ func TestAgentKernel_GetState(t *testing.T) {
 func TestAgentKernel_Event(t *testing.T) {
 	kernel := NewAgentKernel(&MockLLMProvider{}, &MockToolExecutor{}, &MockMemory{}, NewSessionStoreAdapter(), DefaultConfig())
 
-	var received bool
+	received := make(chan bool, 1)
 	handler := EventHandlerFunc(func(event Event) {
 		if event.Type == EventQueryReceived {
-			received = true
+			received <- true
 		}
 	})
 
 	kernel.Subscribe(handler)
-
-	// 触发事件
 	kernel.Process(context.Background(), &Query{Content: "test"})
 
-	time.Sleep(100 * time.Millisecond)
-
-	if !received {
+	select {
+	case <-received:
+		// ok
+	case <-time.After(1 * time.Second):
 		t.Error("Event not received")
 	}
 }
