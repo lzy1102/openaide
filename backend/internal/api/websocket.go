@@ -74,39 +74,49 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		for chunk := range stream {
-			if chunk.Error != nil {
-				sendWS(conn, map[string]interface{}{
-					"type":  "error",
-					"error": chunk.Error.Error(),
-				})
-				break
-			}
-
-			event := map[string]interface{}{
-				"type": "chunk",
-			}
-
-			if chunk.Done {
-				event["type"] = "done"
-				if chunk.Usage != nil {
-					event["tokens"] = chunk.Usage.TotalTokens
+		done := ctx.Done()
+	loop:
+		for {
+			select {
+			case <-done:
+				break loop
+			case chunk, ok := <-stream:
+				if !ok {
+					break loop
 				}
+				if chunk.Error != nil {
+					sendWS(conn, map[string]interface{}{
+						"type":  "error",
+						"error": chunk.Error.Error(),
+					})
+					break loop
+				}
+
+				event := map[string]interface{}{
+					"type": "chunk",
+				}
+
+				if chunk.Done {
+					event["type"] = "done"
+					if chunk.Usage != nil {
+						event["tokens"] = chunk.Usage.TotalTokens
+					}
+					sendWS(conn, event)
+					break loop
+				}
+
+				if chunk.Content != "" {
+					event["content"] = chunk.Content
+				}
+				if chunk.ReasoningContent != "" {
+					event["thinking"] = chunk.ReasoningContent
+				}
+				if len(chunk.ToolCalls) > 0 {
+					event["tool_calls"] = chunk.ToolCalls
+				}
+
 				sendWS(conn, event)
-				break
 			}
-
-			if chunk.Content != "" {
-				event["content"] = chunk.Content
-			}
-			if chunk.ReasoningContent != "" {
-				event["thinking"] = chunk.ReasoningContent
-			}
-			if len(chunk.ToolCalls) > 0 {
-				event["tool_calls"] = chunk.ToolCalls
-			}
-
-			sendWS(conn, event)
 		}
 	}
 }

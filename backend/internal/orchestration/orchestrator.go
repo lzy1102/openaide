@@ -26,6 +26,10 @@ type Orchestrator struct {
 	knowledge   kernel.KnowledgeCollector
 	approver    PlanApprover // 规划审批回调（nil = 自动批准）
 	team        *Team        // 多 Agent 团队（可选）
+
+	// 可配置参数
+	PreviewTimeout time.Duration
+	DeepTimeout    time.Duration
 }
 
 // NewOrchestrator 创建编排器
@@ -37,11 +41,13 @@ func NewOrchestrator(
 	sessions kernel.SessionStore,
 ) *Orchestrator {
 	return &Orchestrator{
-		kernel:     k,
-		llmGateway: llm,
-		toolExec:   tools,
-		memory:     mem,
-		sessions:   sessions,
+		kernel:         k,
+		llmGateway:     llm,
+		toolExec:       tools,
+		memory:         mem,
+		sessions:       sessions,
+		PreviewTimeout: 15 * time.Second,
+		DeepTimeout:    120 * time.Second,
 	}
 }
 

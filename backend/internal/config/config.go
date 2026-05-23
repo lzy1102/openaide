@@ -33,6 +33,9 @@ type Config struct {
 	// 内核配置
 	Kernel KernelConfig `json:"kernel" yaml:"kernel"`
 
+	// 规划配置
+	Planning PlanningConfig `json:"planning" yaml:"planning"`
+
 	// 存储配置
 	Storage StorageConfig `json:"storage" yaml:"storage"`
 
@@ -94,7 +97,18 @@ type ToolsConfig struct {
 type KernelConfig struct {
 	MaxRounds    int    `json:"max_rounds" yaml:"max_rounds"`
 	MaxTokens    int    `json:"max_tokens" yaml:"max_tokens"`
+	MinRounds    int    `json:"min_rounds" yaml:"min_rounds"`       // 自适应轮次下限（默认5）
+	MaxRoundsCap int    `json:"max_rounds_cap" yaml:"max_rounds_cap"` // 自适应轮次上限（默认30）
 	SystemPrompt string `json:"system_prompt" yaml:"system_prompt"`
+	UnsafeMode   *bool  `json:"unsafe_mode" yaml:"unsafe_mode"`     // 安全模式：true=跳过审批（默认true）
+}
+
+// PlanningConfig 任务规划配置
+type PlanningConfig struct {
+	Enabled        bool `json:"enabled" yaml:"enabled"`                 // 启用规划（默认true）
+	DeepTimeout    int  `json:"deep_timeout" yaml:"deep_timeout"`       // 深度分析超时秒（默认120）
+	PreviewTimeout int  `json:"preview_timeout" yaml:"preview_timeout"` // 预览超时秒（默认15）
+	MaxProposals   int  `json:"max_proposals" yaml:"max_proposals"`     // 最大方案数（默认3）
 }
 
 // StorageConfig 存储配置
@@ -184,8 +198,16 @@ func DefaultConfig() *Config {
 			DangerousTools: []string{"execute_command", "write_file"},
 		},
 		Kernel: KernelConfig{
-			MaxRounds: 10,
-			MaxTokens: 4000,
+			MaxRounds:    10,
+			MaxTokens:    4000,
+			MinRounds:    5,
+			MaxRoundsCap: 30,
+		},
+		Planning: PlanningConfig{
+			Enabled:        true,
+			DeepTimeout:    120,
+			PreviewTimeout: 15,
+			MaxProposals:   3,
 		},
 		Storage: StorageConfig{
 			DataDir: "./data",

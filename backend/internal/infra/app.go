@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"time"
 
 	"openaide/backend/internal/api"
 	"openaide/backend/internal/auth"
@@ -193,10 +194,15 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 
 	// 7. 编排器
 	orch := orchestration.NewOrchestrator(agentKernel, gateway, toolRegistry, memManager, sessionStore)
+	if cfg.Planning.PreviewTimeout > 0 {
+		orch.PreviewTimeout = time.Duration(cfg.Planning.PreviewTimeout) * time.Second
+	}
+	if cfg.Planning.DeepTimeout > 0 {
+		orch.DeepTimeout = time.Duration(cfg.Planning.DeepTimeout) * time.Second
+	}
 	if kb != nil {
 		orch.SetKnowledgeCollector(kb)
 	}
-	// 接入多 Agent 团队（分析/编码/审查/执行角色分工）
 	orch.SetTeam(orchestration.NewTeam(orch))
 	app.Orchestrator = orch
 

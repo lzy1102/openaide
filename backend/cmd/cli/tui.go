@@ -382,7 +382,7 @@ func (m *model) updateChat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 		// 规划预览：LLM 自主判断是否需要拆分为多步任务
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), m.app.Orchestrator.PreviewTimeout)
 		plan, err := m.app.Orchestrator.PreviewPlan(ctx, query)
 		cancel()
 		if err == nil && plan != nil && len(plan.Subtasks) > 1 {
@@ -520,7 +520,7 @@ func (m *model) planConfirmView() string {
 
 func (m *model) doDeepPlan(query string) {
 	m.streaming = true
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), m.app.Orchestrator.DeepTimeout)
 	defer cancel()
 
 	// Phase 0: Research

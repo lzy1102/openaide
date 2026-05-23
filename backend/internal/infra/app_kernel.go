@@ -56,11 +56,19 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 	agentKernel.SetPatternDetector(kernel.NewSimplePatternDetector())
 	agentKernel.SetSkillEvolution(kernel.NewSkillEvolution(sm, cfg.Storage.DataDir+"/skills"))
 	approver := kernel.NewAutoApprover()
-	approver.SetLLM(gateway) // LLM 智能评估工具调用风险
-	approver.UnsafeMode = true // 保留本地便利模式；设为 false 启用 LLM 风险评估
+	approver.SetLLM(gateway)
+	if cfg.Kernel.UnsafeMode != nil {
+		approver.UnsafeMode = *cfg.Kernel.UnsafeMode
+	} else {
+		approver.UnsafeMode = true // 默认本地信任模式
+	}
 	agentKernel.SetApprover(approver)
-	ar := kernel.NewAdaptiveRounds(5, 30)
-	ar.SetLLM(gateway) // LLM 辅助估计任务复杂度
+	minR := cfg.Kernel.MinRounds
+	maxR := cfg.Kernel.MaxRoundsCap
+	if minR <= 0 { minR = 5 }
+	if maxR <= 0 { maxR = 30 }
+	ar := kernel.NewAdaptiveRounds(minR, maxR)
+	ar.SetLLM(gateway)
 	agentKernel.SetAdaptiveRounds(ar)
 
 	if cp, err := kernel.NewFileCheckpointer(kernel.FileCheckpointerConfig{
