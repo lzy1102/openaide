@@ -73,6 +73,7 @@ type LLMConfig struct {
 	ExecutionModel string `json:"execution_model" yaml:"execution_model"` // 等同于 model_routing.execution
 	MaxTokens      int    `json:"max_tokens" yaml:"max_tokens"`           // 等同于 kernel.max_tokens
 	MaxRounds      int    `json:"max_rounds" yaml:"max_rounds"`           // 等同于 kernel.max_rounds
+	ContextSize    string `json:"context_size" yaml:"context_size"`       // "1m" "200k" "128k" "32k"
 }
 
 // ModelRoutingCfg 按能力分配模型
@@ -334,6 +335,37 @@ func (c *Config) normalize() {
 		}
 	}
 }
+
+// parseContextSize 解析 "1m" "200k" "128k" → token 数
+func parseContextSize(s string) int {
+	s = strings.ToLower(strings.TrimSpace(s))
+	s = strings.ReplaceAll(s, "_", "")
+	mult := 1
+	if strings.HasSuffix(s, "k") { mult = 1000; s = strings.TrimSuffix(s, "k") }
+	if strings.HasSuffix(s, "m") { mult = 1000000; s = strings.TrimSuffix(s, "m") }
+	n := 0
+	fmt.Sscanf(s, "%d", &n)
+	if n > 0 { return n * mult }
+	return 200000
+}
+
+// guessContextSize 从模型名推断上下文大小（找不到时返回 200K）
+func guessContextSize(model string) int {
+	m := strings.ToLower(model)
+	switch {
+	case strings.Contains(m, "gemini") || strings.Contains(m, "1m"):
+		return 1000000
+	case strings.Contains(m, "v4") || strings.Contains(m, "v3"):
+		return 1000000
+	case strings.Contains(m, "opus") || strings.Contains(m, "sonnet") || strings.Contains(m, "haiku"):
+		return 200000
+	case strings.Contains(m, "gpt-4") || strings.Contains(m, "gpt-5") || strings.Contains(m, "o"):
+		return 128000
+	default:
+		return 200000
+	}
+}
+
 
 // Save 保存配置到文件（自动根据扩展名选择 JSON 或 YAML）
 func (c *Config) Save(path string) error {
