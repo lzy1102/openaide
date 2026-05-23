@@ -559,11 +559,20 @@ func (e *EnhancedOrchestrator) enhance(ctx context.Context, userID, projectID, q
 	}
 }
 
-// executePlan 智能路由多 Agent 执行：LLM 根据任务类型自动选择角色组合
+// Branch 执行分支——从主线分叉出来处理发现的问题，完成后收敛回主线
+type Branch struct {
+	Trigger  string   // 触发分支的原因 (DISCOVERY/ERROR/REVIEW_ISSUE)
+	Task     string   // 分支任务描述
+	Role     string   // 执行角色
+	Result   string   // 分支执行结果
+	Learnings []string // 从分支学到的经验
+}
+
+// executePlan 主线→分支→收敛 执行模型
 func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, content string, plan *Plan, opts kernel.QueryOptions) (*kernel.Response, error) {
-	// 智能路由：一次 LLM 调用分配所有子任务角色
 	roleMap := o.routePipeline(ctx, plan)
 	var results []string
+	var branches []Branch
 	totalTools := 0
 	hasExecutor := false
 	hasReviewer := false
@@ -597,10 +606,20 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 					results[st.ID-1] = fmt.Sprintf("❌ 步骤%d(%s)失败: %v", st.ID, st.Title, err)
 					return
 				}
-				results[st.ID-1] = fmt.Sprintf("### 步骤%d: %s [%s]\n%s", st.ID, st.Title, roleName, content)
-			}(st)
-		}
-		wg.Wait()
+			results[st.ID-1] = fmt.Sprintf("### 步骤%d: %s [%s]\n%s", st.ID, st.Title, roleName, content)
+
+			// 检测是否需要开启分支
+			if needsBranch, branchTask := detectBranchSignal(content); needsBranch {
+				slog.Info("Branch created", "trigger", branchTask[:min(50, len(branchTask))])
+				branch := o.executeBranch(ctx, userID, projectID, branchTask, results, &branches)
+				branches = append(branches, branch)
+				// 分支结果注入到当前步骤结果
+				results[st.ID-1] += fmt.Sprintf("\n\n### 🔀 分支: %s\n%s", branch.Trigger, branch.Result)
+				totalTools++
+			}
+		}(st)
+	}
+	wg.Wait()
 		totalTools += len(group)
 	}
 
@@ -737,6 +756,53 @@ func truncateForLearning(s string) string {
 		return string([]rune(s)[:100]) + "..."
 	}
 	return s
+}
+
+// detectBranchSignal 检测子Agent输出中是否需要开启分支
+func detectBranchSignal(content string) (bool, string) {
+	for _, signal := range []string{"[DISCOVERY:", "[ISSUE:", "[BRANCH:", "[BLOCKED:"} {
+		if idx := strings.Index(content, signal); idx >= 0 {
+			end := strings.Index(content[idx:], "]")
+			if end > 0 {
+				task := strings.TrimSpace(content[idx+len(signal) : idx+end])
+				return true, task
+			}
+		}
+	}
+	return false, ""
+}
+
+// executeBranch 执行一个分支：分析问题 → 生成方案 → 实施修复
+func (o *Orchestrator) executeBranch(ctx context.Context, userID, projectID, trigger string, mainResults []string, branches *[]Branch) Branch {
+	b := Branch{Trigger: trigger}
+
+	// 1. 分析师分析问题
+	analyzeTask := fmt.Sprintf("分析以下问题，找出根因：%s\n\n已完成的工作:\n%s\n\n输出: 1.根因 2.影响范围 3.建议修复方案", trigger, strings.Join(mainResults, "\n"))
+	analysis, err := o.RunSubAgent(ctx, userID, projectID, "analyst", analyzeTask, nil)
+	if err != nil {
+		b.Result = fmt.Sprintf("分析失败: %v", err)
+		return b
+	}
+
+	// 2. 程序员实施修复
+	fixTask := fmt.Sprintf("根据分析修复问题：\n\n问题: %s\n分析: %s\n\n请实施修复。如果无法修复，标注 [BLOCKED: 原因]", trigger, analysis)
+	fix, err := o.RunSubAgent(ctx, userID, projectID, "coder", fixTask, nil)
+	if err != nil {
+		b.Result = fmt.Sprintf("修复失败: %v", err)
+		return b
+	}
+
+	// 3. 收敛：提取经验，回写主线
+	b.Result = fmt.Sprintf("根因: %s\n修复: %s", analysis, fix)
+	b.Learnings = []string{trigger + " → " + truncateForLearning(analysis)}
+
+	// 记录到 ProjectMind
+	if o.mind != nil {
+		o.mind.AddLearning("pattern", b.Learnings[0])
+		o.mind.Save()
+	}
+
+	return b
 }
 
 // routePipeline 让 LLM 根据任务类型选择需要的角色管线
