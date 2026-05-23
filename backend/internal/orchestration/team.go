@@ -148,9 +148,47 @@ func (t *Team) buildAllChain(startRole string) *graph.Graph {
 	return g
 }
 
-// 通过图引擎执行
-func (t *Team) executeGraph(ctx context.Context, query string, opts kernel.QueryOptions, _ *graph.Graph) (*kernel.Response, error) {
-	return t.orchestrator.ProcessQuery(ctx, "", "", query, opts)
+// 通过图引擎执行，按拓扑序依次运行每个角色作为独立 sub-agent
+func (t *Team) executeGraph(ctx context.Context, query string, opts kernel.QueryOptions, g *graph.Graph) (*kernel.Response, error) {
+	if g == nil || len(g.Nodes) == 0 {
+		return t.orchestrator.ProcessQuery(ctx, "", "", query, opts)
+	}
+
+	order, err := g.TopoSort()
+	if err != nil {
+		return nil, fmt.Errorf("topo sort failed: %w", err)
+	}
+
+	var previousResults []string
+	var lastContent string
+
+	for _, name := range order {
+		node := g.Nodes[name]
+		if node == nil {
+			continue
+		}
+
+		// 找到匹配的角色名
+		var roleName string
+		for rn, role := range t.roles {
+			if role.Name == name || rn == name {
+				roleName = rn
+				break
+			}
+		}
+		if roleName == "" {
+			roleName = name
+		}
+
+		content, err := t.orchestrator.RunSubAgent(ctx, "", "", roleName, query, previousResults)
+		if err != nil {
+			return nil, fmt.Errorf("role %s failed: %w", name, err)
+		}
+		previousResults = append(previousResults, fmt.Sprintf("[%s]: %s", name, content))
+		lastContent = content
+	}
+
+	return &kernel.Response{Content: lastContent}, nil
 }
 
 func (t *Team) roleNames() string {

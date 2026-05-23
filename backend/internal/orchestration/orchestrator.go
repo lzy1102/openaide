@@ -80,6 +80,42 @@ func (o *Orchestrator) GetLLMProvider() kernel.LLMProvider {
 	return o.llmGateway
 }
 
+// RunSubAgent 在隔离的临时会话中运行指定角色，只回传结果摘要
+// 主 Agent 上下文不会被子 Agent 的工具调用污染
+func (o *Orchestrator) RunSubAgent(ctx context.Context, userID, projectID, roleName, task string, previousResults []string) (string, error) {
+	if o.team == nil {
+		return "", fmt.Errorf("team not configured")
+	}
+	role := o.team.GetRole(roleName)
+	if role == nil {
+		return "", fmt.Errorf("role not found: %s", roleName)
+	}
+
+	// 构建子 Agent 的输入：角色定义 + 前置结果 + 当前任务
+	var input strings.Builder
+	input.WriteString(fmt.Sprintf("## 你的角色: %s\n%s\n\n## 可用工具: %s\n\n",
+		role.Name, role.Prompt, strings.Join(role.Tools, ", ")))
+	if len(previousResults) > 0 {
+		input.WriteString("## 前置步骤结果:\n")
+		for _, r := range previousResults {
+			input.WriteString(r + "\n")
+		}
+		input.WriteString("\n")
+	}
+	input.WriteString(fmt.Sprintf("## 当前任务\n%s\n\n请完成此任务，输出你的工作结果。", task))
+
+	// 用独立会话执行（隔离上下文）
+	opts := kernel.QueryOptions{}
+	if len(role.Tools) > 0 {
+		opts.ToolFilter = role.Tools
+	}
+	resp, err := o.processSingle(ctx, userID, projectID, input.String(), opts)
+	if err != nil {
+		return "", fmt.Errorf("sub-agent %s failed: %w", roleName, err)
+	}
+	return resp.Content, nil
+}
+
 // PreviewPlan 仅规划不执行，返回拆分后的计划（用于交互式确认）
 func (o *Orchestrator) PreviewPlan(ctx context.Context, content string) (*Plan, error) {
 	planner := NewPlanner(o.llmGateway)
@@ -440,87 +476,52 @@ func (e *EnhancedOrchestrator) enhance(ctx context.Context, userID, projectID, q
 	}
 }
 
-// executePlan 完整任务生命周期：执行(TDD) → 测试 → 验收（多 Agent 角色分工）
+// executePlan 使用隔离上下文的多 Agent 执行：每个子任务在独立会话中运行
+// 主 Agent 上下文只接收子 Agent 的结果摘要，不被工具调用历史污染
 func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, content string, plan *Plan, opts kernel.QueryOptions) (*kernel.Response, error) {
 	var results []string
 	totalTools := 0
 
-	// 角色提示词注入
-	coderPrompt := o.rolePrompt("coder")
-	reviewerPrompt := o.rolePrompt("reviewer")
-	executorPrompt := o.rolePrompt("executor")
-
-	// Phase 1: 执行 — 逐个完成子任务（程序员角色 + TDD）
+	// Phase 1: 执行 — 每个子任务作为独立的 coder sub-agent（隔离上下文 + TDD）
 	for i, st := range plan.Subtasks {
-		tddInstruction := "\n\n## TDD 原则：请先编写测试用例，确认测试失败后再实现功能。实现后运行测试确认通过。"
-		subQuery := fmt.Sprintf("%s## 总体目标: %s\n## 当前步骤 (%d/%d): %s\n## 具体要求: %s\n%s\n\n请完成此步骤的任务。",
-			coderPrompt, plan.Goal, i+1, len(plan.Subtasks), st.Title, st.Description, tddInstruction)
+		task := fmt.Sprintf("总体目标: %s\n当前步骤 (%d/%d): %s\n具体要求: %s\n\nTDD 原则：请先编写测试用例，确认测试失败后再实现功能。实现后运行测试确认通过。",
+			plan.Goal, i+1, len(plan.Subtasks), st.Title, st.Description)
 
-		if i > 0 {
-			subQuery += fmt.Sprintf("\n\n## 已完成的步骤结果:\n%s", strings.Join(results, "\n"))
-		}
-
-		resp, err := o.processSingle(ctx, userID, projectID, subQuery, opts)
+		content, err := o.RunSubAgent(ctx, userID, projectID, "coder", task, results)
 		if err != nil {
 			results = append(results, fmt.Sprintf("❌ 步骤%d(%s)失败: %v", st.ID, st.Title, err))
 			continue
 		}
-		results = append(results, fmt.Sprintf("### 步骤%d: %s\n%s", st.ID, st.Title, resp.Content))
-		totalTools += resp.ToolCalls
+		results = append(results, fmt.Sprintf("### 步骤%d: %s\n%s", st.ID, st.Title, content))
+		totalTools++
 	}
 
 	execSummary := strings.Join(results, "\n\n---\n\n")
 
-	// Phase 2: 测试验证（执行者角色）
-	testQuery := fmt.Sprintf(`%s## 总体目标: %s
+	// Phase 2: 测试验证 — executor sub-agent（隔离上下文，只读+执行）
+	verifyTask := fmt.Sprintf("总体目标: %s\n\n已完成的工作:\n%s\n\n验证以上工作是否完整正确。\n1. 运行编译/构建命令\n2. 运行测试\n3. 检查逻辑正确性\n4. 发现问题请直接修复。",
+		plan.Goal, execSummary)
 
-## 已完成的工作:
-%s
-
-## 你的任务：验证以上工作是否完整正确
-1. 运行编译/构建命令，确认无报错
-2. 运行测试，确认全部通过
-3. 检查逻辑正确性和需求覆盖率
-4. 发现问题请直接修复
-
-请开始验证。`, executorPrompt, plan.Goal, execSummary)
-
-	testResp, testErr := o.processSingle(ctx, userID, projectID, testQuery, opts)
-	var testReport string
+	testReport, testErr := o.RunSubAgent(ctx, userID, projectID, "executor", verifyTask, results)
 	if testErr != nil {
 		testReport = fmt.Sprintf("⚠ 验证阶段出错: %v", testErr)
 	} else {
-		testReport = testResp.Content
-		totalTools += testResp.ToolCalls
+		totalTools++
 	}
 
-	// Phase 3: 验收报告（审查者角色）
-	reviewQuery := fmt.Sprintf(`%s## 总体目标: %s
+	// Phase 3: 验收报告 — reviewer sub-agent（隔离上下文，只读）
+	reviewTask := fmt.Sprintf("总体目标: %s\n\n执行结果:\n%s\n\n验证结果:\n%s\n\n生成最终验收报告：\n1. 完成了什么\n2. 修改了哪些文件\n3. 验证状态\n4. 遗留问题\n\n输出 Markdown，不要用代码块包裹。",
+		plan.Goal, execSummary, testReport)
 
-## 执行结果:
-%s
-
-## 验证结果:
-%s
-
-## 你的任务：生成最终验收报告
-用简洁的语言总结：
-1. **完成了什么** — 1-2句话
-2. **修改了哪些文件** — 列出文件路径
-3. **验证状态** — 是否通过测试
-4. **遗留问题** — 如果没有就写"无"
-
-输出格式：Markdown，不要用代码块包裹。`, reviewerPrompt, plan.Goal, execSummary, testReport)
-
-	reviewResp, reviewErr := o.processSingle(ctx, userID, projectID, reviewQuery, opts)
+	reviewContent, reviewErr := o.RunSubAgent(ctx, userID, projectID, "reviewer", reviewTask, nil)
 	var finalReport string
 	if reviewErr != nil {
 		finalReport = fmt.Sprintf("## %s\n\n### 执行结果\n%s\n\n### 验证结果\n%s\n\n### 验收报告\n生成失败: %v",
 			plan.Goal, execSummary, testReport, reviewErr)
 	} else {
 		finalReport = fmt.Sprintf("## %s\n\n### 验证结果\n%s\n\n---\n\n### 验收报告\n%s",
-			plan.Goal, testReport, reviewResp.Content)
-		totalTools += reviewResp.ToolCalls
+			plan.Goal, testReport, reviewContent)
+		totalTools++
 	}
 
 	return &kernel.Response{
@@ -531,15 +532,3 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 	}, nil
 }
 
-// rolePrompt 获取指定角色的系统提示词（用于多 Agent 分工）
-func (o *Orchestrator) rolePrompt(roleName string) string {
-	if o.team == nil {
-		return ""
-	}
-	role := o.team.GetRole(roleName)
-	if role == nil {
-		return ""
-	}
-	return fmt.Sprintf("## 你的角色: %s\n%s\n\n## 可用工具: %s\n",
-		role.Name, role.Prompt, strings.Join(role.Tools, ", "))
-}
