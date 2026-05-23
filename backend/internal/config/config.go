@@ -381,12 +381,23 @@ func (c *Config) GetEnabledProviders() []ProviderConfig {
 // resolvePaths 将所有路径中的 ~ 展开为 home 目录
 func (c *Config) resolvePaths() {
 	home, _ := os.UserHomeDir()
-	if home == "" {
-		return
+
+	// 相对路径基于 CWD 解析为绝对路径
+	if c.Storage.DataDir == "./data" || strings.HasPrefix(c.Storage.DataDir, "./") {
+		if wd, err := os.Getwd(); err == nil {
+			c.Storage.DataDir = filepath.Join(wd, c.Storage.DataDir[2:])
+		}
+	}
+	if c.Memory.DataDir == "./data/memory" || strings.HasPrefix(c.Memory.DataDir, "./") {
+		if wd, err := os.Getwd(); err == nil {
+			c.Memory.DataDir = filepath.Join(wd, c.Memory.DataDir[2:])
+		}
 	}
 
-	c.Memory.DataDir = expandPath(c.Memory.DataDir, home)
-	c.Storage.DataDir = expandPath(c.Storage.DataDir, home)
+	if home != "" {
+		c.Memory.DataDir = expandPath(c.Memory.DataDir, home)
+		c.Storage.DataDir = expandPath(c.Storage.DataDir, home)
+	}
 }
 
 func expandPath(p, home string) string {
