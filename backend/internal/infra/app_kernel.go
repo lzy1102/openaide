@@ -40,6 +40,7 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 	// 接入增强能力 — LLM Reflection（降级到 SimpleReflection）
 	agentKernel.SetReflection(kernel.NewLLMReflection(gateway, kernel.NewSimpleReflection()))
 	sm := kernel.NewSkillManager(cfg.Storage.DataDir + "/skills")
+	sm.SetLLM(gateway) // LLM 语义匹配技能
 	// 发现 Claude 格式插件中的 SKILL.md
 	for _, cs := range plugin.DiscoverClaudeSkills(cfg.Storage.DataDir + "/plugins") {
 		sm.AddClaudeSkill(cs.ID, cs.Name, cs.Description, cs.Prompt, cs.AllowedTools, cs.Keywords)
@@ -54,7 +55,8 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 	agentKernel.SetPatternDetector(kernel.NewSimplePatternDetector())
 	agentKernel.SetSkillEvolution(kernel.NewSkillEvolution(sm, cfg.Storage.DataDir+"/skills"))
 	approver := kernel.NewAutoApprover()
-	approver.UnsafeMode = true // 保留本地便利模式；设为 false 启用危险工具拦截
+	approver.SetLLM(gateway) // LLM 智能评估工具调用风险
+	approver.UnsafeMode = true // 保留本地便利模式；设为 false 启用 LLM 风险评估
 	agentKernel.SetApprover(approver)
 	ar := kernel.NewAdaptiveRounds(5, 30)
 	ar.SetLLM(gateway) // LLM 辅助估计任务复杂度

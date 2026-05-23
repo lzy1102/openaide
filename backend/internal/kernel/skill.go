@@ -1,6 +1,7 @@
 package kernel
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -24,6 +25,7 @@ type SkillManager struct {
 	skills    map[string]*Skill
 	dir       string
 	autoDetect bool
+	llm       LLMProvider // 可选：LLM 语义匹配技能
 }
 
 // NewSkillManager 创建技能管理器
@@ -192,6 +194,9 @@ func (sm *SkillManager) loadFromDisk() {
 	}
 }
 
+// SetLLM 注入 LLM 用于语义技能匹配
+func (sm *SkillManager) SetLLM(llm LLMProvider) { sm.llm = llm }
+
 // Get 获取技能
 func (sm *SkillManager) Get(id string) *Skill {
 	return sm.skills[id]
@@ -217,17 +222,23 @@ func (sm *SkillManager) EnabledSkills() []*Skill {
 	return result
 }
 
-// DetectSkill 自动检测用户意图并匹配技能
-// 遍历所有已启用技能，用每个技能的 Keywords 做匹配，返回命中数最多的
+// DetectSkill 自动检测用户意图并匹配技能（LLM 优先，关键词兜底）
 func (sm *SkillManager) DetectSkill(query string) *Skill {
 	if !sm.autoDetect {
 		return nil
 	}
 
+	// LLM 语义匹配
+	if sm.llm != nil {
+		if skill := sm.detectWithLLM(query); skill != nil {
+			return skill
+		}
+	}
+
+	// 关键词兜底
 	lower := strings.ToLower(query)
 	var bestSkill *Skill
 	bestScore := 0
-
 	for _, skill := range sm.skills {
 		if !skill.Enabled || len(skill.Keywords) == 0 {
 			continue
@@ -243,8 +254,32 @@ func (sm *SkillManager) DetectSkill(query string) *Skill {
 			bestSkill = skill
 		}
 	}
-
 	return bestSkill
+}
+
+func (sm *SkillManager) detectWithLLM(query string) *Skill {
+	var skillList strings.Builder
+	for _, s := range sm.skills {
+		if s.Enabled {
+			skillList.WriteString(fmt.Sprintf("- %s: %s\n", s.ID, s.Description))
+		}
+	}
+	if skillList.Len() == 0 {
+		return nil
+	}
+
+	resp, err := sm.llm.Chat(context.Background(), []Message{
+		{Role: "user", Content: fmt.Sprintf("Which skill best matches this query? Reply with the skill ID or 'none'.\n\nSkills:\n%s\nQuery: %s", skillList.String(), query)},
+	}, nil, map[string]interface{}{"max_tokens": 30, "temperature": 0})
+	if err != nil {
+		return nil
+	}
+
+	choice := strings.TrimSpace(resp.Content)
+	if choice == "" || choice == "none" {
+		return nil
+	}
+	return sm.skills[choice]
 }
 
 // InjectPrompt 将技能提示词注入系统消息
