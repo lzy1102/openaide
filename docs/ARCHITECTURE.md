@@ -35,7 +35,7 @@
 | llm | 7个 | 网关、OpenAI兼容、Anthropic原生、Embedding、缓存 |
 | tools | 10个 | 22个工具注册+实现（按领域拆分文件） |
 | memory | 3个 | 3级记忆、TF-IDF向量搜索、语义搜索 |
-| orchestration | 5个 | 编排器、Planner任务拆分、DAG、Team多Agent |
+| orchestration | 3个 | 编排器、Planner、Team多Agent |
 | api | 3个 | REST、SSE、WebSocket、JWT中间件 |
 | infra | 4个 | DI容器、LLM网关工厂、Kernel工厂、Channel工厂 |
 | plugin | 2个 | 插件管理、Claude Code格式解析 (.claude-plugin/skills/MCP/hooks) |

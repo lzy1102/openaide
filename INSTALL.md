@@ -311,11 +311,11 @@ backend/
 │   └── cli/onboard.go         # 首次运行引导
 ├── internal/
 │   ├── infra/   (4 files)     # DI 容器
-│   ├── kernel/  (22 files)    # Agent 内核 (ReAct 循环, split into process/stream/prompt)
+│   ├── kernel/  (18 files)    # Agent 内核 (process/stream/prompt + enhancements)
 │   ├── llm/    (7 files)      # LLM 网关: 多提供商 + Anthropic + OpenAI
 │   ├── tools/  (10 files)     # 22 个工具按领域拆分
 │   ├── memory/                 # 3 级文件记忆 + 语义搜索
-│   ├── orchestration/          # 编排器 + Planner + DAG + Team
+│   ├── orchestration/          # 编排器 + Planner + Team
 │   ├── api/                    # REST + SSE + WebSocket
 │   ├── plugin/                 # 插件管理 + Claude 格式解析
 │   ├── compress/               # LLM 语义压缩
