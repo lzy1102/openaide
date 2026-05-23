@@ -68,20 +68,30 @@ var enText = onboardText{
 }
 
 func runOnboarding(promptsDir string) {
-	t := &enText
-	if kernel.IsZhEnv() {
-		t = &zhText
-	}
-
 	fmt.Println(strings.Repeat("─", 60))
-	fmt.Println("  " + t.welcome)
-	fmt.Println("  " + t.profile)
+	fmt.Println("  Welcome to OpenAIDE! / 欢迎使用 OpenAIDE！")
 	fmt.Println(strings.Repeat("─", 60))
 	fmt.Println()
 
 	reader := bufio.NewReader(os.Stdin)
 
-	// 1. 角色
+	// 1. 先选语言（最重要的问题）
+	fmt.Println("1. Language / 语言")
+	fmt.Println("   [1] 中文")
+	fmt.Println("   [2] English")
+	fmt.Print("\n   Choice / 选择 (1-2): ")
+	langChoice := readLine(reader)
+
+	zh := langChoice == "1"
+	t := &enText
+	if zh { t = &zhText }
+
+	fmt.Println("\n" + strings.Repeat("─", 60))
+	fmt.Println("  " + t.profile)
+	fmt.Println(strings.Repeat("─", 60))
+	fmt.Println()
+
+	// 2. 角色
 	fmt.Println(t.focus)
 	fmt.Println(t.gp)
 	fmt.Println(t.prog)
@@ -93,9 +103,9 @@ func runOnboarding(promptsDir string) {
 	fmt.Print("\n" + t.choice123)
 	choice := readLine(reader)
 
-	identity := buildIdentity(choice, reader, t == &zhText)
+	identity := buildIdentity(choice, reader, zh)
 
-	// 2. 回复风格
+	// 3. 回复风格
 	fmt.Println("\n" + t.respStyle)
 	fmt.Println(t.concise)
 	fmt.Println(t.detailed)
@@ -109,20 +119,9 @@ func runOnboarding(promptsDir string) {
 		style = "balanced"
 	}
 
-	// 3. 语言
-	fmt.Println("\n" + t.langQ)
-	fmt.Println(t.langZH)
-	fmt.Println(t.langEN)
-	fmt.Println(t.langFollow)
-	fmt.Print("\n" + t.choice123[:len(t.choice123)-2] + "3): ")
-	langChoice := readLine(reader)
-
-	lang := map[string]string{"1": "zh", "2": "en", "3": "follow"}[langChoice]
-	if lang == "" {
-		lang = "follow"
-	}
-
 	// 生成并写入
+	lang := "follow"
+	if zh { lang = "zh" } else { lang = "en" }
 	prompt := buildTailoredPrompt(identity, style, lang)
 	if err := kernel.WriteSystemPrompt(promptsDir, prompt); err != nil {
 		fmt.Printf("\n  ⚠ Failed to save: %v\n", err)
