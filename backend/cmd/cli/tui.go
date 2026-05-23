@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	osexec "os/exec"
 	"regexp"
 	"strings"
 	"sync"
@@ -371,8 +372,8 @@ func (m *model) updateChat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "ctrl+v":
 		if !m.streaming {
-			text, err := clipboard.ReadAll()
-			if err == nil && text != "" {
+			text := readClipboard()
+			if text != "" {
 				m.input.SetValue(m.input.Value() + text)
 			}
 		}
@@ -542,6 +543,41 @@ func (m *model) runTeamChain(task string) {
 		}
 		m.program.Send(chunkMsg{content: fmt.Sprintf("## 团队协作完成\n\n### 分析报告\n%s\n\n### 实现\n%s\n\n### 审查\n%s", analysis, code, review), done: true})
 	}()
+}
+
+// readClipboard 多策略读系统剪贴板，不依赖外部工具
+func readClipboard() string {
+	// 1. clipboard 库
+	if text, err := clipboard.ReadAll(); err == nil && text != "" {
+		return text
+	}
+	// 2. WSL: powershell
+	if out, err := execCmd("powershell.exe", "-Command", "Get-Clipboard"); err == nil && out != "" {
+		return out
+	}
+	// 3. macOS
+	if out, err := execCmd("pbpaste"); err == nil && out != "" {
+		return out
+	}
+	// 4. Linux X11
+	if out, err := execCmd("xclip", "-o", "-selection", "clipboard"); err == nil && out != "" {
+		return out
+	}
+	// 5. Linux Wayland
+	if out, err := execCmd("wl-paste"); err == nil && out != "" {
+		return out
+	}
+	return ""
+}
+
+func execCmd(name string, args ...string) (string, error) {
+	cmd := osexec.Command(name, args...)
+	cmd.Stderr = nil
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 func (m *model) startStream(query string) {
