@@ -26,12 +26,18 @@ type Plan struct {
 
 // Planner 任务规划器 — 将复杂任务拆分为子任务
 type Planner struct {
-	llm kernel.LLMProvider
+	llm   kernel.LLMProvider
+	tools kernel.ToolExecutor // 可选：用于 Research 阶段执行只读工具
 }
 
 // NewPlanner 创建规划器
 func NewPlanner(llm kernel.LLMProvider) *Planner {
 	return &Planner{llm: llm}
+}
+
+// SetToolExecutor 注入工具执行器（用于 Research 阶段执行只读工具）
+func (p *Planner) SetToolExecutor(te kernel.ToolExecutor) {
+	p.tools = te
 }
 
 var planningPrompt = `你是一个任务规划专家。分析用户请求，自行判断是否需要拆分为子任务。
@@ -224,39 +230,102 @@ type Proposals struct {
 	Options []Proposal `json:"options"`
 }
 
-// Research 分析现有代码，生成研究报告
-func (p *Planner) Research(ctx context.Context, query string) (*ResearchReport, error) {
-	prompt := fmt.Sprintf(`你是一个资深软件架构师。分析以下需求，先研究现有代码再给出报告。
-
-## 用户需求
-%s
-
-## 你的任务
-1. 用 search_files 和 read_file 分析相关代码
-2. 输出 JSON 格式的研究报告：
-{
-  "findings": "现有代码的架构、关键模块、数据流（2-3句话）",
-  "modules": "涉及的模块和文件列表",
-  "risks": "重构/修改的主要风险点",
-  "complexity": "low/medium/high"
+// readOnlyTools Research 阶段允许的只读工具
+var readOnlyTools = map[string]bool{
+	"read_file": true, "list_directory": true, "search_files": true,
+	"search_symbols": true, "git_status": true, "git_diff": true,
+	"git_log": true, "git_blame": true, "search_knowledge": true,
 }
 
-只输出 JSON，不要其他内容。`, query)
+// Research 分析现有代码，生成研究报告（ReAct 循环，只读工具）
+func (p *Planner) Research(ctx context.Context, query string) (*ResearchReport, error) {
+	sysPrompt := `你是资深软件架构师。先研究代码再输出报告。
+
+规则：
+1. 使用只读工具分析代码（read_file, search_files, list_directory 等）
+2. 充分了解现有架构后再生成报告
+3. 最后输出 JSON 研究报告`
 
 	messages := []kernel.Message{
-		{Role: "system", Content: "你是资深软件架构师。先研究代码再输出报告。输出纯JSON。"},
-		{Role: "user", Content: prompt},
+		{Role: "system", Content: sysPrompt},
+		{Role: "user", Content: fmt.Sprintf("研究需求: %s\n\n先分析代码，最后输出JSON报告。", query)},
 	}
 
-	resp, err := p.llm.Chat(ctx, messages, nil, map[string]interface{}{
-		"temperature": 0.3,
-		"max_tokens":  1000,
-	})
-	if err != nil {
-		return nil, err
+	// Mini ReAct loop: 最多 5 轮，只读工具
+	for round := 0; round < 5; round++ {
+		tools := p.readOnlyToolDefs()
+		resp, err := p.llm.Chat(ctx, messages, tools, map[string]interface{}{
+			"temperature": 0.3,
+			"max_tokens":  1500,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		messages = append(messages, kernel.Message{
+			Role:    "assistant",
+			Content: resp.Content,
+			ToolCalls: resp.ToolCalls,
+		})
+
+		// 无工具调用 → 输出应该是研究报告，解析 JSON
+		if len(resp.ToolCalls) == 0 {
+			if report, err := parseResearch(resp.Content); err == nil {
+				return report, nil
+			}
+			// JSON 解析失败，可能是 LLM 还在思考，继续
+			if round >= 2 {
+				return nil, fmt.Errorf("research did not produce valid JSON after %d rounds", round+1)
+			}
+			continue
+		}
+
+		// 执行只读工具
+		if p.tools == nil {
+			// 无工具执行器，直接要求 LLM 基于已有知识输出
+			messages = append(messages, kernel.Message{
+				Role: "user", Content: "请基于你的知识直接输出 JSON 研究报告，不需要调用工具。",
+			})
+			continue
+		}
+
+		for _, tc := range resp.ToolCalls {
+			if tc.Function.Name == "" {
+				continue
+			}
+			result, err := p.tools.Execute(ctx, tc, "")
+			var content string
+			if err != nil {
+				content = fmt.Sprintf("Error: %v", err)
+			} else if result.Error != "" {
+				content = fmt.Sprintf("Error: %s", result.Error)
+			} else {
+				content = fmt.Sprintf("%v", result.Content)
+			}
+			messages = append(messages, kernel.Message{
+				Role:       "tool",
+				Content:    content,
+				ToolCallID: tc.ID,
+			})
+		}
 	}
 
-	return parseResearch(resp.Content)
+	return nil, fmt.Errorf("research exceeded max rounds")
+}
+
+// readOnlyToolDefs 返回只读工具定义（从 toolExecutor 获取并过滤）
+func (p *Planner) readOnlyToolDefs() []kernel.ToolDefinition {
+	if p.tools == nil {
+		return nil
+	}
+	allDefs := p.tools.GetDefinitions()
+	var filtered []kernel.ToolDefinition
+	for _, d := range allDefs {
+		if readOnlyTools[d.Function.Name] {
+			filtered = append(filtered, d)
+		}
+	}
+	return filtered
 }
 
 // Propose 基于研究报告生成多个可选方案

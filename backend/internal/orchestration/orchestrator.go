@@ -70,9 +70,20 @@ func (o *Orchestrator) SetTeam(t *Team) {
 	o.team = t
 }
 
+// GetToolExecutor 返回工具执行器（供外部规划器使用）
+func (o *Orchestrator) GetToolExecutor() kernel.ToolExecutor {
+	return o.toolExec
+}
+
+// GetLLMProvider 返回 LLM 提供商（供外部规划器使用）
+func (o *Orchestrator) GetLLMProvider() kernel.LLMProvider {
+	return o.llmGateway
+}
+
 // PreviewPlan 仅规划不执行，返回拆分后的计划（用于交互式确认）
 func (o *Orchestrator) PreviewPlan(ctx context.Context, content string) (*Plan, error) {
 	planner := NewPlanner(o.llmGateway)
+	planner.SetToolExecutor(o.toolExec)
 	return planner.Plan(ctx, content)
 }
 
@@ -87,6 +98,7 @@ type DeepPlanResult struct {
 // DeepPlan 深度规划：研究 → 方案分析 → 生成计划（不含选择，调用方负责选择方案）
 func (o *Orchestrator) DeepPlan(ctx context.Context, content string) (*DeepPlanResult, error) {
 	planner := NewPlanner(o.llmGateway)
+	planner.SetToolExecutor(o.toolExec)
 
 	// Phase 1: Research
 	research, err := planner.Research(ctx, content)

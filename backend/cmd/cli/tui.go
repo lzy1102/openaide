@@ -502,6 +502,7 @@ func (m *model) doDeepPlan(query string) {
 	// Phase 0: Research
 	m.program.Send(func() tea.Msg { return chunkMsg{thinking: "🔍 研究阶段: 分析现有代码…"} })
 	planner := orchestration.NewPlanner(m.app.LLMGateway)
+	planner.SetToolExecutor(m.app.Orchestrator.GetToolExecutor())
 	research, err := planner.Research(ctx, query)
 	if err != nil {
 		m.program.Send(func() tea.Msg { return chunkMsg{err: fmt.Errorf("研究阶段失败: %w", err), done: true} })
