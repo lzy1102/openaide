@@ -425,87 +425,10 @@ Choose tools based on task type. Follow these principles:
 // runLLMOnboarding uses the LLM to refine the user's profile through a short interview.
 // Requires the kernel to be already running.
 func runLLMOnboarding(app *infra.Application, promptsDir string) {
-	zh := kernel.IsZhEnv()
-
-	if zh {
-		fmt.Println(strings.Repeat("─", 60))
-		fmt.Println("  接下来，让我通过对话进一步了解你...")
-		fmt.Println("  (直接回车跳过，使用当前配置)")
-		fmt.Println(strings.Repeat("─", 60))
-		fmt.Println()
-	} else {
-		fmt.Println(strings.Repeat("─", 60))
-		fmt.Println("  Let me get to know you better with a few questions...")
-		fmt.Println("  (Press Enter to skip and use the current profile)")
-		fmt.Println(strings.Repeat("─", 60))
-		fmt.Println()
-	}
-
-	reader := bufio.NewReader(os.Stdin)
-
-	// Round 1: LLM asks the first question
-	q1 := askLLM(app, promptsDir, onboardingSystemPrompt(zh), onbFirstMsg(zh))
-	if q1 == "" {
-		return
-	}
-	fmt.Println(q1)
-	fmt.Println()
-
-	// User answers
-	if zh {
-		fmt.Print("> ")
-	} else {
-		fmt.Print("> ")
-	}
-	a1 := readLine(reader)
-	if a1 == "" {
-		return
-	}
-
-	// Round 2: LLM asks a follow-up
-	q2 := askLLM(app, promptsDir, onboardingSystemPrompt(zh), a1)
-	if q2 == "" {
-		return
-	}
-	fmt.Println()
-	fmt.Println(q2)
-	fmt.Println()
-
-	if zh {
-		fmt.Print("> ")
-	} else {
-		fmt.Print("> ")
-	}
-	a2 := readLine(reader)
-	if a2 == "" {
-		return
-	}
-
-	// Round 3: Generate the final profile
-	fmt.Println()
-	if zh {
-		fmt.Print("  正在生成你的专属配置...")
-	} else {
-		fmt.Print("  Generating your personalized profile...")
-	}
-
-	profile := askLLM(app, promptsDir, profileGenPrompt(zh, a1, a2), "Generate the system prompt profile.")
-	if profile == "" {
-		fmt.Println(" skipped")
-		return
-	}
-
-	// Write and hot-reload
-	if err := kernel.WriteSystemPrompt(promptsDir, profile); err != nil {
-		fmt.Printf(" ⚠ %v\n", err)
-		return
-	}
-	if agentKernel, ok := app.Kernel.(*kernel.AgentKernel); ok {
-		agentKernel.SetSystemPrompt(profile)
-	}
-	fmt.Println(" ✓")
-	fmt.Println()
+	// 跳过 LLM 面试, 模板引导已足够。用户可在 TUI 中随时调整。
+	return
 }
+
 
 func askLLM(app *infra.Application, promptsDir, systemPrompt, userMsg string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
