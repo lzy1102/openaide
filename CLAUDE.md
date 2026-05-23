@@ -94,11 +94,10 @@ cmd/server (API server)          cmd/cli (interactive CLI)
 
 7. **`backend/internal/api/`** — HTTP REST API + WebSocket. Routes: `POST /api/v1/chat`, `POST /api/v1/chat/stream` (SSE), `GET /api/v1/sessions`, etc. WebSocket heartbeat uses `done` channel for clean shutdown.
 
-8. **`backend/internal/orchestration/`** — Full task lifecycle management:
-   - `orchestrator.go` — `Orchestrator` wraps kernel with pre/post processing. `ProcessQuery` triggers LLM-based planning via `Planner`. `executePlan` runs full lifecycle (Execute→Test→Review) with context-isolated sub-agents via `RunSubAgent()`. `DeepPlan` pipeline: Research→Propose→Select→Plan. `Smart routing`: LLM auto-selects role pipeline per task. `ExecuteWithPlan` accepts pre-made plans.
-   - `planner.go` — `Planner`: LLM-driven task decomposition (Function Calling → text fallback). Research phase: mini ReAct loop with read-only tools, auto-stops when LLM done. `Propose`: generates 2-3 alternatives with pros/cons/risk/effort. `PlanWithApproach`: detailed plan from chosen approach.
-   - `team.go` — `Team`: 4 roles (analyst/coder/reviewer/executor) each with isolated tool sets. `RunSubAgent`: fresh session per role, prevents context pollution. `Smart routing`: `routePipeline` LLM selects needed roles. `assignRole` LLM picks right role per subtask.
-   - `dag.go` — DAG execution engine with parallel execution and data-race-safe map access.
+8. **`backend/internal/orchestration/`** (3 files) — Full task lifecycle management:
+   - `orchestrator.go` — `ProcessQuery` → LLM planning → DeepPlan pipeline. `executePlan` with **self-correcting loop**: test→review→analyst(root cause)→coder(fix)→retry (until pass or BLOCKED). **Branch-converge model**: sub-agent signals `[DISCOVERY:]` → branch(analyze+fix) → converge back to main line → update remaining steps. `ExecuteWithPlan` accepts pre-made plans. `CleanupOldSessions` for sub-agent session GC.
+   - `planner.go` — `Planner`: Research (multi-round hypothesis→verify→report, read-only tools), Propose (2-3 alternatives with reasoning/pros/cons/risk/effort), PlanWithApproach (detailed plan from chosen approach). `PreviewPlan` combines complexity classification + task splitting in single LLM call.
+   - `team.go` — 4 bilingual roles (analyst/coder/reviewer/executor). `RunSubAgent`: fresh session + role-specific tools + model routing (reasoning vs execution). `routePipeline`: single LLM call assigns all subtask roles at once. Slash commands: `/analyst`, `/coder`, `/reviewer`, `/executor`, `/team`.
 
 ### LLM-driven decision making (replacing hardcoded rules)
 
