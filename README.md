@@ -181,8 +181,11 @@ git push origin v1.0.0
 - **多模态Vision**: base64图片→Vision API格式 (OpenAI+Anthropic)
 - **5个内置Skill + 自动进化**: 代码审查/Git提交/调试/重构/解释（自动检测触发），重复模式自动生成新技能
 - **模型智能路由**: 按任务类型自动选择provider/model（代码/搜索/翻译/对话）
-- **Planner + DAG**: 复杂请求自动拆分+DAG并行执行（function calling驱动，纯文本回退）
-- **多Agent Team**: 分析员→程序员→审查员→执行者角色委派
+- **DeepPlan 深度规划**: 研究→方案对比→选择→计划→TDD执行→测试→验收，自反思闭环（验收不通过自动返工）
+- **多Agent Team + 隔离子Agent**: 分析员→程序员→审查员→执行者，独立会话上下文隔离
+- **LLM全决策引擎**: 17项硬编码规则替换，角色分配/风险评估/技能检测等全部由LLM判断
+- **OpenCode 配置兼容**: 自动发现 opencode.json，导入MCP服务器+项目指令
+- **插件市场**: `openaide plugins [list|search|install]` CLI命令
 - **LLM反思+跨会话学习**: 每轮LLM结构化反思(function calling)→eval→insights持久化→后续对话自动注入历史经验
 - **知识库**: 质量门控自动抽取(score>0.6)+提示词注入 + LLM Embedding语义搜索 + 使用反馈闭环(自动评估有效性)
 - **3级记忆**: L1/L2/L3 + LLM Embedding语义搜索 + TF-IDF向量搜索 + 文本匹配三级降级
@@ -212,6 +215,9 @@ openaide -o json                  # Structured JSON output
 
 # Subcommands
 openaide sessions                 # List sessions
+openaide plugins                  # List installed plugins
+openaide plugins search           # Search available plugins
+openaide plugins install <url>    # Install plugin from GitHub
 openaide update                   # Update
 openaide version                  # Version
 openaide help                     # Show help

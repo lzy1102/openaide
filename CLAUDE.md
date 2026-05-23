@@ -154,6 +154,27 @@ All judgment calls now delegated to LLM, with rule-based fallbacks:
   - `extractPendingQuestions()`: detects unanswered user queries in compressed messages, re-injects as `[待解决问题]` to prevent information loss
   - **Fallback chain**: LLM call fails → `SimpleCompressor` → returns original messages if everything fails
 
+### Deep thinking pipeline (Research → Propose → Select → Plan)
+
+OpenAIDE's unique value: deep pre-execution analysis before any code changes.
+
+- **Multi-round Research**: Hypothesis-driven — scan code → form hypothesis → read deeply → verify → report. Only read-only tools allowed.
+- **Propose alternatives**: LLM generates 2-3 approaches with pros/cons/risk/effort/reasoning. User selects from TUI overlay.
+- **Decision rationale**: Each proposal includes a `reasoning` field explaining *why* this option exists and when to choose it.
+- **Self-reflection loop**: After review, if `[需要返工]` is detected, auto-loops back to coder for fixes (max 2 retries).
+- **Smart routing**: `routePipeline()` LLM selects needed roles per task. `assignRole()` LLM picks best role per subtask.
+- **Context-isolated sub-agents**: `RunSubAgent()` creates fresh sessions per role — main agent sees only result summaries, not intermediate tool calls.
+- **Editable plans**: Foundation for user editing subtask order/add/delete in TUI overlay.
+
+### Ecosystem compatibility
+
+OpenAIDE reads and integrates with other agent ecosystems:
+
+- **Claude Code plugins**: Full format support (manifest, skills, MCP, hooks). See plugin system section.
+- **OpenCode config**: Auto-discovers `opencode.json` in project root — imports MCP servers + instructions.
+- **MCP protocol**: Universal standard across all major coding agents (stdio transport, 30s timeout).
+- **Plugin marketplace**: CLI command `openaide plugins [list|search|install <url>]`.
+
 ### Prompt system
 
 - **Default prompt**: Bilingual (Chinese/English), auto-detected from `LANG` env var.

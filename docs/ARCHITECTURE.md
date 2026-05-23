@@ -63,6 +63,11 @@
 | 智能路由 | ✅ LLM 自动选择角色管线 + 子任务分配 |
 | 隔离子Agent | ✅ 独立会话执行，主Agent上下文不污染 |
 | 深度规划 | ✅ Research→Propose→Select→Plan→Execute→Test→Review |
-| LLM决策引擎 | ✅ 11项硬编码规则替换为LLM判断 |
+| LLM决策引擎 | ✅ 17项硬编码规则替换为LLM判断 |
+| DeepPlan深度规划 | ✅ Research→Propose→Select→Plan→Execute→Test→Review |
+| 自反思闭环 | ✅ 审查检测[需要返工]→自动修复→再审查(最多2次) |
+| 隔离子Agent | ✅ 独立会话执行，主Agent上下文不受污染 |
+| OpenCode配置兼容 | ✅ 自动发现opencode.json MCP+instructions |
+| 插件市场 | ✅ openaide plugins list/search/install |
 | API限流 | ✅ token bucket 20req/s |
 | 语法高亮 | ✅ chroma/Monokai TUI代码块渲染 |
