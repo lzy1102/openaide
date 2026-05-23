@@ -532,15 +532,32 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 		testReport = "（跳过验证阶段）"
 	}
 
-	if pipelineHas(pipeline, "reviewer") {
-		reviewTask := fmt.Sprintf("总体目标: %s\n\n执行结果:\n%s\n\n验证结果:\n%s\n\n生成验收报告：完成内容、修改文件、验证状态、遗留问题。Markdown 格式。",
-			plan.Goal, execSummary, testReport)
-		reviewContent, err := o.RunSubAgent(ctx, userID, projectID, "reviewer", reviewTask, nil)
-		if err == nil {
-			finalReport = fmt.Sprintf("## %s\n\n### 验证结果\n%s\n\n---\n\n### 验收报告\n%s",
-				plan.Goal, testReport, reviewContent)
-			totalTools++
+	// 自反思闭环：最多重试 2 次
+	const maxRetries = 2
+	for retry := 0; retry <= maxRetries; retry++ {
+		if pipelineHas(pipeline, "reviewer") {
+			reviewTask := fmt.Sprintf("总体目标: %s\n\n执行结果:\n%s\n\n验证结果:\n%s\n\n生成验收报告：完成内容、修改文件、验证状态、遗留问题。\n如果存在未解决问题，在报告末尾标注 [需要返工] 并列出需要修复的具体问题。\nMarkdown 格式。",
+				plan.Goal, execSummary, testReport)
+			reviewContent, err := o.RunSubAgent(ctx, userID, projectID, "reviewer", reviewTask, nil)
+			if err == nil {
+				finalReport = fmt.Sprintf("## %s\n\n### 验证结果\n%s\n\n---\n\n### 验收报告\n%s",
+					plan.Goal, testReport, reviewContent)
+				totalTools++
+
+				// 自反思：检查是否需要返工
+				if retry < maxRetries && strings.Contains(reviewContent, "[需要返工]") {
+					fixTask := fmt.Sprintf("验收发现问题，需要修复：\n\n%s\n\n请修复以上问题。", reviewContent)
+					fixContent, fixErr := o.RunSubAgent(ctx, userID, projectID, "coder", fixTask, results)
+					if fixErr == nil {
+						results = append(results, fmt.Sprintf("### 返工修复 (第%d次)\n%s", retry+1, fixContent))
+						execSummary = strings.Join(results, "\n\n---\n\n")
+						totalTools++
+						continue // 重新进入审查
+					}
+				}
+			}
 		}
+		break // 审查通过或达到最大重试
 	}
 
 	if finalReport == "" {

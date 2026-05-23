@@ -428,3 +428,59 @@ func MapClaudeEvent(claudeEvent string) string {
 	}
 	return ""
 }
+
+// ============ OpenCode 配置兼容 ============
+
+// OpenCodeConfig opencode.json 结构
+type OpenCodeConfig struct {
+	MCP          map[string]OpenCodeMCPServer `json:"mcp,omitempty"`
+	Instructions []string                     `json:"instructions,omitempty"`
+	Model        string                       `json:"model,omitempty"`
+	Plugin       []string                     `json:"plugin,omitempty"`
+}
+
+// OpenCodeMCPServer OpenCode MCP 服务器配置
+type OpenCodeMCPServer struct {
+	Type    string   `json:"type"`
+	Command string   `json:"command"`
+	Args    []string `json:"args,omitempty"`
+	Enabled bool     `json:"enabled"`
+}
+
+// DiscoverOpenCodeConfig 从项目目录发现 opencode.json 配置
+func DiscoverOpenCodeConfig(projectDir string) (*OpenCodeConfig, []MCPServerEntry, string) {
+	path := filepath.Join(projectDir, "opencode.json")
+	// 也检查 .opencode/opencode.json
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		path = filepath.Join(projectDir, ".opencode", "opencode.json")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, nil, ""
+	}
+
+	var cfg OpenCodeConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, nil, ""
+	}
+
+	// 提取 MCP 服务器
+	var mcpServers []MCPServerEntry
+	for name, srv := range cfg.MCP {
+		if srv.Command != "" && srv.Enabled {
+			mcpServers = append(mcpServers, MCPServerEntry{
+				Type:    srv.Type,
+				Command: srv.Command,
+				Args:    srv.Args,
+			})
+		} else {
+			// 尝试 stdio 类型（OpenCode 常见格式）
+			_ = name
+		}
+	}
+
+	// 提取 instructions 作为额外提示词
+	instructions := strings.Join(cfg.Instructions, "\n")
+
+	return &cfg, mcpServers, instructions
+}

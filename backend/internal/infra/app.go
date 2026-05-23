@@ -219,6 +219,47 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 		return nil, err
 	}
 
+	// 10. OpenCode 配置兼容：发现 opencode.json 中的 MCP + instructions
+	if opencodeCfg, opencodeMCP, opencodeInstr := plugin.DiscoverOpenCodeConfig("."); opencodeCfg != nil {
+		slog.Info("OpenCode config discovered", "mcp_servers", len(opencodeMCP))
+		for _, srv := range opencodeMCP {
+			if srv.Command != "" {
+				id := "opencode-" + srv.Command
+				if err := mcpManager.ConnectServer(id, srv.Command, srv.Args...); err != nil {
+					slog.Warn("OpenCode MCP connect failed", "id", id, "error", err)
+					continue
+				}
+				for _, mcpTool := range mcpManager.GetServerTools(id) {
+					def := kernel.ToolDefinition{Type: "function", Function: kernel.FunctionDef{
+						Name: mcpTool.Name, Description: mcpTool.Description, Parameters: mcpTool.InputSchema,
+					}}
+					serverID, toolName := id, mcpTool.Name
+					toolRegistry.Register(def, kernel.ToolHandler(func(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
+						var args map[string]interface{}
+						if arguments != "" { json.Unmarshal([]byte(arguments), &args) }
+						result, _ := mcpManager.CallTool(serverID, toolName, args)
+						if result == nil { return &kernel.ToolResult{Error: "tool call failed"}, nil }
+						var content string
+						for _, item := range result.Content {
+							if item.Type == "text" && item.Text != "" {
+								if content != "" { content += "\n" }
+								content += item.Text
+							}
+						}
+						errStr := ""
+						if result.IsError { errStr = content }
+						return &kernel.ToolResult{Content: content, Error: errStr}, nil
+					}))
+				}
+				slog.Info("OpenCode MCP connected", "id", id)
+			}
+		}
+		if opencodeInstr != "" {
+			currentPrompt := kernel.LoadSystemPrompt(cfg.Storage.DataDir + "/prompts")
+			agentKernel.SetSystemPrompt(currentPrompt + "\n\n## OpenCode 项目指令\n" + opencodeInstr)
+		}
+	}
+
 	return app, nil
 }
 

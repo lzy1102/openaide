@@ -218,6 +218,7 @@ type ResearchReport struct {
 type Proposal struct {
 	Name        string `json:"name"`        // 方案名称
 	Description string `json:"description"` // 方案描述
+	Reasoning   string `json:"reasoning"`   // 为什么提出这个方案（决策理由）
 	Pros        string `json:"pros"`        // 优点
 	Cons        string `json:"cons"`        // 缺点
 	Risk        string `json:"risk"`        // 风险等级: low/medium/high
@@ -239,12 +240,20 @@ var readOnlyTools = map[string]bool{
 
 // Research 分析现有代码，生成研究报告（ReAct 循环，只读工具）
 func (p *Planner) Research(ctx context.Context, query string) (*ResearchReport, error) {
-	sysPrompt := `你是资深软件架构师。先研究代码再输出报告。
+	sysPrompt := `你是资深软件架构师。按以下步骤研究代码：
 
-规则：
-1. 使用只读工具分析代码（read_file, search_files, list_directory 等）
-2. 充分了解现有架构后再生成报告
-3. 最后输出 JSON 研究报告`
+第1轮 - 形成假设：
+1. 用 search_files 快速扫描相关文件，了解代码分布
+2. 形成初步假设：现有架构是怎样的？关键模块在哪？
+
+第2轮 - 验证假设：
+3. 用 read_file 深入阅读关键文件，验证或修正你的假设
+4. 如果假设错误，调整理解后重新搜索
+
+第3轮 - 输出报告：
+5. 当假设被充分验证后，输出 JSON 研究报告
+
+重要：在充分研究之前不要急于输出报告。确保你的理解是基于代码阅读而非猜测。`
 
 	messages := []kernel.Message{
 		{Role: "system", Content: sysPrompt},
@@ -348,6 +357,7 @@ func (p *Planner) Propose(ctx context.Context, query string, research *ResearchR
     {
       "name": "方案A: 名称",
       "description": "方案简述（1-2句话）",
+      "reasoning": "为什么提出这个方案，适用于什么场景",
       "pros": "优点1; 优点2; 优点3",
       "cons": "缺点1; 缺点2",
       "risk": "low/medium/high",

@@ -93,6 +93,9 @@ func parseFlags(args []string) cliFlags {
 		case a == "sessions":
 			cmdSessions(args[i+1:])
 			os.Exit(0)
+		case a == "plugins":
+			cmdPlugins(args[i+1:])
+			os.Exit(0)
 		case !strings.HasPrefix(a, "-"):
 			positional = append(positional, a)
 		}
@@ -356,4 +359,62 @@ func truncate(s string, n int) string {
 		return string(runes)
 	}
 	return string(runes[:n]) + "…"
+}
+
+func cmdPlugins(args []string) {
+	cfg, err := config.Load(defaultConfigPath())
+	if err != nil {
+		cfg = config.DefaultConfig()
+	}
+	infra.InitLogger(cfg.Log.Level, cfg.Log.Format)
+
+	app, err := infra.NewApplication(cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "启动失败: %v\n", err)
+		os.Exit(1)
+	}
+
+	plugins := app.PluginManager.List()
+	if len(args) > 0 && args[0] == "install" && len(args) >= 2 {
+		fmt.Printf("要从 GitHub 安装插件: %s\n", args[1])
+		fmt.Println("运行: git clone", args[1], cfg.Storage.DataDir+"/plugins/"+filepath.Base(args[1]))
+		cmd := exec.Command("git", "clone", args[1], cfg.Storage.DataDir+"/plugins/"+filepath.Base(args[1]))
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "安装失败: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("✓ 插件已安装。重启 openaide 生效。")
+		return
+	}
+
+	if len(args) > 0 && args[0] == "search" {
+		fmt.Println("搜索 Claude 插件：")
+		fmt.Println("  GitHub: https://github.com/topics/claude-plugin")
+		fmt.Println("  Claude 官方: https://github.com/anthropics/claude-plugins-official")
+		fmt.Println("  Superpowers: https://github.com/obra/superpowers")
+		fmt.Println()
+		fmt.Println("安装: openaide plugins install <github-url>")
+		return
+	}
+
+	if len(plugins) == 0 {
+		fmt.Println("没有安装的插件。")
+		fmt.Println("搜索: openaide plugins search")
+		fmt.Println("安装: openaide plugins install <github-url>")
+		return
+	}
+
+	fmt.Printf("已安装 %d 个插件:\n\n", len(plugins))
+	for _, p := range plugins {
+		status := "✓"
+		if !p.Enabled {
+			status = "✗"
+		}
+		fmt.Printf("  %s %s (%s)\n", status, p.Name, p.Version)
+		if p.Description != "" {
+			fmt.Printf("    %s\n", p.Description)
+		}
+	}
 }

@@ -588,6 +588,9 @@ func (m *model) proposalSelectView() string {
 		}
 		sb.WriteString(fmt.Sprintf("%s[%d] %s\n", marker, i+1, opt.Name))
 		sb.WriteString(fmt.Sprintf("    %s\n", opt.Description))
+		if opt.Reasoning != "" {
+			sb.WriteString(fmt.Sprintf("    💡 %s\n", opt.Reasoning))
+		}
 		sb.WriteString(fmt.Sprintf("    ✅ %s\n", opt.Pros))
 		sb.WriteString(fmt.Sprintf("    ❌ %s\n", opt.Cons))
 		sb.WriteString(fmt.Sprintf("    风险: %s | 工作量: %s\n\n", opt.Risk, opt.Effort))
