@@ -64,6 +64,13 @@ type LLMConfig struct {
 	DefaultProvider string           `json:"default_provider" yaml:"default_provider"`
 	Providers       []ProviderConfig `json:"providers" yaml:"providers"`
 	ModelRouting    ModelRoutingCfg  `json:"model_routing" yaml:"model_routing"`
+
+	// 简化配置字段（扁平格式，自动展开为完整格式）
+	Provider       string `json:"provider" yaml:"provider"`               // 等同于 default_provider + providers[0].name
+	APIKey         string `json:"api_key" yaml:"api_key"`                 // 等同于 providers[0].api_key
+	Model          string `json:"model" yaml:"model"`                     // 等同于 providers[0].default_model
+	BaseURL        string `json:"base_url" yaml:"base_url"`               // 等同于 providers[0].base_url
+	ExecutionModel string `json:"execution_model" yaml:"execution_model"` // 等同于 model_routing.execution
 }
 
 // ModelRoutingCfg 按能力分配模型
@@ -205,15 +212,15 @@ func DefaultConfig() *Config {
 			DangerousTools: []string{"execute_command", "write_file"},
 		},
 		Kernel: KernelConfig{
-			MaxRounds:    10,
-			MaxTokens:    4000,
+			MaxRounds:    30,
+			MaxTokens:    200000,
 			MinRounds:    5,
-			MaxRoundsCap: 30,
+			MaxRoundsCap: 50,
 		},
 		Planning: PlanningConfig{
 			Enabled:        true,
-			DeepTimeout:    120,
-			PreviewTimeout: 15,
+			DeepTimeout:    300,
+			PreviewTimeout: 30,
 			MaxProposals:   3,
 		},
 		Storage: StorageConfig{
@@ -262,8 +269,46 @@ func Load(path string) (*Config, error) {
 		}
 	}
 
+	config.normalize()
 	config.resolvePaths()
 	return config, nil
+}
+
+// normalize 将扁平简化配置展开为完整内部格式
+func (c *Config) normalize() {
+	if c.LLM.Provider != "" && len(c.LLM.Providers) == 0 {
+		// 扁平格式 → 展开为 providers 数组
+		c.LLM.DefaultProvider = c.LLM.Provider
+		baseURL := c.LLM.BaseURL
+		if baseURL == "" {
+			// 自动推断 base_url
+			if strings.Contains(strings.ToLower(c.LLM.Provider), "deepseek") {
+				baseURL = "https://api.deepseek.com/anthropic"
+			} else {
+				baseURL = "https://api.openai.com/v1"
+			}
+		}
+		providerType := "anthropic"
+		if strings.Contains(baseURL, "openai") || strings.Contains(baseURL, "/v1") {
+			providerType = "openai"
+		}
+		c.LLM.Providers = []ProviderConfig{{
+			Name:         c.LLM.Provider,
+			Type:         providerType,
+			BaseURL:      baseURL,
+			APIKey:       c.LLM.APIKey,
+			DefaultModel: c.LLM.Model,
+			Timeout:      300,
+			Enabled:      true,
+		}}
+	}
+	// 展开执行模型到 model_routing
+	if c.LLM.ExecutionModel != "" && c.LLM.ModelRouting.Execution == "" {
+		c.LLM.ModelRouting.Execution = c.LLM.ExecutionModel
+	}
+	if c.LLM.Model != "" && c.LLM.ModelRouting.Reasoning == "" {
+		c.LLM.ModelRouting.Reasoning = c.LLM.Model
+	}
 }
 
 // Save 保存配置到文件（自动根据扩展名选择 JSON 或 YAML）
