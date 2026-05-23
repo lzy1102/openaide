@@ -322,7 +322,7 @@ func (c *Config) normalize() {
 		model := strings.ToLower(c.LLM.Model)
 		switch {
 		case strings.Contains(model, "1m") || strings.Contains(model, "v4-pro") || strings.Contains(model, "v4-flash") || strings.Contains(model, "gemini"):
-			c.Kernel.MaxTokens = 970000 // 1M 上下文
+			c.Kernel.MaxTokens = 980000 // 1M 上下文，留 20K 给系统开销
 		case strings.Contains(model, "opus"):
 			c.Kernel.MaxTokens = 190000 // 200K
 		case strings.Contains(model, "sonnet") || strings.Contains(model, "haiku"):
