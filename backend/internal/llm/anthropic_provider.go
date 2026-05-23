@@ -207,7 +207,7 @@ func (p *AnthropicProvider) HealthCheck(ctx context.Context) error {
 func (p *AnthropicProvider) buildAnthropicBody(messages []kernel.Message, tools []kernel.ToolDefinition, options map[string]interface{}) map[string]interface{} {
 	body := map[string]interface{}{
 		"model":      p.modelID,
-		"max_tokens": 4096,
+		"max_tokens": 64000,
 	}
 
 	// 分离 system 消息
