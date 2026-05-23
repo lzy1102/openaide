@@ -65,11 +65,12 @@ type LLMConfig struct {
 	Providers       []ProviderConfig `json:"providers" yaml:"providers"`
 	ModelRouting    ModelRoutingCfg  `json:"model_routing" yaml:"model_routing"`
 
-	// 扁平格式（用户只需配下面的字段，其余自动推断）
-	APIKey         string `json:"api_key" yaml:"api_key"`                 // 必填：API Key
-	Model          string `json:"model" yaml:"model"`                     // 模型名, 默认自动选
-	BaseURL        string `json:"base_url" yaml:"base_url"`               // API 地址, 从模型名自动推断
-	ExecutionModel string `json:"execution_model" yaml:"execution_model"` // sub-agent 用轻量模型
+	// 扁平格式（只需 api_key，其余都可选）
+	APIKey         string `json:"api_key" yaml:"api_key"`                 // 必填
+	Model          string `json:"model" yaml:"model"`                     // 模型名(从名字推断 API/provider/context)
+	BaseURL        string `json:"base_url" yaml:"base_url"`               // API 地址
+	ExecutionModel string `json:"execution_model" yaml:"execution_model"` // 子Agent 模型
+	Context        string `json:"context" yaml:"context"`                 // "1m"/"200k"/"128k", 不配则从模型名猜
 }
 
 // ModelRoutingCfg 按能力分配模型
@@ -324,8 +325,10 @@ func (c *Config) normalize() {
 		c.LLM.ModelRouting.Execution = c.LLM.Model
 	}
 
-	// 上下文自动推断
-	if c.LLM.Model != "" {
+	// 上下文: context 字段 > 模型名推断 > 默认 200K; 统一留 20K
+	if c.LLM.Context != "" {
+		c.Kernel.MaxTokens = parseContextSize(c.LLM.Context) - 20000
+	} else if c.LLM.Model != "" {
 		c.Kernel.MaxTokens = guessContextSize(c.LLM.Model) - 20000
 	}
 }
@@ -413,5 +416,19 @@ func guessContextSize(model string) int {
 	default:
 		return 200000
 	}
+}
+
+
+// parseContextSize 解析 "1m" "200k" "128k" → token 数
+func parseContextSize(s string) int {
+	s = strings.ToLower(strings.TrimSpace(s))
+	s = strings.ReplaceAll(s, "_", "")
+	mult := 1
+	if strings.HasSuffix(s, "k") { mult = 1000; s = strings.TrimSuffix(s, "k") }
+	if strings.HasSuffix(s, "m") { mult = 1000000; s = strings.TrimSuffix(s, "m") }
+	n := 0
+	fmt.Sscanf(s, "%d", &n)
+	if n > 0 { return n * mult }
+	return 200000
 }
 
