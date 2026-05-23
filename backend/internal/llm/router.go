@@ -2,7 +2,6 @@ package llm
 
 import (
 	"regexp"
-	"strings"
 )
 
 // RouteRule 路由规则
@@ -89,20 +88,8 @@ type RouterConfig struct {
 	Rules   []RouteRule `json:"rules" yaml:"rules"`
 }
 
-// isComplexQuery 判断是否为复杂查询（用于自适应路由）
+// isComplexQuery 轻量预估查询复杂度（用于预路由）
+// 复杂度的真正判断由 orchestrator 的 LLM 规划完成
 func isComplexQuery(query string) bool {
-	indicators := []string{
-		"分析", "设计", "架构", "优化", "重构", "实现",
-		"修复", "排查", "部署", "配置", "集成",
-		"最好", "推荐", "比较", "对比", "评估",
-		"analyze", "design", "implement", "refactor",
-		"optimize", "debug", "fix", "deploy",
-	}
-	count := 0
-	for _, kw := range indicators {
-		if strings.Contains(strings.ToLower(query), kw) {
-			count++
-		}
-	}
-	return count >= 2 || len([]rune(query)) > 200
+	return len([]rune(query)) > 200
 }

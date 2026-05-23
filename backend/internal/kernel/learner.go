@@ -13,10 +13,14 @@ import (
 
 // SimpleLearner 简单学习实现
 type SimpleLearner struct {
-	dataDir string
+	dataDir  string
 	insights []Insight
 	mu       sync.RWMutex
+	llm      LLMProvider // 可选：LLM 语义分类
 }
+
+// SetLLM 注入 LLM 用于智能偏好检测
+func (l *SimpleLearner) SetLLM(llm LLMProvider) { l.llm = llm }
 
 // Insight 学习洞察
 type Insight struct {
@@ -76,17 +80,46 @@ func (l *SimpleLearner) Learn(ctx context.Context, record ExecutionRecord) error
 		})
 	}
 
-	// 学习用户偏好（基于查询内容）
-	if strings.Contains(record.Query, "代码") || strings.Contains(record.Query, "code") {
+	// 学习用户偏好（LLM 分类 > 关键词兜底）
+	if l.llm != nil {
+		if pref := l.detectPreferenceWithLLM(record.Query); pref != "" {
+			l.addOrUpdateInsight(Insight{
+				Type:       "preference",
+				Content:    pref,
+				Frequency:  1,
+				Confidence: 0.7,
+			})
+		}
+	} else if strings.Contains(record.Query, "代码") || strings.Contains(record.Query, "code") {
 		l.addOrUpdateInsight(Insight{
-			Type:      "preference",
-			Content:   "用户偏好代码相关回答",
-			Frequency: 1,
+			Type:       "preference",
+			Content:    "用户偏好代码相关回答",
+			Frequency:  1,
 			Confidence: 0.6,
 		})
 	}
 
 	return l.save()
+}
+
+func (l *SimpleLearner) detectPreferenceWithLLM(query string) string {
+	resp, err := l.llm.Chat(context.Background(), []Message{
+		{Role: "user", Content: fmt.Sprintf("Classify this user query into ONE category. Reply with only the category name.\n\nQuery: %s\n\nCategories: coding, writing, research, devops, learning, design, business, general", query)},
+	}, nil, map[string]interface{}{"max_tokens": 15, "temperature": 0})
+	if err != nil || resp.Content == "" {
+		return ""
+	}
+	cat := strings.TrimSpace(strings.ToLower(resp.Content))
+	categoryNames := map[string]string{
+		"coding": "用户偏好编程与技术相关回答", "writing": "用户偏好写作与创作相关回答",
+		"research": "用户偏好研究与分析相关回答", "devops": "用户偏好运维与部署相关回答",
+		"learning": "用户偏好学习与教学相关回答", "design": "用户偏好设计与架构相关回答",
+		"business": "用户偏好商业与管理相关回答", "general": "用户偏好通用型回答",
+	}
+	if name, ok := categoryNames[cat]; ok {
+		return name
+	}
+	return ""
 }
 
 // GetInsights 获取学习洞察

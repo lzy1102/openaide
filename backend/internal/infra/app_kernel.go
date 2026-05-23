@@ -47,6 +47,7 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 	}
 	agentKernel.SetSkillManager(sm)
 	if learner, err := kernel.NewSimpleLearner(cfg.Storage.DataDir + "/insights"); err == nil {
+		learner.SetLLM(gateway) // LLM 分类用户偏好
 		agentKernel.SetLearner(learner)
 		slog.Info("Learner enabled", "dir", cfg.Storage.DataDir+"/insights")
 	} else {

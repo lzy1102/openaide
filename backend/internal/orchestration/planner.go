@@ -51,7 +51,7 @@ var planningPrompt = `你是一个任务规划专家。分析用户请求，自�
 
 ## 规则
 1. 每个子任务应该是独立可执行的一步
-2. 子任务数不超过5个
+2. 子任务数按实际需要拆分，不要人为限制
 3. 简单请求返回1个子任务（title和description都用原始请求）
 4. 标注建议工具：read_file/write_file/execute_command/list_directory/search_files/git_status/search_knowledge/add_knowledge
 
@@ -399,7 +399,7 @@ func (p *Planner) PlanWithApproach(ctx context.Context, query string, research *
   ]
 }
 
-规则：子任务 ≤5 个，每个独立可执行，标注依赖和工具。只输出 JSON。`, query, string(researchJSON), string(chosenJSON))
+规则：按需拆分子任务，每个独立可执行，标注依赖和工具。只输出 JSON。`, query, string(researchJSON), string(chosenJSON))
 
 	messages := []kernel.Message{
 		{Role: "system", Content: "你是任务规划专家。基于选定方案生成可执行的详细计划。输出纯JSON。"},
