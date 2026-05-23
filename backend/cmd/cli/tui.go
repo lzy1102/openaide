@@ -352,6 +352,12 @@ func (m *model) updateChat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.viewport.GotoBottom()
 		m.input.SetValue("")
 
+		// ≤3 字跳过规划（如 "hi"）
+		if len([]rune(query)) <= 3 {
+			m.startStream(query)
+			return m, nil
+		}
+
 		// 规划预览：LLM 自主判断是否需要拆分为多步任务
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		plan, err := m.app.Orchestrator.PreviewPlan(ctx, query)
@@ -492,28 +498,50 @@ func (m *model) planConfirmView() string {
 func (m *model) doDeepPlan(query string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
-	result, err := m.app.Orchestrator.DeepPlan(ctx, query)
+
+	// Phase 0: Research
+	m.program.Send(func() tea.Msg { return chunkMsg{thinking: "🔍 研究阶段: 分析现有代码…"} })
+	planner := orchestration.NewPlanner(m.app.LLMGateway)
+	research, err := planner.Research(ctx, query)
 	if err != nil {
-		m.program.Send(func() tea.Msg { return chunkMsg{err: err, done: true} })
+		m.program.Send(func() tea.Msg { return chunkMsg{err: fmt.Errorf("研究阶段失败: %w", err), done: true} })
 		return
 	}
-	m.deepResult = result
+	m.program.Send(func() tea.Msg { return chunkMsg{thinking: "✓ 研究完成 | 复杂度: " + research.Complexity} })
+
+	// Phase 1: Propose
+	m.program.Send(func() tea.Msg { return chunkMsg{thinking: "💡 方案阶段: 生成可选方案…"} })
+	proposals, err := planner.Propose(ctx, query, research)
+	if err != nil {
+		m.program.Send(func() tea.Msg { return chunkMsg{err: fmt.Errorf("方案阶段失败: %w", err), done: true} })
+		return
+	}
+
+	m.deepResult = &orchestration.DeepPlanResult{Research: research, Proposals: proposals}
 	m.state = viewProposalSelect
 	m.proposalSel = 0
-	m.program.Send(func() tea.Msg { return chunkMsg{content: "方案分析完成，请选择方案（1/2/3）", done: true} })
+	m.program.Send(func() tea.Msg { return chunkMsg{thinking: "✓ 方案已生成，请选择（1/2/3）"} })
 }
 
 func (m *model) doDeepPlanFinalize(idx int) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
+
+	m.program.Send(func() tea.Msg { return chunkMsg{thinking: "📋 计划阶段: 生成详细任务计划…"} })
 	plan, err := m.app.Orchestrator.DeepPlanFinalize(ctx, m.pendingQuery, m.deepResult, idx)
 	if err != nil {
 		m.program.Send(func() tea.Msg { return chunkMsg{err: err, done: true} })
 		return
 	}
-	m.pendingPlan = plan
-	m.state = viewPlanConfirm
-	m.program.Send(func() tea.Msg { return chunkMsg{content: "详细计划已生成，请确认", done: true} })
+
+	// 用户已选择方案 = 已确认，直接执行
+	m.state = viewChat
+	m.addSystemMsg("计划已生成，开始执行（程序员 → 测试 → 审查）")
+	m.renderViewport()
+	go m.executePlan(m.pendingQuery, plan)
+	m.pendingPlan = nil
+	m.pendingQuery = ""
+	m.deepResult = nil
 }
 
 func (m *model) proposalSelectView() string {
