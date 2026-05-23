@@ -383,9 +383,15 @@ func (m *model) updateChat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		// 自适应规划深度：LLM 快速分类任务复杂度
 		// PreviewPlan 一次 LLM 调用同时判断复杂度+拆分
+		m.streaming = true
+		m.thinkBuf.WriteString("分析任务复杂度…")
+		m.renderViewport()
 		ctx, cancel := context.WithTimeout(context.Background(), m.app.Orchestrator.PreviewTimeout)
 		plan, err := m.app.Orchestrator.PreviewPlan(ctx, query)
 		cancel()
+		m.streaming = false
+		m.thinkBuf.Reset()
+		m.renderViewport()
 		if err != nil || plan == nil || len(plan.Subtasks) <= 1 {
 			m.startStream(query)
 			return m, nil
