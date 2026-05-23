@@ -153,6 +153,12 @@ func (o *Orchestrator) RunSubAgent(ctx context.Context, userID, projectID, roleN
 		input.WriteString(o.projectFacts)
 		input.WriteString("\n\n")
 	}
+	if o.mind != nil {
+		conventions := o.mind.ConventionsForPrompt()
+		if conventions != "" { input.WriteString(conventions + "\n\n") }
+		failures := o.mind.RecentFailures()
+		if failures != "" { input.WriteString(failures + "\n\n") }
+	}
 	input.WriteString(fmt.Sprintf("## 当前任务\n%s\n\n请完成此任务，输出你的工作结果。", task))
 
 	// 使用唯一 userID 创建真正隔离的临时会话
@@ -212,7 +218,11 @@ func (o *Orchestrator) DeepPlan(ctx context.Context, content string) (*DeepPlanR
 		o.extractFactsFromResearch(research)
 	}
 
-	// Phase 2: Propose alternatives
+	// Phase 2: Propose alternatives (注入历史方案效果)
+	if o.mind != nil {
+		advice := o.mind.StrategyAdvice()
+		if advice != "" { content += "\n\n" + advice }
+	}
 	proposals, err := planner.Propose(ctx, content, research)
 	if err != nil {
 		return nil, fmt.Errorf("propose phase failed: %w", err)
@@ -629,6 +639,17 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 
 	if finalReport == "" {
 		finalReport = fmt.Sprintf("## %s\n\n### 执行结果\n%s\n\n### 验证结果\n%s", plan.Goal, execSummary, testReport)
+	}
+
+	// 记录执行历史 + 自动学习项目约定
+	if o.mind != nil {
+		o.mind.RecordExecution(plan.Goal, strings.Join(pipeline, "+"), true,
+			nil, nil, nil, 0, o.pickModel("coder"))
+		o.mind.UpdateStrategy(strings.Join(pipeline, "+"), true, plan.Goal)
+		// 从测试输出中学习
+		if testReport != "" { o.mind.AnalyzeBuildError(testReport) }
+		o.mind.SessionCount++
+		o.mind.Save()
 	}
 
 	return &kernel.Response{
