@@ -22,6 +22,7 @@ import (
 	"openaide/backend/internal/kernel"
 	"openaide/backend/internal/lang"
 	"openaide/backend/internal/llm"
+	"openaide/backend/internal/orchestration"
 )
 
 type ViewState int
@@ -31,6 +32,7 @@ const (
 	viewSessionList
 	viewModelList
 	viewHelp
+	viewPlanConfirm
 )
 
 const maxHistory = 50
@@ -100,6 +102,9 @@ type model struct {
 	selProvider  int
 	skillTrigger string // slash 命令触发的技能 ID
 	cancelStream context.CancelFunc
+
+	pendingPlan  *orchestration.Plan // 待确认的任务规划
+	pendingQuery string              // 待确认的查询
 }
 
 func initModel(app *infra.Application, continueSess bool) *model {
@@ -164,6 +169,26 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case viewHelp:
 			m.state = viewChat
 			m.input.Focus()
+			return m, nil
+		case viewPlanConfirm:
+			switch msg.String() {
+			case "y":
+				m.state = viewChat
+				m.addSystemMsg("规划已批准，开始执行…")
+				m.renderViewport()
+				go m.executePlan(m.pendingQuery, m.pendingPlan)
+				m.pendingPlan = nil
+				m.pendingQuery = ""
+			case "n", "esc", "ctrl+c":
+				m.state = viewChat
+				q := m.pendingQuery
+				m.pendingPlan = nil
+				m.pendingQuery = ""
+				m.input.Focus()
+				m.addSystemMsg("规划已取消，切换为直接执行")
+				m.renderViewport()
+				m.startStream(q)
+			}
 			return m, nil
 		case viewChat:
 			return m.updateChat(msg)
@@ -320,20 +345,25 @@ func (m *model) updateChat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.viewport.GotoBottom()
 		m.input.SetValue("")
 
-		m.streaming = true
-		m.thinkBuf.Reset()
-		m.aiBuf.Reset()
-		m.err = nil
-		m.input.Blur()
-
-		sessionID := ""
-		if m.currentSess != nil {
-			sessionID = m.currentSess.ID
+		// 规划预览：轻量检查是否需要拆分为多步任务
+		if len([]rune(query)) >= 15 {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			plan, err := m.app.Orchestrator.PreviewPlan(ctx, query)
+			cancel()
+			if err == nil && plan != nil && len(plan.Subtasks) > 1 {
+				m.pendingPlan = plan
+				m.pendingQuery = query
+				m.state = viewPlanConfirm
+				m.input.Blur()
+				m.renderViewport()
+				return m, nil
+			}
 		}
-		ctx, cancel := context.WithCancel(context.Background())
-		m.cancelStream = cancel
-		go doStream(ctx, m.program, m.app, sessionID, query)
+
+		m.startStream(query)
 		return m, nil
+
+
 
 	case "up":
 		if !m.streaming && len(m.history) > 0 {
@@ -387,6 +417,71 @@ func (m *model) addErrorMsg(content string) {
 	m.messages = append(m.messages, chatMsg{role: "error", content: content})
 	m.renderViewport()
 	m.viewport.GotoBottom()
+}
+
+func (m *model) startStream(query string) {
+	m.streaming = true
+	m.thinkBuf.Reset()
+	m.aiBuf.Reset()
+	m.err = nil
+	m.input.Blur()
+	sessionID := ""
+	if m.currentSess != nil {
+		sessionID = m.currentSess.ID
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	m.cancelStream = cancel
+	go doStream(ctx, m.program, m.app, sessionID, query)
+}
+
+func (m *model) executePlan(query string, plan *orchestration.Plan) {
+	m.streaming = true
+	m.thinkBuf.Reset()
+	m.aiBuf.Reset()
+	m.err = nil
+	m.input.Blur()
+	ctx, cancel := context.WithCancel(context.Background())
+	m.cancelStream = cancel
+	go func() {
+		defer cancel()
+		resp, err := m.app.Orchestrator.ProcessQuery(ctx, "cli-user", "default", query, kernel.QueryOptions{ForcePlan: true})
+		if err != nil {
+			m.program.Send(chunkMsg{err: err, done: true})
+			return
+		}
+		m.program.Send(chunkMsg{content: resp.Content, done: true, tokens: resp.TokensUsed, toolCnt: resp.ToolCalls})
+	}()
+}
+
+func (m *model) planConfirmView() string {
+	if m.pendingPlan == nil {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString(planTitleStyle.Render("📋 任务规划"))
+	sb.WriteString("\n\n")
+	sb.WriteString(fmt.Sprintf("目标: %s\n", m.pendingPlan.Goal))
+	sb.WriteString(fmt.Sprintf("子任务: %d 个\n\n", len(m.pendingPlan.Subtasks)))
+	for i, st := range m.pendingPlan.Subtasks {
+		deps := ""
+		if len(st.DependsOn) > 0 {
+			deps = fmt.Sprintf(" (依赖: %v)", st.DependsOn)
+		}
+		sb.WriteString(fmt.Sprintf("  %d. %s%s\n", i+1, st.Title, deps))
+		if st.ToolHints != "" {
+			sb.WriteString(fmt.Sprintf("     工具: %s\n", st.ToolHints))
+		}
+	}
+	sb.WriteString("\n")
+	sb.WriteString(planPromptStyle.Render("[y] 确认执行  [n] 取消(直接执行)"))
+
+	overlay := lipgloss.NewStyle().
+		Width(m.width - 10).
+		Border(lipgloss.DoubleBorder()).
+		BorderForeground(lipgloss.Color("#D4A859")).
+		Padding(0, 1).
+		Render(sb.String())
+	return strings.Repeat("\n", 2) + overlay
 }
 
 func (m *model) handleCommand(cmd string) (tea.Model, tea.Cmd) {
@@ -584,6 +679,8 @@ func (m *model) View() string {
 		return m.chatView() + "\n" + m.modelOverlayView()
 	case viewHelp:
 		return m.chatView() + "\n" + m.helpOverlayView()
+	case viewPlanConfirm:
+		return m.chatView() + "\n" + m.planConfirmView()
 	default:
 		return m.chatView()
 	}
@@ -892,7 +989,7 @@ func init() {
 type tuiTheme struct {
 	user, ai, think, err, tool, toolOut, sys                lipgloss.Style
 	statusBar, input, sessionTitle, sel, helpKey, helpTitle lipgloss.Style
-	helpSection, separator, warn, codeBlock                lipgloss.Style
+	helpSection, separator, warn, codeBlock, planTitle, planPrompt  lipgloss.Style
 }
 
 var theme = tuiTheme{
@@ -913,6 +1010,8 @@ var theme = tuiTheme{
 	separator:   lipgloss.NewStyle().Foreground(lipgloss.Color("#333333")),
 	warn:        lipgloss.NewStyle().Foreground(lipgloss.Color("#D4A859")).Bold(true),
 	codeBlock:   lipgloss.NewStyle().Background(lipgloss.Color("#1a1a2e")).Padding(0, 1),
+	planTitle:   lipgloss.NewStyle().Foreground(lipgloss.Color("#D4A859")).Bold(true),
+	planPrompt:  lipgloss.NewStyle().Foreground(lipgloss.Color("#AAAAAA")),
 }
 
 // shorthand helpers for theme access
@@ -933,6 +1032,8 @@ var (
 	helpSectionStyle = theme.helpSection
 	separatorStyle   = theme.separator
 	warnStyle        = theme.warn
+	planTitleStyle   = theme.planTitle
+	planPromptStyle  = theme.planPrompt
 )
 
 

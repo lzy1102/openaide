@@ -70,6 +70,12 @@ func (o *Orchestrator) SetTeam(t *Team) {
 	o.team = t
 }
 
+// PreviewPlan 仅规划不执行，返回拆分后的计划（用于交互式确认）
+func (o *Orchestrator) PreviewPlan(ctx context.Context, content string) (*Plan, error) {
+	planner := NewPlanner(o.llmGateway)
+	return planner.Plan(ctx, content)
+}
+
 // ProcessQuery 处理用户查询 — LLM 自动判断是否需要拆分任务
 func (o *Orchestrator) ProcessQuery(ctx context.Context, userID, projectID, content string, opts kernel.QueryOptions) (*kernel.Response, error) {
 	// 极短查询直接执行，不浪费 LLM 调用
