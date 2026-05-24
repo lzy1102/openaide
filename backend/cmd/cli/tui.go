@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	osexec "os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -182,6 +183,32 @@ func initModel(app *infra.Application, continueSess bool) *model {
 }
 
 func (m *model) Init() tea.Cmd {
+	// 欢迎横幅
+	info := m.app.LLMGateway.GetProviderInfos()
+	var sb strings.Builder
+	sb.WriteString("\n")
+	sb.WriteString("  ╔══════════════════════════════════════╗\n")
+	sb.WriteString("  ║         OpenAIDE  AI Agent           ║\n")
+	sb.WriteString("  ╚══════════════════════════════════════╝\n")
+	sb.WriteString("\n")
+	if len(info) > 0 {
+		sb.WriteString(fmt.Sprintf("  Model:  %s (%s)\n", info[0].Model, info[0].Name))
+	}
+	sb.WriteString(fmt.Sprintf("  Config: ~/.openaide/config.yaml\n"))
+	sb.WriteString(fmt.Sprintf("  Data:   ./data/\n"))
+	prompt, _ := os.ReadFile(filepath.Join("./data/prompts/system.md"))
+	if prompt == nil {
+		prompt, _ = os.ReadFile(filepath.Join("./data/prompts/system.zh.md"))
+	}
+	if prompt == nil {
+		prompt, _ = os.ReadFile(filepath.Join("./data/prompts/system.en.md"))
+	}
+	if len(prompt) > 0 {
+		sb.WriteString(fmt.Sprintf("  Prompt: %.50s...\n", string(prompt)))
+	}
+	sb.WriteString("\n  /help 查看命令 | /log 查看日志\n")
+	m.messages = append(m.messages, chatMsg{role: "system", content: sb.String()})
+	m.renderViewport()
 	return tea.Batch(
 		textinput.Blink,
 		m.loadSessionList(),
