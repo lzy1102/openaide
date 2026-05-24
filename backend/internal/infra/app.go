@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"time"
@@ -312,7 +313,7 @@ func (app *Application) Stop(ctx context.Context) error {
 	return nil
 }
 
-// InitLogger 初始化日志
+// InitLogger 初始化日志（stderr + 文件双写）
 func InitLogger(level, format string) {
 	var logLevel slog.Level
 	switch level {
@@ -328,13 +329,29 @@ func InitLogger(level, format string) {
 		logLevel = slog.LevelInfo
 	}
 
-	var handler slog.Handler
+	// 日志文件
+	logDir := os.Getenv("HOME") + "/.openaide/logs"
+	os.MkdirAll(logDir, 0755)
+	logFile, err := os.OpenFile(logDir+"/openaide.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		logFile = nil
+	}
+
 	opts := &slog.HandlerOptions{Level: logLevel}
+	var handler slog.Handler
 
 	if format == "json" {
-		handler = slog.NewJSONHandler(os.Stdout, opts)
+		if logFile != nil {
+			handler = slog.NewJSONHandler(io.MultiWriter(os.Stderr, logFile), opts)
+		} else {
+			handler = slog.NewJSONHandler(os.Stderr, opts)
+		}
 	} else {
-		handler = slog.NewTextHandler(os.Stdout, opts)
+		if logFile != nil {
+			handler = slog.NewTextHandler(io.MultiWriter(os.Stderr, logFile), opts)
+		} else {
+			handler = slog.NewTextHandler(os.Stderr, opts)
+		}
 	}
 
 	slog.SetDefault(slog.New(handler))
