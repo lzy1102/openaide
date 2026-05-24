@@ -792,6 +792,8 @@ func (m *model) handleCommand(cmd string) (tea.Model, tea.Cmd) {
 		m.input.SetValue("")
 		m.renderViewport()
 		return m, nil
+	case "/exit", "/quit", "/q":
+		return m, tea.Quit
 	case "/model":
 		if len(parts) >= 2 {
 			m.app.SetModel(parts[1])
