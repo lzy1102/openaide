@@ -203,6 +203,7 @@ func (g *Gateway) ChatWithProvider(ctx context.Context, providerName string, mes
 	}
 
 	start := time.Now()
+	slog.Debug("LLM chat start", "provider", providerName, "model", provider.GetModelID(), "msgs", len(messages), "tools", len(tools))
 	resp, err := provider.Chat(ctx, messages, tools, options)
 	if err != nil {
 		slog.Error("LLM chat failed", "provider", providerName, "error", err, "duration", time.Since(start))
@@ -242,6 +243,7 @@ func (g *Gateway) ChatStreamWithProvider(ctx context.Context, providerName strin
 		return nil, fmt.Errorf("provider not found: %s", providerName)
 	}
 
+	slog.Debug("LLM chat stream start", "provider", providerName, "model", provider.GetModelID(), "msgs", len(messages), "tools", len(tools))
 	return provider.ChatStream(ctx, messages, tools, options)
 }
 

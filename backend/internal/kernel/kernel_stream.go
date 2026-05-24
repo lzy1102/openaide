@@ -338,14 +338,28 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 			slog.Debug("ReAct stream iteration end", "round", round)
 		}
 
-		// 超出最大轮次
+		// 超出最大轮次 → 合成最终回答（smolagents 风格）
 		k.setState(StateIdle)
-		lastMsg := messages[len(messages)-1]
+		slog.Debug("ReAct stream max rounds reached, synthesizing", "rounds", maxRounds, "msgs", len(messages))
+		messages = append(messages, Message{
+			Role: "user",
+			Content: "已达到最大分析轮次。请基于以上所有发现，用中文给出一个完整的总结性回答。不要调用工具，直接输出最终结论。",
+		})
+		resp, err := k.llmProvider.Chat(ctx, messages, nil, map[string]interface{}{"temperature": 0.3, "max_tokens": 2000})
+		if err != nil {
+			slog.Warn("Stream final synthesis failed", "error", err)
+			lastMsg := messages[len(messages)-1]
+			resultChan <- StreamChunk{Type: ChunkTypeDone, Done: true, Usage: &TokenUsage{TotalTokens: totalTokens}, Content: lastMsg.Content}
+			return
+		}
+		if resp.Usage != nil {
+			totalTokens += resp.Usage.TotalTokens
+		}
 		resultChan <- StreamChunk{
 			Type:  ChunkTypeDone,
 			Done:  true,
 			Usage: &TokenUsage{TotalTokens: totalTokens},
-			Content: lastMsg.Content,
+			Content: resp.Content,
 		}
 	}()
 

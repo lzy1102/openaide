@@ -215,8 +215,8 @@ func DefaultConfig() *Config {
 		Kernel: KernelConfig{
 			MaxRounds:    30,
 			MaxTokens:    200000,
-			MinRounds:    5,
-			MaxRoundsCap: 50,
+			MinRounds:    8,
+			MaxRoundsCap: 30,
 		},
 		Planning: PlanningConfig{
 			Enabled:        true,
