@@ -244,13 +244,13 @@ func (k *AgentKernel) getOrCreateSession(ctx context.Context, query *Query) (*Se
 func (k *AgentKernel) buildMessages(session *Session, query *Query) []Message {
 	messages := make([]Message, 0)
 
-	// 系统提示词
+	// === P0: 静态前缀（Prompt Cache 友好） ===
+	// 系统提示词放最前且保持不变，最大化 API 前缀缓存命中
 	systemPrompt := k.systemPrompt
 	if k.skillManager != nil {
 		systemPrompt = k.skillManager.InjectPrompt(query.Content, systemPrompt)
 	}
 	if systemPrompt != "" {
-		// 注入当前工作目录，避免 LLM 幻觉出错误的路径
 		cwd, _ := os.Getwd()
 		promptWithCWD := systemPrompt + fmt.Sprintf("\n\n[当前工作目录] %s\n请在执行文件操作时优先使用此目录。", cwd)
 		messages = append(messages, Message{
@@ -259,7 +259,23 @@ func (k *AgentKernel) buildMessages(session *Session, query *Query) []Message {
 		})
 	}
 
-	// 注入上轮反思结果（提升后续对话质量）
+	// 加载历史对话（紧接系统提示词，保持前缀稳定）
+	if k.memory != nil && len(session.Messages) > 0 {
+		history, err := k.memory.Load(context.Background(), session.ID, 20)
+		if err == nil && len(history) > 0 {
+			messages = append(messages, history...)
+		}
+	}
+
+	// 用户当前查询
+	messages = append(messages, Message{
+		Role:    "user",
+		Content: query.Content,
+	})
+
+	// === 动态尾部：反思/学习/知识放在用户查询之后，不影响前缀缓存 ===
+
+	// 注入上轮反思结果
 	if session.Metadata != nil {
 		if ref, ok := session.Metadata["reflection"]; ok {
 			if r, ok := ref.(*ReflectionResult); ok && r != nil {
@@ -270,21 +286,9 @@ func (k *AgentKernel) buildMessages(session *Session, query *Query) []Message {
 				if len(r.Suggestions) > 0 {
 					hint += fmt.Sprintf(" | 建议: %s", strings.Join(r.Suggestions, "; "))
 				}
-				messages = append(messages, Message{
-					Role:    "system",
-					Content: hint,
-				})
+				messages = append(messages, Message{Role: "system", Content: hint})
 			}
-			// 清除已注入的反思，避免重复使用
 			delete(session.Metadata, "reflection")
-		}
-	}
-
-	// 加载历史记忆
-	if k.memory != nil && len(session.Messages) > 0 {
-		history, err := k.memory.Load(context.Background(), session.ID, 20)
-		if err == nil && len(history) > 0 {
-			messages = append(messages, history...)
 		}
 	}
 
@@ -293,22 +297,17 @@ func (k *AgentKernel) buildMessages(session *Session, query *Query) []Message {
 		insights, err := k.learner.GetInsights(context.Background(), query.Content)
 		if err == nil && len(insights) > 0 {
 			messages = append(messages, Message{
-				Role:    "system",
-				Content: "[历史学习] " + strings.Join(insights, " | "),
+				Role: "system", Content: "[历史学习] " + strings.Join(insights, " | "),
 			})
 		}
 	}
 
-	// 注入相关知识库上下文
+	// 注入知识库上下文
 	if k.knowledgeCollector != nil {
 		ctx := context.Background()
 		kbCtx, docIDs, err := k.knowledgeCollector.InjectContext(ctx, query.Content, 500)
 		if err == nil && kbCtx != "" {
-			messages = append(messages, Message{
-				Role:    "system",
-				Content: kbCtx,
-			})
-			// 记录被注入的知识文档ID到会话，后续用于反馈
+			messages = append(messages, Message{Role: "system", Content: kbCtx})
 			if len(docIDs) > 0 {
 				if session.Metadata == nil {
 					session.Metadata = make(map[string]interface{})
@@ -318,13 +317,7 @@ func (k *AgentKernel) buildMessages(session *Session, query *Query) []Message {
 		}
 	}
 
-	// 用户当前查询
-	messages = append(messages, Message{
-		Role:    "user",
-		Content: query.Content,
-	})
-
-	// 旧工具输出衰减裁剪：保留最近 4 条完整，更早的只保留头尾
+	// 旧工具输出衰减裁剪
 	snipOldToolOutputs(messages)
 
 	return messages

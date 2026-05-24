@@ -58,5 +58,9 @@ func createLLMGateway(cfg *config.Config) *llm.Gateway {
 		gateway.SetRouter(llm.DefaultRouter())
 	}
 
+	// 成本感知路由：小调用用 execution，核心推理用 reasoning
+	gateway.ExecutionModel = cfg.LLM.ModelRouting.Execution
+	gateway.ReasoningModel = cfg.LLM.ModelRouting.Reasoning
+
 	return gateway
 }

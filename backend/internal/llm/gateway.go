@@ -18,6 +18,10 @@ type Gateway struct {
 	cache           *PromptCache
 	router          *Router
 	mu              sync.RWMutex
+
+	// 成本感知路由：小调用走 execution，核心推理走 reasoning
+	ExecutionModel string
+	ReasoningModel string
 }
 
 // Provider LLM 提供商接口（内部使用）
@@ -168,7 +172,25 @@ func (g *Gateway) routeProvider(query string) string {
 }
 
 // Chat 发送聊天请求（智能路由 + 默认提供商）
+// options["route"]: "execution" → 用 flash 模型, "reasoning" → 用 pro 模型
 func (g *Gateway) Chat(ctx context.Context, messages []kernel.Message, tools []kernel.ToolDefinition, options map[string]interface{}) (*kernel.LLMResponse, error) {
+	// 成本感知路由：根据 options["route"] 选择模型
+	if options == nil {
+		options = make(map[string]interface{})
+	}
+	if route, _ := options["route"].(string); route != "" {
+		switch route {
+		case "execution":
+			if g.ExecutionModel != "" {
+				options["model"] = g.ExecutionModel
+			}
+		case "reasoning":
+			if g.ReasoningModel != "" {
+				options["model"] = g.ReasoningModel
+			}
+		}
+	}
+
 	// 从最后一条user消息提取query用于路由
 	query := ""
 	for i := len(messages) - 1; i >= 0; i-- {
@@ -193,6 +215,13 @@ func (g *Gateway) ChatWithProvider(ctx context.Context, providerName string, mes
 
 	if !ok {
 		return nil, fmt.Errorf("provider not found: %s", providerName)
+	}
+
+	// 支持 options["model"] 覆盖模型（成本感知路由）
+	if opts, _ := options["model"].(string); opts != "" {
+		prevModel := provider.GetModelID()
+		provider.SetModelID(opts)
+		defer provider.SetModelID(prevModel)
 	}
 
 	// 检查缓存

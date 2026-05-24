@@ -272,7 +272,7 @@ func (sm *SkillManager) detectWithLLM(query string) *Skill {
 
 	resp, err := sm.llm.Chat(context.Background(), []Message{
 		{Role: "user", Content: fmt.Sprintf("Which skill best matches this query? Reply with the skill ID or 'none'.\n\nSkills:\n%s\nQuery: %s", skillList.String(), query)},
-	}, nil, map[string]interface{}{"max_tokens": 30, "temperature": 0})
+	}, nil, map[string]interface{}{"max_tokens": 30, "temperature": 0, "route": "execution"})
 	if err != nil {
 		return nil
 	}

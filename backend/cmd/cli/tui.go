@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	osexec "os/exec"
@@ -213,7 +214,21 @@ func (m *model) Init() tea.Cmd {
 	if len(prompt) > 0 {
 		sb.WriteString(fmt.Sprintf("  Prompt: %.50s...\n", string(prompt)))
 	}
-	sb.WriteString("\n  /help 查看命令 | /log 查看日志\n")
+	sb.WriteString("\n  /help 查看命令 | /log 查看日志 | /handoff 保存会话\n")
+
+	// 检测上次 handoff，提示恢复
+	if data, err := os.ReadFile("./data/handoff.json"); err == nil {
+		var h struct {
+			SessionID string `json:"session_id"`
+			Messages  int    `json:"messages"`
+			CreatedAt string `json:"created_at"`
+		}
+		if json.Unmarshal(data, &h) == nil && h.SessionID != "" {
+			sb.WriteString(fmt.Sprintf("\n  📋 检测到上次会话 (%d 条消息, %s)", h.Messages, h.CreatedAt[:16]))
+			sb.WriteString("\n  输入\"继续上次的工作\"或发送新任务开始。")
+		}
+	}
+
 	m.messages = append(m.messages, chatMsg{role: "system", content: sb.String()})
 	m.renderViewport()
 	// 用独立 goroutine 驱动 spinner tick，避免 tea.Tick 命令队列竞争
@@ -566,6 +581,30 @@ func (m *model) addSystemMsg(content string) {
 	m.messages = append(m.messages, chatMsg{role: "system", content: content})
 	m.renderViewport()
 	m.viewport.GotoBottom()
+}
+
+// saveHandoff 保存当前会话状态，下次启动可恢复
+func (m *model) saveHandoff() {
+	type Handoff struct {
+		SessionID    string `json:"session_id"`
+		Messages     int    `json:"messages"`
+		Tokens       int    `json:"tokens"`
+		LastActivity string `json:"last_activity"`
+		CreatedAt    string `json:"created_at"`
+	}
+	h := Handoff{
+		Messages:     len(m.messages),
+		Tokens:       m.tokens,
+		LastActivity: "handoff",
+		CreatedAt:    time.Now().Format(time.RFC3339),
+	}
+	if m.currentSess != nil {
+		h.SessionID = m.currentSess.ID
+	}
+	data, _ := json.MarshalIndent(h, "", "  ")
+	os.WriteFile("./data/handoff.json", data, 0644)
+	m.addSystemMsg("📋 会话状态已保存到 ./data/handoff.json")
+	m.addSystemMsg("下次启动时将自动恢复上下文。建议在新会话中说'继续上次的工作'。")
 }
 
 func (m *model) addErrorMsg(content string) {
@@ -981,6 +1020,10 @@ func (m *model) handleCommand(cmd string) (tea.Model, tea.Cmd) {
 		m.addSystemMsg("启动团队协作: 分析员→程序员→审查员…")
 		m.renderViewport()
 		go m.runTeamChain(task)
+		m.input.SetValue("")
+		return m, nil
+	case "/handoff":
+		m.saveHandoff()
 		m.input.SetValue("")
 		return m, nil
 	default:

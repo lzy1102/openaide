@@ -578,8 +578,18 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 			if o.OnProgress != nil {
 				o.OnProgress("verify", fmt.Sprintf("验证轮次 %d/%d", iteration+1, maxIterations))
 			}
-			verifyTask := fmt.Sprintf("总体目标: %s\n\n已完成的工作:\n%s\n\n验证完整性：编译/构建/测试/逻辑检查。\n发现问题直接修复。如果一切正常，报告\"验证通过\"。",
-				plan.Goal, execSummary)
+			verifyTask := fmt.Sprintf(`总体目标: %s
+
+已完成的工作:
+%s
+
+验证步骤（必须实际执行，不能凭猜测）：
+1. 用 execute_command 运行编译或构建命令（如 go build、npm run build）
+2. 用 execute_command 运行测试（如 go test、npm test）
+3. 检查输出：有报错就分析根因，能修复就当场修
+4. 确认所有测试通过后，报告"验证通过"
+
+如果测试失败且无法简单修复，输出具体错误信息。`, plan.Goal, execSummary)
 			testReport, _ = o.RunSubAgent(ctx, userID, projectID, "executor", verifyTask, results)
 			totalTools++
 		}
@@ -780,7 +790,7 @@ func (o *Orchestrator) routePipeline(ctx context.Context, plan *Plan) map[int]st
 		{Role: "system", Content: "你是任务路由器。为每个子任务选择最合适的角色。回复格式: ID=角色,用逗号分隔。"},
 		{Role: "user", Content: prompt},
 	}
-	resp, err := o.llmGateway.Chat(ctx, messages, nil, map[string]interface{}{"max_tokens": 100, "temperature": 0})
+	resp, err := o.llmGateway.Chat(ctx, messages, nil, map[string]interface{}{"max_tokens": 100, "temperature": 0, "route": "execution"})
 	if err != nil {
 		for i := range plan.Subtasks { result[i] = "coder" }
 		return result
