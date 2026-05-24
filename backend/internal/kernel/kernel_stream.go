@@ -355,6 +355,21 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 		if resp.Usage != nil {
 			totalTokens += resp.Usage.TotalTokens
 		}
+		// 追加合成结果到消息历史
+		messages = append(messages, Message{
+			Role: "assistant", Content: resp.Content,
+		})
+		k.saveToMemory(ctx, session.ID, messages)
+		session.Messages = messages
+		session.UpdatedAt = time.Now()
+		ensureSessionTitle(session)
+		k.sessionStore.Update(ctx, session)
+
+		if k.reflection != nil {
+			go k.doReflection(ctx, session.ID, query.Content, resp.Content, totalToolCalls)
+		}
+
+		k.setState(StateIdle)
 		resultChan <- StreamChunk{
 			Type:  ChunkTypeDone,
 			Done:  true,
