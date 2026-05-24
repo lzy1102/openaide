@@ -354,13 +354,13 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.sysMsg != "" {
 			m.messages = append(m.messages, chatMsg{role: "system", content: msg.sysMsg})
 			m.renderViewport()
-			m.viewport.GotoBottom()
+			m.smartScroll()
 			return m, nil
 		}
 		if msg.toolCall {
 			m.messages = append(m.messages, chatMsg{role: "tool_call", content: msg.toolName})
 			m.renderViewport()
-			m.viewport.GotoBottom()
+			m.smartScroll()
 			return m, nil
 		}
 		if msg.done {
@@ -379,7 +379,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.thinkBuf.Reset()
 			m.input.Focus()
 		m.renderViewport()
-		m.viewport.GotoBottom()
+		m.smartScroll()
 		// 自动发送排队消息
 		if m.queuedQuery != "" {
 			q := m.queuedQuery
@@ -391,7 +391,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if msg.content != "" {
 			m.aiBuf.WriteString(msg.content)
 			m.renderViewport()
-			m.viewport.GotoBottom()
+			m.smartScroll()
 		}
 		if msg.thinking != "" {
 			m.thinkBuf.WriteString(msg.thinking)
@@ -518,7 +518,7 @@ func (m *model) updateChat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		m.messages = append(m.messages, chatMsg{role: "user", content: query})
 		m.renderViewport()
-		m.viewport.GotoBottom()
+		m.smartScroll()
 		m.input.SetValue("")
 
 		// ≤3 字跳过规划（如 "hi"）
@@ -584,10 +584,17 @@ func (m *model) updateChat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// smartScroll 只在用户处于底部时才自动滚到底，允许手动上翻
+func (m *model) smartScroll() {
+	if m.viewport.AtBottom() {
+		m.viewport.GotoBottom()
+	}
+}
+
 func (m *model) addSystemMsg(content string) {
 	m.messages = append(m.messages, chatMsg{role: "system", content: content})
 	m.renderViewport()
-	m.viewport.GotoBottom()
+	m.smartScroll()
 }
 
 // saveHandoff 保存当前会话状态，下次启动可恢复
@@ -617,7 +624,7 @@ func (m *model) saveHandoff() {
 func (m *model) addErrorMsg(content string) {
 	m.messages = append(m.messages, chatMsg{role: "error", content: content})
 	m.renderViewport()
-	m.viewport.GotoBottom()
+	m.smartScroll()
 }
 
 
