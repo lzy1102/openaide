@@ -37,6 +37,7 @@ const (
 	viewHelp
 	viewPlanConfirm
 	viewProposalSelect
+	viewLangList
 )
 
 const maxHistory = 50
@@ -80,6 +81,10 @@ type sessionDeletedMsg struct {
 	err error
 }
 
+type langChoice struct {
+	code, name string
+}
+
 type model struct {
 	app     *infra.Application
 	program *tea.Program
@@ -117,7 +122,9 @@ type model struct {
 	pendingPlan  *orchestration.Plan // 待确认的任务规划
 	pendingQuery string              // 待确认的查询
 	deepResult   *orchestration.DeepPlanResult      // 深度规划结果
-	proposalSel  int                                 // 方案选择游标
+	proposalSel  int
+	langChoices  []langChoice
+	langSel      int                                 // 方案选择游标
 }
 
 func initModel(app *infra.Application, continueSess bool) *model {
@@ -614,6 +621,43 @@ func (m *model) executePlan(query string, plan *orchestration.Plan) {
 	}()
 }
 
+func (m *model) updateLangList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if m.langSel > 0 { m.langSel-- }
+	case "down", "j":
+		if m.langSel < len(m.langChoices)-1 { m.langSel++ }
+	case "enter":
+		if m.langSel >= 0 && m.langSel < len(m.langChoices) {
+			lc := m.langChoices[m.langSel]
+			if lc.code == "zh" { lang.SetLang(lang.ZH) } else { lang.SetLang(lang.EN) }
+			m.addSystemMsg(fmt.Sprintf("语言已切换: %s", lc.name))
+		}
+		m.state = viewChat
+		m.input.Focus()
+	case "esc", "q":
+		m.state = viewChat
+		m.input.Focus()
+	}
+	return m, nil
+}
+
+func (m *model) langListView() string {
+	var sb strings.Builder
+	sb.WriteString(planTitleStyle.Render("Language / 语言"))
+	sb.WriteString("\n\n")
+	for i, lc := range m.langChoices {
+		prefix := "  "
+		if i == m.langSel { prefix = "▸ " }
+		sb.WriteString(fmt.Sprintf("%s%s\n", prefix, lc.name))
+	}
+	sb.WriteString("\n" + planPromptStyle.Render("↑/↓ 选择  Enter 确认  esc 取消"))
+	overlay := lipgloss.NewStyle().Width(m.width-10).Border(lipgloss.DoubleBorder()).
+		BorderForeground(lipgloss.Color("#6C8EBF")).Padding(0,1).Render(sb.String())
+	return strings.Repeat("\n", 2) + overlay
+}
+
+
 func (m *model) planConfirmView() string {
 	if m.pendingPlan == nil {
 		return ""
@@ -767,25 +811,11 @@ func (m *model) handleCommand(cmd string) (tea.Model, tea.Cmd) {
 		m.input.SetValue("")
 		return m, nil
 	case "/lang":
-		if len(parts) >= 2 {
-			switch parts[1] {
-			case "zh":
-				lang.SetLang(lang.ZH)
-				m.addSystemMsg("语言已切换为中文")
-			case "en":
-				lang.SetLang(lang.EN)
-				m.addSystemMsg("Language switched to English")
-			default:
-				m.addSystemMsg("用法: /lang zh | /lang en")
-			}
-		} else {
-			cur := lang.GetLang()
-			if cur == lang.ZH {
-				m.addSystemMsg("当前语言: 中文。切换: /lang en")
-			} else {
-				m.addSystemMsg("Current: English. Switch: /lang zh")
-			}
-		}
+		m.langChoices = []langChoice{{"zh", "中文"}, {"en", "English"}}
+		m.langSel = 0
+		if lang.GetLang() == lang.ZH { m.langSel = 0 } else { m.langSel = 1 }
+		m.state = viewLangList
+		m.input.Blur()
 		m.input.SetValue("")
 		return m, nil
 	case "/analyst", "/coder", "/reviewer", "/executor":
@@ -977,6 +1007,8 @@ func (m *model) View() string {
 		return m.chatView() + "\n" + m.helpOverlayView()
 	case viewPlanConfirm:
 		return m.chatView() + "\n" + m.planConfirmView()
+	case viewLangList:
+		return m.chatView() + "\n" + m.langListView()
 	case viewProposalSelect:
 		return m.chatView() + "\n" + m.proposalSelectView()
 	default:
