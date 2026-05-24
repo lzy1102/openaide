@@ -139,7 +139,12 @@ func runREPL(app *infra.Application) {
 					thinkShown = false
 				}
 				if chunk.Type == kernel.ChunkTypeToolDone {
-					fmt.Print("✓")
+					summary := ""
+					if chunk.ToolResult != nil {
+						raw := fmt.Sprintf("%v", chunk.ToolResult.Content)
+						summary = strings.TrimPrefix(strings.SplitN(raw, "\n", 2)[0], "// ")
+					}
+					PrintToolDone(summary)
 				}
 			}
 		}()

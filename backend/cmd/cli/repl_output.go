@@ -73,17 +73,18 @@ func PrintThinking(text string) {
 	fmt.Printf("%s  [think] %s%s\n", gray, firstLine, reset)
 }
 
-// PrintToolCall displays a tool being called
+// PrintToolCall displays a tool being called (always on new line)
 func PrintToolCall(name string) {
-	fmt.Printf("\n  %s⚙ %s%s ", yellow, name, reset)
+	fmt.Printf("\n  %s⚙ %s%s", yellow, name, reset)
 }
 
 // PrintToolDone displays a completed tool with result summary
 func PrintToolDone(summary string) {
-	fmt.Printf("%s✓%s", green, reset)
+	fmt.Printf(" %s✓%s", green, reset)
 	if summary != "" {
-		fmt.Printf(" %s%s%s", gray, trunc(summary, 100), reset)
+		fmt.Printf(" %s%s%s", gray, trunc(summary, 80), reset)
 	}
+	fmt.Println()
 }
 
 // PrintStatusLine prints the final status bar after completion
