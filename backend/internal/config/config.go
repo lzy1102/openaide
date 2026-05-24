@@ -207,7 +207,7 @@ func DefaultConfig() *Config {
 			Providers:       []ProviderConfig{},
 		},
 		Memory: MemoryConfig{
-			DataDir: "./data/memory",
+			DataDir: "~/.openaide/data/memory",
 		},
 		Tools: ToolsConfig{
 			DangerousTools: []string{"execute_command", "write_file"},
@@ -225,7 +225,7 @@ func DefaultConfig() *Config {
 			MaxProposals:   3,
 		},
 		Storage: StorageConfig{
-			DataDir: "./data",
+			DataDir: "~/.openaide/data",
 		},
 		Browser: BrowserConfig{
 			Enabled: false,
