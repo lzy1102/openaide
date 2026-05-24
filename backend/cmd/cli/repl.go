@@ -106,72 +106,45 @@ func runREPL(app *infra.Application) {
 		// Goroutine to handle Ctrl+C during streaming
 
 		startTime := time.Now()
-		totalTools := 0
-		totalTokens := 0
-		var fullResponse strings.Builder
-		thinkShown := false
+	totalTools := 0
+	totalTokens := 0
+	thinkShown := false
 
-		// Consume stream
-		streamDone := make(chan struct{})
-		go func() {
-			defer close(streamDone)
-			for chunk := range stream {
-				if chunk.Error != nil {
-					PrintError(chunk.Error.Error())
-					return
-				}
-				if chunk.Done {
-					fmt.Println()
-					return
-				}
-
-				if chunk.ReasoningContent != "" && !thinkShown {
-					PrintThinking(chunk.ReasoningContent)
-					thinkShown = true
-				}
-				if chunk.Content != "" {
-					fmt.Print(chunk.Content)
-					fullResponse.WriteString(chunk.Content)
-				}
-				if chunk.Type == kernel.ChunkTypeToolCall && chunk.ToolName != "" {
-					PrintToolCall(chunk.ToolName)
-					totalTools++
-					thinkShown = false
-				}
-				if chunk.Type == kernel.ChunkTypeToolDone {
-					summary := ""
-					if chunk.ToolResult != nil {
-						raw := fmt.Sprintf("%v", chunk.ToolResult.Content)
-						summary = strings.TrimPrefix(strings.SplitN(raw, "\n", 2)[0], "// ")
-					}
-					PrintToolDone(summary)
-				}
+	for chunk := range stream {
+		if chunk.Error != nil {
+			PrintError(chunk.Error.Error())
+			break
+		}
+		if chunk.Done {
+			fmt.Println()
+			break
+		}
+		if chunk.ReasoningContent != "" && !thinkShown {
+			PrintThinking(chunk.ReasoningContent)
+			thinkShown = true
+		}
+		if chunk.Content != "" {
+			fmt.Print(chunk.Content)
+		}
+		if chunk.Type == kernel.ChunkTypeToolCall && chunk.ToolName != "" {
+			PrintToolCall(chunk.ToolName)
+			totalTools++
+			thinkShown = false
+		}
+		if chunk.Type == kernel.ChunkTypeToolDone {
+			summary := ""
+			if chunk.ToolResult != nil {
+				raw := fmt.Sprintf("%v", chunk.ToolResult.Content)
+				summary = strings.TrimPrefix(strings.SplitN(raw, "\n", 2)[0], "// ")
 			}
-		}()
-
-		// Wait for stream OR cancellation
-		select {
-		case <-streamDone:
-		case <-ctx.Done():
-			fmt.Println()
-			PrintWarning("Interrupted")
-			cancel()
-			// Drain remaining stream
-			go func() { for range stream {} }()
-			<-streamDone
+			PrintToolDone(summary)
 		}
-		cancel()
+	}
 
-		elapsed := time.Since(startTime)
-
-		// Render markdown response
-		if fullResponse.Len() > 0 {
-			fmt.Println()
-			rendered := RenderMarkdown(fullResponse.String())
-			fmt.Println(rendered)
-		}
-
-		PrintStatusLine(totalTokens, totalTools, elapsed)
+	elapsed := time.Since(startTime)
+	cancel()
+	fmt.Println()
+	PrintStatusLine(totalTokens, totalTools, elapsed)
 		rl.SetPrompt(PromptStyle(sessionID, modelName))
 	}
 }
