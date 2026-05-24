@@ -60,6 +60,7 @@ type previewResultMsg struct {
 type chunkMsg struct {
 	content   string
 	thinking  string
+	sysMsg    string // 系统消息（追加到消息列表，不覆盖）
 	done      bool
 	tokens    int
 	toolCnt   int
@@ -348,6 +349,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.streaming = false
 			m.input.Focus()
 			m.renderViewport()
+			return m, nil
+		}
+		if msg.sysMsg != "" {
+			m.messages = append(m.messages, chatMsg{role: "system", content: msg.sysMsg})
+			m.renderViewport()
+			m.viewport.GotoBottom()
 			return m, nil
 		}
 		if msg.toolCall {
@@ -745,7 +752,8 @@ func (m *model) executePlan(query string, plan *orchestration.Plan) {
 			icon = "🔍"
 		}
 		currentStep = fmt.Sprintf("%s %s", icon, detail)
-		m.program.Send(chunkMsg{thinking: currentStep})
+		// 追加到消息列表（累积显示），不用 thinking（会被覆盖）
+		m.program.Send(chunkMsg{sysMsg: currentStep})
 	}
 
 	go func() {
@@ -763,7 +771,7 @@ func (m *model) executePlan(query string, plan *orchestration.Plan) {
 				case <-heartbeat.C:
 					elapsed := time.Since(start).Round(time.Second)
 					if currentStep != "" {
-						m.program.Send(chunkMsg{thinking: fmt.Sprintf("%s (%v)", currentStep, elapsed)})
+						m.program.Send(chunkMsg{sysMsg: fmt.Sprintf("%s (已用 %v)", currentStep, elapsed)})
 					}
 				case <-hbDone:
 					return
