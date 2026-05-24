@@ -108,6 +108,7 @@ func runREPL(app *infra.Application) {
 		startTime := time.Now()
 	totalTools := 0
 	totalTokens := 0
+	var fullResponse strings.Builder
 	thinkShown := false
 
 	for chunk := range stream {
@@ -116,15 +117,15 @@ func runREPL(app *infra.Application) {
 			break
 		}
 		if chunk.Done {
-			fmt.Println()
 			break
 		}
 		if chunk.ReasoningContent != "" && !thinkShown {
 			PrintThinking(chunk.ReasoningContent)
 			thinkShown = true
 		}
+		// 积累正文（不流式打印），结束后统一 Markdown 渲染
 		if chunk.Content != "" {
-			fmt.Print(chunk.Content)
+			fullResponse.WriteString(chunk.Content)
 		}
 		if chunk.Type == kernel.ChunkTypeToolCall && chunk.ToolName != "" {
 			PrintToolCall(chunk.ToolName)
@@ -143,7 +144,14 @@ func runREPL(app *infra.Application) {
 
 	elapsed := time.Since(startTime)
 	cancel()
-	fmt.Println()
+
+	// 流式结束后一次性渲染完整回答（Markdown + 代码高亮）
+	if fullResponse.Len() > 0 {
+		fmt.Println()
+		rendered := RenderMarkdown(fullResponse.String())
+		fmt.Println(rendered)
+	}
+
 	PrintStatusLine(totalTokens, totalTools, elapsed)
 		rl.SetPrompt(PromptStyle(sessionID, modelName))
 	}
