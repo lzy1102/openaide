@@ -375,15 +375,40 @@ func (m *AppModel) startDeepPlan(query string) tea.Cmd {
 }
 
 func (m *AppModel) processStream(ctx context.Context, stream <-chan kernel.StreamChunk) {
+	// 异步转发：缓冲通道解耦 stream 消费和 p.Send()
+	msgBuf := make(chan tea.Msg, 64)
+	defer close(msgBuf)
+	go func() {
+		for msg := range msgBuf {
+			m.program.Send(msg)
+		}
+	}()
+
+	// Content/thinking 合并发送，降低消息频率
+	var bufContent, bufThinking strings.Builder
+	flushTick := time.NewTicker(50 * time.Millisecond)
+	defer flushTick.Stop()
+	flush := func() {
+		c := bufContent.String()
+		t := bufThinking.String()
+		bufContent.Reset()
+		bufThinking.Reset()
+		if c != "" || t != "" {
+			msgBuf <- StreamContentMsg{Content: c, Thinking: t}
+		}
+	}
+
 	totalTools := 0
 	totalTokens := 0
 
 	for chunk := range stream {
 		if chunk.Error != nil {
+			flush()
 			m.program.Send(StreamDoneMsg{Err: chunk.Error})
 			return
 		}
 		if chunk.Done {
+			flush()
 			m.program.Send(StreamDoneMsg{Tokens: totalTokens, Tools: totalTools})
 			return
 		}
@@ -392,17 +417,26 @@ func (m *AppModel) processStream(ctx context.Context, stream <-chan kernel.Strea
 		}
 		switch chunk.Type {
 		case kernel.ChunkTypeToolCall:
-			m.program.Send(StreamToolMsg{Name: chunk.ToolName, IsCall: true})
+			flush()
+			msgBuf <- StreamToolMsg{Name: chunk.ToolName, IsCall: true}
 		case kernel.ChunkTypeToolDone:
+			flush()
 			if chunk.ToolResult != nil {
 				raw := fmt.Sprintf("%v", chunk.ToolResult.Content)
 				summary := strings.TrimPrefix(strings.SplitN(raw, "\n", 2)[0], "// ")
-				m.program.Send(StreamToolMsg{Name: chunk.ToolName, Summary: trunc(summary, 120)})
+				msgBuf <- StreamToolMsg{Name: chunk.ToolName, Summary: trunc(summary, 120)}
 			}
 		default:
-			m.program.Send(StreamContentMsg{Content: chunk.Content, Thinking: chunk.ReasoningContent})
+			bufContent.WriteString(chunk.Content)
+			bufThinking.WriteString(chunk.ReasoningContent)
+			select {
+			case <-flushTick.C:
+				flush()
+			default:
+			}
 		}
 	}
+	flush()
 }
 
 func (m *AppModel) handleCommand(cmd string) (tea.Model, tea.Cmd) {

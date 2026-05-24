@@ -88,9 +88,6 @@ func (b *InputBar) Update(msg tea.Msg) (string, tea.Cmd) {
 }
 
 func (b *InputBar) View() string {
-	if b.streaming {
-		return inputStyle.Render(icons.busy+" " + b.input.View())
-	}
 	return inputStyle.Render(b.input.View())
 }
 
