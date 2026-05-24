@@ -329,7 +329,9 @@ func (p *OpenAIProvider) buildRequestBody(messages []kernel.Message, tools []ker
 
 	// DeepSeek 特有参数 - 只在检测到 DeepSeek 时发送
 	if p.isDeepSeek() {
-		if p.config.Thinking != nil {
+		if p.isDeepSeek() && p.config.Thinking == nil {
+			body["thinking"] = map[string]string{"type": "disabled"}
+		} else if p.config.Thinking != nil {
 			body["thinking"] = map[string]string{
 				"type": p.config.Thinking.Type,
 			}
@@ -377,10 +379,7 @@ func (p *OpenAIProvider) convertMessages(messages []kernel.Message) []map[string
 			"role":    msg.Role,
 			"content": content,
 		}
-		// DeepSeek thinking 模式要求 assistant 消息必须带 reasoning_content
-		if msg.Role == "assistant" && p.isDeepSeek() {
-			m["reasoning_content"] = msg.ReasoningContent
-		} else if msg.ReasoningContent != "" {
+		if msg.ReasoningContent != "" {
 			m["reasoning_content"] = msg.ReasoningContent
 		}
 		if msg.Name != "" {
