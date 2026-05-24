@@ -370,7 +370,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			text := m.aiBuf.String()
 			if m.thinkBuf.Len() > 0 {
 				think := m.thinkBuf.String()
-				text = thinkStyle.Render("[think] "+trunc(think, 500)) + "\n" + text
+				text = thinkStyle.Render("[think] "+trunc(strings.SplitN(think, "\n", 2)[0], 120)) + "\n" + text
 			}
 			if text != "" {
 				m.messages = append(m.messages, chatMsg{role: "assistant", content: text})
@@ -395,7 +395,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.thinking != "" {
 			m.thinkBuf.WriteString(msg.thinking)
-			m.renderViewport()
+			// 流式中不重绘思考内容，减少闪烁
 		}
 		return m, nil
 
@@ -452,7 +452,7 @@ func (m *model) updateChat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			text := m.aiBuf.String()
 			if m.thinkBuf.Len() > 0 {
 				think := m.thinkBuf.String()
-				text = thinkStyle.Render("[think] "+trunc(think, 500)) + "\n" + text
+				text = thinkStyle.Render("[think] "+trunc(strings.SplitN(think, "\n", 2)[0], 120)) + "\n" + text
 			}
 			if text != "" {
 				m.messages = append(m.messages, chatMsg{role: "assistant", content: text})
@@ -1191,7 +1191,7 @@ func (m *model) loadChatHistory() {
 	for _, msg := range msgs {
 		display := msg.Content
 		if msg.ReasoningContent != "" {
-			display = thinkStyle.Render("[think] "+trunc(msg.ReasoningContent, 500)) + "\n" + display
+			display = thinkStyle.Render("[think] "+trunc(strings.SplitN(msg.ReasoningContent, "\n", 2)[0], 120)) + "\n" + display
 		}
 		m.messages = append(m.messages, chatMsg{role: msg.Role, content: display})
 	}
