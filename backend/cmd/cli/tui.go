@@ -291,20 +291,20 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case previewResultMsg:
 		m.streaming = false
+		m.streaming = false
 		if msg.err != nil || msg.plan == nil || len(msg.plan.Subtasks) <= 1 {
 			m.startStream(msg.query)
 			return m, nil
 		}
 		if len(msg.plan.Subtasks) >= 4 {
 			m.pendingQuery = msg.query
-			m.addSystemMsg("检测到复杂任务，开始深度分析…")
+			m.addSystemMsg("🔍 研究阶段: 分析现有代码…")
 			m.renderViewport()
 			go m.doDeepPlan(msg.query)
 		} else {
 			m.pendingPlan = msg.plan
 			m.pendingQuery = msg.query
 			m.state = viewPlanConfirm
-			m.input.Blur()
 			m.renderViewport()
 		}
 
@@ -428,7 +428,6 @@ func (m *model) updateChat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+s":
 		if !m.streaming {
 			m.state = viewSessionList
-			m.input.Blur()
 			m.selSession = -1
 			return m, m.loadSessionList()
 		}
@@ -445,7 +444,6 @@ func (m *model) updateChat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "f1", "ctrl+h":
 		if !m.streaming {
 			m.state = viewHelp
-			m.input.Blur()
 			return m, nil
 		}
 
@@ -555,7 +553,6 @@ func (m *model) runSingleRole(role, task string) {
 	m.thinkBuf.Reset()
 	m.aiBuf.Reset()
 	m.err = nil
-	m.input.Blur()
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancelMu.Lock()
 	m.cancelStream = cancel
@@ -577,7 +574,6 @@ func (m *model) runTeamChain(task string) {
 	m.thinkBuf.Reset()
 	m.aiBuf.Reset()
 	m.err = nil
-	m.input.Blur()
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancelMu.Lock()
 	m.cancelStream = cancel
@@ -664,7 +660,6 @@ func (m *model) executePlan(query string, plan *orchestration.Plan) {
 	m.thinkBuf.Reset()
 	m.aiBuf.Reset()
 	m.err = nil
-	m.input.Blur()
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancelStream = cancel
 	go func() {
@@ -859,12 +854,10 @@ func (m *model) handleCommand(cmd string) (tea.Model, tea.Cmd) {
 	switch parts[0] {
 	case "/help":
 		m.state = viewHelp
-		m.input.Blur()
 		return m, nil
 	case "/log":
 		m.state = viewLog
 		m.logBuf = tuiLogBuf.buf
-		m.input.Blur()
 		m.input.SetValue("")
 		return m, nil
 	case "/clear":
@@ -891,7 +884,6 @@ func (m *model) handleCommand(cmd string) (tea.Model, tea.Cmd) {
 				}
 			}
 			m.state = viewModelList
-			m.input.Blur()
 		}
 		m.input.SetValue("")
 		return m, nil
@@ -900,7 +892,6 @@ func (m *model) handleCommand(cmd string) (tea.Model, tea.Cmd) {
 		m.langSel = 0
 		if lang.GetLang() == lang.ZH { m.langSel = 0 } else { m.langSel = 1 }
 		m.state = viewLangList
-		m.input.Blur()
 		m.input.SetValue("")
 		return m, nil
 	case "/analyst", "/coder", "/reviewer", "/executor":
