@@ -238,7 +238,9 @@ func (m *model) Init() tea.Cmd {
 	}
 
 	m.messages = append(m.messages, chatMsg{role: "system", content: sb.String()})
-	m.renderViewport()
+	// 初始渲染可能在前 WindowSizeMsg 之前，force 一把
+	m.viewport.SetContent(sb.String())
+	m.viewport.GotoTop()
 	// 用独立 goroutine 驱动 spinner tick，避免 tea.Tick 命令队列竞争
 	go func() {
 		ticker := time.NewTicker(100 * time.Millisecond)
