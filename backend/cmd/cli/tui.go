@@ -291,7 +291,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case previewResultMsg:
 		m.streaming = false
-		m.streaming = false
 		if msg.err != nil || msg.plan == nil || len(msg.plan.Subtasks) <= 1 {
 			m.startStream(msg.query)
 			return m, nil
