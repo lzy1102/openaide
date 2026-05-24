@@ -80,7 +80,7 @@ func runREPL(app *infra.Application) {
 				}
 				continue
 			case "/log":
-				lines := tuiLogBuf.buf
+				lines := tuiLogBuf.snapshot()
 				start := 0
 				if len(lines) > 20 {
 					start = len(lines) - 20

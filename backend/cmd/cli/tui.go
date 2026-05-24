@@ -123,7 +123,6 @@ type model struct {
 
 	providers    []llm.ProviderInfo
 	selProvider  int
-	skillTrigger string // slash 命令触发的技能 ID
 	cancelStream context.CancelFunc
 	cancelMu     sync.Mutex
 
@@ -149,6 +148,14 @@ func (r *logRing) Write(p []byte) (int, error) {
 	r.buf = append(r.buf, strings.TrimSpace(string(p)))
 	if len(r.buf) > 50 { r.buf = r.buf[1:] }
 	return len(p), nil
+}
+
+func (r *logRing) snapshot() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	c := make([]string, len(r.buf))
+	copy(c, r.buf)
+	return c
 }
 
 var tuiLogBuf = &logRing{buf: make([]string, 0, 50)}
@@ -1001,7 +1008,7 @@ func (m *model) handleCommand(cmd string) (tea.Model, tea.Cmd) {
 	case "/log":
 		m.state = viewLog
 		m.input.Blur()
-		m.logBuf = tuiLogBuf.buf
+		m.logBuf = tuiLogBuf.snapshot()
 		m.input.SetValue("")
 		return m, nil
 	case "/clear":
@@ -1087,7 +1094,6 @@ func (m *model) handleCommand(cmd string) (tea.Model, tea.Cmd) {
 			if skillID, ok := slashCmds[parts[0]]; ok {
 				m.addSystemMsg(fmt.Sprintf("已激活技能: %s", skillID))
 				m.input.SetValue("")
-				m.skillTrigger = skillID
 				return m, nil
 			}
 		}
@@ -1460,7 +1466,9 @@ func (m *model) renderViewport() {
 	for i := start; i < len(m.messages); i++ {
 		msg := m.messages[i]
 		if i > start && m.messages[i-1].role != msg.role {
-			sb.WriteString(separatorStyle.Render("─") + "\n")
+			w := m.width - 6
+			if w < 20 { w = 20 }
+			sb.WriteString(separatorStyle.Render(strings.Repeat("â", w)) + "\n")
 		}
 		switch msg.role {
 		case "user":
