@@ -1196,6 +1196,7 @@ func (m *model) loadChatHistory() {
 		m.messages = append(m.messages, chatMsg{role: msg.Role, content: display})
 	}
 	m.renderViewport()
+	m.viewport.GotoBottom()
 }
 
 func (m *model) loadSessionList() tea.Cmd {
@@ -1452,7 +1453,7 @@ func (m *model) renderViewport() {
 		case "error":
 			sb.WriteString(errStyle.Render("✗ " + msg.content))
 		case "system":
-			sb.WriteString(sysStyle.Render(icons.system+" " + msg.content))
+			sb.WriteString(sysStyle.Render(icons.system+" " + trunc(strings.SplitN(msg.content, "\n", 2)[0], 120)))
 		case "tool_call":
 			sb.WriteString(toolStyle.Render(icons.gear+" " + msg.content))
 		case "tool":
