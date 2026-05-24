@@ -247,7 +247,7 @@ func main() {
 		return
 	}
 
-	m := initModel(app, flags.continueSess)
+	m := NewAppModel(app, flags.continueSess)
 	p := tea.NewProgram(m,
 		tea.WithAltScreen(),
 		tea.WithMouseCellMotion(),
