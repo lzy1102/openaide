@@ -185,6 +185,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case viewSessionList:
 			return m.updateSessionList(msg)
 		case viewModelList:
+		case viewLangList:
+			return m.updateLangList(msg)
 			return m.updateModelList(msg)
 		case viewHelp:
 			m.state = viewChat
