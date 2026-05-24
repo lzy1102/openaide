@@ -397,7 +397,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.thinkBuf.Reset()
 			m.input.Focus()
 		m.renderViewport()
-		m.smartScroll()
+		m.viewport.GotoBottom()
 		// 自动发送排队消息
 		if m.queuedQuery != "" {
 			q := m.queuedQuery
@@ -1468,7 +1468,7 @@ func (m *model) renderViewport() {
 		if i > start && m.messages[i-1].role != msg.role {
 			w := m.width - 6
 			if w < 20 { w = 20 }
-			sb.WriteString(separatorStyle.Render(strings.Repeat("â", w)) + "\n")
+			sb.WriteString(separatorStyle.Render(strings.Repeat("-", w)) + "\n")
 		}
 		switch msg.role {
 		case "user":
