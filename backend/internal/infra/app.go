@@ -343,12 +343,16 @@ func InitLogger(level, format string) {
 	opts := &slog.HandlerOptions{Level: logLevel}
 	var handler slog.Handler
 
-	writers := []io.Writer{os.Stderr}
+	var writers []io.Writer
+	if TUILogWriter != nil {
+		// 交互模式 (TUI/REPL): 文件 + ring buffer, 不污染终端
+		writers = append(writers, TUILogWriter)
+	} else {
+		// 服务模式: stderr
+		writers = append(writers, os.Stderr)
+	}
 	if logFile != nil {
 		writers = append(writers, logFile)
-	}
-	if TUILogWriter != nil {
-		writers = append(writers, TUILogWriter)
 	}
 	multiWriter := io.MultiWriter(writers...)
 
