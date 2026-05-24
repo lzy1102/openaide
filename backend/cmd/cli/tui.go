@@ -1533,8 +1533,12 @@ func doStream(ctx context.Context, p *tea.Program, app *infra.Application, sessi
 		case kernel.ChunkTypeToolDone:
 			flush()
 			if chunk.ToolResult != nil {
-				summary := fmt.Sprintf("%v", chunk.ToolResult.Content)
-				msgBuf <- chunkMsg{toolCall: true, toolName: icons.result+" " + trunc(summary, 200)}
+				// 只显示第一行摘要，不显示原始文件内容
+				raw := fmt.Sprintf("%v", chunk.ToolResult.Content)
+				summary := strings.SplitN(raw, "\n", 2)[0]
+				// 去掉 "// " 前缀（工具输出注释）
+				summary = strings.TrimPrefix(summary, "// ")
+				msgBuf <- chunkMsg{toolCall: true, toolName: icons.result+" " + trunc(summary, 120)}
 			}
 		default:
 			bufContent.WriteString(chunk.Content)
