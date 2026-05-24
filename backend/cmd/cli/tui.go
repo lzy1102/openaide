@@ -111,6 +111,7 @@ type model struct {
 	currentSess *kernel.Session
 
 	spinner int // 加载动画帧
+	planning bool // 深度分析进行中
 
 	tokens         int
 	tools          int
@@ -227,7 +228,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case spinnerTick:
 		m.spinner = (m.spinner + 1) % 10
-		if m.streaming || m.state == viewProposalSelect {
+		if m.streaming || m.planning || m.state == viewProposalSelect {
 			return m, tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg { return spinnerTick{} })
 		}
 
@@ -775,6 +776,8 @@ func (m *model) planConfirmView() string {
 }
 
 func (m *model) doDeepPlan(query string) {
+	m.planning = true
+	defer func() { m.planning = false }()
 	ctx, cancel := context.WithTimeout(context.Background(), m.app.Orchestrator.DeepTimeout)
 	defer cancel()
 
@@ -1134,7 +1137,7 @@ func (m *model) chatView() string {
 		statusParts = append(statusParts, fmt.Sprintf(icons.folder+" %s", title))
 	}
 	spinnerFrames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-	if m.streaming || m.state == viewProposalSelect {
+	if m.streaming || m.planning || m.state == viewProposalSelect {
 		frame := spinnerFrames[m.spinner]
 		statusParts = append(statusParts, frame+" "+lang.T("mode.thinking"))
 	}
