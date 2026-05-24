@@ -636,7 +636,6 @@ func (m *model) startStream(query string) {
 	m.thinkBuf.Reset()
 	m.aiBuf.Reset()
 	m.err = nil
-	m.input.Blur()
 	sessionID := ""
 	if m.currentSess != nil {
 		sessionID = m.currentSess.ID
