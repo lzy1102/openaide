@@ -123,6 +123,7 @@ type model struct {
 
 	pendingPlan  *orchestration.Plan // 待确认的任务规划
 	pendingQuery string              // 待确认的查询
+	queuedQuery  string              // 排队消息（当前回复完自动发送）
 	deepResult   *orchestration.DeepPlanResult      // 深度规划结果
 	proposalSel  int
 	langChoices  []langChoice
@@ -337,11 +338,17 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.aiBuf.Reset()
 			m.thinkBuf.Reset()
 			m.input.Focus()
-			m.renderViewport()
-			m.viewport.GotoBottom()
-			return m, nil
+		m.renderViewport()
+		m.viewport.GotoBottom()
+		// 自动发送排队消息
+		if m.queuedQuery != "" {
+			q := m.queuedQuery
+			m.queuedQuery = ""
+			m.startStream(q)
 		}
-		if msg.content != "" {
+		return m, nil
+	}
+	if msg.content != "" {
 			m.aiBuf.WriteString(msg.content)
 			m.renderViewport()
 			m.viewport.GotoBottom()
@@ -443,10 +450,17 @@ func (m *model) updateChat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "enter":
+		query := strings.TrimSpace(m.input.Value())
 		if m.streaming {
+			// 排队：当前回复完自动发送
+			if query != "" {
+				m.queuedQuery = query
+				m.addSystemMsg("消息已排队，回复完自动发送")
+				m.input.SetValue("")
+				m.renderViewport()
+			}
 			return m, nil
 		}
-		query := strings.TrimSpace(m.input.Value())
 		if query == "" {
 			return m, nil
 		}
