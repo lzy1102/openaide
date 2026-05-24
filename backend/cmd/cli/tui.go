@@ -814,6 +814,21 @@ func (m *model) doDeepPlan(query string) {
 	m.program.Send(func() tea.Msg { return chunkMsg{thinking: "🔍 研究阶段: 分析现有代码…"} })
 	planner := orchestration.NewPlanner(m.app.LLMGateway)
 	planner.SetToolExecutor(m.app.Orchestrator.GetToolExecutor())
+	// 心跳：Research 同步执行期间定期更新进度
+	researchDone := make(chan struct{})
+	defer close(researchDone)
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				m.program.Send(func() tea.Msg { return chunkMsg{thinking: "   ⏳ 研究中…"} })
+			case <-researchDone:
+				return
+			}
+		}
+	}()
 	research, err := planner.Research(ctx, query)
 	if err != nil {
 		m.program.Send(func() tea.Msg { return chunkMsg{err: fmt.Errorf("研究阶段失败: %w", err), done: true} })

@@ -264,10 +264,15 @@ func (p *Planner) Research(ctx context.Context, query string) (*ResearchReport, 
 	}
 
 	// Mini ReAct loop: LLM 自主决定何时研究完毕（不再调工具 = 准备好输出报告）
-	const maxRounds = 15 // 安全上限，防止无限循环
+	const maxRounds = 8           // 安全上限
+	const forceOutputAt = maxRounds - 2 // 最后 2 轮不给工具，强制输出
 	for round := 0; round < maxRounds; round++ {
 		slog.Debug("Research round", "round", round, "msg_count", len(messages))
 		tools := p.readOnlyToolDefs()
+		// 后期强制输出：不给工具，逼迫 LLM 写 JSON 报告
+		if round >= forceOutputAt {
+			tools = nil
+		}
 		resp, err := p.llm.Chat(ctx, messages, tools, map[string]interface{}{
 			"temperature": 0.3,
 			"max_tokens":  1500,
@@ -441,19 +446,36 @@ func (p *Planner) PlanWithApproach(ctx context.Context, query string, research *
 }
 
 func parseResearch(content string) (*ResearchReport, error) {
-	start := strings.Index(content, "{")
-	end := strings.LastIndex(content, "}")
-	if start < 0 || end <= start {
+	jsonStr := extractJSON(content)
+	if jsonStr == "" {
 		return nil, fmt.Errorf("no JSON in research response")
 	}
 	var r ResearchReport
-	if err := json.Unmarshal([]byte(content[start:end+1]), &r); err != nil {
+	if err := json.Unmarshal([]byte(jsonStr), &r); err != nil {
 		return nil, err
 	}
 	if r.Findings == "" {
 		return nil, fmt.Errorf("empty research")
 	}
 	return &r, nil
+}
+
+// extractJSON 从 LLM 输出中提取 JSON（容错：处理 markdown 包裹、多余文本）
+func extractJSON(content string) string {
+	// 优先从 ```json ... ``` 代码块中提取
+	if i := strings.Index(content, "```json"); i >= 0 {
+		start := i + 7
+		if j := strings.Index(content[start:], "```"); j >= 0 {
+			content = content[start : start+j]
+		}
+	}
+	// 找最外层的 { ... }
+	start := strings.Index(content, "{")
+	end := strings.LastIndex(content, "}")
+	if start < 0 || end <= start {
+		return ""
+	}
+	return content[start : end+1]
 }
 
 func parseProposals(content string) (*Proposals, error) {
