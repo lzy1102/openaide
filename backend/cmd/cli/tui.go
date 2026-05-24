@@ -764,7 +764,6 @@ func (m *model) planConfirmView() string {
 }
 
 func (m *model) doDeepPlan(query string) {
-	m.streaming = true
 	ctx, cancel := context.WithTimeout(context.Background(), m.app.Orchestrator.DeepTimeout)
 	defer cancel()
 
