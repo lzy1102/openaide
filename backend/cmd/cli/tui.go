@@ -766,6 +766,28 @@ func (m *model) handleCommand(cmd string) (tea.Model, tea.Cmd) {
 		}
 		m.input.SetValue("")
 		return m, nil
+	case "/lang":
+		if len(parts) >= 2 {
+			switch parts[1] {
+			case "zh":
+				lang.SetLang(lang.ZH)
+				m.addSystemMsg("语言已切换为中文")
+			case "en":
+				lang.SetLang(lang.EN)
+				m.addSystemMsg("Language switched to English")
+			default:
+				m.addSystemMsg("用法: /lang zh | /lang en")
+			}
+		} else {
+			cur := lang.GetLang()
+			if cur == lang.ZH {
+				m.addSystemMsg("当前语言: 中文。切换: /lang en")
+			} else {
+				m.addSystemMsg("Current: English. Switch: /lang zh")
+			}
+		}
+		m.input.SetValue("")
+		return m, nil
 	case "/analyst", "/coder", "/reviewer", "/executor":
 		role := strings.TrimPrefix(parts[0], "/")
 		task := strings.TrimSpace(strings.TrimPrefix(cmd, parts[0]))
