@@ -364,6 +364,27 @@ func (k *AgentKernel) buildOptions(opts QueryOptions) map[string]interface{} {
 	return options
 }
 
+// parallelSafeTools 可在同一批次内并行执行的工具（只读/无副作用）
+var parallelSafeTools = map[string]bool{
+	"read_file":       true,
+	"list_directory":  true,
+	"search_files":    true,
+	"search_symbols":  true,
+	"web_search":      true,
+	"web_fetch":       true,
+	"read_image":      true,
+	"search_knowledge": true,
+	"git_status":      true,
+	"git_diff":        true,
+	"git_log":         true,
+	"git_blame":       true,
+}
+
+// isParallelSafe 判断工具是否可以和其他工具并行执行
+func isParallelSafe(name string) bool {
+	return parallelSafeTools[name]
+}
+
 func (k *AgentKernel) executeTool(ctx context.Context, tc ToolCall, sessionID string) *ToolResult {
 	// 审批检查（高危工具需要用户确认）
 	if k.approver != nil {

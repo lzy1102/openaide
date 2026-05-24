@@ -176,65 +176,50 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 		}
 
 		results := make([]toolResult, len(tasks))
-		var wg sync.WaitGroup
 
+		// 按并发安全性分组：安全工具可并行，不安全工具单独成组串行
+		type batch struct{ indices []int }
+		var batches []batch
+		current := batch{}
 		for i, task := range tasks {
 			if task.skip {
-				results[i] = toolResult{
-					id:      task.ID,
-					name:    "",
-					content: task.reason,
-					err:     task.reason,
-				}
+				results[i] = toolResult{id: task.ID, content: task.reason, err: task.reason}
 				continue
 			}
-
-			k.publishEvent(Event{
-				Type:      EventToolCallStarted,
-				Source:    "kernel",
-				Data:      map[string]interface{}{"tool": task.Function.Name, "session_id": session.ID},
-				Timestamp: time.Now(),
-			})
-
-			wg.Add(1)
-			go func(idx int, call ToolCall) {
-				defer wg.Done()
-				var toolCtx context.Context
-				if k.tracer != nil {
-					toolCtx = k.tracer.StartSpan(ctx, session.ID, TraceTool, call.Function.Name)
-				}
-				r := k.executeTool(ctx, call, session.ID)
-				if k.tracer != nil {
-					var toolErr error
-					if r.Error != "" {
-						toolErr = fmt.Errorf("tool error: %s", r.Error)
-					}
-					k.tracer.EndSpan(toolCtx, map[string]interface{}{
-						"tool":    call.Function.Name,
-						"content": r.Content,
-					}, toolErr)
-				}
-				content := fmt.Sprintf("%v", r.Content)
-				errStr := ""
-				if r.Error != "" {
-					errStr = r.Error
-					content = fmt.Sprintf("Error: %s", r.Error)
-				}
-				results[idx] = toolResult{
-					id:      call.ID,
-					name:    call.Function.Name,
-					content: content,
-					err:     errStr,
-				}
-				k.publishEvent(Event{
-					Type:      EventToolCallEnded,
-					Source:    "kernel",
-					Data:      map[string]interface{}{"tool": call.Function.Name, "success": r.Error == "", "session_id": session.ID},
-					Timestamp: time.Now(),
-				})
-			}(i, task.ToolCall)
+			if !isParallelSafe(task.Function.Name) {
+				if len(current.indices) > 0 { batches = append(batches, current); current = batch{} }
+				batches = append(batches, batch{indices: []int{i}})
+				continue
+			}
+			current.indices = append(current.indices, i)
 		}
-		wg.Wait()
+		if len(current.indices) > 0 { batches = append(batches, current) }
+
+		for _, b := range batches {
+			var wg sync.WaitGroup
+			for _, i := range b.indices {
+				task := tasks[i]
+				k.publishEvent(Event{Type: EventToolCallStarted, Source: "kernel", Data: map[string]interface{}{"tool": task.Function.Name, "session_id": session.ID}, Timestamp: time.Now()})
+				wg.Add(1)
+				go func(idx int, call ToolCall) {
+					defer wg.Done()
+					var toolCtx context.Context
+					if k.tracer != nil { toolCtx = k.tracer.StartSpan(ctx, session.ID, TraceTool, call.Function.Name) }
+					r := k.executeTool(ctx, call, session.ID)
+					if k.tracer != nil {
+						var toolErr error
+						if r.Error != "" { toolErr = fmt.Errorf("tool error: %s", r.Error) }
+						k.tracer.EndSpan(toolCtx, map[string]interface{}{"tool": call.Function.Name, "content": r.Content}, toolErr)
+					}
+					content := fmt.Sprintf("%v", r.Content)
+					errStr := ""
+					if r.Error != "" { errStr = r.Error; content = fmt.Sprintf("Error: %s", r.Error) }
+					results[idx] = toolResult{id: call.ID, name: call.Function.Name, content: content, err: errStr}
+					k.publishEvent(Event{Type: EventToolCallEnded, Source: "kernel", Data: map[string]interface{}{"tool": call.Function.Name, "success": r.Error == "", "session_id": session.ID}, Timestamp: time.Now()})
+				}(i, task.ToolCall)
+			}
+			wg.Wait()
+		}
 		totalToolCalls += len(results)
 
 		// 按原始顺序添加 tool 结果

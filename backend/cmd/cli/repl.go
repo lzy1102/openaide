@@ -152,17 +152,38 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string)
 func executePlanQuery(app *infra.Application, query string, plan *orchestration.Plan) {
 	startTime := time.Now()
 
-	// Register progress callback
+	// Progress callback
 	app.Orchestrator.OnProgress = func(phase, detail string) {
-		fmt.Printf("  %s🔧%s %s\n", yellow, reset, detail)
+		elapsed := time.Since(startTime).Round(time.Second)
+		fmt.Printf("\r\033[K  %s🔧%s %s %s(%v)%s\n", yellow, reset, detail, gray, elapsed, reset)
 	}
 
 	fmt.Printf("  %s执行中…%s\n", gray, reset)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
+	// Heartbeat goroutine
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				elapsed := time.Since(startTime).Round(time.Second)
+				fmt.Printf("\r\033[K  %s⏳ 执行中… (%v)%s\n", gray, elapsed, reset)
+				fmt.Print("\033[1A") // move cursor up to overwrite on next update
+			case <-done:
+				return
+			}
+		}
+	}()
+
+	ctx, cancel := context.WithCancel(context.Background())
 	resp, err := app.Orchestrator.ExecuteWithPlan(ctx, "cli-user", "default", query, plan, kernel.QueryOptions{})
+	cancel()
+	close(done)
+
 	elapsed := time.Since(startTime)
+	fmt.Print("\r\033[K") // clear progress line
 
 	if err != nil {
 		PrintError(fmt.Sprintf("%v", err))

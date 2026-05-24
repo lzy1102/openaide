@@ -583,13 +583,22 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 已完成的工作:
 %s
 
-验证步骤（必须实际执行，不能凭猜测）：
-1. 用 execute_command 运行编译或构建命令（如 go build、npm run build）
-2. 用 execute_command 运行测试（如 go test、npm test）
-3. 检查输出：有报错就分析根因，能修复就当场修
-4. 确认所有测试通过后，报告"验证通过"
+## 验证规则（严格遵守）
 
-如果测试失败且无法简单修复，输出具体错误信息。`, plan.Goal, execSummary)
+你必须**实际执行命令**来验证，不能凭推理判断。以下行为**禁止**：
+- ❌ "代码看起来正确" — 没跑过测试就不能说正确
+- ❌ "逻辑上没问题" — 必须实际编译运行
+- ❌ "应该能通过" — 没有"应该"，只有"实际通过了"或"失败了"
+- ❌ 跳过测试直接报告"验证通过"
+
+### 必须执行的步骤：
+1. 用 execute_command 运行编译/构建命令
+2. 用 execute_command 运行测试套件
+3. **将命令的实际输出粘贴到报告中**（stdout + stderr）
+4. 如果有失败，分析根因并尝试修复
+5. 只有所有测试**实际通过**后才能报告"验证通过"
+
+如果无法修复，输出具体的错误信息和失败命令。`, plan.Goal, execSummary)
 			testReport, _ = o.RunSubAgent(ctx, userID, projectID, "executor", verifyTask, results)
 			totalTools++
 		}
