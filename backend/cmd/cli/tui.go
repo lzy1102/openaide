@@ -477,7 +477,6 @@ func (m *model) updateChat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// PreviewPlan 一次 LLM 调用同时判断复杂度+拆分
 		m.streaming = true
 		m.addSystemMsg("分析任务中…")
-		m.input.Blur()
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), m.app.Orchestrator.PreviewTimeout)
 			plan, err := m.app.Orchestrator.PreviewPlan(ctx, query)
