@@ -110,6 +110,8 @@ type model struct {
 	selSession  int
 	currentSess *kernel.Session
 
+	spinner int // 加载动画帧
+
 	tokens         int
 	tools          int
 	err            error
@@ -183,6 +185,8 @@ func initModel(app *infra.Application, continueSess bool) *model {
 	return m
 }
 
+type spinnerTick struct{}
+
 func (m *model) Init() tea.Cmd {
 	// 欢迎横幅
 	info := m.app.LLMGateway.GetProviderInfos()
@@ -213,6 +217,7 @@ func (m *model) Init() tea.Cmd {
 	return tea.Batch(
 		textinput.Blink,
 		m.loadSessionList(),
+		tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg { return spinnerTick{} }),
 	)
 }
 
@@ -220,6 +225,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
+	case spinnerTick:
+		m.spinner = (m.spinner + 1) % 10
+		if m.streaming || m.state == viewProposalSelect {
+			return m, tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg { return spinnerTick{} })
+		}
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -1122,8 +1133,10 @@ func (m *model) chatView() string {
 		}
 		statusParts = append(statusParts, fmt.Sprintf(icons.folder+" %s", title))
 	}
-	if m.streaming {
-		statusParts = append(statusParts, icons.thinking+" "+lang.T("mode.thinking"))
+	spinnerFrames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+	if m.streaming || m.state == viewProposalSelect {
+		frame := spinnerFrames[m.spinner]
+		statusParts = append(statusParts, frame+" "+lang.T("mode.thinking"))
 	}
 	if m.tools > 0 {
 		statusParts = append(statusParts, fmt.Sprintf(icons.tools+" %d", m.tools))
