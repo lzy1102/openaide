@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -249,9 +250,12 @@ func (k *AgentKernel) buildMessages(session *Session, query *Query) []Message {
 		systemPrompt = k.skillManager.InjectPrompt(query.Content, systemPrompt)
 	}
 	if systemPrompt != "" {
+		// 注入当前工作目录，避免 LLM 幻觉出错误的路径
+		cwd, _ := os.Getwd()
+		promptWithCWD := systemPrompt + fmt.Sprintf("\n\n[当前工作目录] %s\n请在执行文件操作时优先使用此目录。", cwd)
 		messages = append(messages, Message{
 			Role:    "system",
-			Content: systemPrompt,
+			Content: promptWithCWD,
 		})
 	}
 
@@ -320,7 +324,35 @@ func (k *AgentKernel) buildMessages(session *Session, query *Query) []Message {
 		Content: query.Content,
 	})
 
+	// 旧工具输出衰减裁剪：保留最近 4 条完整，更早的只保留头尾
+	snipOldToolOutputs(messages)
+
 	return messages
+}
+
+// snipOldToolOutputs 对旧工具输出做头尾保留裁剪（Claude Code 风格）
+// 最近 keepFull 条完整保留，更早的保留前 500 字符 + 后 500 字符，中间替换为 snipped 标记
+func snipOldToolOutputs(messages []Message) {
+	const keepFull = 4       // 最近 N 条完整保留
+	const headLen = 500      // 保留头部长度
+	const tailLen = 500      // 保留尾部长度
+
+	// 从后往前数 tool 消息
+	toolIdx := 0
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "tool" {
+			if toolIdx >= keepFull {
+				content := messages[i].Content
+				if len(content) > headLen+tailLen+100 {
+					head := content[:headLen]
+					tail := content[len(content)-tailLen:]
+					snipped := len(content) - headLen - tailLen
+					messages[i].Content = fmt.Sprintf("%s\n... [%d chars snipped] ...\n%s", head, snipped, tail)
+				}
+			}
+			toolIdx++
+		}
+	}
 }
 
 func (k *AgentKernel) buildOptions(opts QueryOptions) map[string]interface{} {
@@ -372,6 +404,11 @@ func (k *AgentKernel) executeTool(ctx context.Context, tc ToolCall, sessionID st
 	result, err := k.toolExecutor.Execute(ctx, tc, sessionID)
 	if err != nil {
 		return &ToolResult{Error: err.Error()}
+	}
+	// 统一截断工具输出，避免超大数据塞进 LLM 上下文
+	const maxOutput = 50 * 1024
+	if s, ok := result.Content.(string); ok && len(s) > maxOutput {
+		result.Content = s[:maxOutput] + "\n... (truncated)"
 	}
 	return result
 }

@@ -377,8 +377,9 @@ func (p *OpenAIProvider) convertMessages(messages []kernel.Message) []map[string
 			"role":    msg.Role,
 			"content": content,
 		}
-		// 推理模型需要此字段, 含空串也传
-		m["reasoning_content"] = msg.ReasoningContent
+		if msg.ReasoningContent != "" {
+			m["reasoning_content"] = msg.ReasoningContent
+		}
 		if msg.Name != "" {
 			m["name"] = msg.Name
 		}

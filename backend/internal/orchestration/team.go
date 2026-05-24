@@ -3,6 +3,7 @@ package orchestration
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"openaide/backend/internal/kernel"
@@ -158,6 +159,7 @@ func (t *Team) buildAllChain(startRole string) *graph.Graph {
 
 // 通过图引擎执行，按拓扑序依次运行每个角色作为独立 sub-agent
 func (t *Team) executeGraph(ctx context.Context, query string, opts kernel.QueryOptions, g *graph.Graph) (*kernel.Response, error) {
+	slog.Debug("Team executeGraph start", "nodes", len(g.Nodes))
 	if g == nil || len(g.Nodes) == 0 {
 		return t.orchestrator.ProcessQuery(ctx, "", "", query, opts)
 	}
@@ -172,6 +174,7 @@ func (t *Team) executeGraph(ctx context.Context, query string, opts kernel.Query
 
 	for _, name := range order {
 		node := g.Nodes[name]
+		slog.Debug("Team executing node", "node", name, "tools", len(node.Tools))
 		if node == nil {
 			continue
 		}

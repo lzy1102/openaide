@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -51,6 +52,7 @@ func NewSessionStoreAdapter() *SessionStoreAdapter {
 // ============ FileSessionStore 实现（持久化） ============
 
 func (s *FileSessionStore) Create(ctx context.Context, projectID, userID string) (*Session, error) {
+	slog.Debug("Session create", "project", projectID, "user", userID)
 	session := &Session{
 		ID:        uuid.New().String(),
 		ProjectID: projectID,
@@ -72,6 +74,7 @@ func (s *FileSessionStore) Create(ctx context.Context, projectID, userID string)
 }
 
 func (s *FileSessionStore) Get(ctx context.Context, sessionID string) (*Session, error) {
+	slog.Debug("Session get", "session", sessionID[:min(8, len(sessionID))])
 	s.mu.RLock()
 	session, ok := s.sessions[sessionID]
 	s.mu.RUnlock()
@@ -85,6 +88,7 @@ func (s *FileSessionStore) Get(ctx context.Context, sessionID string) (*Session,
 }
 
 func (s *FileSessionStore) Update(ctx context.Context, session *Session) error {
+	slog.Debug("Session update", "session", session.ID[:min(8, len(session.ID))], "msgs", len(session.Messages))
 	session.UpdatedAt = time.Now()
 
 	s.mu.Lock()
@@ -126,6 +130,7 @@ func (s *FileSessionStore) Count() int {
 
 // Delete 删除会话
 func (s *FileSessionStore) Delete(ctx context.Context, sessionID string) error {
+	slog.Debug("Session delete", "session", sessionID[:min(8, len(sessionID))])
 	s.mu.Lock()
 	delete(s.sessions, sessionID)
 	s.mu.Unlock()

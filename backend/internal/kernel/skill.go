@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"log/slog"
 )
 
 // Skill 可插拔的能力模块
@@ -224,6 +225,7 @@ func (sm *SkillManager) EnabledSkills() []*Skill {
 
 // DetectSkill 自动检测用户意图并匹配技能（LLM 优先，关键词兜底）
 func (sm *SkillManager) DetectSkill(query string) *Skill {
+	slog.Debug("Skill detect", "query", query[:min(80, len(query))])
 	if !sm.autoDetect {
 		return nil
 	}

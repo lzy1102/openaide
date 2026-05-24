@@ -56,7 +56,10 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 		totalTokens := 0
 		totalToolCalls := 0
 
+		slog.Debug("ReAct stream loop start", "query", query.Content[:min(80, len(query.Content))], "max_rounds", maxRounds, "tools", len(tools), "history_msgs", len(messages))
 		for round := 0; round < maxRounds; round++ {
+			slog.Debug("ReAct stream round", "round", round, "msg_count", len(messages))
+			snipOldToolOutputs(messages)
 			// 检查上下文长度，必要时压缩
 			if k.compressor != nil {
 				tokenCount := k.compressor.EstimateTokens(messages)
@@ -147,6 +150,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 				ReasoningContent: reasoningContent.String(),
 				ToolCalls:        lastToolCalls,
 			})
+			slog.Debug("ReAct stream LLM response", "round", round, "content_len", fullContent.Len(), "tool_calls", len(lastToolCalls), "reasoning_len", reasoningContent.Len(), "tokens", totalTokens)
 
 			// 无工具调用 -> 返回结果
 			if len(lastToolCalls) == 0 {
@@ -179,6 +183,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 
 			// === 工具调用轮次 ===
 			k.setState(StateToolCalling)
+			slog.Debug("ReAct stream executing tools", "round", round, "tool_count", len(lastToolCalls))
 
 			type streamToolTask struct {
 				ToolCall
@@ -284,6 +289,14 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 			}
 			wg.Wait()
 			totalToolCalls += len(results)
+			for _, r := range results {
+				if r.msg.Content != "" && strings.HasPrefix(r.msg.Content, "Error:") {
+					slog.Warn("Stream tool failed", "tool", r.name, "error", r.msg.Content[:min(200, len(r.msg.Content))])
+				} else {
+					slog.Debug("Stream tool done", "tool", r.name, "output_len", len(r.msg.Content))
+				}
+			}
+			slog.Debug("ReAct stream round done", "round", round, "tools_executed", len(results))
 
 			// 发送 tool_done 事件 + 添加到消息列表
 			for _, r := range results {
@@ -322,6 +335,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 					slog.Warn("Failed to save checkpoint", "round", round, "error", err)
 				}
 			}
+			slog.Debug("ReAct stream iteration end", "round", round)
 		}
 
 		// 超出最大轮次

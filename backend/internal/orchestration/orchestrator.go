@@ -41,6 +41,9 @@ type Orchestrator struct {
 
 	// 项目知识缓存（跨子Agent共享，避免重复读取）
 	projectFacts string
+
+	// OnProgress 进度回调（用于 TUI 报告子 Agent 执行状态）
+	OnProgress func(phase, detail string)
 }
 
 // ModelRouting 按能力分配模型
@@ -129,6 +132,7 @@ func (o *Orchestrator) CleanupOldSessions(ctx context.Context) {
 // RunSubAgent 在隔离的临时会话中运行指定角色，只回传结果摘要
 // 主 Agent 上下文不会被子 Agent 的工具调用污染
 func (o *Orchestrator) RunSubAgent(ctx context.Context, userID, projectID, roleName, task string, previousResults []string) (string, error) {
+	slog.Debug("SubAgent start", "role", roleName, "task", task[:min(80, len(task))], "prev_results", len(previousResults))
 	if o.team == nil {
 		return "", fmt.Errorf("team not configured")
 	}
@@ -172,13 +176,16 @@ func (o *Orchestrator) RunSubAgent(ctx context.Context, userID, projectID, roleN
 	}
 	resp, err := o.processSingle(ctx, sessionID, projectID, input.String(), opts)
 	if err != nil {
+		slog.Warn("SubAgent failed", "role", roleName, "error", err)
 		return "", fmt.Errorf("sub-agent %s failed: %w", roleName, err)
 	}
+	slog.Debug("SubAgent done", "role", roleName, "output_len", len(resp.Content), "tool_calls", resp.ToolCalls, "tokens", resp.TokensUsed)
 	return resp.Content, nil
 }
 
 // PreviewPlan 仅规划不执行，返回拆分后的计划（用于交互式确认）
 func (o *Orchestrator) PreviewPlan(ctx context.Context, content string) (*Plan, error) {
+	slog.Debug("PreviewPlan start", "query", content)
 	planner := NewPlanner(o.llmGateway)
 	planner.SetToolExecutor(o.toolExec)
 	return planner.Plan(ctx, content)
@@ -262,6 +269,7 @@ func (o *Orchestrator) ExecuteWithPlan(ctx context.Context, userID, projectID, c
 
 // ProcessQuery 处理用户查询 — LLM 自动判断是否需要拆分任务
 func (o *Orchestrator) ProcessQuery(ctx context.Context, userID, projectID, content string, opts kernel.QueryOptions) (*kernel.Response, error) {
+	slog.Debug("ProcessQuery start", "user", userID, "project", projectID, "content_len", len(content))
 	planner := NewPlanner(o.llmGateway)
 	plan, err := planner.Plan(ctx, content)
 	if err == nil && len(plan.Subtasks) > 1 {
@@ -336,6 +344,7 @@ func (o *Orchestrator) processSingle(ctx context.Context, userID, projectID, con
 
 // ProcessQueryStream 流式处理用户查询
 func (o *Orchestrator) ProcessQueryStream(ctx context.Context, userID, projectID, content string, opts kernel.QueryOptions) (<-chan kernel.StreamChunk, error) {
+	slog.Debug("ProcessQueryStream start", "user", userID, "content_len", len(content))
 	// 获取或创建会话
 	session, err := o.getOrCreateSession(ctx, projectID, userID)
 	if err != nil {
@@ -529,6 +538,9 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 				}
 				task := fmt.Sprintf("总体目标: %s\n当前步骤: %s\n具体要求: %s\n\nTDD 原则：涉及代码修改时请先编写测试用例再实现。",
 					plan.Goal, st.Title, st.Description)
+				if o.OnProgress != nil {
+					o.OnProgress("execute", fmt.Sprintf("步骤%d/%d: %s [%s]", st.ID, len(plan.Subtasks), st.Title, roleName))
+				}
 				content, err := o.RunSubAgent(ctx, userID, projectID, roleName, task, deps)
 				if err != nil {
 					results[st.ID-1] = fmt.Sprintf("❌ 步骤%d(%s)失败: %v", st.ID, st.Title, err)
@@ -563,6 +575,9 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 	for iteration := 0; iteration < maxIterations; iteration++ {
 		// 测试验证
 		if hasExecutor {
+			if o.OnProgress != nil {
+				o.OnProgress("verify", fmt.Sprintf("验证轮次 %d/%d", iteration+1, maxIterations))
+			}
 			verifyTask := fmt.Sprintf("总体目标: %s\n\n已完成的工作:\n%s\n\n验证完整性：编译/构建/测试/逻辑检查。\n发现问题直接修复。如果一切正常，报告\"验证通过\"。",
 				plan.Goal, execSummary)
 			testReport, _ = o.RunSubAgent(ctx, userID, projectID, "executor", verifyTask, results)
@@ -578,6 +593,9 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 			break
 		}
 
+		if o.OnProgress != nil {
+			o.OnProgress("review", fmt.Sprintf("审查轮次 %d/%d", iteration+1, maxIterations))
+		}
 		reviewTask := fmt.Sprintf(`总体目标: %s
 
 执行结果:

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 
+	"log/slog"
+
 	"openaide/backend/internal/kernel"
 )
 
@@ -240,6 +242,7 @@ var readOnlyTools = map[string]bool{
 
 // Research 分析现有代码，生成研究报告（ReAct 循环，只读工具）
 func (p *Planner) Research(ctx context.Context, query string) (*ResearchReport, error) {
+	slog.Debug("Research phase start", "query", query)
 	sysPrompt := `你是资深软件架构师。按以下步骤研究代码：
 
 第1轮 - 形成假设：
@@ -263,19 +266,23 @@ func (p *Planner) Research(ctx context.Context, query string) (*ResearchReport, 
 	// Mini ReAct loop: LLM 自主决定何时研究完毕（不再调工具 = 准备好输出报告）
 	const maxRounds = 15 // 安全上限，防止无限循环
 	for round := 0; round < maxRounds; round++ {
+		slog.Debug("Research round", "round", round, "msg_count", len(messages))
 		tools := p.readOnlyToolDefs()
 		resp, err := p.llm.Chat(ctx, messages, tools, map[string]interface{}{
 			"temperature": 0.3,
 			"max_tokens":  1500,
 		})
 		if err != nil {
+			slog.Warn("Research LLM call failed", "round", round, "error", err)
 			return nil, err
 		}
+		slog.Debug("Research LLM response", "round", round, "tool_calls", len(resp.ToolCalls), "content_len", len(resp.Content), "reasoning_len", len(resp.ReasoningContent))
 
 		messages = append(messages, kernel.Message{
-			Role:      "assistant",
-			Content:   resp.Content,
-			ToolCalls: resp.ToolCalls,
+			Role:             "assistant",
+			Content:          resp.Content,
+			ToolCalls:        resp.ToolCalls,
+			ReasoningContent: resp.ReasoningContent,
 		})
 
 		// 无工具调用 → LLM 认为研究够了，尝试解析报告
@@ -303,14 +310,18 @@ func (p *Planner) Research(ctx context.Context, query string) (*ResearchReport, 
 			if tc.Function.Name == "" {
 				continue
 			}
+			slog.Debug("Research tool executing", "round", round, "tool", tc.Function.Name)
 			result, err := p.tools.Execute(ctx, tc, "")
 			var content string
 			if err != nil {
 				content = fmt.Sprintf("Error: %v", err)
+				slog.Warn("Research tool failed", "tool", tc.Function.Name, "error", err)
 			} else if result.Error != "" {
 				content = fmt.Sprintf("Error: %s", result.Error)
+				slog.Warn("Research tool failed", "tool", tc.Function.Name, "error", result.Error)
 			} else {
 				content = fmt.Sprintf("%v", result.Content)
+				slog.Debug("Research tool done", "tool", tc.Function.Name, "output_len", len(content))
 			}
 			messages = append(messages, kernel.Message{
 				Role:       "tool",
@@ -340,6 +351,7 @@ func (p *Planner) readOnlyToolDefs() []kernel.ToolDefinition {
 
 // Propose 基于研究报告生成多个可选方案
 func (p *Planner) Propose(ctx context.Context, query string, research *ResearchReport) (*Proposals, error) {
+	slog.Debug("Propose phase start", "query", query, "complexity", research.Complexity)
 	researchJSON, _ := json.Marshal(research)
 	prompt := fmt.Sprintf(`你是一个资深软件架构师。基于研究报告，提出 2-3 个可选方案。
 
@@ -387,6 +399,7 @@ func (p *Planner) Propose(ctx context.Context, query string, research *ResearchR
 
 // PlanWithApproach 基于选定方案生成详细任务计划
 func (p *Planner) PlanWithApproach(ctx context.Context, query string, research *ResearchReport, chosen *Proposal) (*Plan, error) {
+	slog.Debug("PlanWithApproach phase start", "query", query, "approach", chosen.Name)
 	researchJSON, _ := json.Marshal(research)
 	chosenJSON, _ := json.Marshal(chosen)
 	prompt := fmt.Sprintf(`基于研究报告和选定方案，生成详细任务计划。

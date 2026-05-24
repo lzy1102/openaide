@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"openaide/backend/internal/kernel"
+	"log/slog"
+
 	"openaide/backend/internal/llm"
 )
 
@@ -374,6 +376,7 @@ func NewFileMemory(dataDir string) (*FileMemory, error) {
 
 // Save 保存消息到记忆
 func (f *FileMemory) Save(ctx context.Context, sessionID string, messages []kernel.Message) error {
+	slog.Debug("Memory save", "session", sessionID[:min(8, len(sessionID))], "msgs", len(messages))
 	for _, msg := range messages {
 		if msg.Role == "system" {
 			continue
@@ -394,6 +397,7 @@ func (f *FileMemory) Save(ctx context.Context, sessionID string, messages []kern
 
 // Load 加载记忆
 func (f *FileMemory) Load(ctx context.Context, sessionID string, limit int) ([]kernel.Message, error) {
+	slog.Debug("Memory load", "session", sessionID[:min(8, len(sessionID))], "limit", limit)
 	items, err := f.manager.GetBySession(ctx, sessionID)
 	if err != nil {
 		return nil, err
@@ -424,6 +428,7 @@ func (f *FileMemory) Load(ctx context.Context, sessionID string, limit int) ([]k
 
 // Search 搜索记忆
 func (f *FileMemory) Search(ctx context.Context, query string, limit int) ([]kernel.Message, float64, error) {
+	slog.Debug("Memory search", "query", query[:min(50, len(query))], "limit", limit)
 	items, err := f.manager.Search(ctx, query, LevelLongTerm, limit)
 	if err != nil {
 		return nil, 0, err

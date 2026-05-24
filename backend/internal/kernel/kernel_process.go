@@ -66,6 +66,7 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 	if k.adaptiveRounds != nil {
 		maxRounds = k.adaptiveRounds.Calculate(query.Content, len(session.Messages))
 	}
+	slog.Debug("ReAct loop start", "query", query.Content[:min(80, len(query.Content))], "max_rounds", maxRounds, "tools", len(tools), "history_msgs", len(messages))
 	for round := 0; round < maxRounds; round++ {
 		// 检查上下文长度，必要时压缩
 		if k.compressor != nil {
@@ -79,6 +80,8 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 			}
 		}
 
+		slog.Debug("ReAct round start", "round", round, "state", k.state, "msg_count", len(messages))
+		snipOldToolOutputs(messages)
 		// 调用 LLM（如果指定了模型，临时切换）
 		if query.Options.ModelID != "" {
 			k.llmProvider.SetModelID(query.Options.ModelID)
@@ -100,6 +103,7 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 		if llmResp.Usage != nil {
 			totalTokens += llmResp.Usage.TotalTokens
 		}
+		slog.Debug("ReAct LLM response", "round", round, "model", llmResp.Model, "content_len", len(llmResp.Content), "tool_calls", len(llmResp.ToolCalls), "reasoning_len", len(llmResp.ReasoningContent), "tokens", llmResp.Usage)
 
 		// 添加 assistant 消息（包含 reasoning_content）
 		messages = append(messages, Message{

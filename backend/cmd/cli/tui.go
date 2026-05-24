@@ -110,8 +110,9 @@ type model struct {
 	selSession  int
 	currentSess *kernel.Session
 
-	spinner int // 加载动画帧
-	planning bool // 深度分析进行中
+	spinner    int // 加载动画帧
+	planning   bool // 深度分析进行中
+	lastRender time.Time // 渲染节流
 
 	tokens         int
 	tools          int
@@ -215,10 +216,17 @@ func (m *model) Init() tea.Cmd {
 	sb.WriteString("\n  /help 查看命令 | /log 查看日志\n")
 	m.messages = append(m.messages, chatMsg{role: "system", content: sb.String()})
 	m.renderViewport()
+	// 用独立 goroutine 驱动 spinner tick，避免 tea.Tick 命令队列竞争
+	go func() {
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		for range ticker.C {
+			m.program.Send(spinnerTick{})
+		}
+	}()
 	return tea.Batch(
 		textinput.Blink,
 		m.loadSessionList(),
-		tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg { return spinnerTick{} }),
 	)
 }
 
@@ -228,9 +236,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case spinnerTick:
 		m.spinner = (m.spinner + 1) % 10
-		if m.streaming || m.planning || m.state == viewProposalSelect {
-			return m, tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg { return spinnerTick{} })
-		}
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -302,8 +307,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case previewResultMsg:
-		m.streaming = false
 		if msg.err != nil || msg.plan == nil || len(msg.plan.Subtasks) <= 1 {
+			m.streaming = false
 			m.startStream(msg.query)
 			return m, nil
 		}
@@ -313,10 +318,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.renderViewport()
 			go m.doDeepPlan(msg.query)
 		} else {
+			m.streaming = false
 			m.pendingPlan = msg.plan
 			m.pendingQuery = msg.query
 			m.state = viewPlanConfirm
-		m.input.Blur()
+			m.input.Blur()
 			m.renderViewport()
 		}
 
@@ -545,7 +551,15 @@ func (m *model) updateChat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
-	return m, nil
+	// 流式输出中也响应输入（纯文本按键），让用户可以提前输入下一条消息
+	switch msg.String() {
+	case "enter", "ctrl+c", "ctrl+d":
+		// 已在上面处理，不传给 input
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	return m, cmd
 }
 
 func (m *model) addSystemMsg(content string) {
@@ -676,6 +690,21 @@ func (m *model) executePlan(query string, plan *orchestration.Plan) {
 	m.err = nil
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancelStream = cancel
+
+	// 注册进度回调，实时显示子 Agent 执行状态
+	m.app.Orchestrator.OnProgress = func(phase, detail string) {
+		icon := "⚙"
+		switch phase {
+		case "execute":
+			icon = "🔧"
+		case "verify":
+			icon = "🧪"
+		case "review":
+			icon = "🔍"
+		}
+		m.program.Send(chunkMsg{thinking: fmt.Sprintf("%s %s", icon, detail)})
+	}
+
 	go func() {
 		defer cancel()
 		resp, err := m.app.Orchestrator.ExecuteWithPlan(ctx, "cli-user", "default", query, plan, kernel.QueryOptions{})
@@ -1139,7 +1168,7 @@ func (m *model) chatView() string {
 	spinnerFrames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 	if m.streaming || m.planning || m.state == viewProposalSelect {
 		frame := spinnerFrames[m.spinner]
-		statusParts = append(statusParts, frame+" "+lang.T("mode.thinking"))
+		statusParts = append(statusParts, fmt.Sprintf("%s %s[%d]", frame, lang.T("mode.thinking"), m.spinner))
 	}
 	if m.tools > 0 {
 		statusParts = append(statusParts, fmt.Sprintf(icons.tools+" %d", m.tools))
@@ -1155,11 +1184,7 @@ func (m *model) chatView() string {
 		sb.WriteString(errStyle.Render(icons.err+" "+m.err.Error()) + "\n")
 	}
 
-	if m.streaming {
-		sb.WriteString(inputStyle.Render(icons.busy+" " + lang.T("mode.streaming")))
-	} else {
-		sb.WriteString(inputStyle.Render(m.input.View()))
-	}
+	sb.WriteString(inputStyle.Render(m.input.View()))
 
 	return sb.String()
 }
@@ -1367,15 +1392,40 @@ func doStream(ctx context.Context, p *tea.Program, app *infra.Application, sessi
 		return
 	}
 
+	// 异步转发：用有缓冲 channel 解耦 stream 消费和 p.Send()，
+	// 避免 Bubble Tea 无缓冲消息队列阻塞导致 stream goroutine 死锁
+	msgBuf := make(chan tea.Msg, 64)
+	go func() {
+		for msg := range msgBuf {
+			p.Send(msg)
+		}
+	}()
+
 	totalTools := 0
 	totalTokens := 0
 
+	// content/thinking 合并发送，降低消息频率
+	var bufContent, bufThinking strings.Builder
+	flushTick := time.NewTicker(50 * time.Millisecond)
+	defer flushTick.Stop()
+	flush := func() {
+		c := bufContent.String()
+		t := bufThinking.String()
+		bufContent.Reset()
+		bufThinking.Reset()
+		if c != "" || t != "" {
+			msgBuf <- chunkMsg{content: c, thinking: t}
+		}
+	}
+
 	for chunk := range stream {
 		if chunk.Error != nil {
+			flush()
 			p.Send(chunkMsg{err: chunk.Error, done: true})
 			return
 		}
 		if chunk.Done {
+			flush()
 			if chunk.Usage != nil {
 				totalTokens = chunk.Usage.TotalTokens
 			}
@@ -1387,16 +1437,25 @@ func doStream(ctx context.Context, p *tea.Program, app *infra.Application, sessi
 		}
 		switch chunk.Type {
 		case kernel.ChunkTypeToolCall:
-			p.Send(chunkMsg{toolCall: true, toolName: chunk.ToolName})
+			flush()
+			msgBuf <- chunkMsg{toolCall: true, toolName: chunk.ToolName}
 		case kernel.ChunkTypeToolDone:
+			flush()
 			if chunk.ToolResult != nil {
 				summary := fmt.Sprintf("%v", chunk.ToolResult.Content)
-				p.Send(chunkMsg{toolCall: true, toolName: icons.result+" " + trunc(summary, 200)})
+				msgBuf <- chunkMsg{toolCall: true, toolName: icons.result+" " + trunc(summary, 200)}
 			}
 		default:
-			p.Send(chunkMsg{content: chunk.Content, thinking: chunk.ReasoningContent})
+			bufContent.WriteString(chunk.Content)
+			bufThinking.WriteString(chunk.ReasoningContent)
+			select {
+			case <-flushTick.C:
+				flush()
+			default:
+			}
 		}
 	}
+	flush()
 }
 
 // iconSet provides Unicode symbols with ASCII fallback for terminal compatibility.

@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"log/slog"
 	"time"
 
 	"openaide/backend/internal/kernel"
@@ -82,6 +83,7 @@ func (kb *Base) SetEmbedder(e llm.Embedder) {
 
 // Add 添加文档
 func (kb *Base) Add(ctx context.Context, title, content, source string, tags []string) (*Document, error) {
+	slog.Debug("Knowledge add", "title", title, "source", source)
 	doc := &Document{
 		ID:        fmt.Sprintf("doc_%d", time.Now().UnixNano()),
 		Title:     title,
@@ -133,6 +135,7 @@ func (kb *Base) Get(ctx context.Context, docID string) (*Document, error) {
 
 // Search 搜索文档（语义 + 文本混合搜索）
 func (kb *Base) Search(ctx context.Context, query string, limit int) ([]*Document, error) {
+	slog.Debug("Knowledge search", "query", query[:min(50, len(query))], "limit", limit)
 	kb.mu.RLock()
 	defer kb.mu.RUnlock()
 
@@ -466,5 +469,6 @@ func (kb *Base) RecordKnowledgeUsage(ctx context.Context, docIDs []string, quali
 
 // InjectContext 将相关知识注入提示词，返回 (contextText, docIDs, error)
 func (kb *Base) InjectContext(ctx context.Context, query string, maxTokens int) (string, []string, error) {
+	slog.Debug("Knowledge inject", "query", query[:min(50, len(query))], "max_tokens", maxTokens)
 	return kb.InjectToPrompt(ctx, query, maxTokens)
 }

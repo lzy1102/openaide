@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"log/slog"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -62,8 +63,8 @@ func (fc *FileCheckpointer) sessionDir() string {
 }
 
 func (fc *FileCheckpointer) Save(ctx context.Context, sessionID string, cp *Checkpoint) error {
+	slog.Debug("Checkpoint save", "session", sessionID[:min(8, len(sessionID))], "id", cp.ID, "msgs", len(cp.Messages))
 	fc.mu.Lock()
-	defer fc.mu.Unlock()
 
 	if cp.ID == "" {
 		cp.ID = fmt.Sprintf("cp_%d", time.Now().UnixNano())
@@ -72,24 +73,40 @@ func (fc *FileCheckpointer) Save(ctx context.Context, sessionID string, cp *Chec
 
 	data, err := json.MarshalIndent(cp, "", "  ")
 	if err != nil {
+		fc.mu.Unlock()
 		return fmt.Errorf("marshal checkpoint: %w", err)
 	}
 
 	path := fc.checkpointPath(sessionID, cp.ID)
 	if err := os.WriteFile(path, data, 0644); err != nil {
+		fc.mu.Unlock()
 		return fmt.Errorf("write checkpoint: %w", err)
 	}
 
+	// 先解锁再清理旧检查点（List 也要获取同一把锁，sync.Mutex 不可重入）
+	fc.mu.Unlock()
+
 	// 每个会话最多保留 5 个检查点，删除旧的
-	if checkpoints, err := fc.List(ctx, sessionID); err == nil && len(checkpoints) > 5 {
-		for _, old := range checkpoints[:len(checkpoints)-5] {
-			os.Remove(fc.checkpointPath(sessionID, old.ID))
+	prefix := sessionID + "_"
+	entries, err := os.ReadDir(fc.dir)
+	if err == nil {
+		var sessionEntries []os.DirEntry
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasPrefix(e.Name(), prefix) {
+				sessionEntries = append(sessionEntries, e)
+			}
+		}
+		if len(sessionEntries) > 5 {
+			for _, old := range sessionEntries[:len(sessionEntries)-5] {
+				os.Remove(filepath.Join(fc.dir, old.Name()))
+			}
 		}
 	}
 	return nil
 }
 
 func (fc *FileCheckpointer) LoadLatest(ctx context.Context, sessionID string) (*Checkpoint, error) {
+	slog.Debug("Checkpoint load", "session", sessionID[:min(8, len(sessionID))])
 	checkpoints, err := fc.List(ctx, sessionID)
 	if err != nil {
 		return nil, err

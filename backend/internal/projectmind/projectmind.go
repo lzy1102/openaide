@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"log/slog"
 	"time"
 )
 
@@ -77,6 +78,7 @@ func Load(projectDir string) *ProjectMind {
 
 // Save 持久化
 func (pm *ProjectMind) Save() error {
+	slog.Debug("ProjectMind save", "path", pm.path)
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 	pm.UpdatedAt = time.Now()
