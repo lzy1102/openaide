@@ -305,6 +305,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pendingPlan = msg.plan
 			m.pendingQuery = msg.query
 			m.state = viewPlanConfirm
+		m.input.Blur()
 			m.renderViewport()
 		}
 
@@ -428,6 +429,7 @@ func (m *model) updateChat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+s":
 		if !m.streaming {
 			m.state = viewSessionList
+		m.input.Blur()
 			m.selSession = -1
 			return m, m.loadSessionList()
 		}
@@ -444,6 +446,7 @@ func (m *model) updateChat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "f1", "ctrl+h":
 		if !m.streaming {
 			m.state = viewHelp
+		m.input.Blur()
 			return m, nil
 		}
 
@@ -787,6 +790,7 @@ func (m *model) doDeepPlan(query string) {
 
 	m.deepResult = &orchestration.DeepPlanResult{Research: research, Proposals: proposals}
 	m.state = viewProposalSelect
+		m.input.Blur()
 	m.proposalSel = 0
 	m.program.Send(func() tea.Msg { return chunkMsg{thinking: "✓ 方案已生成，请选择（1/2/3）"} })
 	m.streaming = false
@@ -854,9 +858,11 @@ func (m *model) handleCommand(cmd string) (tea.Model, tea.Cmd) {
 	switch parts[0] {
 	case "/help":
 		m.state = viewHelp
+		m.input.Blur()
 		return m, nil
 	case "/log":
 		m.state = viewLog
+		m.input.Blur()
 		m.logBuf = tuiLogBuf.buf
 		m.input.SetValue("")
 		return m, nil
@@ -884,6 +890,7 @@ func (m *model) handleCommand(cmd string) (tea.Model, tea.Cmd) {
 				}
 			}
 			m.state = viewModelList
+		m.input.Blur()
 		}
 		m.input.SetValue("")
 		return m, nil
@@ -892,6 +899,7 @@ func (m *model) handleCommand(cmd string) (tea.Model, tea.Cmd) {
 		m.langSel = 0
 		if lang.GetLang() == lang.ZH { m.langSel = 0 } else { m.langSel = 1 }
 		m.state = viewLangList
+		m.input.Blur()
 		m.input.SetValue("")
 		return m, nil
 	case "/analyst", "/coder", "/reviewer", "/executor":
