@@ -313,7 +313,10 @@ func (app *Application) Stop(ctx context.Context) error {
 	return nil
 }
 
-// InitLogger 初始化日志（stderr + 文件双写）
+// TUILogWriter TUI 日志环缓冲（由 cmd/cli 设置）
+var TUILogWriter io.Writer
+
+// InitLogger 初始化日志（stderr + 文件 + TUI buffer）
 func InitLogger(level, format string) {
 	var logLevel slog.Level
 	switch level {
@@ -340,18 +343,19 @@ func InitLogger(level, format string) {
 	opts := &slog.HandlerOptions{Level: logLevel}
 	var handler slog.Handler
 
+	writers := []io.Writer{os.Stderr}
+	if logFile != nil {
+		writers = append(writers, logFile)
+	}
+	if TUILogWriter != nil {
+		writers = append(writers, TUILogWriter)
+	}
+	multiWriter := io.MultiWriter(writers...)
+
 	if format == "json" {
-		if logFile != nil {
-			handler = slog.NewJSONHandler(io.MultiWriter(os.Stderr, logFile), opts)
-		} else {
-			handler = slog.NewJSONHandler(os.Stderr, opts)
-		}
+		handler = slog.NewJSONHandler(multiWriter, opts)
 	} else {
-		if logFile != nil {
-			handler = slog.NewTextHandler(io.MultiWriter(os.Stderr, logFile), opts)
-		} else {
-			handler = slog.NewTextHandler(os.Stderr, opts)
-		}
+		handler = slog.NewTextHandler(multiWriter, opts)
 	}
 
 	slog.SetDefault(slog.New(handler))

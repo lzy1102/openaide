@@ -168,6 +168,7 @@ func main() {
 	if flags.verbose {
 		cfg.Log.Level = "debug"
 	}
+	infra.TUILogWriter = tuiLogBuf
 	infra.InitLogger(cfg.Log.Level, cfg.Log.Format)
 
 	if flags.model != "" {
@@ -294,6 +295,7 @@ func cmdSessions(args []string) {
 		cfg = config.DefaultConfig()
 	}
 	cfg.Server.Mode = "direct"
+	infra.TUILogWriter = tuiLogBuf
 	infra.InitLogger(cfg.Log.Level, cfg.Log.Format)
 
 	app, err := infra.NewApplication(cfg)
@@ -383,6 +385,7 @@ func cmdPlugins(args []string) {
 	if err != nil {
 		cfg = config.DefaultConfig()
 	}
+	infra.TUILogWriter = tuiLogBuf
 	infra.InitLogger(cfg.Log.Level, cfg.Log.Format)
 
 	app, err := infra.NewApplication(cfg)

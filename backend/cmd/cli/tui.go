@@ -38,6 +38,7 @@ const (
 	viewPlanConfirm
 	viewProposalSelect
 	viewLangList
+	viewLog
 )
 
 const maxHistory = 50
@@ -124,8 +125,26 @@ type model struct {
 	deepResult   *orchestration.DeepPlanResult      // 深度规划结果
 	proposalSel  int
 	langChoices  []langChoice
-	langSel      int                                 // 方案选择游标
+	langSel      int
+	logBuf       []string                                 // 方案选择游标
 }
+
+// LogRing TUI 日志环形缓冲区
+type logRing struct {
+	mu  sync.Mutex
+	buf []string
+}
+
+func (r *logRing) Write(p []byte) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.buf = append(r.buf, strings.TrimSpace(string(p)))
+	if len(r.buf) > 50 { r.buf = r.buf[1:] }
+	return len(p), nil
+}
+
+var tuiLogBuf = &logRing{buf: make([]string, 0, 50)}
+
 
 func initModel(app *infra.Application, continueSess bool) *model {
 	ti := textinput.New()
@@ -141,6 +160,7 @@ func initModel(app *infra.Application, continueSess bool) *model {
 		BorderForeground(lipgloss.Color("#333333"))
 
 	m := &model{
+		logBuf: tuiLogBuf.buf,
 		app:        app,
 		state:      viewChat,
 		viewport:   vp,
@@ -644,6 +664,26 @@ func (m *model) updateLangList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m *model) logView() string {
+	var sb strings.Builder
+	sb.WriteString(planTitleStyle.Render("Log / 日志"))
+	sb.WriteString("\n\n")
+	lines := m.logBuf
+	start := 0
+	if len(lines) > 20 { start = len(lines) - 20 }
+	for i := start; i < len(lines); i++ {
+		sb.WriteString(lines[i] + "\n")
+	}
+	if len(lines) == 0 {
+		sb.WriteString("(no logs yet)")
+	}
+	sb.WriteString("\n" + planPromptStyle.Render("任意键返回"))
+	overlay := lipgloss.NewStyle().Width(m.width-10).Border(lipgloss.DoubleBorder()).
+		BorderForeground(lipgloss.Color("#888888")).Padding(0,1).Render(sb.String())
+	return strings.Repeat("\n", 2) + overlay
+}
+
+
 func (m *model) langListView() string {
 	var sb strings.Builder
 	sb.WriteString(planTitleStyle.Render("Language / 语言"))
@@ -785,6 +825,12 @@ func (m *model) handleCommand(cmd string) (tea.Model, tea.Cmd) {
 	case "/help":
 		m.state = viewHelp
 		m.input.Blur()
+		return m, nil
+	case "/log":
+		m.state = viewLog
+		m.logBuf = tuiLogBuf.buf
+		m.input.Blur()
+		m.input.SetValue("")
 		return m, nil
 	case "/clear":
 		m.messages = nil
@@ -1011,6 +1057,8 @@ func (m *model) View() string {
 		return m.chatView() + "\n" + m.helpOverlayView()
 	case viewPlanConfirm:
 		return m.chatView() + "\n" + m.planConfirmView()
+	case viewLog:
+		return m.chatView() + "\n" + m.logView()
 	case viewLangList:
 		return m.chatView() + "\n" + m.langListView()
 	case viewProposalSelect:
