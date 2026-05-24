@@ -49,6 +49,7 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 	embedder := llm.NewEmbedderFunc(gateway.Embed, gateway.EmbedBatch, embedderDim)
 
 	// 3. 工具注册表 + MCP
+	tools.LoadIgnorePatterns(".")
 	tools.SetBrowserEnabled(cfg.Browser.Enabled)
 	toolRegistry := tools.NewRegistry()
 	if err := tools.RegisterBuiltins(toolRegistry); err != nil {

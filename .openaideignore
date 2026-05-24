@@ -1,0 +1,39 @@
+# OpenAIDE ignore patterns (gitignore format)
+# Directories and files matching these patterns will be hidden from AI tools
+
+# Dependencies
+node_modules/
+vendor/
+
+# Build outputs
+dist/
+build/
+bin/
+out/
+
+# Cache
+.cache/
+__pycache__/
+*.pyc
+
+# Large binary files
+*.exe
+*.dll
+*.so
+*.dylib
+*.zip
+*.tar.gz
+*.jar
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Git
+.git/
+
+# Test coverage
+coverage/
+.nyc_output/

@@ -132,7 +132,7 @@ func handleReadFile(ctx context.Context, arguments string) (*kernel.ToolResult, 
 		Limit  int    `json:"limit,omitempty"`
 	}
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
-		return &kernel.ToolResult{Error: err.Error()}, nil
+		return &kernel.ToolResult{Error: err.Error(), ErrorCode: "INVALID_PATH", IsRetryable: false}, nil
 	}
 	if args.Path == "" {
 		return &kernel.ToolResult{Error: "path is required"}, nil
@@ -140,7 +140,7 @@ func handleReadFile(ctx context.Context, arguments string) (*kernel.ToolResult, 
 
 	absPath, err := safeAbsPath(args.Path)
 	if err != nil {
-		return &kernel.ToolResult{Error: err.Error()}, nil
+		return &kernel.ToolResult{Error: err.Error(), ErrorCode: "INVALID_PATH", IsRetryable: false}, nil
 	}
 
 	data, err := os.ReadFile(absPath)
@@ -176,7 +176,7 @@ func handleWriteFile(ctx context.Context, arguments string) (*kernel.ToolResult,
 		Content string `json:"content"`
 	}
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
-		return &kernel.ToolResult{Error: err.Error()}, nil
+		return &kernel.ToolResult{Error: err.Error(), ErrorCode: "INVALID_PATH", IsRetryable: false}, nil
 	}
 	if args.Path == "" {
 		return &kernel.ToolResult{Error: "path is required"}, nil
@@ -184,7 +184,7 @@ func handleWriteFile(ctx context.Context, arguments string) (*kernel.ToolResult,
 
 	absPath, err := safeAbsPath(args.Path)
 	if err != nil {
-		return &kernel.ToolResult{Error: err.Error()}, nil
+		return &kernel.ToolResult{Error: err.Error(), ErrorCode: "INVALID_PATH", IsRetryable: false}, nil
 	}
 
 	dir := filepath.Dir(absPath)
@@ -205,7 +205,7 @@ func handleExecuteCommand(ctx context.Context, arguments string) (*kernel.ToolRe
 		WorkingDir string `json:"working_dir,omitempty"`
 	}
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
-		return &kernel.ToolResult{Error: err.Error()}, nil
+		return &kernel.ToolResult{Error: err.Error(), ErrorCode: "INVALID_PATH", IsRetryable: false}, nil
 	}
 	if args.Command == "" {
 		return &kernel.ToolResult{Error: "command is required"}, nil
@@ -222,7 +222,7 @@ func handleExecuteCommand(ctx context.Context, arguments string) (*kernel.ToolRe
 	if args.WorkingDir != "" {
 		absDir, err := safeAbsPath(args.WorkingDir)
 		if err != nil {
-			return &kernel.ToolResult{Error: err.Error()}, nil
+			return &kernel.ToolResult{Error: err.Error(), ErrorCode: "INVALID_PATH", IsRetryable: false}, nil
 		}
 		cmd.Dir = absDir
 	} else {
@@ -239,7 +239,7 @@ func handleExecuteCommand(ctx context.Context, arguments string) (*kernel.ToolRe
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			exitCode = exitErr.ExitCode()
 		} else {
-			return &kernel.ToolResult{Error: fmt.Sprintf("exec failed: %v", err)}, nil
+			return &kernel.ToolResult{Error: fmt.Sprintf("exec failed: %v", err), ErrorCode: "EXEC_FAILED", IsRetryable: true}, nil
 		}
 	}
 
@@ -259,7 +259,7 @@ func handleListDirectory(ctx context.Context, arguments string) (*kernel.ToolRes
 		Path string `json:"path"`
 	}
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
-		return &kernel.ToolResult{Error: err.Error()}, nil
+		return &kernel.ToolResult{Error: err.Error(), ErrorCode: "INVALID_PATH", IsRetryable: false}, nil
 	}
 	if args.Path == "" {
 		args.Path = "."
@@ -267,17 +267,20 @@ func handleListDirectory(ctx context.Context, arguments string) (*kernel.ToolRes
 
 	absPath, err := safeAbsPath(args.Path)
 	if err != nil {
-		return &kernel.ToolResult{Error: err.Error()}, nil
+		return &kernel.ToolResult{Error: err.Error(), ErrorCode: "INVALID_PATH", IsRetryable: false}, nil
 	}
 
 	entries, err := os.ReadDir(absPath)
 	if err != nil {
-		return &kernel.ToolResult{Error: fmt.Sprintf("readdir failed: %v", err)}, nil
+		return &kernel.ToolResult{Error: fmt.Sprintf("readdir failed: %v", err), ErrorCode: "NOT_FOUND", IsRetryable: true}, nil
 	}
 
 	var out strings.Builder
-	out.WriteString(fmt.Sprintf("// %s/ (%d entries)\n", absPath, len(entries)))
+	var lines []string
 	for _, e := range entries {
+		if isIgnored(filepath.Join(absPath, e.Name())) {
+			continue
+		}
 		info, _ := e.Info()
 		size := ""
 		modTime := ""
@@ -289,7 +292,11 @@ func handleListDirectory(ctx context.Context, arguments string) (*kernel.ToolRes
 		if e.IsDir() {
 			typeChar = "/"
 		}
-		fmt.Fprintf(&out, "%s  %9s  %s%s\n", modTime, size, e.Name(), typeChar)
+		lines = append(lines, fmt.Sprintf("%s  %9s  %s%s", modTime, size, e.Name(), typeChar))
+	}
+	out.WriteString(fmt.Sprintf("// %s/ (%d entries)\n", absPath, len(lines)))
+	for _, l := range lines {
+		out.WriteString(l + "\n")
 	}
 	return &kernel.ToolResult{Content: out.String()}, nil
 }
@@ -301,10 +308,10 @@ func handleSearchFiles(ctx context.Context, arguments string) (*kernel.ToolResul
 		Path    string `json:"path"`
 	}
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
-		return &kernel.ToolResult{Error: err.Error()}, nil
+		return &kernel.ToolResult{Error: err.Error(), ErrorCode: "INVALID_PATH", IsRetryable: false}, nil
 	}
 	if args.Pattern == "" {
-		return &kernel.ToolResult{Error: "pattern is required"}, nil
+		return &kernel.ToolResult{Error: "pattern is required", ErrorCode: "INVALID_ARGS", IsRetryable: true}, nil
 	}
 	if args.Path == "" {
 		args.Path = "."
@@ -312,7 +319,7 @@ func handleSearchFiles(ctx context.Context, arguments string) (*kernel.ToolResul
 
 	absPath, err := safeAbsPath(args.Path)
 	if err != nil {
-		return &kernel.ToolResult{Error: err.Error()}, nil
+		return &kernel.ToolResult{Error: err.Error(), ErrorCode: "INVALID_PATH", IsRetryable: false}, nil
 	}
 
 	re, err := regexp.Compile(args.Pattern)
@@ -325,7 +332,7 @@ func handleSearchFiles(ctx context.Context, arguments string) (*kernel.ToolResul
 	total := 0
 
 	filepath.Walk(absPath, func(fpath string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() {
+		if err != nil || info.IsDir() || isIgnored(fpath) {
 			return nil
 		}
 		if strings.HasPrefix(info.Name(), ".") {

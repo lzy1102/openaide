@@ -29,8 +29,10 @@ type FunctionCall struct {
 
 // ToolResult 工具执行结果
 type ToolResult struct {
-	Content interface{} `json:"content"`
-	Error   string      `json:"error,omitempty"`
+	Content     interface{} `json:"content"`
+	Error       string      `json:"error,omitempty"`
+	ErrorCode   string      `json:"error_code,omitempty"`   // NOT_FOUND, PERMISSION_DENIED, TIMEOUT, INVALID_ARGS, EXEC_FAILED
+	IsRetryable bool        `json:"is_retryable,omitempty"` // 可以换参数重试
 }
 
 // ToolDefinition 工具定义
