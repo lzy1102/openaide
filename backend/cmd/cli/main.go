@@ -26,6 +26,7 @@ type cliFlags struct {
 	model        string
 	verbose      bool
 	outputFormat string
+	repl         bool
 }
 
 func defaultConfigPath() string {
@@ -96,6 +97,8 @@ func parseFlags(args []string) cliFlags {
 		case a == "plugins":
 			cmdPlugins(args[i+1:])
 			os.Exit(0)
+		case a == "repl" || a == "-r" || a == "--repl":
+			f.repl = true
 		case !strings.HasPrefix(a, "-"):
 			positional = append(positional, a)
 		}
@@ -203,6 +206,12 @@ func main() {
 	// 首次运行：LLM 深度引导（需要内核就绪）
 	if firstRun {
 		runLLMOnboarding(app, promptsDir)
+	}
+
+	// REPL 模式: 纯文本交互, 无 TUI
+	if flags.repl {
+		runREPL(app)
+		return
 	}
 
 	// One-shot: prompt from positional args
