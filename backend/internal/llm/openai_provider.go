@@ -327,11 +327,9 @@ func (p *OpenAIProvider) buildRequestBody(messages []kernel.Message, tools []ker
 		body["tools"] = p.convertTools(tools)
 	}
 
-	// DeepSeek 特有参数 - 只在检测到 DeepSeek 时发送
+	// DeepSeek 特有参数
 	if p.isDeepSeek() {
-		if p.isDeepSeek() && p.config.Thinking == nil {
-			body["thinking"] = map[string]string{"type": "disabled"}
-		} else if p.config.Thinking != nil {
+		if p.config.Thinking != nil {
 			body["thinking"] = map[string]string{
 				"type": p.config.Thinking.Type,
 			}
@@ -379,9 +377,8 @@ func (p *OpenAIProvider) convertMessages(messages []kernel.Message) []map[string
 			"role":    msg.Role,
 			"content": content,
 		}
-		if msg.ReasoningContent != "" {
-			m["reasoning_content"] = msg.ReasoningContent
-		}
+		// 推理模型需要此字段, 含空串也传
+		m["reasoning_content"] = msg.ReasoningContent
 		if msg.Name != "" {
 			m["name"] = msg.Name
 		}
