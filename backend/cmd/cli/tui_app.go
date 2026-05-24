@@ -139,6 +139,7 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status.SetTokens(msg.Tokens)
 			m.status.SetTools(msg.Tools)
 		}
+		m.chat.ScrollToBottom()
 		// Auto-send queued query
 		if q := m.inputBar.PopQueued(); q != "" {
 			m.chat.AddMessage("system", "消息已排队，自动发送…", "")
@@ -271,6 +272,7 @@ func (m *AppModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.handleCommand(query)
 		}
 		m.chat.AddMessage("user", query, "")
+		m.chat.ScrollToBottom()
 		m.streaming = true
 		m.status.SetStreaming(true)
 		m.inputBar.SetStreaming(true)
@@ -309,6 +311,7 @@ func (m *AppModel) View() string {
 
 func (m *AppModel) submitQuery(query string) tea.Cmd {
 	m.chat.AddMessage("user", query, "")
+	m.chat.ScrollToBottom()
 	m.streaming = true
 	m.status.SetStreaming(true)
 	m.inputBar.SetStreaming(true)
