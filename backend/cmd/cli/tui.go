@@ -270,8 +270,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case viewLangList:
 			return m.updateLangList(msg)
 		case viewHelp:
-			m.state = viewChat
-			m.input.Focus()
+			switch msg.String() {
+			case "esc", "q", "enter", "ctrl+c":
+				m.state = viewChat
+				m.input.Focus()
+			}
 			return m, nil
 		case viewProposalSelect:
 			switch msg.String() {
@@ -483,9 +486,18 @@ func (m *model) updateChat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "ctrl+v":
 		if !m.streaming {
-			text := readClipboard()
-			if text != "" {
-				m.input.SetValue(m.input.Value() + text)
+			// 异步读取剪贴板，避免阻塞 UI（Wayland/X11 子进程可能卡住）
+			done := make(chan string, 1)
+			go func() {
+				done <- readClipboard()
+			}()
+			select {
+			case text := <-done:
+				if text != "" {
+					m.input.SetValue(m.input.Value() + text)
+				}
+			case <-time.After(2 * time.Second):
+				// 剪贴板超时，放弃
 			}
 		}
 		return m, nil
