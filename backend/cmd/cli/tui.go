@@ -468,10 +468,6 @@ func (m *model) updateChat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.input.SetValue("")
 
 		// ≤3 字跳过规划（如 "hi"）
-		if len([]rune(query)) <= 15 {
-			m.startStream(query)
-			return m, nil
-		}
 
 		// 自适应规划深度：LLM 快速分类任务复杂度
 		// PreviewPlan 一次 LLM 调用同时判断复杂度+拆分
