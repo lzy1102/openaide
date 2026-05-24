@@ -354,7 +354,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.sysMsg != "" {
 			m.messages = append(m.messages, chatMsg{role: "system", content: msg.sysMsg})
 			m.renderViewport()
-			m.smartScroll()
+			m.viewport.GotoBottom()
 			return m, nil
 		}
 		if msg.toolCall {
@@ -518,7 +518,7 @@ func (m *model) updateChat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		m.messages = append(m.messages, chatMsg{role: "user", content: query})
 		m.renderViewport()
-		m.smartScroll()
+		m.viewport.GotoBottom()
 		m.input.SetValue("")
 
 		// ≤3 字跳过规划（如 "hi"）
