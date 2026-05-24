@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"log/slog"
 	"time"
@@ -109,6 +110,11 @@ func (s *FileSessionStore) List(ctx context.Context, projectID, userID string, l
 			matched = append(matched, session)
 		}
 	}
+
+	// 按更新时间倒序，最近会话优先
+	sort.Slice(matched, func(i, j int) bool {
+		return matched[i].UpdatedAt.After(matched[j].UpdatedAt)
+	})
 
 	if offset >= len(matched) {
 		return nil, nil
@@ -260,6 +266,10 @@ func (s *SessionStoreAdapter) List(ctx context.Context, projectID, userID string
 			matched = append(matched, session)
 		}
 	}
+
+	sort.Slice(matched, func(i, j int) bool {
+		return matched[i].UpdatedAt.After(matched[j].UpdatedAt)
+	})
 
 	if offset >= len(matched) {
 		return nil, nil
