@@ -26,7 +26,7 @@ type cliFlags struct {
 	model        string
 	verbose      bool
 	outputFormat string
-	repl         bool
+	tui          bool // Use TUI instead of REPL
 }
 
 func defaultConfigPath() string {
@@ -97,8 +97,8 @@ func parseFlags(args []string) cliFlags {
 		case a == "plugins":
 			cmdPlugins(args[i+1:])
 			os.Exit(0)
-		case a == "repl" || a == "-r" || a == "--repl":
-			f.repl = true
+		case a == "--tui":
+			f.tui = true
 		case !strings.HasPrefix(a, "-"):
 			positional = append(positional, a)
 		}
@@ -208,8 +208,8 @@ func main() {
 		runLLMOnboarding(app, promptsDir)
 	}
 
-	// REPL 模式: 纯文本交互, 无 TUI
-	if flags.repl {
+	// 默认 REPL，--tui 启用图形终端界面
+	if !flags.tui {
 		runREPL(app)
 		return
 	}
