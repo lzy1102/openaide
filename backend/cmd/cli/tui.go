@@ -730,6 +730,9 @@ func (m *model) executePlan(query string, plan *orchestration.Plan) {
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancelStream = cancel
 
+	// 当前步骤提示（用于心跳更新）
+	currentStep := ""
+
 	// 注册进度回调，实时显示子 Agent 执行状态
 	m.app.Orchestrator.OnProgress = func(phase, detail string) {
 		icon := "⚙"
@@ -741,11 +744,33 @@ func (m *model) executePlan(query string, plan *orchestration.Plan) {
 		case "review":
 			icon = "🔍"
 		}
-		m.program.Send(chunkMsg{thinking: fmt.Sprintf("%s %s", icon, detail)})
+		currentStep = fmt.Sprintf("%s %s", icon, detail)
+		m.program.Send(chunkMsg{thinking: currentStep})
 	}
 
 	go func() {
 		defer cancel()
+
+		// 心跳：子 Agent 同步执行期间定期更新耗时
+		start := time.Now()
+		heartbeat := time.NewTicker(5 * time.Second)
+		defer heartbeat.Stop()
+		hbDone := make(chan struct{})
+		defer close(hbDone)
+		go func() {
+			for {
+				select {
+				case <-heartbeat.C:
+					elapsed := time.Since(start).Round(time.Second)
+					if currentStep != "" {
+						m.program.Send(chunkMsg{thinking: fmt.Sprintf("%s (%v)", currentStep, elapsed)})
+					}
+				case <-hbDone:
+					return
+				}
+			}
+		}()
+
 		resp, err := m.app.Orchestrator.ExecuteWithPlan(ctx, "cli-user", "default", query, plan, kernel.QueryOptions{})
 		if err != nil {
 			m.program.Send(chunkMsg{err: err, done: true})
