@@ -377,7 +377,10 @@ func (p *OpenAIProvider) convertMessages(messages []kernel.Message) []map[string
 			"role":    msg.Role,
 			"content": content,
 		}
-		if msg.ReasoningContent != "" {
+		// DeepSeek thinking 模式要求 assistant 消息必须带 reasoning_content
+		if msg.Role == "assistant" && p.isDeepSeek() {
+			m["reasoning_content"] = msg.ReasoningContent
+		} else if msg.ReasoningContent != "" {
 			m["reasoning_content"] = msg.ReasoningContent
 		}
 		if msg.Name != "" {
