@@ -419,13 +419,17 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case sessionListMsg:
 		if msg.err == nil {
+			hadSession := m.currentSess != nil
 			m.sessions = msg.sessions
 			if msg.session != nil {
 				m.currentSess = msg.session
-				m.messages = nil
 				m.tokens = 0
 				m.tools = 0
 				m.err = nil
+				// 只在用户主动切换会话时清空消息（首次加载保留欢迎横幅）
+				if hadSession {
+					m.messages = nil
+				}
 			}
 			if m.selSession >= len(m.sessions) {
 				m.selSession = len(m.sessions) - 1
@@ -1487,6 +1491,9 @@ func (m *model) renderViewport() {
 		sb.WriteString("\n")
 	}
 
+	if len(m.messages) == 0 && m.aiBuf.Len() == 0 {
+		sb.WriteString(sysStyle.Render("[sys] 就绪。输入消息开始…"))
+	}
 	if m.aiBuf.Len() > 0 {
 		sb.WriteString(aiStyle.Render(m.aiBuf.String()))
 	}
