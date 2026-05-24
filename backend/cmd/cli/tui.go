@@ -266,9 +266,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case viewSessionList:
 			return m.updateSessionList(msg)
 		case viewModelList:
+			return m.updateModelList(msg)
 		case viewLangList:
 			return m.updateLangList(msg)
-			return m.updateModelList(msg)
 		case viewHelp:
 			m.state = viewChat
 			m.input.Focus()
@@ -300,12 +300,19 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = viewChat
 				m.addSystemMsg("规划已批准，开始执行…")
 				m.renderViewport()
-				go m.executePlan(m.pendingQuery, m.pendingPlan)
+				m.streaming = true
+				m.thinkBuf.Reset()
+				m.aiBuf.Reset()
+				m.err = nil
+				ctx, cancel := context.WithCancel(context.Background())
+				m.cancelStream = cancel
+				go m.executePlan(m.pendingQuery, m.pendingPlan, ctx, cancel)
 				m.pendingPlan = nil
 				m.pendingQuery = ""
 			case "d":
 				m.addSystemMsg("正在深度分析…")
 				m.renderViewport()
+				m.planning = true
 				go m.doDeepPlan(m.pendingQuery)
 			case "n", "esc", "ctrl+c":
 				m.state = viewChat
@@ -332,6 +339,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pendingQuery = msg.query
 			m.addSystemMsg("🔍 研究阶段: 分析现有代码…")
 			m.renderViewport()
+			m.planning = true
 			go m.doDeepPlan(msg.query)
 		} else {
 			m.streaming = false
@@ -629,15 +637,8 @@ func (m *model) addErrorMsg(content string) {
 
 
 // runSingleRole 使用单个团队角色执行任务
-func (m *model) runSingleRole(role, task string) {
-	m.streaming = true
-	m.thinkBuf.Reset()
-	m.aiBuf.Reset()
-	m.err = nil
-	ctx, cancel := context.WithCancel(context.Background())
-	m.cancelMu.Lock()
-	m.cancelStream = cancel
-	m.cancelMu.Unlock()
+// streaming/buffers/err/cancelStream 已由调用方在 main goroutine 设置
+func (m *model) runSingleRole(role, task string, ctx context.Context, cancel context.CancelFunc) {
 	go func() {
 		defer cancel()
 		resp, err := m.app.Orchestrator.RunSubAgent(ctx, "cli-user", "default", role, task, nil)
@@ -650,15 +651,8 @@ func (m *model) runSingleRole(role, task string) {
 }
 
 // runTeamChain 使用完整团队链执行任务 (analyst→coder→reviewer)
-func (m *model) runTeamChain(task string) {
-	m.streaming = true
-	m.thinkBuf.Reset()
-	m.aiBuf.Reset()
-	m.err = nil
-	ctx, cancel := context.WithCancel(context.Background())
-	m.cancelMu.Lock()
-	m.cancelStream = cancel
-	m.cancelMu.Unlock()
+// streaming/buffers/err/cancelStream 已由调用方在 main goroutine 设置
+func (m *model) runTeamChain(task string, ctx context.Context, cancel context.CancelFunc) {
 	go func() {
 		defer cancel()
 		// analyst 分析
@@ -736,13 +730,8 @@ func (m *model) startStream(query string) {
 	go doStream(ctx, m.program, m.app, sessionID, query)
 }
 
-func (m *model) executePlan(query string, plan *orchestration.Plan) {
-	m.streaming = true
-	m.thinkBuf.Reset()
-	m.aiBuf.Reset()
-	m.err = nil
-	ctx, cancel := context.WithCancel(context.Background())
-	m.cancelStream = cancel
+func (m *model) executePlan(query string, plan *orchestration.Plan, ctx context.Context, cancel context.CancelFunc) {
+	// streaming/buffers/err/cancelStream 已由调用方在 main goroutine 设置
 
 	// 当前步骤提示（用于心跳更新）
 	currentStep := ""
@@ -884,7 +873,7 @@ func (m *model) planConfirmView() string {
 }
 
 func (m *model) doDeepPlan(query string) {
-	m.planning = true
+	// m.planning 已由调用方在 main goroutine 设置
 	defer func() { m.planning = false }()
 	ctx, cancel := context.WithTimeout(context.Background(), m.app.Orchestrator.DeepTimeout)
 	defer cancel()
@@ -946,7 +935,9 @@ func (m *model) doDeepPlanFinalize(idx int) {
 	m.state = viewChat
 	m.addSystemMsg("计划已生成，开始执行（程序员 → 测试 → 审查）")
 	m.renderViewport()
-	go m.executePlan(m.pendingQuery, plan)
+	execCtx, execCancel := context.WithCancel(context.Background())
+	m.cancelStream = execCancel
+	go m.executePlan(m.pendingQuery, plan, execCtx, execCancel)
 	m.pendingPlan = nil
 	m.pendingQuery = ""
 	m.deepResult = nil
@@ -1047,7 +1038,13 @@ func (m *model) handleCommand(cmd string) (tea.Model, tea.Cmd) {
 		}
 		m.addSystemMsg(fmt.Sprintf("调用 %s 角色执行任务…", role))
 		m.renderViewport()
-		go m.runSingleRole(role, task)
+		m.streaming = true
+		m.thinkBuf.Reset()
+		m.aiBuf.Reset()
+		m.err = nil
+		ctx, cancel := context.WithCancel(context.Background())
+		m.cancelStream = cancel
+		go m.runSingleRole(role, task, ctx, cancel)
 		m.input.SetValue("")
 		return m, nil
 	case "/team":
@@ -1059,7 +1056,13 @@ func (m *model) handleCommand(cmd string) (tea.Model, tea.Cmd) {
 		}
 		m.addSystemMsg("启动团队协作: 分析员→程序员→审查员…")
 		m.renderViewport()
-		go m.runTeamChain(task)
+		m.streaming = true
+		m.thinkBuf.Reset()
+		m.aiBuf.Reset()
+		m.err = nil
+		ctx, cancel := context.WithCancel(context.Background())
+		m.cancelStream = cancel
+		go m.runTeamChain(task, ctx, cancel)
 		m.input.SetValue("")
 		return m, nil
 	case "/handoff":
@@ -1267,7 +1270,7 @@ func (m *model) chatView() string {
 	spinnerFrames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 	if m.streaming || m.planning || m.state == viewProposalSelect {
 		frame := spinnerFrames[m.spinner]
-		statusParts = append(statusParts, fmt.Sprintf("%s %s[%d]", frame, lang.T("mode.thinking"), m.spinner))
+		statusParts = append(statusParts, frame+" "+lang.T("mode.thinking"))
 	}
 	if m.tools > 0 {
 		statusParts = append(statusParts, fmt.Sprintf(icons.tools+" %d", m.tools))
@@ -1494,6 +1497,7 @@ func doStream(ctx context.Context, p *tea.Program, app *infra.Application, sessi
 	// 异步转发：用有缓冲 channel 解耦 stream 消费和 p.Send()，
 	// 避免 Bubble Tea 无缓冲消息队列阻塞导致 stream goroutine 死锁
 	msgBuf := make(chan tea.Msg, 64)
+	defer close(msgBuf)
 	go func() {
 		for msg := range msgBuf {
 			p.Send(msg)
