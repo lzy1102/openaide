@@ -54,7 +54,7 @@ cmd/server (API server)          cmd/cli (interactive CLI)
 ### Entry points
 
 - **`backend/cmd/server/main.go`** — Production server. Loads config from `~/.openaide/config.yaml`, starts the HTTP API server.
-- **`backend/cmd/cli/main.go`** — Interactive CLI. Defaults to **REPL mode** (rich terminal readline with markdown rendering). `--tui` flag for Bubble Tea TUI. `-c` flag resumes last session. On first run, triggers interactive onboarding (`onboard.go`). One-shot mode: `openaide "fix this bug"`.
+- **`backend/cmd/cli/main.go`** — Interactive CLI. **REPL mode** (rich terminal readline with markdown rendering, pterm styling). `-c` flag resumes last session. On first run, triggers interactive onboarding (`onboard.go`). One-shot mode: `openaide "fix this bug"`.
 - **`backend/cmd/cli/onboard.go`** — First-run onboarding. Template questions (role/style/language) → `NewApplication()` → LLM interview (2-round open-ended dialogue) → generates custom `system.md` → hot-reloads via `SetSystemPrompt()`.
 
 ### Layered design
@@ -320,28 +320,20 @@ model_routing:
   execution: deepseek-v4-flash # coder, executor, synthesis, classification
 ```
 
-### CLI (REPL + TUI)
+### CLI (REPL)
 
-**REPL mode (default)** — `openaide`:
+**REPL mode** — `openaide`:
 - `cmd/cli/repl.go` — Rich terminal REPL with lmorg/readline:
   - Readline with history, tab completion, hints
-  - Markdown rendering via glamour (headers, code blocks with Chroma highlighting, tables)
-  - Semantic color palette (15 aliases: cToolName/yellow, cError/red+bold, cThink/dim, etc.)
+  - Markdown rendering via glamour (headers, code blocks with Chroma, tables)
+  - pterm: progress bars, spinners, colored messages
+  - Collapsible tool sections (read-only tools folded into one line)
   - Smart routing: PreviewPlan → direct ReAct or team execution
-  - Streaming display: tools summarized on one line, answer rendered after completion
+  - Streaming display: tool summary line, answer rendered after completion
   - Slash commands: `/analyst`, `/coder`, `/reviewer`, `/executor`, `/team`
   - Session resume: `-c` flag loads last non-empty session
-- `cmd/cli/repl_output.go` — ANSI color system, glamour markdown renderer, output helpers
-
-**TUI mode** — `openaide --tui`:
-- `cmd/cli/tui_app.go` — `AppModel` root coordinator
-- `cmd/cli/tui_chat.go` — `ChatArea` component (viewport + messages + streaming buffer)
-- `cmd/cli/tui_status.go` — `StatusBar` component (spinner, session, tokens, tools)
-- `cmd/cli/tui_input.go` — `InputBar` component (text input, history, queued query)
-- `cmd/cli/tui_theme.go` — Icons, lipgloss styles, logRing, syntax highlighting, utilities
-- `cmd/cli/tui_types.go` — Message types, enums (StreamPhase, OverlayType, WorkKind)
-- Smart scroll: only auto-scrolls when user is at bottom (`viewport.AtBottom()`)
-- Thinking content collapsed to one line
+- `cmd/cli/repl_output.go` — pterm/ANSI styling, glamour renderer, output helpers
+- `cmd/cli/utils.go` — logRing buffer, trunc helper
 
 ### Budget injection (Claude Code style)
 
