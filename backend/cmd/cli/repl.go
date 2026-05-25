@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	osexec "os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -21,14 +23,32 @@ func runREPL(app *infra.Application) {
 	info := app.LLMGateway.GetProviderInfos()
 	modelName := ""
 	if len(info) > 0 {
-		modelName = info[0].Model
+		modelName = fmt.Sprintf("%s (%s)", info[0].Model, info[0].Name)
+	}
+
+	// Project context
+	cwd, _ := os.Getwd()
+	gitBranch := ""
+	if out, err := execCmd("git", "rev-parse", "--abbrev-ref", "HEAD"); err == nil {
+		gitBranch = strings.TrimSpace(out)
+	}
+
+	fmt.Println()
+	fmt.Printf("  %sOpenAIDE%s", bold, reset)
+	if gitBranch != "" {
+		fmt.Printf("  %s%s%s", gray, gitBranch, reset)
 	}
 	fmt.Println()
-	fmt.Printf("  %sOpenAIDE REPL%s\n", bold, reset)
 	if modelName != "" {
-		fmt.Printf("  Model: %s%s%s\n", green, modelName, reset)
+		fmt.Printf("  %s%s%s", green, modelName, reset)
+		if gitBranch == "" {
+			fmt.Printf("  %s%s%s", gray, filepath.Base(cwd), reset)
+		}
 	}
-	fmt.Printf("  %s/h%s help  %s|%s  %s/q%s quit  %s|%s  Ctrl+C interrupt\n", yellow, reset, gray, reset, yellow, reset, gray, reset)
+	fmt.Println()
+	fmt.Println()
+	fmt.Printf("  %s/h%s help  %s|%s  %s/q%s quit  %s|%s  Ctrl+C interrupt", yellow, reset, gray, reset, yellow, reset, gray, reset)
+	fmt.Println()
 	fmt.Println()
 
 	sess, _ := app.Orchestrator.CreateSession(context.Background(), "default", "cli-user")
@@ -97,6 +117,14 @@ func runREPL(app *infra.Application) {
 		}
 		rl.SetPrompt(PromptStyle(sessionID, modelName))
 	}
+}
+
+func execCmd(name string, args ...string) (string, error) {
+	cmd := osexec.Command(name, args...)
+	cmd.Stderr = nil
+	out, err := cmd.Output()
+	if err != nil { return "", err }
+	return strings.TrimSpace(string(out)), nil
 }
 
 // ── Simple Query (direct ReAct stream) ────────────────────
