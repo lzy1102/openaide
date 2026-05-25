@@ -175,10 +175,10 @@ OpenAIDE's unique value: deep pre-execution analysis before any code changes.
 
 OpenAIDE reads and integrates with other agent ecosystems:
 
+- **Rule files**: Auto-loads OPENAIDE.md, CLAUDE.md, CODEBUDDY.md, CONVENTIONS.md, `.github/copilot-instructions.md`, `.cursor/rules/*.md` — write once, works across OpenAIDE + Claude Code + Cursor + Aider + OpenCode + Copilot.
 - **Claude Code plugins**: Full format support (manifest, skills, MCP, hooks). See plugin system section.
 - **OpenCode config**: Auto-discovers `opencode.json` in project root — imports MCP servers + instructions.
 - **MCP protocol**: Universal standard across all major coding agents (stdio transport, 30s timeout).
-- **Plugin marketplace**: CLI command `openaide plugins [list|search|install <url>]`.
 
 ### Continuous learning (ProjectMind — gets smarter every task)
 
