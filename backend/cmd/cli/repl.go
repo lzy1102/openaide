@@ -344,19 +344,39 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 		start := 0; if len(lines) > 20 { start = len(lines) - 20 }
 		for i := start; i < len(lines); i++ { fmt.Printf("  %s%s%s\n", cInfo, lines[i], cReset) }
 
-	case "/sessions":
+		case "/sessions":
 		sessions, _ := app.Orchestrator.ListSessions(context.Background(), "default", "cli-user", 10, 0)
-		fmt.Println()
-		for i, s := range sessions {
-			marker := " "; if s.ID == *sessionID { marker = "*" }
+		if len(sessions) == 0 { PrintInfo("没有会话"); return }
+
+		var options []string
+		for _, s := range sessions {
 			title := s.ID[:8]
 			for j := len(s.Messages) - 1; j >= 0; j-- {
 				if s.Messages[j].Role == "user" { title = trunc(s.Messages[j].Content, 40); break }
 			}
-			fmt.Printf("  %s [%d] %s%s%s  [%d msgs]  %s\n", marker, i+1, cReset, title, cInfo, len(s.Messages), s.UpdatedAt.Format("15:04"))
+			marker := " "
+			if s.ID == *sessionID { marker = "●" }
+			options = append(options, fmt.Sprintf("%s  %s  [%d msgs]  %s", marker, title, len(s.Messages), s.UpdatedAt.Format("15:04")))
 		}
-		fmt.Printf("\n  %s/session <编号>%s 切换会话\n", cInfo, cReset)
-		fmt.Println()
+
+		// 交互式选择（上下键 + Enter）
+		result, _ := pterm.DefaultInteractiveSelect.
+			WithOptions(options).
+			WithDefaultText("选择会话 (↑↓ 移动, Enter 确认, Esc 取消)").
+			WithMaxHeight(10).
+			Show()
+
+		if result != "" {
+			for i, opt := range options {
+				if opt == result {
+					*sessionID = sessions[i].ID
+					pterm.Success.Printfln("已切换到会话 %s", trunc(sessions[i].ID, 8))
+					return
+				}
+			}
+		}
+		PrintInfo("已取消")
+		return
 
 	case "/session":
 		if len(parts) >= 2 {
@@ -377,8 +397,9 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 		} else {
 			PrintInfo("用法: /session <编号>")
 		}
+		return
 
-	case "/analyst", "/coder", "/reviewer", "/executor":
+case "/analyst", "/coder", "/reviewer", "/executor":
 		role := strings.TrimPrefix(parts[0], "/")
 		task := strings.TrimSpace(strings.TrimPrefix(cmd, parts[0]))
 		if task == "" { PrintWarning("usage: " + parts[0] + " <task>"); return }
