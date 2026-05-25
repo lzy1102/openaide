@@ -1,63 +1,61 @@
 # OpenAIDE | AI Agent 内核平台
 
-基于全新架构的 AI Agent 内核，采用分层设计：Kernel → Orchestration → API → Infrastructure。
+Go 编写的 AI Agent 内核，支持 CLI（REPL + TUI）和 HTTP API Server。
 
 ---
 
 ## 快速开始
 
-### 1. 一键部署（推荐）
-
-从 GitHub 最新 Release 下载并部署：
-
 ```bash
-# 使用 curl
-curl -fsSL https://raw.githubusercontent.com/lzy1102/openaide/master/install.sh | sudo bash
+git clone https://github.com/lzy1102/openaide.git
+cd openaide/backend
+make build
 
-# 或使用 wget
-wget -qO- https://raw.githubusercontent.com/lzy1102/openaide/master/install.sh | sudo bash
-```
+# 配置 API Key
+mkdir -p ~/.openaide && cp config.example.yaml ~/.openaide/config.yaml
+# 编辑 ~/.openaide/config.yaml，填入你的 API Key
 
-部署完成后：
-- 服务运行在 `http://localhost:8080`
-- 配置文件：`~/.openaide/config.yaml`
-- 日志：`~/.openaide/logs/server.log`
-- 默认管理员：`admin / admin123`
+# REPL 模式（默认）
+./bin/openaide
 
-### 2. 本地编译部署
+# TUI 模式
+./bin/openaide --tui
 
-```bash
-# 克隆代码到用户目录
-git clone https://github.com/lzy1102/openaide.git ~/.openaide
-cd ~/.openaide
+# 恢复上次会话
+./bin/openaide -c
 
-# 运行安装脚本（本地编译模式）
-bash install.sh --local
-```
+# One-shot
+./bin/openaide "fix this bug"
 
-### 3. Docker 部署
-
-```bash
-cd ~/.openaide/backend
-docker-compose up -d
+# 启动 API 服务器
+./bin/openaide-server
 ```
 
 ---
 
-## 配置说明
+## 配置
 
-配置文件位置：`~/.openaide/config.yaml`（支持 JSON/YAML）
+`~/.openaide/config.yaml`:
 
-首次部署会自动创建默认配置，**必须修改 API Key** 才能使用。
-
-### 最小可用配置
-
-```json
-{
-  "server": {
-    "host": "0.0.0.0",
-    "port": 8080,
-    "mode": "server"
+```yaml
+llm:
+  providers:
+    - name: deepseek
+      default_model: deepseek-v4-pro
+      api_key: sk-xxx
+      timeout: 300
+    - name: deepseek-flash
+      default_model: deepseek-v4-flash
+      api_key: sk-xxx
+      timeout: 120
+  model_routing:
+    reasoning: deepseek-v4-pro   # analyst, reviewer
+    execution: deepseek-v4-flash # coder, executor, synthesis
+kernel:
+  max_rounds: 30
+  min_rounds: 8
+log:
+  level: info
   },
   "llm": {
     "default_provider": "openai",

@@ -49,7 +49,7 @@ cmd/server (API server)          cmd/cli (interactive CLI)
 ### Entry points
 
 - **`backend/cmd/server/main.go`** — Production server. Loads config from `~/.openaide/config.yaml`, starts the HTTP API server.
-- **`backend/cmd/cli/main.go`** — Interactive CLI. Forces `direct` mode. On first run, triggers interactive onboarding (`onboard.go`): template-guided setup → kernel start → LLM-powered interview → TUI. One-shot mode: `openaide "fix this bug"`.
+- **`backend/cmd/cli/main.go`** — Interactive CLI. Defaults to **REPL mode** (rich terminal readline with markdown rendering). `--tui` flag for Bubble Tea TUI. `-c` flag resumes last session. On first run, triggers interactive onboarding (`onboard.go`). One-shot mode: `openaide "fix this bug"`.
 - **`backend/cmd/cli/onboard.go`** — First-run onboarding. Template questions (role/style/language) → `NewApplication()` → LLM interview (2-round open-ended dialogue) → generates custom `system.md` → hot-reloads via `SetSystemPrompt()`.
 
 ### Layered design
@@ -128,7 +128,8 @@ All judgment calls now delegated to LLM, with rule-based fallbacks:
 - **`cache.go`** — All `json.Marshal`/`os.WriteFile` errors now logged. `Shutdown()` stops cleanup goroutine. `Gateway.Shutdown()` wired to `Application.Stop()`.
 - **`ratelimit.go`** — `time.Tick` replaced with `time.NewTicker` + `Shutdown()` (was unleakable goroutine).
 - **`checkpoint.go`** — Max 5 checkpoints per session, auto-deletes old ones (was unbounded growth).
-- **`tui.go`** — `cancelMu sync.Mutex` protects `cancelStream` from concurrent access races.
+- **`kernel_stream.go`** — Main stream goroutine has `defer recover()` with error relay to prevent silent crashes.
+- **`kernel_process.go`** — Synthesis calls use flash model (`route: "execution"`) to avoid DeepSeek thinking budget competition.
 - **`api.go`** — Session authorization: verify `user_id` before GET/DELETE. `sendSSE()` handles marshal errors. `sanitizeParam()` prevents path traversal. Duplicate `/api/v1/state` endpoint removed.
 - **`orchestration/orchestrator.go`** — `RunSubAgent` uses unique userID with nanosecond timestamp for true session isolation.
 
@@ -185,7 +186,7 @@ OpenAIDE accumulates project knowledge across sessions via `internal/projectmind
 - **Strategy Effectiveness**: tracks which approaches succeed for which task types. Propose phase receives historical success rates — LLM makes data-informed choices ("方案C在重构场景成功率100%, 方案B在类似任务失败过").
 - **Discovery signals**: sub-agent output containing `[DISCOVERY: ...]` or `[REPLAN: ...]` automatically captured and persisted.
 - **KnowledgeBase sync**: `SyncToKnowledgeBase()` converts structured facts to searchable KB documents (tagged `projectmind`) — unified RAG injection via `buildMessages`.
-- **Model routing**: `llm.model_routing.reasoning` / `execution` in config.yaml. Analyst/coder/reviewer use reasoning model, executor/classifier use execution model. Enables cost-optimized model selection.
+- **Model routing**: `llm.model_routing.reasoning` / `execution` in config.yaml. Analyst/reviewer → reasoning model (pro, deep thinking). Coder/executor/classifier → execution model (flash, fast). Synthesis and small classification calls also use execution model for cost efficiency.
 
 ### Prompt system
 
@@ -286,32 +287,82 @@ openaide --verbose 2>&1 | grep -i "claude\|plugin\|hook"
 
 ```
 ~/.openaide/config.yaml       ← global config (LLM providers, keys, server port)
-./data/                        ← project-local data (cfg.Storage.DataDir, default "./data")
+~/.openaide/data/              ← global data (cfg.Storage.DataDir, default "~/.openaide/data")
 ├── prompts/
 │   ├── system.zh.md / system.en.md  ← system prompt (auto-generated, user-editable)
-├── sessions/                  ← file-persisted (crash-recoverable)
+├── sessions/                  ← file-persisted (crash-recoverable, last 50 msgs)
 ├── memory/                    ← L1/L2/L3 JSON memory
 ├── knowledge/                 ← knowledge base + embeddings
 ├── skills/                    ← custom skills (JSON)
 ├── plugins/                   ← plugin configs
-├── checkpoints/               ← session checkpoints
+├── checkpoints/               ← session checkpoints (full history)
 ├── traces.jsonl               ← execution traces
 ├── events/                    ← persisted events
 └── cache/                     ← prompt cache
 ```
 
-### TUI (Bubble Tea)
+**Provider config**: Two providers recommended for Architect/Editor pattern:
+```yaml
+providers:
+  - name: deepseek             # Architect — deep reasoning
+    default_model: deepseek-v4-pro
+    timeout: 300
+  - name: deepseek-flash       # Editor — fast execution
+    default_model: deepseek-v4-flash
+    timeout: 120
+model_routing:
+  reasoning: deepseek-v4-pro   # analyst, reviewer
+  execution: deepseek-v4-flash # coder, executor, synthesis, classification
+```
 
-- **`cmd/cli/tui.go`** (1205 lines) — Full Bubble Tea TUI:
-  - Streaming LLM output with thinking visualization
-  - Tool call display (`⚙ read_file`, `→ result summary`)
-  - Syntax highlighting (chroma/Monokai) for code blocks
-  - Render throttle (50ms debounce during streaming)
-  - Theme struct (`tuiTheme`) with 18 style fields
-  - Emoji/ASCII dual rendering (auto-detects terminal capability)
-  - Session list, model selector, help overlay, plan confirmation, proposal selection
-  - Deep plan progress indicators (🔍 Research → 💡 Propose → 📋 Plan)
-  - Context-isolated sub-agent execution (fresh sessions)
+### CLI (REPL + TUI)
+
+**REPL mode (default)** — `openaide`:
+- `cmd/cli/repl.go` — Rich terminal REPL with lmorg/readline:
+  - Readline with history, tab completion, hints
+  - Markdown rendering via glamour (headers, code blocks with Chroma highlighting, tables)
+  - Semantic color palette (15 aliases: cToolName/yellow, cError/red+bold, cThink/dim, etc.)
+  - Smart routing: PreviewPlan → direct ReAct or team execution
+  - Streaming display: tools summarized on one line, answer rendered after completion
+  - Slash commands: `/analyst`, `/coder`, `/reviewer`, `/executor`, `/team`
+  - Session resume: `-c` flag loads last non-empty session
+- `cmd/cli/repl_output.go` — ANSI color system, glamour markdown renderer, output helpers
+
+**TUI mode** — `openaide --tui`:
+- `cmd/cli/tui_app.go` — `AppModel` root coordinator
+- `cmd/cli/tui_chat.go` — `ChatArea` component (viewport + messages + streaming buffer)
+- `cmd/cli/tui_status.go` — `StatusBar` component (spinner, session, tokens, tools)
+- `cmd/cli/tui_input.go` — `InputBar` component (text input, history, queued query)
+- `cmd/cli/tui_theme.go` — Icons, lipgloss styles, logRing, syntax highlighting, utilities
+- `cmd/cli/tui_types.go` — Message types, enums (StreamPhase, OverlayType, WorkKind)
+- Smart scroll: only auto-scrolls when user is at bottom (`viewport.AtBottom()`)
+- Thinking content collapsed to one line
+
+### Budget injection (Claude Code style)
+
+Instead of hard-capping ReAct rounds and forcing synthesis, the LLM sees remaining budget:
+
+- Round >= maxRounds/2: `"[系统] 已使用 N/M 轮，剩余 X 轮。如信息足够请直接给出结论。"`
+- Round >= maxRounds-1: `"[系统] 最后一轮，必须给出最终结论，禁止调用工具。"`
+- Only if budget exhausted: synthesis via flash model (no thinking, `route: "execution"`)
+
+### Architect/Editor model routing
+
+- **Architect** (analyst, reviewer) → reasoning model (pro, with thinking)
+- **Editor** (coder, executor, classifier) → execution model (flash, no thinking)
+- Synthesis/summarization → flash
+- Skill detect, adaptive rounds estimation → flash (`route: "execution"`)
+- `pickModel()` in orchestrator; `findProviderForModel()` in gateway auto-matches provider
+
+### Tool concurrency safety
+
+- `parallelSafeTools` map: read-only tools (read_file, search_files, git_*, etc.) can run in parallel
+- Write tools (write_file, diff_edit, execute_command) serialized between batches
+- Partitioning in both sync (`kernel_process.go`) and stream (`kernel_stream.go`) paths
+
+### Tool output snipping (Claude Code style)
+
+- `snipOldToolOutputs()`: keep last 4 tool results intact, older ones snipped to head(500) + tail(500)
 
 ### Key patterns
 
