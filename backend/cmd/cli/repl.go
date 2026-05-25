@@ -34,17 +34,22 @@ func runREPL(app *infra.Application) {
 	}
 
 	fmt.Println()
-	fmt.Printf("  %sOpenAIDE%s", bold, reset)
-	if gitBranch != "" {
-		fmt.Printf("  %s%s%s", gray, gitBranch, reset)
-	}
+	fmt.Printf(`%s
+   ██████╗ ██████╗ ███████╗███╗   ██╗ █████╗ ██╗██████╗ ███████╗
+  ██╔═══██╗██╔══██╗██╔════╝████╗  ██║██╔══██╗██║██╔══██╗██╔════╝
+  ██║   ██║██████╔╝█████╗  ██╔██╗ ██║███████║██║██║  ██║█████╗
+  ██║   ██║██╔═══╝ ██╔══╝  ██║╚██╗██║██╔══██║██║██║  ██║██╔══╝
+  ╚██████╔╝██║     ███████╗██║ ╚████║██║  ██║██║██████╔╝███████╗
+   ╚═════╝ ╚═╝     ╚══════╝╚═╝  ╚═══╝╚═╝  ╚═╝╚═╝╚═════╝ ╚══════╝
+%s`, cyan, reset)
 	fmt.Println()
 	if modelName != "" {
 		fmt.Printf("  %s%s%s", green, modelName, reset)
-		if gitBranch == "" {
-			fmt.Printf("  %s%s%s", gray, filepath.Base(cwd), reset)
-		}
 	}
+	if gitBranch != "" {
+		fmt.Printf("  %s%s%s", gray, "  ◆  "+gitBranch, reset)
+	}
+	fmt.Printf("  %s%s%s", gray, "  ◆  "+filepath.Base(cwd), reset)
 	fmt.Println()
 	fmt.Println()
 	fmt.Printf("  %s/h%s help  %s|%s  %s/q%s quit  %s|%s  Ctrl+C interrupt", yellow, reset, gray, reset, yellow, reset, gray, reset)
