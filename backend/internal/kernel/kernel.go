@@ -260,10 +260,15 @@ func (k *AgentKernel) buildMessages(session *Session, query *Query) []Message {
 		}
 		promptWithCWD := systemPrompt + fmt.Sprintf("\n\n[工作目录] %s%s", cwd, gitNote)
 
-		// 加载项目级 CLAUDE.md（Claude Code 风格：每项目定制 AI 行为）
-		if claudeMD, err := os.ReadFile(filepath.Join(cwd, "CLAUDE.md")); err == nil && len(claudeMD) > 0 {
-			promptWithCWD += fmt.Sprintf("\n\n[项目规则 CLAUDE.md]\n%s", string(claudeMD))
+		// 加载项目规则文件：优先 OPENAIDE.md，兼容 CLAUDE.md
+		ruleFile := ""
+		for _, name := range []string{"OPENAIDE.md", "CLAUDE.md"} {
+			if data, err := os.ReadFile(filepath.Join(cwd, name)); err == nil && len(data) > 0 {
+				ruleFile = fmt.Sprintf("\n\n[项目规则 %s]\n%s", name, string(data))
+				break
+			}
 		}
+		promptWithCWD += ruleFile
 
 		// RepoMap: 注入符号地图（缓存 5 分钟），LLM 一眼看清代码结构
 		if repoMap := GenerateRepoMap(cwd); repoMap != "" {
