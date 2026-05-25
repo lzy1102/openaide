@@ -172,7 +172,13 @@ func (s *FileSessionStore) CleanupOldSessions(ctx context.Context, ttl time.Dura
 }
 
 func (s *FileSessionStore) save(session *Session) error {
-	data, err := json.MarshalIndent(session, "", "  ")
+	// 只持久化最近 50 条消息（完整历史在 checkpoint 中）
+	// 避免大会话（200+ 条消息）全量序列化导致的写放大
+	toSave := *session
+	if len(session.Messages) > 50 {
+		toSave.Messages = session.Messages[len(session.Messages)-50:]
+	}
+	data, err := json.MarshalIndent(&toSave, "", "  ")
 	if err != nil {
 		return err
 	}

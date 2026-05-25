@@ -42,6 +42,12 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 
 	go func() {
 		defer close(resultChan)
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("panic in stream goroutine", "panic", r)
+				resultChan <- StreamChunk{Type: ChunkTypeError, Error: fmt.Errorf("internal error: %v", r), Done: true}
+			}
+		}()
 
 		var traceCtx context.Context
 		if k.tracer != nil {
