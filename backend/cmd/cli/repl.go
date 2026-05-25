@@ -145,17 +145,21 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string)
 
 	startTime := time.Now()
 	totalTools := 0
+	totalTokens := 0
 	var fullResponse strings.Builder
 	thinkShown := false
 
 	for chunk := range stream {
 		if chunk.Error != nil { PrintError(chunk.Error.Error()); break }
-		if chunk.Done { break }
+		if chunk.Content != "" { fullResponse.WriteString(chunk.Content) }
+		if chunk.Done {
+			if chunk.Usage != nil { totalTokens = chunk.Usage.TotalTokens }
+			break
+		}
 		if chunk.ReasoningContent != "" && !thinkShown {
 			PrintThinking(chunk.ReasoningContent)
 			thinkShown = true
 		}
-		if chunk.Content != "" { fullResponse.WriteString(chunk.Content) }
 		if chunk.Type == kernel.ChunkTypeToolCall && chunk.ToolName != "" {
 			PrintToolCall(chunk.ToolName)
 			totalTools++
@@ -177,7 +181,7 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string)
 		fmt.Println()
 		fmt.Println(RenderMarkdown(fullResponse.String()))
 	}
-	PrintStatusLine(0, totalTools, elapsed)
+	PrintStatusLine(totalTokens, totalTools, elapsed)
 }
 
 // ── Complex Query (sub-agent team execution) ──────────────
