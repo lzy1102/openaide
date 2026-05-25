@@ -329,12 +329,14 @@ func (p *OpenAIProvider) buildRequestBody(messages []kernel.Message, tools []ker
 
 	// DeepSeek 特有参数
 	if p.isDeepSeek() {
-		if p.config.Thinking != nil {
+		// 支持 per-call 禁用 thinking（合成/分类等不需要推理的场景）
+		noThinking, _ := options["no_thinking"].(bool)
+		if !noThinking && p.config.Thinking != nil {
 			body["thinking"] = map[string]string{
 				"type": p.config.Thinking.Type,
 			}
 		}
-		if p.config.ReasoningEffort != "" {
+		if !noThinking && p.config.ReasoningEffort != "" {
 			body["reasoning_effort"] = p.config.ReasoningEffort
 		}
 	}
