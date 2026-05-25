@@ -66,6 +66,17 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 		for round := 0; round < maxRounds; round++ {
 			slog.Debug("ReAct stream round", "round", round, "msg_count", len(messages))
 			snipOldToolOutputs(messages)
+		// 预算注入：过半后提醒 LLM 剩余轮次
+		if round >= maxRounds/2 && round < maxRounds-1 {
+			remaining := maxRounds - round
+			messages = append(messages, Message{
+				Role: "user", Content: fmt.Sprintf("[系统] 已使用 %d/%d 轮，剩余 %d 轮。如信息足够请直接给出结论。", round, maxRounds, remaining),
+			})
+		} else if round >= maxRounds-1 {
+			messages = append(messages, Message{
+				Role: "user", Content: "[系统] 最后一轮，必须给出最终结论，禁止调用工具。",
+			})
+		}
 			// 检查上下文长度，必要时压缩
 			if k.compressor != nil {
 				tokenCount := k.compressor.EstimateTokens(messages)

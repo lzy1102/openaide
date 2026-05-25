@@ -82,6 +82,17 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 
 		slog.Debug("ReAct round start", "round", round, "state", k.state, "msg_count", len(messages))
 		snipOldToolOutputs(messages)
+		// 预算注入：过半后提醒 LLM 剩余轮次
+		if round >= maxRounds/2 && round < maxRounds-1 {
+			remaining := maxRounds - round
+			messages = append(messages, Message{
+				Role: "user", Content: fmt.Sprintf("[系统] 已使用 %d/%d 轮，剩余 %d 轮。如信息足够请直接给出结论。", round, maxRounds, remaining),
+			})
+		} else if round >= maxRounds-1 {
+			messages = append(messages, Message{
+				Role: "user", Content: "[系统] 最后一轮，必须给出最终结论，禁止调用工具。",
+			})
+		}
 		// 调用 LLM（如果指定了模型，临时切换）
 		if query.Options.ModelID != "" {
 			k.llmProvider.SetModelID(query.Options.ModelID)
