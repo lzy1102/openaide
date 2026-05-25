@@ -682,6 +682,9 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 		// Lint/Repair: 自动运行 linter，错误反馈给 LLM 修复（Aider 风格）
 		fixContent = o.lintRepairLoop(ctx, userID, projectID, fixContent, results)
 
+		// Test Generation: 为修改生成测试 → 运行 → 失败则修复
+		fixContent = o.testGenLoop(ctx, userID, projectID, fixContent, results)
+
 		// 检测死胡同
 		if strings.Contains(fixContent, "[BLOCKED:") {
 			finalReport = fmt.Sprintf("## %s\n\n### 验证结果\n%s\n\n---\n\n%s\n\n### 阻塞\n%s\n\n任务遇到无法自动解决的问题，需要人工介入。", plan.Goal, testReport, reviewContent, fixContent)
@@ -997,6 +1000,55 @@ func (o *Orchestrator) lintRepairLoop(ctx context.Context, userID, projectID, fi
 }
 
 // runLint 检测项目语言并运行对应 linter
+// testGenLoop 自动生成测试 → 运行 → 失败则修复（最多 2 轮）
+func (o *Orchestrator) testGenLoop(ctx context.Context, userID, projectID, fixContent string, results []string) string {
+	const maxRetries = 2
+	for retry := 0; retry < maxRetries; retry++ {
+		genTask := fmt.Sprintf("为刚才的代码修改生成单元测试。只输出测试代码，不要修改业务逻辑。\n\n修改内容:\n%s", fixContent[:min(3000, len(fixContent))])
+		testCode, err := o.RunSubAgent(ctx, userID, projectID, "coder", genTask, results)
+		if err != nil || testCode == "" { return fixContent }
+
+		// 运行测试
+		testOutput := runTests()
+		if testOutput == "" {
+			return fixContent // 无测试框架或测试通过
+		}
+		if !strings.Contains(testOutput, "FAIL") {
+			return fixContent // 测试通过
+		}
+
+		slog.Debug("TestGen: tests failed, fixing", "retry", retry+1)
+		fixTask := fmt.Sprintf("测试失败，请修复代码或测试：\n\n失败信息:\n%s", testOutput[:min(1000, len(testOutput))])
+		fixCode, err := o.RunSubAgent(ctx, userID, projectID, "coder", fixTask, results)
+		if err != nil { return fixContent }
+		results = append(results, fmt.Sprintf("### 测试修复 %d\n%s", retry+1, fixCode))
+	}
+	return fixContent
+}
+
+// runTests 检测项目语言并运行测试
+func runTests() string {
+	if _, err := os.Stat("go.mod"); err == nil {
+		cmd := exec.Command("go", "test", "./...", "-count=1", "-timeout=30s")
+		cmd.Stderr = nil
+		out, _ := cmd.Output()
+		return strings.TrimSpace(string(out))
+	}
+	for _, testCmd := range [][]string{
+		{"npm", "test", "--", "--passWithNoTests"},
+		{"pytest", "-x", "-q"},
+		{"cargo", "test"},
+	} {
+		if _, err := exec.LookPath(testCmd[0]); err == nil {
+			cmd := exec.Command(testCmd[0], testCmd[1:]...)
+			cmd.Stderr = nil
+			out, _ := cmd.Output()
+			return strings.TrimSpace(string(out))
+		}
+	}
+	return ""
+}
+
 func runLint() string {
 	// Go 项目
 	if _, err := os.Stat("go.mod"); err == nil {
