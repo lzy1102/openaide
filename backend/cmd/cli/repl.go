@@ -159,12 +159,32 @@ func runREPL(app *infra.Application, continueSess bool) {
 		if planErr != nil || plan == nil || len(plan.Subtasks) <= 1 {
 			executeStreamQuery(app, query, &sessionID)
 		} else {
-			fmt.Printf("  %s📋 %s%s (%d steps)\n", cYellow, cReset, plan.Goal, len(plan.Subtasks))
-			for i, st := range plan.Subtasks {
-				fmt.Printf("    %d. %s\n", i+1, st.Title)
+			// 显示规划
+			Println()
+			var items []pterm.BulletListItem
+			items = append(items, pterm.BulletListItem{
+				Level: 0, Text: pterm.Cyan(plan.Goal),
+			})
+			for _, st := range plan.Subtasks {
+				items = append(items, pterm.BulletListItem{
+					Level: 1, Text: st.Title,
+				})
 			}
-			fmt.Println()
-			executePlanQuery(app, query, plan)
+			pterm.DefaultBulletList.WithItems(items).Render()
+			Println()
+
+			// 交互确认
+			confirmed, _ := pterm.DefaultInteractiveConfirm.
+				WithDefaultText(fmt.Sprintf("执行此计划? (%d 个子任务)", len(plan.Subtasks))).
+				WithConfirmText("执行").
+				WithRejectText("直接回答").
+				Show()
+
+			if confirmed {
+				executePlanQuery(app, query, plan)
+			} else {
+				executeStreamQuery(app, query, &sessionID)
+			}
 		}
 		rl.SetPrompt(PromptStyle(sessionID, modelName, false))
 	}
