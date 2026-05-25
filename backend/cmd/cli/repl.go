@@ -115,7 +115,21 @@ func runREPL(app *infra.Application, continueSess bool) {
 		return &readline.TabCompleterReturnT{}
 	}
 	rl.HintText = func(line []rune, pos int) []rune {
-		if len(line) == 0 { return []rune("type your question or /help") }
+		if len(line) == 0 {
+			return []rune("type your question or /help")
+		}
+		prefix := string(line)
+		if strings.HasPrefix(prefix, "/") {
+			var matches []string
+			for _, cmd := range commands {
+				if strings.HasPrefix(cmd, prefix) {
+					matches = append(matches, cmd)
+				}
+			}
+			if len(matches) > 0 {
+				return []rune(strings.Join(matches, "  "))
+			}
+		}
 		return nil
 	}
 
