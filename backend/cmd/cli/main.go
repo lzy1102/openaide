@@ -10,8 +10,6 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-
 	"openaide/backend/internal/config"
 	"openaide/backend/internal/infra"
 	"openaide/backend/internal/kernel"
@@ -26,7 +24,6 @@ type cliFlags struct {
 	model        string
 	verbose      bool
 	outputFormat string
-	tui          bool // Use TUI instead of REPL
 }
 
 func defaultConfigPath() string {
@@ -97,8 +94,6 @@ func parseFlags(args []string) cliFlags {
 		case a == "plugins":
 			cmdPlugins(args[i+1:])
 			os.Exit(0)
-		case a == "--tui":
-			f.tui = true
 		case !strings.HasPrefix(a, "-"):
 			positional = append(positional, a)
 		}
@@ -208,12 +203,6 @@ func main() {
 		runLLMOnboarding(app, promptsDir)
 	}
 
-	// 默认 REPL，--tui 启用图形终端界面
-	if !flags.tui {
-		runREPL(app, flags.continueSess)
-		return
-	}
-
 	// One-shot: prompt from positional args
 	if flags.prompt != "" || len(flags.contextFiles) > 0 {
 		prompt := buildPrompt(flags.contextFiles, flags.prompt)
@@ -247,16 +236,8 @@ func main() {
 		return
 	}
 
-	m := NewAppModel(app, flags.continueSess)
-	p := tea.NewProgram(m,
-		tea.WithAltScreen(),
-		tea.WithMouseCellMotion(),
-	)
-	m.program = p
-	if _, err := p.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "%s\n", lang.T("err.process", err))
-		os.Exit(1)
-	}
+	// REPL 模式
+	runREPL(app, flags.continueSess)
 }
 
 func printHelp() {
