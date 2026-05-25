@@ -1,6 +1,11 @@
-# CLAUDE.md
+# OPENAIDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+项目规则文件——OpenAIDE 每次查询自动加载到系统提示词。也是 Claude Code 的 CLAUDE.md 兼容文件。
+
+## 作用
+
+LLM 在处理任何请求前自动获得此文件内容，无需手动探索项目结构。省 2-3 轮探索。
+维护：LLM 犯错→加规则；重复说话→加约定；新功能→更新架构。
 
 ## Common commands
 
