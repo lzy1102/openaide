@@ -19,8 +19,16 @@ var (
 )
 
 var (
-	symbolRe = regexp.MustCompile(`(?m)^\s*(?:func|type|const|var|class|def|async\s+def|export\s+(?:const|function|class|interface|type|async\s+function))\s+(?:\([^)]*\)\s+)?(\w+)`)
-	fileRe   = regexp.MustCompile(`\.(go|ts|tsx|py|rs|js|jsx)$`)
+	// 关键字后紧跟的名称（函数/类/类型/变量/方法等）
+	symbolRe = regexp.MustCompile(`(?m)(?:^|\s)(?:` +
+		`func|type|const|var|class|def|struct|enum|interface|trait|impl|` +
+		`void|int|long|float|double|bool|String|byte|char|` +
+		`public|private|protected|export|default|async|static|` +
+		`fn|let|mut|val|var|fun|object|data\s+class|sealed\s+class|` +
+		`@interface|@implementation|@protocol` +
+		`)\s+(?:\w+\s+)?(\w+)`)
+	// 支持常见源码文件扩展名
+	fileRe = regexp.MustCompile(`\.(go|tsx?|py|rs|jsx?|java|kt|kts|[ch](?:pp|\+\+)?|rb|swift|scala|lua|zig|dart|m|mm|r|R|exs?|hs|clj|erl|ex|cr|nim|v)$`)
 )
 
 // GenerateRepoMap 扫描项目生成符号地图（带缓存）
