@@ -19,7 +19,7 @@ import (
 
 // ── REPL ──────────────────────────────────────────────────
 
-func runREPL(app *infra.Application) {
+func runREPL(app *infra.Application, continueSess bool) {
 	info := app.LLMGateway.GetProviderInfos()
 	modelName := ""
 	if len(info) > 0 {
@@ -56,8 +56,22 @@ func runREPL(app *infra.Application) {
 	fmt.Println()
 	fmt.Println()
 
-	sess, _ := app.Orchestrator.CreateSession(context.Background(), "default", "cli-user")
-	sessionID := sess.ID
+	// Session: resume or create
+	var sessionID string
+	if continueSess {
+		sessions, _ := app.Orchestrator.ListSessions(context.Background(), "default", "cli-user", 1, 0)
+		if len(sessions) > 0 {
+			sessionID = sessions[0].ID
+			msgCount := len(sessions[0].Messages)
+			fmt.Printf("  %s📋 恢复会话%s: %s (%d 条消息, %s)\n",
+				cGreen, cReset, sessionID[:8], msgCount,
+				sessions[0].UpdatedAt.Format("15:04"))
+		}
+	}
+	if sessionID == "" {
+		sess, _ := app.Orchestrator.CreateSession(context.Background(), "default", "cli-user")
+		sessionID = sess.ID
+	}
 
 	rl := readline.NewInstance()
 	rl.SetPrompt(PromptStyle(sessionID, modelName))

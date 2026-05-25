@@ -210,7 +210,7 @@ func main() {
 
 	// 默认 REPL，--tui 启用图形终端界面
 	if !flags.tui {
-		runREPL(app)
+		runREPL(app, flags.continueSess)
 		return
 	}
 
