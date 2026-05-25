@@ -10,7 +10,6 @@ import (
 
 // ── ANSI Colors ───────────────────────────────────────────
 
-// 语义色板 — 每个场景有明确归属
 const (
 	cReset  = "\033[0m"
 	cBold   = "\033[1m"
@@ -23,29 +22,40 @@ const (
 	cBlue   = "\033[34m"
 	cMagenta = "\033[35m"
 	cCyan   = "\033[36m"
-
-	cGray   = "\033[90m"  // 辅助信息
-	cWhite  = "\033[97m"  // 高亮
+	cWhite  = "\033[97m"
+	cGray   = "\033[90m"
 )
 
 // 语义别名
 var (
-	cLogo      = cCyan + cBold    // 品牌
-	cHeading   = cCyan + cBold    // 标题
-	cUser      = cBlue + cBold    // 用户查询回显
-	cAI        = ""               // AI 回答（无前缀，glamour 渲染）
-	cToolName  = cYellow + cBold  // 工具名称
-	cToolOK    = cGreen           // 工具成功
-	cToolErr   = cRed + cBold     // 工具失败
-	cThink     = cDim + cItalic    // 思考内容
-	cStatusBar = cDim             // 状态栏
-	cPrompt    = cGreen + cBold   // 提示符
-	cError     = cRed + cBold     // 错误
-	cWarn      = cYellow          // 警告
-	cSuccess   = cGreen           // 成功确认
-	cHint      = cDim             // 提示文字
-	cInfo      = cGray            // 辅助信息
-	cSep       = cDim             // 分隔线
+	cLogo      = cCyan + cBold
+	cHeading   = cCyan + cBold
+	cUser      = cBlue + cBold
+	cToolName  = cYellow + cBold
+	cToolOK    = cGreen
+	cToolErr   = cRed + cBold
+	cThink     = cDim + cItalic
+	cStatusBar = cDim
+	cPrompt    = cGreen + cBold
+	cPromptBusy= cYellow + cBold
+	cError     = cRed + cBold
+	cWarn      = cYellow
+	cSuccess   = cGreen
+	cHint      = cDim
+	cInfo      = cGray
+	cSep       = cDim
+	cBorder    = cGray
+)
+
+// ── Box Drawing ───────────────────────────────────────────
+
+const (
+	boxH  = "─"
+	boxV  = "│"
+	boxTL = "╭"
+	boxTR = "╮"
+	boxBL = "╰"
+	boxBR = "╯"
 )
 
 // ── Markdown Renderer ─────────────────────────────────────
@@ -70,45 +80,122 @@ func RenderMarkdown(text string) string {
 	return out
 }
 
-// ── Output Helpers ────────────────────────────────────────
+// ── Prompt ────────────────────────────────────────────────
 
-// PrintUserEcho echoes the user's query in blue
-func PrintUserEcho(query string) {
-	fmt.Printf("\n  %s▸ %s%s\n", cUser, query, cReset)
+func PromptStyle(sessionID, modelName string, busy bool) string {
+	dot := cGreen + "●" + cReset
+	if busy { dot = cYellow + "◉" + cReset }
+
+	name := "openaide"
+	if modelName != "" {
+		name = strings.SplitN(modelName, " ", 2)[0]
+	}
+	return fmt.Sprintf("%s %s%s %s %s❯%s ", dot, cDim, sessionID[:8], cPrompt, name, cReset)
 }
 
-// PrintThinking shows dimmed thinking (one line per round)
+// ── Tool Call Section ─────────────────────────────────────
+
+type toolSection struct {
+	names   []string
+	results []string // summary per tool
+	errors  []string // error per tool
+}
+
+var currentToolSection toolSection
+
+func BeginToolSection() {
+	currentToolSection = toolSection{}
+}
+
+func AddToolCall(name string) {
+	currentToolSection.names = append(currentToolSection.names, name)
+}
+
+func AddToolResult(name, summary, errStr string) {
+	currentToolSection.results = append(currentToolSection.results, summary)
+	currentToolSection.errors = append(currentToolSection.errors, errStr)
+}
+
+func EndToolSection() {
+	if len(currentToolSection.names) == 0 { return }
+
+	total := len(currentToolSection.names)
+	ok := 0
+	for _, e := range currentToolSection.errors {
+		if e == "" { ok++ }
+	}
+
+	// Header
+	width := 60
+	fmt.Printf("\n  %s%s %s工具 %s(%d)%s %s", cBorder, boxTL, cReset, cDim, total, cReset, strings.Repeat(boxH, width-10-len(fmt.Sprintf("%d", total))))
+	fmt.Printf("%s%s\n", cBorder, boxTR)
+
+	// Each tool
+	for i, name := range currentToolSection.names {
+		marker := cToolOK + "✓" + cReset
+		if currentToolSection.errors[i] != "" {
+			marker = cToolErr + "✗" + cReset
+		}
+		summary := currentToolSection.results[i]
+		if summary == "" { summary = "ok" }
+		if len(summary) > 40 { summary = summary[:37] + "..." }
+		fmt.Printf("  %s%s %s %s%-30s%s %s%s%s\n",
+			cBorder, boxV, marker, cToolName, name, cReset, cInfo, summary, cReset)
+	}
+
+	// Footer
+	fmt.Printf("  %s%s% s %s\n", cBorder, boxBL, strings.Repeat(boxH, width-4), cBorder, boxBR)
+	Println()
+}
+
+// ── Thinking Display ──────────────────────────────────────
+
 func PrintThinking(text string) {
 	firstLine := strings.SplitN(text, "\n", 2)[0]
-	if len(firstLine) > 140 { firstLine = firstLine[:137] + "..." }
-	fmt.Printf("  %s[think] %s%s\n", cThink, firstLine, cReset)
+	if len(firstLine) > 120 { firstLine = firstLine[:117] + "..." }
+	fmt.Printf("\r\033[K  %s[think]%s %s%s%s\n", cThink, cReset, cDim, firstLine, cReset)
 }
 
-// PrintToolCall shows a tool starting execution
-func PrintToolCall(name string) {
-	fmt.Printf("\n  %s⚙ %s%s ", cToolName, name, cReset)
-}
+// ── Progress Bar ──────────────────────────────────────────
 
-// PrintToolDone shows completed tool with result
-func PrintToolDone(summary string) {
-	fmt.Printf("%s✓%s", cToolOK, cReset)
-	if summary != "" {
-		fmt.Printf(" %s%s%s", cInfo, trunc(summary, 80), cReset)
+var progressLineActive bool
+
+func ShowProgress(phase string, current, total int) {
+	progressLineActive = true
+	bar := progressBar(current, total, 30)
+	fmt.Printf("\r\033[K  %s%-12s%s %s %s%d/%d%s\n",
+		cDim, phase, cReset, bar, cInfo, current, total, cReset)
+	if progressLineActive {
+		fmt.Print("\033[1A") // cursor up
 	}
-	fmt.Println()
 }
 
-// PrintToolError shows a failed tool
-func PrintToolError(name, err string) {
-	fmt.Printf("\n  %s✗ %s%s %s%s%s\n", cToolErr, name, cReset, cInfo, err, cReset)
+func ClearProgress() {
+	if progressLineActive {
+		fmt.Print("\r\033[K")
+		progressLineActive = false
+	}
 }
 
-// PrintStatusLine prints the footer after completion
-func PrintStatusLine(tokens, tools int, elapsed time.Duration) {
-	sep := strings.Repeat("─", 60)
+func progressBar(current, total, width int) string {
+	if total <= 0 { return "" }
+	filled := (current * width) / total
+	bar := strings.Repeat("█", filled) + strings.Repeat("░", width-filled)
+	pct := (current * 100) / total
+	return fmt.Sprintf("%s%s [%s%d%%%s]", cGreen, bar, cDim, pct, cReset)
+}
+
+// ── Status Bar ────────────────────────────────────────────
+
+func PrintStatusBar(tokens, tools int, elapsed time.Duration, model string) {
+	width := 60
+	sep := strings.Repeat(boxH, width)
 	fmt.Printf("\n%s%s%s\n", cSep, sep, cReset)
 
 	var parts []string
+	if model != "" {
+		parts = append(parts, fmt.Sprintf("%s%s%s", cDim, model, cReset))
+	}
 	if tokens > 0 {
 		parts = append(parts, fmt.Sprintf("%s⚡ %d tokens%s", cInfo, tokens, cReset))
 	}
@@ -116,35 +203,58 @@ func PrintStatusLine(tokens, tools int, elapsed time.Duration) {
 		parts = append(parts, fmt.Sprintf("%s🔧 %d tools%s", cInfo, tools, cReset))
 	}
 	parts = append(parts, fmt.Sprintf("%s⏱ %v%s", cInfo, elapsed.Round(100*time.Millisecond), cReset))
-	fmt.Printf("  %s\n\n", strings.Join(parts, "  "+cSep+"│"+cReset+"  "))
+	fmt.Printf("  %s\n\n", strings.Join(parts, "  │  "))
 }
 
-// PrintError shows a red error
+// ── Simple Print Helpers ──────────────────────────────────
+
+func Println()  { fmt.Println() }
+func Printf(f string, args ...interface{}) { fmt.Printf(f, args...) }
+
+func PrintUserQuery(query string) {
+	fmt.Printf("\n  %s▸ %s%s\n", cUser, query, cReset)
+}
+
 func PrintError(err string) {
 	fmt.Printf("\n  %s✗ %s%s\n", cError, err, cReset)
 }
 
-// PrintWarning shows a yellow warning
 func PrintWarning(msg string) {
 	fmt.Printf("  %s⚠ %s%s\n", cWarn, msg, cReset)
 }
 
-// PrintSuccess shows a green success message
 func PrintSuccess(msg string) {
 	fmt.Printf("  %s✓ %s%s\n", cSuccess, msg, cReset)
 }
 
-// PrintInfo shows a gray info message
 func PrintInfo(msg string) {
 	fmt.Printf("  %s%s%s\n", cInfo, msg, cReset)
 }
 
-// ── Prompt ────────────────────────────────────────────────
+// ── Content Divider ───────────────────────────────────────
 
-func PromptStyle(sessionID, modelName string) string {
-	prompt := "❯ "
-	if sessionID != "" {
-		prompt = fmt.Sprintf("%s%s%s │ %s%s", cDim, sessionID[:8], cReset, cPrompt, prompt)
+func PrintDivider(title string) {
+	width := 60
+	if title != "" {
+		fmt.Printf("\n  %s── %s%s%s %s\n", cSep, cHeading, title, cReset, cSep+strings.Repeat(boxH, width-len(title)-6))
+	} else {
+		fmt.Printf("\n  %s%s\n", cSep, strings.Repeat(boxH, width))
 	}
-	return prompt + cReset
+}
+
+// ── Section ───────────────────────────────────────────────
+
+func BeginSection(title string) {
+	width := 60
+	fmt.Printf("\n  %s%s %s%s %s", cBorder, boxTL, cHeading, title, cReset)
+	fmt.Printf("%s%s%s\n", cBorder, strings.Repeat(boxH, width-len(title)-4), boxTR)
+}
+
+func EndSection() {
+	width := 60
+	fmt.Printf("  %s%s%s%s\n", cBorder, boxBL, strings.Repeat(boxH, width-2), boxBR)
+}
+
+func SectionLine(text string) {
+	fmt.Printf("  %s%s %s%s\n", cBorder, boxV, text, cReset)
 }

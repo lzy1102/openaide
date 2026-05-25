@@ -91,7 +91,7 @@ func runREPL(app *infra.Application, continueSess bool) {
 	}
 
 	rl := readline.NewInstance()
-	rl.SetPrompt(PromptStyle(sessionID, modelName))
+	rl.SetPrompt(PromptStyle(sessionID, modelName, false))
 	rl.HistoryAutoWrite = true
 
 	commands := []string{"/help", "/clear", "/model", "/lang", "/log", "/sessions",
@@ -129,7 +129,7 @@ func runREPL(app *infra.Application, continueSess bool) {
 
 		if strings.HasPrefix(query, "/") {
 			handleREPLCommand(app, query, &sessionID, &modelName)
-			rl.SetPrompt(PromptStyle(sessionID, modelName))
+			rl.SetPrompt(PromptStyle(sessionID, modelName, false))
 			continue
 		}
 
@@ -151,7 +151,7 @@ func runREPL(app *infra.Application, continueSess bool) {
 			fmt.Println()
 			executePlanQuery(app, query, plan)
 		}
-		rl.SetPrompt(PromptStyle(sessionID, modelName))
+		rl.SetPrompt(PromptStyle(sessionID, modelName, false))
 	}
 }
 
@@ -220,7 +220,7 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string)
 		fmt.Println(rendered)
 		fmt.Printf("\n%s──%s\n", cSep, cReset)
 	}
-	PrintStatusLine(totalTokens, totalTools, elapsed)
+	PrintStatusBar(totalTokens, totalTools, elapsed, "deepseek-v4-pro")
 }
 
 // ── Complex Query (sub-agent team execution) ──────────────
@@ -271,7 +271,7 @@ func executePlanQuery(app *infra.Application, query string, plan *orchestration.
 		fmt.Println()
 		fmt.Println(RenderMarkdown(resp.Content))
 	}
-	PrintStatusLine(resp.TokensUsed, totalTools, elapsed)
+	PrintStatusBar(resp.TokensUsed, totalTools, elapsed, "deepseek-v4-pro")
 }
 
 // ── Commands ──────────────────────────────────────────────
