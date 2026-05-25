@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"time"
@@ -677,6 +679,9 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 			continue
 		}
 
+		// Lint/Repair: 自动运行 linter，错误反馈给 LLM 修复（Aider 风格）
+		fixContent = o.lintRepairLoop(ctx, userID, projectID, fixContent, results)
+
 		// 检测死胡同
 		if strings.Contains(fixContent, "[BLOCKED:") {
 			finalReport = fmt.Sprintf("## %s\n\n### 验证结果\n%s\n\n---\n\n%s\n\n### 阻塞\n%s\n\n任务遇到无法自动解决的问题，需要人工介入。", plan.Goal, testReport, reviewContent, fixContent)
@@ -948,5 +953,67 @@ func groupByDependency(subtasks []SubTask) [][]SubTask {
 		remaining = nextRound
 	}
 	return groups
+}
+
+// lintRepairLoop 自动运行 linter，错误反馈给 LLM 修复（Aider 风格）
+// 最多重试 3 次，每次只反馈新增的 lint 错误
+func (o *Orchestrator) lintRepairLoop(ctx context.Context, userID, projectID, fixContent string, results []string) string {
+	const maxRetries = 3
+	prevErrors := make(map[string]bool)
+
+	for retry := 0; retry < maxRetries; retry++ {
+		lintOutput := runLint()
+		if lintOutput == "" {
+			return fixContent // 没有 lint 错误，完成
+		}
+
+		// 只反馈新增的错误（去重）
+		var newErrors []string
+		for _, line := range strings.Split(lintOutput, "\n") {
+			line = strings.TrimSpace(line)
+			if line != "" && !prevErrors[line] {
+				newErrors = append(newErrors, line)
+				prevErrors[line] = true
+			}
+		}
+		if len(newErrors) == 0 {
+			return fixContent // 没有新错误
+		}
+
+		slog.Debug("Lint/Repair: fixing errors", "retry", retry+1, "new_errors", len(newErrors))
+		lintFixTask := fmt.Sprintf("代码检查发现以下问题，请逐一修复：\n\n%s\n\n只修复 lint 问题，不要改变代码逻辑。输出修复后的代码变更。",
+			strings.Join(newErrors, "\n"))
+		lintFix, err := o.RunSubAgent(ctx, userID, projectID, "coder", lintFixTask, results)
+		if err != nil {
+			slog.Warn("Lint/Repair: coder failed", "error", err)
+			return fixContent
+		}
+		if strings.Contains(lintFix, "[BLOCKED:") {
+			return fixContent
+		}
+		results = append(results, fmt.Sprintf("### Lint 修复 %d\n%s", retry+1, lintFix))
+	}
+	return fixContent
+}
+
+// runLint 检测项目语言并运行对应 linter
+func runLint() string {
+	// Go 项目
+	if _, err := os.Stat("go.mod"); err == nil {
+		cmd := exec.Command("golangci-lint", "run", "--out-format=line-number")
+		cmd.Stderr = nil
+		out, _ := cmd.Output()
+		return strings.TrimSpace(string(out))
+	}
+	// 通用：检查是否有可用的 linter
+	for _, linter := range []string{"eslint", "ruff", "pylint"} {
+		if _, err := exec.LookPath(linter); err == nil {
+			cmd := exec.Command(linter, ".")
+			cmd.Stderr = nil
+			out, _ := cmd.Output()
+			return strings.TrimSpace(string(out))
+		}
+	}
+	return ""
 }
 

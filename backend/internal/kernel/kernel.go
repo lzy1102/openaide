@@ -258,6 +258,10 @@ func (k *AgentKernel) buildMessages(session *Session, query *Query) []Message {
 			gitNote = fmt.Sprintf(" (分支: %s)", out)
 		}
 		promptWithCWD := systemPrompt + fmt.Sprintf("\n\n[工作目录] %s%s", cwd, gitNote)
+		// RepoMap: 注入符号地图（缓存 5 分钟），LLM 一眼看清代码结构
+		if repoMap := GenerateRepoMap(cwd); repoMap != "" {
+			promptWithCWD += "\n\n" + repoMap
+		}
 		messages = append(messages, Message{
 			Role:    "system",
 			Content: promptWithCWD,

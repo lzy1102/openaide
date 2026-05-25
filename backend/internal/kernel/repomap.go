@@ -1,0 +1,82 @@
+package kernel
+
+import (
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"sync"
+	"time"
+)
+
+// ── RepoMap: lightweight code symbol map (Aider-style) ─────
+
+var (
+	repoMapCache     string
+	repoMapCacheTime time.Time
+	repoMapMu        sync.Mutex
+	repoMapTTL       = 5 * time.Minute
+)
+
+var (
+	symbolRe = regexp.MustCompile(`(?m)^\s*(?:func|type|const|var)\s+(?:\([^)]*\)\s+)?(\w+)`)
+	fileRe   = regexp.MustCompile(`\.go$`)
+)
+
+// GenerateRepoMap 扫描项目生成符号地图（带缓存）
+func GenerateRepoMap(root string) string {
+	repoMapMu.Lock()
+	defer repoMapMu.Unlock()
+
+	if repoMapCache != "" && time.Since(repoMapCacheTime) < repoMapTTL {
+		return repoMapCache
+	}
+
+	var sb strings.Builder
+	sb.WriteString("[RepoMap] 项目符号地图:\n")
+
+	fileCount := 0
+	symbolCount := 0
+
+	filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || !fileRe.MatchString(info.Name()) {
+			if info != nil && info.IsDir() && (strings.HasPrefix(info.Name(), ".") ||
+				info.Name() == "vendor" || info.Name() == "node_modules" || info.Name() == "bin") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		data, err := os.ReadFile(path)
+		if err != nil { return nil }
+
+		matches := symbolRe.FindAllStringSubmatch(string(data), -1)
+		if len(matches) == 0 { return nil }
+
+		relPath, _ := filepath.Rel(root, path)
+		sb.WriteString(relPath + ": ")
+		names := make([]string, 0, len(matches))
+		seen := make(map[string]bool)
+		for _, m := range matches {
+			name := m[1]
+			if !seen[name] {
+				seen[name] = true
+				names = append(names, name)
+			}
+		}
+		sb.WriteString(strings.Join(names, ", "))
+		sb.WriteString("\n")
+		fileCount++
+		symbolCount += len(names)
+		return nil
+	})
+
+	if fileCount == 0 {
+		return ""
+	}
+
+	sb.WriteString("\n---\n")
+	repoMapCache = sb.String()
+	repoMapCacheTime = time.Now()
+	return repoMapCache
+}
