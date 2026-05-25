@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/lmorg/readline/v4"
+	"github.com/pterm/pterm"
 
 	"openaide/backend/internal/infra"
 	"openaide/backend/internal/kernel"
@@ -202,7 +203,9 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string)
 			// 实时更新工具状态行
 			display := toolNames
 			if len(display) > 4 { display = display[len(display)-4:] }
-			fmt.Printf("\r\033[K  %s🔧%s %s%s\n", cToolName, cReset, cDim, strings.Join(display, ", "), cReset)
+			toolStr := strings.Join(display, ", ")
+		if len(toolStr) > 80 { toolStr = toolStr[:77] + "..." }
+		fmt.Printf("\r\033[K  %s%s%s\n", pterm.Cyan("🔧"), cDim, toolStr)
 			fmt.Print("\033[1A") // cursor up to overwrite on next update
 		}
 	}
@@ -218,7 +221,7 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string)
 		// 用分隔线将回答与工具区隔开
 		fmt.Println()
 		fmt.Println(rendered)
-		fmt.Printf("\n%s──%s\n", cSep, cReset)
+		fmt.Printf("\n%s──%s\n", cInfo, cReset)
 	}
 	PrintStatusBar(totalTokens, totalTools, elapsed, "deepseek-v4-pro")
 }

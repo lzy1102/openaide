@@ -6,56 +6,36 @@ import (
 	"time"
 
 	"github.com/charmbracelet/glamour"
+	"github.com/pterm/pterm"
 )
 
-// ── ANSI Colors ───────────────────────────────────────────
+// ── ANSI Colors (minimal, for inline formatting) ──────────
 
 const (
-	cReset  = "\033[0m"
-	cBold   = "\033[1m"
-	cDim    = "\033[2m"
-	cItalic = "\033[3m"
-
-	cRed    = "\033[31m"
-	cGreen  = "\033[32m"
-	cYellow = "\033[33m"
-	cBlue   = "\033[34m"
-	cMagenta = "\033[35m"
-	cCyan   = "\033[36m"
-	cWhite  = "\033[97m"
-	cGray   = "\033[90m"
+	cReset   = "\033[0m"
+	cBold    = "\033[1m"
+	cDim     = "\033[2m"
+	cItalic  = "\033[3m"
+	cRed     = "\033[31m"
+	cGreen   = "\033[32m"
+	cYellow  = "\033[33m"
+	cBlue    = "\033[34m"
+	cCyan    = "\033[36m"
+	cGray    = "\033[90m"
 )
 
-// 语义别名
 var (
 	cLogo      = cCyan + cBold
-	cHeading   = cCyan + cBold
 	cUser      = cBlue + cBold
-	cToolName  = cYellow + cBold
 	cToolOK    = cGreen
 	cToolErr   = cRed + cBold
 	cThink     = cDim + cItalic
-	cStatusBar = cDim
 	cPrompt    = cGreen + cBold
-	cPromptBusy= cYellow + cBold
+	cPromptBusy = cYellow + cBold
 	cError     = cRed + cBold
 	cWarn      = cYellow
 	cSuccess   = cGreen
-	cHint      = cDim
 	cInfo      = cGray
-	cSep       = cDim
-	cBorder    = cGray
-)
-
-// ── Box Drawing ───────────────────────────────────────────
-
-const (
-	boxH  = "─"
-	boxV  = "│"
-	boxTL = "╭"
-	boxTR = "╮"
-	boxBL = "╰"
-	boxBR = "╯"
 )
 
 // ── Markdown Renderer ─────────────────────────────────────
@@ -85,7 +65,6 @@ func RenderMarkdown(text string) string {
 func PromptStyle(sessionID, modelName string, busy bool) string {
 	dot := cGreen + "●" + cReset
 	if busy { dot = cYellow + "◉" + cReset }
-
 	name := "openaide"
 	if modelName != "" {
 		name = strings.SplitN(modelName, " ", 2)[0]
@@ -93,24 +72,17 @@ func PromptStyle(sessionID, modelName string, busy bool) string {
 	return fmt.Sprintf("%s %s%s %s %s❯%s ", dot, cDim, sessionID[:8], cPrompt, name, cReset)
 }
 
-// ── Tool Call Section ─────────────────────────────────────
+// ── Tool Section ──────────────────────────────────────────
 
 type toolSection struct {
 	names   []string
-	results []string // summary per tool
-	errors  []string // error per tool
+	results []string
+	errors  []string
 }
-
 var currentToolSection toolSection
 
-func BeginToolSection() {
-	currentToolSection = toolSection{}
-}
-
-func AddToolCall(name string) {
-	currentToolSection.names = append(currentToolSection.names, name)
-}
-
+func BeginToolSection()  { currentToolSection = toolSection{} }
+func AddToolCall(n string) { currentToolSection.names = append(currentToolSection.names, n) }
 func AddToolResult(name, summary, errStr string) {
 	currentToolSection.results = append(currentToolSection.results, summary)
 	currentToolSection.errors = append(currentToolSection.errors, errStr)
@@ -118,97 +90,79 @@ func AddToolResult(name, summary, errStr string) {
 
 func EndToolSection() {
 	if len(currentToolSection.names) == 0 { return }
-
 	total := len(currentToolSection.names)
 	errors := 0
-	reads := 0
 	for _, e := range currentToolSection.errors {
-		if e != "" { errors++ } else { reads++ }
+		if e != "" { errors++ }
 	}
 
-	// 只读工具折叠为一行摘要（Claude Code 风格）
 	if errors == 0 && total > 1 {
-		names := make([]string, 0)
 		seen := make(map[string]bool)
+		var names []string
 		for _, n := range currentToolSection.names {
-			base := strings.TrimSuffix(n, "_file")
-			if !seen[base] { seen[base] = true; names = append(names, base) }
+			if !seen[n] { seen[n] = true; names = append(names, n) }
 		}
-		fmt.Printf("  %s📁%s %s%d tools%s (%s)\n",
-			cToolOK, cReset, cDim, total, cReset,
-			strings.Join(names, ", "))
+		pterm.Info.Printfln("📁 %d tools (%s)", total, strings.Join(names, ", "))
 		return
 	}
-
-	// 有错误或单个工具：逐个展示
-	width := 55
-	fmt.Printf("\n  %s%s%s%s%s%s%s\n",
-		cBorder, boxTL, cDim, strings.Repeat(boxH, width-2), cReset, cBorder, boxTR)
 
 	for i, name := range currentToolSection.names {
 		marker := cToolOK + "✓" + cReset
 		if currentToolSection.errors[i] != "" {
 			marker = cToolErr + "✗" + cReset
 		}
-		summary := currentToolSection.results[i]
-		if summary == "" { summary = "ok" }
-		if len(summary) > 35 { summary = summary[:32] + "..." }
-		fmt.Printf("  %s%s %s %s%-25s%s %s%s%s\n",
-			cBorder, boxV, marker, cToolName, name, cReset, cInfo, summary, cReset)
+		info := ""
+		if currentToolSection.results[i] != "" {
+			info = " " + pterm.Gray(currentToolSection.results[i])
+		}
+		fmt.Printf("  %s %s%s%s\n", marker, pterm.Cyan(name), info, cReset)
 	}
-
-	fmt.Printf("  %s%s%s%s%s%s\n",
-		cBorder, boxBL, cDim, strings.Repeat(boxH, width-2), cReset, boxBR)
-	Println()
+	fmt.Println()
 }
 
-// ── Thinking Display ──────────────────────────────────────
+// ── Thinking ──────────────────────────────────────────────
 
 func PrintThinking(text string) {
 	firstLine := strings.SplitN(text, "\n", 2)[0]
-	if len(firstLine) > 120 { firstLine = firstLine[:117] + "..." }
+	if len(firstLine) > 100 { firstLine = firstLine[:97] + "..." }
 	fmt.Printf("\r\033[K  %s[think]%s %s%s%s\n", cThink, cReset, cDim, firstLine, cReset)
 }
 
-// ── Progress Bar ──────────────────────────────────────────
+// ── Progress (pterm Spinner + Progressbar) ────────────────
 
-var progressLineActive bool
+var currentSpinner *pterm.SpinnerPrinter
 
-func ShowProgress(phase string, current, total int) {
-	progressLineActive = true
-	bar := progressBar(current, total, 30)
-	fmt.Printf("\r\033[K  %s%-12s%s %s %s%d/%d%s\n",
-		cDim, phase, cReset, bar, cInfo, current, total, cReset)
-	if progressLineActive {
-		fmt.Print("\033[1A") // cursor up
-	}
+func ShowSpinner(text string) {
+	if currentSpinner != nil { currentSpinner.Stop() }
+	s, _ := pterm.DefaultSpinner.WithRemoveWhenDone(true).Start(text)
+	currentSpinner = s
 }
 
-func ClearProgress() {
-	if progressLineActive {
-		fmt.Print("\r\033[K")
-		progressLineActive = false
-	}
+func UpdateSpinner(text string) {
+	if currentSpinner != nil { currentSpinner.UpdateText(text) }
 }
 
-func progressBar(current, total, width int) string {
-	if total <= 0 { return "" }
-	filled := (current * width) / total
-	bar := strings.Repeat("█", filled) + strings.Repeat("░", width-filled)
-	pct := (current * 100) / total
-	return fmt.Sprintf("%s%s [%s%d%%%s]", cGreen, bar, cDim, pct, cReset)
+func StopSpinner() {
+	if currentSpinner != nil { currentSpinner.Stop(); currentSpinner = nil }
+}
+
+func ShowProgress(total int, title string) *pterm.ProgressbarPrinter {
+	p, _ := pterm.DefaultProgressbar.
+		WithTotal(total).
+		WithTitle(title).
+		WithShowCount(true).
+		WithShowPercentage(true).
+		WithRemoveWhenDone(false).
+		Start()
+	return p
 }
 
 // ── Status Bar ────────────────────────────────────────────
 
 func PrintStatusBar(tokens, tools int, elapsed time.Duration, model string) {
-	width := 60
-	sep := strings.Repeat(boxH, width)
-	fmt.Printf("\n%s%s%s\n", cSep, sep, cReset)
-
 	var parts []string
 	if model != "" {
-		parts = append(parts, fmt.Sprintf("%s%s%s", cDim, model, cReset))
+		parts = append(parts, pterm.Gray(model))
 	}
 	if tokens > 0 {
 		parts = append(parts, fmt.Sprintf("%s⚡ %d tokens%s", cInfo, tokens, cReset))
@@ -217,58 +171,13 @@ func PrintStatusBar(tokens, tools int, elapsed time.Duration, model string) {
 		parts = append(parts, fmt.Sprintf("%s🔧 %d tools%s", cInfo, tools, cReset))
 	}
 	parts = append(parts, fmt.Sprintf("%s⏱ %v%s", cInfo, elapsed.Round(100*time.Millisecond), cReset))
-	fmt.Printf("  %s\n\n", strings.Join(parts, "  │  "))
+	fmt.Printf("\n  %s\n\n", strings.Join(parts, "  │  "))
 }
 
-// ── Simple Print Helpers ──────────────────────────────────
+// ── Message Helpers ───────────────────────────────────────
 
-func Println()  { fmt.Println() }
-func Printf(f string, args ...interface{}) { fmt.Printf(f, args...) }
-
-func PrintUserQuery(query string) {
-	fmt.Printf("\n  %s▸ %s%s\n", cUser, query, cReset)
-}
-
-func PrintError(err string) {
-	fmt.Printf("\n  %s✗ %s%s\n", cError, err, cReset)
-}
-
-func PrintWarning(msg string) {
-	fmt.Printf("  %s⚠ %s%s\n", cWarn, msg, cReset)
-}
-
-func PrintSuccess(msg string) {
-	fmt.Printf("  %s✓ %s%s\n", cSuccess, msg, cReset)
-}
-
-func PrintInfo(msg string) {
-	fmt.Printf("  %s%s%s\n", cInfo, msg, cReset)
-}
-
-// ── Content Divider ───────────────────────────────────────
-
-func PrintDivider(title string) {
-	width := 60
-	if title != "" {
-		fmt.Printf("\n  %s── %s%s%s %s\n", cSep, cHeading, title, cReset, cSep+strings.Repeat(boxH, width-len(title)-6))
-	} else {
-		fmt.Printf("\n  %s%s\n", cSep, strings.Repeat(boxH, width))
-	}
-}
-
-// ── Section ───────────────────────────────────────────────
-
-func BeginSection(title string) {
-	width := 60
-	fmt.Printf("\n  %s%s %s%s %s", cBorder, boxTL, cHeading, title, cReset)
-	fmt.Printf("%s%s%s\n", cBorder, strings.Repeat(boxH, width-len(title)-4), boxTR)
-}
-
-func EndSection() {
-	width := 60
-	fmt.Printf("  %s%s%s%s\n", cBorder, boxBL, strings.Repeat(boxH, width-2), boxBR)
-}
-
-func SectionLine(text string) {
-	fmt.Printf("  %s%s %s%s\n", cBorder, boxV, text, cReset)
-}
+func PrintError(err string)   { pterm.Error.Println(err) }
+func PrintWarning(msg string) { pterm.Warning.Println(msg) }
+func PrintSuccess(msg string) { pterm.Success.Println(msg) }
+func PrintInfo(msg string)    { pterm.Info.Println(msg) }
+func Println()                { fmt.Println() }
