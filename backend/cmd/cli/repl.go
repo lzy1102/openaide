@@ -59,26 +59,29 @@ func runREPL(app *infra.Application, continueSess bool) {
 	// Session: resume or create
 	var sessionID string
 	if continueSess {
-		sessions, _ := app.Orchestrator.ListSessions(context.Background(), "default", "cli-user", 1, 0)
-		if len(sessions) > 0 {
-			sessionID = sessions[0].ID
-			msgCount := len(sessions[0].Messages)
-			fmt.Printf("  %s📋 恢复会话%s: %s (%d 条消息)\n",
-				cGreen, cReset, sessionID[:8], msgCount)
+		sessions, _ := app.Orchestrator.ListSessions(context.Background(), "default", "cli-user", 10, 0)
+		for _, s := range sessions {
+			if len(s.Messages) > 0 { // 跳过空会话
+				sessionID = s.ID
+				msgCount := len(s.Messages)
+				fmt.Printf("  %s📋 恢复会话%s: %s (%d 条消息)\n",
+					cGreen, cReset, sessionID[:8], msgCount)
 
-			// 显示最近几条历史消息
-			history, _ := app.Orchestrator.GetSessionHistory(context.Background(), sessionID, 3)
-			if len(history) > 0 {
-				fmt.Printf("  %s最近消息:%s\n", cInfo, cReset)
-				for _, msg := range history {
-					switch msg.Role {
-					case "user":
-						fmt.Printf("    %s▸ %s%s\n", cUser, trunc(msg.Content, 80), cReset)
-					case "assistant":
-						fmt.Printf("    %s✓ %s%s\n", cToolOK, trunc(msg.Content, 80), cReset)
+				// 显示最近几条历史消息
+				history, _ := app.Orchestrator.GetSessionHistory(context.Background(), sessionID, 3)
+				if len(history) > 0 {
+					fmt.Printf("  %s最近消息:%s\n", cInfo, cReset)
+					for _, msg := range history {
+						switch msg.Role {
+						case "user":
+							fmt.Printf("    %s▸ %s%s\n", cUser, trunc(msg.Content, 80), cReset)
+						case "assistant":
+							fmt.Printf("    %s✓ %s%s\n", cToolOK, trunc(msg.Content, 80), cReset)
+						}
 					}
+					fmt.Println()
 				}
-				fmt.Println()
+				break // 取第一个有消息的会话
 			}
 		}
 	}
