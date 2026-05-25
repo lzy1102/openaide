@@ -158,6 +158,47 @@ func runREPL(app *infra.Application, continueSess bool) {
 
 		if planErr != nil || plan == nil || len(plan.Subtasks) <= 1 {
 			executeStreamQuery(app, query, &sessionID)
+		} else if len(plan.Subtasks) >= 4 {
+			// DeepPlan: 深度研究 + 方案对比
+			pterm.Info.Println("复杂任务，启动深度分析…")
+			deepCtx, deepCancel := context.WithTimeout(context.Background(), app.Orchestrator.DeepTimeout)
+			deepResult, deepErr := app.Orchestrator.DeepPlan(deepCtx, query)
+			deepCancel()
+
+			if deepErr != nil || deepResult == nil || len(deepResult.Proposals.Options) == 0 {
+				PrintWarning("深度分析失败，使用默认计划")
+				executePlanQuery(app, query, plan)
+			} else {
+				// 交互式方案选择
+				var options []string
+				for _, opt := range deepResult.Proposals.Options {
+					options = append(options, fmt.Sprintf("%s  (风险:%s 工作量:%s)", opt.Name, opt.Risk, opt.Effort))
+				}
+				result, _ := pterm.DefaultInteractiveSelect.
+					WithOptions(options).
+					WithDefaultText("选择方案 (\u2191\u2193 移动, Enter 确认)").
+					WithMaxHeight(10).
+					Show()
+
+				if result != "" {
+					for i, opt := range options {
+						if opt == result {
+							selectedPlan, planErr := app.Orchestrator.DeepPlanFinalize(
+								context.Background(), query, deepResult, i)
+							if planErr != nil || selectedPlan == nil {
+								PrintWarning("计划生成失败，使用默认计划")
+								executePlanQuery(app, query, plan)
+							} else {
+								pterm.Success.Printfln("已选择: %s", deepResult.Proposals.Options[i].Name)
+								executePlanQuery(app, query, selectedPlan)
+							}
+							break
+						}
+					}
+				} else {
+					executeStreamQuery(app, query, &sessionID)
+				}
+			}
 		} else {
 			// 显示规划
 			Println()
@@ -337,7 +378,14 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 		fmt.Println()
 
 	case "/clear":
-		fmt.Print("\033[2J\033[H")
+		confirmed, _ := pterm.DefaultInteractiveConfirm.
+			WithDefaultText("清空所有会话消息?").
+			WithConfirmText("清空").
+			WithRejectText("取消").
+			Show()
+		if confirmed {
+			fmt.Print("\033[2J\033[H")
+		}
 
 	case "/model":
 		if len(parts) >= 2 {
