@@ -49,11 +49,18 @@ func GenerateRepoMap(root string) string {
 
 		data, err := os.ReadFile(path)
 		if err != nil { return nil }
-
-		matches := symbolRe.FindAllStringSubmatch(string(data), -1)
-		if len(matches) == 0 { return nil }
+		if len(data) == 0 { return nil }
 
 		relPath, _ := filepath.Rel(root, path)
+		matches := symbolRe.FindAllStringSubmatch(string(data), -1)
+		fileCount++
+
+		if len(matches) == 0 {
+			// 无符号文件仍列出（防止 LLM 幻觉不存在的文件）
+			sb.WriteString(relPath + "\n")
+			return nil
+		}
+
 		sb.WriteString(relPath + ": ")
 		names := make([]string, 0, len(matches))
 		seen := make(map[string]bool)
@@ -66,7 +73,6 @@ func GenerateRepoMap(root string) string {
 		}
 		sb.WriteString(strings.Join(names, ", "))
 		sb.WriteString("\n")
-		fileCount++
 		symbolCount += len(names)
 		return nil
 	})
