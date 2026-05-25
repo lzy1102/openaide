@@ -325,11 +325,32 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 			PrintSuccess("Model: " + parts[1])
 		} else {
 			info := app.LLMGateway.GetProviderInfos()
+			if len(info) == 0 { PrintInfo("没有可用的模型"); return }
+
+			var options []string
 			for _, p := range info {
-				m := " "; if p.Default { m = "*" }
-				fmt.Printf("  %s %s%s: %s%s\n", m, cGreen, p.Name, cReset, p.Model)
+				m := " "; if p.Default { m = "●" }
+				options = append(options, fmt.Sprintf("%s  %s  %s", m, p.Name, p.Model))
+			}
+
+			result, _ := pterm.DefaultInteractiveSelect.
+				WithOptions(options).
+				WithDefaultText("选择模型 (\u2191\u2193 移动, Enter 确认, Esc 取消)").
+				WithMaxHeight(10).
+				Show()
+
+			if result != "" {
+				fields := strings.Fields(result)
+				if len(fields) >= 3 {
+					app.SetModel(fields[2])
+					*modelName = fields[2]
+					PrintSuccess("Model: " + fields[2])
+				}
+			} else {
+				PrintInfo("已取消")
 			}
 		}
+		return
 
 	case "/lang":
 		if len(parts) >= 2 {
