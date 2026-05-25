@@ -261,7 +261,7 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 		Role: "user",
 		Content: "已达到最大分析轮次。请基于以上所有发现，用中文给出一个完整的总结性回答。不要调用工具，直接输出最终结论。",
 	})
-	resp, err := k.llmProvider.Chat(ctx, messages, nil, map[string]interface{}{"temperature": 0.3, "max_tokens": 4000, "no_thinking": true})
+	resp, err := k.llmProvider.Chat(ctx, messages, nil, map[string]interface{}{"temperature": 0.3, "max_tokens": 4000, "route": "execution"})
 	if err != nil {
 		slog.Warn("Final synthesis failed", "error", err)
 		lastMsg := messages[len(messages)-1]

@@ -159,6 +159,18 @@ func (g *Gateway) GetEnabledProviders() []string {
 func (g *Gateway) SetRouter(r *Router) { g.router = r }
 
 // routeProvider 根据用户输入选择最佳 provider
+// findProviderForModel 查找默认模型匹配指定名称的 provider
+func (g *Gateway) findProviderForModel(model string) string {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	for name, p := range g.providers {
+		if p.GetModelID() == model {
+			return name
+		}
+	}
+	return ""
+}
+
 func (g *Gateway) routeProvider(query string) string {
 	if g.router != nil {
 		provider, _, matched := g.router.Route(query)
@@ -181,12 +193,21 @@ func (g *Gateway) Chat(ctx context.Context, messages []kernel.Message, tools []k
 	if route, _ := options["route"].(string); route != "" {
 		switch route {
 		case "execution":
+			// 优先找默认模型匹配 execution model 的 provider（如 deepseek-flash）
 			if g.ExecutionModel != "" {
-				options["model"] = g.ExecutionModel
+				if pn := g.findProviderForModel(g.ExecutionModel); pn != "" {
+					options["_force_provider"] = pn
+				} else {
+					options["model"] = g.ExecutionModel
+				}
 			}
 		case "reasoning":
 			if g.ReasoningModel != "" {
-				options["model"] = g.ReasoningModel
+				if pn := g.findProviderForModel(g.ReasoningModel); pn != "" {
+					options["_force_provider"] = pn
+				} else {
+					options["model"] = g.ReasoningModel
+				}
 			}
 		}
 	}
@@ -201,6 +222,9 @@ func (g *Gateway) Chat(ctx context.Context, messages []kernel.Message, tools []k
 	}
 
 	providerName := g.routeProvider(query)
+	if forcePn, _ := options["_force_provider"].(string); forcePn != "" {
+		providerName = forcePn
+	}
 	if providerName == "" {
 		return nil, fmt.Errorf("no provider configured")
 	}
