@@ -172,33 +172,27 @@ git push origin v1.0.0
 
 ## 核心能力
 
-- **22个内置工具**: 文件读写/执行命令/列目录/搜索/Git深度(diff/log/blame)/知识库/代码符号索引
-- **联网搜索**: web_search/web_fetch/ai_search (DuckDuckGo，无需API Key)
-- **浏览器自动化**: Headless Chrome (browser_navigate/extract/screenshot/click/fill)
-- **Diff编辑**: 精确search/replace + 行号替换
-- **多模态Vision**: base64图片→Vision API格式 (OpenAI+Anthropic)
-- **5个内置Skill + 自动进化**: 代码审查/Git提交/调试/重构/解释（LLM语义匹配触发）
-- **ProjectMind 持续学习**: 跨会话积累项目知识（代码地图/风险地图/约定/策略有效性），越用越聪明
-- **知识库+ProjectMind 统一记忆**: 结构化事实自动同步到语义搜索知识库，统一RAG注入
-- **DeepPlan 深度规划**: 研究→方案对比(💡决策理由)→选择→计划→执行→自修正闭环(发现问题→根因分析→换方法修→直到通过)
-- **主线→分支→收敛 执行模型**: 子Agent发现问题→开启分支(根因+修复)→收敛回主线→更新剩余步骤
-- **多Agent Team + 斜杠命令**: /analyst /coder /reviewer /executor /team，独立会话+模型分层路由
-- **LLM全决策引擎**: 17项硬编码规则替换，角色分配/风险评估/技能检测等全部由LLM判断
-- **OpenCode 配置兼容**: 自动发现 opencode.json，导入MCP服务器+项目指令
-- **插件市场**: `openaide plugins [list|search|install]` CLI命令
-- **LLM反思+跨会话学习**: 每轮LLM结构化反思(function calling)→eval→insights持久化→后续对话自动注入历史经验
-- **知识库**: 质量门控自动抽取(score>0.6)+提示词注入 + LLM Embedding语义搜索 + 使用反馈闭环(自动评估有效性)
-- **3级记忆**: L1/L2/L3 + LLM Embedding语义搜索 + TF-IDF向量搜索 + 文本匹配三级降级
-- **LLM上下文压缩**: LLM驱动的语义摘要 + 待解决问题提取，NovelCompressor降级
-- **会话检查点**: 文件JSON，崩溃可恢复会话进度
-- **事件持久化**: 事件总线持久化到磁盘，支持回放
-- **LLM网关**: OpenAI+Anthropic原生+DeepSeek(thinking)+文本向量化(Embedding)+故障转移
-- **Embedder接口**: 可扩展的文本向量化接口，支持配置独立 embedding model
-- **MCP协议**: JSON-RPC stdio，外部工具生态接入
-- **WebSocket**: 双向流式+心跳
-- **插件系统**: Claude Code 官方格式兼容 (skills/MCP/hooks)，`./data/plugins/` 即装即用，自动发现 SKILL.md/.mcp.json/hooks.json
-- **TUI**: Bubbletea (AltScreen可选) + 流式渲染 + 思考过程显示
-- **认证**: JWT默认关闭，OPENAIDE_AUTH=true开启
+### 智能增强（Aider 风格）
+- **RepoMap 符号地图**: 项目符号自动提取注入 prompt，LLM 一眼看清代码结构
+- **Lint/Repair 循环**: 代码修改后自动 lint → 错误反馈 LLM 修复 → 循环直到干净
+- **Architect/Editor 模型路由**: analyst/reviewer→推理模型，coder/executor→执行模型
+- **预算注入**: LLM 感知剩余轮次，主动收敛而非突然截断
+- **ProjectMind 持续学习**: 跨会话积累项目知识，越用越聪明
+
+### 核心架构
+- **REPL 默认模式**: rich readline + markdown 渲染 + 代码高亮 + tab 补全
+- **TUI 模式** (`--tui`): Bubble Tea 组件化 TUI
+- **22个内置工具**: 文件读写/执行命令/Git深度/知识库/代码符号索引
+- **多 Agent Team**: /analyst /coder /reviewer /executor /team，独立会话+模型路由
+- **DeepPlan 深度规划**: 研究→方案对比→选择→计划→执行→自修正闭环
+- **LLM 全决策引擎**: 角色分配/风险评估/技能检测全部由 LLM 判断
+- **工具并发安全分区**: 只读工具并行，写工具串行
+- **会话检查点**: 文件 JSON，崩溃可恢复
+
+### 扩展
+- **MCP 协议**: JSON-RPC stdio，外部工具生态
+- **插件系统**: Claude Code 官方格式兼容 (skills/MCP/hooks)
+- **Web 前端 + API Server**: HTTP/WebSocket/SSE
 
 ## CLI
 

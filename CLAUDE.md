@@ -364,6 +364,19 @@ Instead of hard-capping ReAct rounds and forcing synthesis, the LLM sees remaini
 
 - `snipOldToolOutputs()`: keep last 4 tool results intact, older ones snipped to head(500) + tail(500)
 
+### Lint/Repair loop (Aider-style)
+
+- After coder fixes, auto-runs linter: golangci-lint (Go), eslint/ruff/pylint (JS/Python)
+- New errors fed back to coder for fixing (max 3 retries, error deduplication)
+- `lintRepairLoop()` in `orchestrator.go`, `runLint()` auto-detects project language
+
+### RepoMap (Aider-style code symbol map)
+
+- `repomap.go`: regex-based symbol extraction from Go files (func, type, const, var)
+- Injected into system prompt as `[RepoMap] 项目符号地图: file: symbol1, symbol2, ...`
+- 5-min TTL cache; LLM sees code structure without exploration rounds
+- Skips dot-dirs, vendor, node_modules, bin
+
 ### Key patterns
 
 - All inter-module communication uses interfaces defined in `kernel/interfaces.go`
