@@ -2,6 +2,7 @@ package kernel
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -33,6 +34,7 @@ type AgentKernel struct {
 	skillEvolution   *SkillEvolution
 	approver         Approver
 	adaptiveRounds   *AdaptiveRounds
+	queryOptions     *QueryOptions // 当前查询的选项（含交互回调）
 
 	// 跟踪系统
 	tracer  Tracer
@@ -427,6 +429,21 @@ func isParallelSafe(name string) bool {
 }
 
 func (k *AgentKernel) executeTool(ctx context.Context, tc ToolCall, sessionID string) *ToolResult {
+	// 交互审批（REPL pterm 回调）
+	if k.queryOptions != nil && k.queryOptions.OnApproval != nil {
+		if _, dangerous := DangerousTools[tc.Function.Name]; dangerous {
+			var path string
+			var args struct {
+				Path string `json:"path"`
+			}
+			if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err == nil {
+				path = args.Path
+			}
+			if !k.queryOptions.OnApproval(tc.Function.Name, path) {
+				return &ToolResult{Error: "user denied"}
+			}
+		}
+	}
 	// 审批检查（高危工具需要用户确认）
 	if k.approver != nil {
 		if reason, dangerous := DangerousTools[tc.Function.Name]; dangerous {

@@ -243,7 +243,25 @@ func execCmd(name string, args ...string) (string, error) {
 
 func executeStreamQuery(app *infra.Application, query string, sessionID *string) {
 	ctx, cancel := context.WithCancel(context.Background())
-	stream, err := app.Orchestrator.ProcessQueryStream(ctx, "cli-user", "default", query, kernel.QueryOptions{})
+	opts := kernel.QueryOptions{
+		OnApproval: func(tool, path string) bool {
+			result, _ := pterm.DefaultInteractiveConfirm.
+				WithDefaultText(fmt.Sprintf("%s %s 允许?", pterm.Yellow(tool), path)).
+				WithConfirmText("允许").
+				WithRejectText("拒绝").
+				Show()
+			return result
+		},
+		OnBudgetExhausted: func(round, maxRounds int) bool {
+			result, _ := pterm.DefaultInteractiveConfirm.
+				WithDefaultText(fmt.Sprintf("轮次用尽 (%d/%d)，继续分析?", round, maxRounds)).
+				WithConfirmText("继续").
+				WithRejectText("总结").
+				Show()
+			return result
+		},
+	}
+	stream, err := app.Orchestrator.ProcessQueryStream(ctx, "cli-user", "default", query, opts)
 	if err != nil {
 		PrintError(fmt.Sprintf("%v", err))
 		cancel()
