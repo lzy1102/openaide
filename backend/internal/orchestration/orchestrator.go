@@ -838,9 +838,11 @@ func (o *Orchestrator) routePipeline(ctx context.Context, plan *Plan) map[int]st
 func (o *Orchestrator) pickModel(role string) string {
 	if o.ModelRouting.Reasoning == "" { return "" }
 	switch role {
-	case "analyst", "coder", "reviewer":
+	// Architect: 分析/审查 → 推理模型（深度思考）
+	case "analyst", "reviewer":
 		return o.ModelRouting.Reasoning
-	case "executor", "classifier":
+	// Editor: 编码/执行 → 执行模型（快速、无 thinking）
+	case "coder", "executor", "classifier":
 		if o.ModelRouting.Execution != "" {
 			return o.ModelRouting.Execution
 		}

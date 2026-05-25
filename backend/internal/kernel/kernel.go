@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"time"
@@ -317,10 +318,58 @@ func (k *AgentKernel) buildMessages(session *Session, query *Query) []Message {
 		}
 	}
 
+	// Git 上下文自动注入（Aider 风格）— LLM 无需手动查 git 状态
+	injectGitContext(&messages)
+
 	// 旧工具输出衰减裁剪
 	snipOldToolOutputs(messages)
 
 	return messages
+}
+
+// injectGitContext 自动附加 git diff --stat 和最近修改文件到上下文
+func injectGitContext(messages *[]Message) {
+	if _, err := os.Stat(".git"); os.IsNotExist(err) {
+		return
+	}
+
+	var parts []string
+
+	// git branch
+	if out, err := runGitCmd("rev-parse", "--abbrev-ref", "HEAD"); err == nil && out != "" {
+		parts = append(parts, fmt.Sprintf("[Git] 当前分支: %s", out))
+	}
+
+	// git status -s
+	if out, err := runGitCmd("status", "-s"); err == nil && out != "" {
+		parts = append(parts, fmt.Sprintf("[Git] 工作区变更:\n%s", out))
+	}
+
+	// git diff --stat (unstaged)
+	if out, err := runGitCmd("diff", "--stat"); err == nil && out != "" {
+		parts = append(parts, fmt.Sprintf("[Git] 未暂存修改:\n%s", out))
+	}
+
+	// git diff --cached --stat (staged)
+	if out, err := runGitCmd("diff", "--cached", "--stat"); err == nil && out != "" {
+		parts = append(parts, fmt.Sprintf("[Git] 已暂存修改:\n%s", out))
+	}
+
+	if len(parts) > 0 {
+		*messages = append(*messages, Message{
+			Role: "user", Content: strings.Join(parts, "\n"),
+		})
+	}
+}
+
+func runGitCmd(args ...string) (string, error) {
+	cmd := exec.Command("git", args...)
+	cmd.Stderr = nil
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 // snipOldToolOutputs 对旧工具输出做头尾保留裁剪（Claude Code 风格）
