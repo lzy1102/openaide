@@ -95,7 +95,7 @@ func runREPL(app *infra.Application, continueSess bool) {
 	rl.SetPrompt(PromptStyle(sessionID, modelName, false))
 	rl.HistoryAutoWrite = true
 
-	commands := []string{"/help", "/clear", "/model", "/lang", "/log", "/sessions",
+	commands := []string{"/help", "/clear", "/model", "/lang", "/log", "/sessions", "/session",
 		"/handoff", "/exit", "/quit", "/q", "/analyst", "/coder", "/reviewer", "/executor", "/team"}
 	rl.TabCompleter = func(line []rune, pos int, _ readline.DelayedTabContext) *readline.TabCompleterReturnT {
 		prefix := string(line[:pos])
@@ -116,7 +116,7 @@ func runREPL(app *infra.Application, continueSess bool) {
 	}
 	rl.HintText = func(line []rune, pos int) []rune {
 		if len(line) == 0 {
-			return []rune("type your question or /help")
+			return []rune("/help for commands")
 		}
 		prefix := string(line)
 		if strings.HasPrefix(prefix, "/") {
@@ -126,7 +126,7 @@ func runREPL(app *infra.Application, continueSess bool) {
 					matches = append(matches, cmd)
 				}
 			}
-			if len(matches) > 0 {
+			if len(matches) > 0 && len(matches) <= 5 {
 				return []rune(strings.Join(matches, "  "))
 			}
 		}
@@ -347,15 +347,36 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 	case "/sessions":
 		sessions, _ := app.Orchestrator.ListSessions(context.Background(), "default", "cli-user", 10, 0)
 		fmt.Println()
-		for _, s := range sessions {
-			m := " "; if s.ID == *sessionID { m = "*" }
+		for i, s := range sessions {
+			marker := " "; if s.ID == *sessionID { marker = "*" }
 			title := s.ID[:8]
-			for i := len(s.Messages) - 1; i >= 0; i-- {
-				if s.Messages[i].Role == "user" { title = trunc(s.Messages[i].Content, 40); break }
+			for j := len(s.Messages) - 1; j >= 0; j-- {
+				if s.Messages[j].Role == "user" { title = trunc(s.Messages[j].Content, 40); break }
 			}
-			fmt.Printf("  %s %s%s%s  [%d msgs]  %s\n", m, cReset, title, cInfo, len(s.Messages), s.UpdatedAt.Format("15:04"))
+			fmt.Printf("  %s [%d] %s%s%s  [%d msgs]  %s\n", marker, i+1, cReset, title, cInfo, len(s.Messages), s.UpdatedAt.Format("15:04"))
 		}
+		fmt.Printf("\n  %s/session <编号>%s 切换会话\n", cInfo, cReset)
 		fmt.Println()
+
+	case "/session":
+		if len(parts) >= 2 {
+			sessions, _ := app.Orchestrator.ListSessions(context.Background(), "default", "cli-user", 10, 0)
+			idx := 0
+			fmt.Sscanf(parts[1], "%d", &idx)
+			if idx > 0 && idx <= len(sessions) {
+				*sessionID = sessions[idx-1].ID
+				msgCount := len(sessions[idx-1].Messages)
+				title := (*sessionID)[:8]
+				for j := len(sessions[idx-1].Messages) - 1; j >= 0; j-- {
+					if sessions[idx-1].Messages[j].Role == "user" { title = trunc(sessions[idx-1].Messages[j].Content, 30); break }
+				}
+				fmt.Printf("  %s✓ 切换到会话 %s (%d 条消息)%s\n", cSuccess, title, msgCount, cReset)
+			} else {
+				PrintWarning("无效的会话编号")
+			}
+		} else {
+			PrintInfo("用法: /session <编号>")
+		}
 
 	case "/analyst", "/coder", "/reviewer", "/executor":
 		role := strings.TrimPrefix(parts[0], "/")
