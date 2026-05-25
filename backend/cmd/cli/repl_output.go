@@ -6,21 +6,46 @@ import (
 	"time"
 
 	"github.com/charmbracelet/glamour"
-	"github.com/charmbracelet/lipgloss"
 )
 
-// ── ANSI Color Helpers ────────────────────────────────────
+// ── ANSI Colors ───────────────────────────────────────────
 
+// 语义色板 — 每个场景有明确归属
+const (
+	cReset  = "\033[0m"
+	cBold   = "\033[1m"
+	cDim    = "\033[2m"
+	cItalic = "\033[3m"
+
+	cRed    = "\033[31m"
+	cGreen  = "\033[32m"
+	cYellow = "\033[33m"
+	cBlue   = "\033[34m"
+	cMagenta = "\033[35m"
+	cCyan   = "\033[36m"
+
+	cGray   = "\033[90m"  // 辅助信息
+	cWhite  = "\033[97m"  // 高亮
+)
+
+// 语义别名
 var (
-	dim    = "\033[2m"
-	reset  = "\033[0m"
-	bold   = "\033[1m"
-	red    = "\033[31m"
-	green  = "\033[32m"
-	yellow = "\033[33m"
-	blue   = "\033[34m"
-	cyan   = "\033[36m"
-	gray   = "\033[90m"
+	cLogo      = cCyan + cBold    // 品牌
+	cHeading   = cCyan + cBold    // 标题
+	cUser      = cBlue + cBold    // 用户查询回显
+	cAI        = ""               // AI 回答（无前缀，glamour 渲染）
+	cToolName  = cYellow + cBold  // 工具名称
+	cToolOK    = cGreen           // 工具成功
+	cToolErr   = cRed + cBold     // 工具失败
+	cThink     = cDim + cItalic    // 思考内容
+	cStatusBar = cDim             // 状态栏
+	cPrompt    = cGreen + cBold   // 提示符
+	cError     = cRed + cBold     // 错误
+	cWarn      = cYellow          // 警告
+	cSuccess   = cGreen           // 成功确认
+	cHint      = cDim             // 提示文字
+	cInfo      = cGray            // 辅助信息
+	cSep       = cDim             // 分隔线
 )
 
 // ── Markdown Renderer ─────────────────────────────────────
@@ -28,102 +53,98 @@ var (
 var mdRenderer *glamour.TermRenderer
 
 func initMarkdown() {
-	if mdRenderer != nil {
-		return
-	}
+	if mdRenderer != nil { return }
 	r, err := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
 		glamour.WithWordWrap(100),
 	)
-	if err != nil {
-		// Fallback: just print plain text
-		return
-	}
+	if err != nil { return }
 	mdRenderer = r
 }
 
-// RenderMarkdown renders markdown text to ANSI terminal
 func RenderMarkdown(text string) string {
-	if mdRenderer == nil {
-		initMarkdown()
-	}
-	if mdRenderer == nil {
-		return text
-	}
+	if mdRenderer == nil { initMarkdown() }
+	if mdRenderer == nil { return text }
 	out, err := mdRenderer.Render(text)
-	if err != nil {
-		return text
-	}
+	if err != nil { return text }
 	return out
 }
 
 // ── Output Helpers ────────────────────────────────────────
 
-// PrintStream outputs a content chunk during streaming (no newline)
-func PrintStream(content string) {
-	fmt.Print(content)
+// PrintUserEcho echoes the user's query in blue
+func PrintUserEcho(query string) {
+	fmt.Printf("\n  %s▸ %s%s\n", cUser, query, cReset)
 }
 
-// PrintThinking displays a dimmed thinking line
+// PrintThinking shows dimmed thinking (one line per round)
 func PrintThinking(text string) {
 	firstLine := strings.SplitN(text, "\n", 2)[0]
-	if len(firstLine) > 160 {
-		firstLine = firstLine[:157] + "..."
-	}
-	fmt.Printf("%s  [think] %s%s\n", gray, firstLine, reset)
+	if len(firstLine) > 140 { firstLine = firstLine[:137] + "..." }
+	fmt.Printf("  %s[think] %s%s\n", cThink, firstLine, cReset)
 }
 
-// PrintToolCall displays a tool being called (always on new line)
+// PrintToolCall shows a tool starting execution
 func PrintToolCall(name string) {
-	fmt.Printf("\n  %s⚙ %s%s", yellow, name, reset)
+	fmt.Printf("\n  %s⚙ %s%s ", cToolName, name, cReset)
 }
 
-// PrintToolDone displays a completed tool with result summary
+// PrintToolDone shows completed tool with result
 func PrintToolDone(summary string) {
-	fmt.Printf(" %s✓%s", green, reset)
+	fmt.Printf("%s✓%s", cToolOK, cReset)
 	if summary != "" {
-		fmt.Printf(" %s%s%s", gray, trunc(summary, 80), reset)
+		fmt.Printf(" %s%s%s", cInfo, trunc(summary, 80), cReset)
 	}
 	fmt.Println()
 }
 
-// PrintStatusLine prints the final status bar after completion
+// PrintToolError shows a failed tool
+func PrintToolError(name, err string) {
+	fmt.Printf("\n  %s✗ %s%s %s%s%s\n", cToolErr, name, cReset, cInfo, err, cReset)
+}
+
+// PrintStatusLine prints the footer after completion
 func PrintStatusLine(tokens, tools int, elapsed time.Duration) {
 	sep := strings.Repeat("─", 60)
-	fmt.Printf("\n%s%s%s\n", gray, sep, reset)
-	parts := []string{}
+	fmt.Printf("\n%s%s%s\n", cSep, sep, cReset)
+
+	var parts []string
 	if tokens > 0 {
-		parts = append(parts, fmt.Sprintf("%s⚡ %d tokens%s", yellow, tokens, reset))
+		parts = append(parts, fmt.Sprintf("%s⚡ %d tokens%s", cInfo, tokens, cReset))
 	}
 	if tools > 0 {
-		parts = append(parts, fmt.Sprintf("%s🔧 %d tools%s", yellow, tools, reset))
+		parts = append(parts, fmt.Sprintf("%s🔧 %d tools%s", cInfo, tools, cReset))
 	}
-	parts = append(parts, fmt.Sprintf("%s⏱ %v%s", gray, elapsed.Round(100*time.Millisecond), reset))
-	fmt.Printf("  %s\n\n", strings.Join(parts, " │ "))
+	parts = append(parts, fmt.Sprintf("%s⏱ %v%s", cInfo, elapsed.Round(100*time.Millisecond), cReset))
+	fmt.Printf("  %s\n\n", strings.Join(parts, "  "+cSep+"│"+cReset+"  "))
 }
 
-// PrintError prints an error message
+// PrintError shows a red error
 func PrintError(err string) {
-	fmt.Printf("\n  %s✗ %s%s\n", red, err, reset)
+	fmt.Printf("\n  %s✗ %s%s\n", cError, err, cReset)
 }
 
-// PrintWarning prints a warning message
+// PrintWarning shows a yellow warning
 func PrintWarning(msg string) {
-	fmt.Printf("%s  ⚠ %s%s\n", yellow, msg, reset)
+	fmt.Printf("  %s⚠ %s%s\n", cWarn, msg, cReset)
 }
 
-// PrintSuccess prints a success message
+// PrintSuccess shows a green success message
 func PrintSuccess(msg string) {
-	fmt.Printf("%s  ✓ %s%s\n", green, msg, reset)
+	fmt.Printf("  %s✓ %s%s\n", cSuccess, msg, cReset)
+}
+
+// PrintInfo shows a gray info message
+func PrintInfo(msg string) {
+	fmt.Printf("  %s%s%s\n", cInfo, msg, cReset)
 }
 
 // ── Prompt ────────────────────────────────────────────────
 
-// PromptStyle returns a styled prompt
 func PromptStyle(sessionID, modelName string) string {
 	prompt := "❯ "
 	if sessionID != "" {
-		prompt = fmt.Sprintf("%s%s%s │ %s", dim, sessionID[:8], reset, prompt)
+		prompt = fmt.Sprintf("%s%s%s │ %s%s", cDim, sessionID[:8], cReset, cPrompt, prompt)
 	}
-	return lipgloss.NewStyle().Foreground(lipgloss.Color("#82B74B")).Render(prompt)
+	return prompt + cReset
 }

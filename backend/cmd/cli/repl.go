@@ -41,18 +41,18 @@ func runREPL(app *infra.Application) {
   ██║   ██║██╔═══╝ ██╔══╝  ██║╚██╗██║██╔══██║██║██║  ██║██╔══╝
   ╚██████╔╝██║     ███████╗██║ ╚████║██║  ██║██║██████╔╝███████╗
    ╚═════╝ ╚═╝     ╚══════╝╚═╝  ╚═══╝╚═╝  ╚═╝╚═╝╚═════╝ ╚══════╝
-%s`, cyan, reset)
+%s`, cCyan, cReset)
 	fmt.Println()
 	if modelName != "" {
-		fmt.Printf("  %s%s%s", green, modelName, reset)
+		fmt.Printf("  %s%s%s", cGreen, modelName, cReset)
 	}
 	if gitBranch != "" {
-		fmt.Printf("  %s%s%s", gray, "  ◆  "+gitBranch, reset)
+		fmt.Printf("  %s%s%s", cInfo, "  ◆  "+gitBranch, cReset)
 	}
-	fmt.Printf("  %s%s%s", gray, "  ◆  "+filepath.Base(cwd), reset)
+	fmt.Printf("  %s%s%s", cInfo, "  ◆  "+filepath.Base(cwd), cReset)
 	fmt.Println()
 	fmt.Println()
-	fmt.Printf("  %s/h%s help  %s|%s  %s/q%s quit  %s|%s  Ctrl+C interrupt", yellow, reset, gray, reset, yellow, reset, gray, reset)
+	fmt.Printf("  %s/h%s help  %s|%s  %s/q%s quit  %s|%s  Ctrl+C interrupt", cYellow, cReset, cInfo, cReset, cYellow, cReset, cInfo, cReset)
 	fmt.Println()
 	fmt.Println()
 
@@ -104,7 +104,7 @@ func runREPL(app *infra.Application) {
 
 		// ── Smart routing: PreviewPlan → direct or team execution ──
 		fmt.Println()
-		fmt.Printf("  %s分析任务…%s", gray, reset)
+		fmt.Printf("  %s分析任务…%s", cInfo, cReset)
 		planCtx, planCancel := context.WithTimeout(context.Background(), app.Orchestrator.PreviewTimeout)
 		plan, planErr := app.Orchestrator.PreviewPlan(planCtx, query)
 		planCancel()
@@ -113,7 +113,7 @@ func runREPL(app *infra.Application) {
 		if planErr != nil || plan == nil || len(plan.Subtasks) <= 1 {
 			executeStreamQuery(app, query, &sessionID)
 		} else {
-			fmt.Printf("  %s📋 %s%s (%d steps)\n", yellow, reset, plan.Goal, len(plan.Subtasks))
+			fmt.Printf("  %s📋 %s%s (%d steps)\n", cYellow, cReset, plan.Goal, len(plan.Subtasks))
 			for i, st := range plan.Subtasks {
 				fmt.Printf("    %d. %s\n", i+1, st.Title)
 			}
@@ -192,10 +192,10 @@ func executePlanQuery(app *infra.Application, query string, plan *orchestration.
 	// Progress callback
 	app.Orchestrator.OnProgress = func(phase, detail string) {
 		elapsed := time.Since(startTime).Round(time.Second)
-		fmt.Printf("\r\033[K  %s🔧%s %s %s(%v)%s\n", yellow, reset, detail, gray, elapsed, reset)
+		fmt.Printf("\r\033[K  %s🔧%s %s %s(%v)%s\n", cYellow, cReset, detail, cInfo, elapsed, cReset)
 	}
 
-	fmt.Printf("  %s执行中…%s\n", gray, reset)
+	fmt.Printf("  %s执行中…%s\n", cInfo, cReset)
 
 	// Heartbeat goroutine
 	done := make(chan struct{})
@@ -206,7 +206,7 @@ func executePlanQuery(app *infra.Application, query string, plan *orchestration.
 			select {
 			case <-ticker.C:
 				elapsed := time.Since(startTime).Round(time.Second)
-				fmt.Printf("\r\033[K  %s⏳ 执行中… (%v)%s\n", gray, elapsed, reset)
+				fmt.Printf("\r\033[K  %s⏳ 执行中… (%v)%s\n", cInfo, elapsed, cReset)
 				fmt.Print("\033[1A") // move cursor up to overwrite on next update
 			case <-done:
 				return
@@ -246,18 +246,18 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 
 	case "/help":
 		fmt.Println()
-		fmt.Printf("  %sCommands%s\n", bold, reset)
-		fmt.Printf("  %s/h%s help              Help\n", yellow, reset)
-		fmt.Printf("  %s/c%s clear             Clear screen\n", yellow, reset)
-		fmt.Printf("  %s/m%s model [name]       View/switch model\n", yellow, reset)
-		fmt.Printf("  %s/l%s lang zh|en         Switch language\n", yellow, reset)
-		fmt.Printf("  %s/l%s log                Recent logs\n", yellow, reset)
-		fmt.Printf("  %s/s%s sessions           List sessions\n", yellow, reset)
-		fmt.Printf("  %s/a%s analyst <task>     Run analyst sub-agent\n", yellow, reset)
-		fmt.Printf("  %s/c%s coder <task>       Run coder sub-agent\n", yellow, reset)
-		fmt.Printf("  %s/r%s eviewer <task>     Run reviewer sub-agent\n", yellow, reset)
-		fmt.Printf("  %s/e%s xecutor <task>     Run executor sub-agent\n", yellow, reset)
-		fmt.Printf("  %s/t%s eam <task>         Run full team chain\n", yellow, reset)
+		fmt.Printf("  %sCommands%s\n", cBold, cReset)
+		fmt.Printf("  %s/h%s help              Help\n", cYellow, cReset)
+		fmt.Printf("  %s/c%s clear             Clear screen\n", cYellow, cReset)
+		fmt.Printf("  %s/m%s model [name]       View/switch model\n", cYellow, cReset)
+		fmt.Printf("  %s/l%s lang zh|en         Switch language\n", cYellow, cReset)
+		fmt.Printf("  %s/l%s log                Recent logs\n", cYellow, cReset)
+		fmt.Printf("  %s/s%s sessions           List sessions\n", cYellow, cReset)
+		fmt.Printf("  %s/a%s analyst <task>     Run analyst sub-agent\n", cYellow, cReset)
+		fmt.Printf("  %s/c%s coder <task>       Run coder sub-agent\n", cYellow, cReset)
+		fmt.Printf("  %s/r%s eviewer <task>     Run reviewer sub-agent\n", cYellow, cReset)
+		fmt.Printf("  %s/e%s xecutor <task>     Run executor sub-agent\n", cYellow, cReset)
+		fmt.Printf("  %s/t%s eam <task>         Run full team chain\n", cYellow, cReset)
 		fmt.Println()
 
 	case "/clear":
@@ -271,7 +271,7 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 			info := app.LLMGateway.GetProviderInfos()
 			for _, p := range info {
 				m := " "; if p.Default { m = "*" }
-				fmt.Printf("  %s %s%s: %s%s\n", m, green, p.Name, reset, p.Model)
+				fmt.Printf("  %s %s%s: %s%s\n", m, cGreen, p.Name, cReset, p.Model)
 			}
 		}
 
@@ -286,7 +286,7 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 	case "/log":
 		lines := tuiLogBuf.snapshot()
 		start := 0; if len(lines) > 20 { start = len(lines) - 20 }
-		for i := start; i < len(lines); i++ { fmt.Printf("  %s%s%s\n", gray, lines[i], reset) }
+		for i := start; i < len(lines); i++ { fmt.Printf("  %s%s%s\n", cInfo, lines[i], cReset) }
 
 	case "/sessions":
 		sessions, _ := app.Orchestrator.ListSessions(context.Background(), "default", "cli-user", 10, 0)
@@ -297,7 +297,7 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 			for i := len(s.Messages) - 1; i >= 0; i-- {
 				if s.Messages[i].Role == "user" { title = trunc(s.Messages[i].Content, 40); break }
 			}
-			fmt.Printf("  %s %s%s%s  [%d msgs]  %s\n", m, reset, title, gray, len(s.Messages), s.UpdatedAt.Format("15:04"))
+			fmt.Printf("  %s %s%s%s  [%d msgs]  %s\n", m, cReset, title, cInfo, len(s.Messages), s.UpdatedAt.Format("15:04"))
 		}
 		fmt.Println()
 
@@ -305,7 +305,7 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 		role := strings.TrimPrefix(parts[0], "/")
 		task := strings.TrimSpace(strings.TrimPrefix(cmd, parts[0]))
 		if task == "" { PrintWarning("usage: " + parts[0] + " <task>"); return }
-		fmt.Printf("  %s⚙%s %s running…\n", yellow, reset, role)
+		fmt.Printf("  %s⚙%s %s running…\n", cYellow, cReset, role)
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		result, err := app.Orchestrator.RunSubAgent(ctx, "cli-user", "default", role, task, nil)
@@ -316,12 +316,12 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 	case "/team":
 		task := strings.TrimSpace(strings.TrimPrefix(cmd, "/team"))
 		if task == "" { PrintWarning("usage: /team <task>"); return }
-		fmt.Printf("  %s⚙%s team: analyst → coder → reviewer\n", yellow, reset)
+		fmt.Printf("  %s⚙%s team: analyst → coder → reviewer\n", cYellow, cReset)
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		prevResults := []string{}
 		for _, role := range []string{"analyst", "coder", "reviewer"} {
-			fmt.Printf("    %s…%s", role, reset)
+			fmt.Printf("    %s…%s", role, cReset)
 			result, err := app.Orchestrator.RunSubAgent(ctx, "cli-user", "default", role, task, prevResults)
 			if err != nil { PrintError(fmt.Sprintf("%v", err)); return }
 			prevResults = append(prevResults, result)
