@@ -599,12 +599,16 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 5. 只有所有测试**实际通过**后才能报告"验证通过"
 
 如果无法修复，输出具体的错误信息和失败命令。`, plan.Goal, execSummary)
-			testReport, _ = o.RunSubAgent(ctx, userID, projectID, "executor", verifyTask, results)
-			totalTools++
+			var verifyErr error
+		testReport, verifyErr = o.RunSubAgent(ctx, userID, projectID, "executor", verifyTask, results)
+		totalTools++
+		if verifyErr != nil {
+			testReport = fmt.Sprintf("验证执行失败: %v", verifyErr)
 		}
-		if testReport == "" {
-			testReport = "（跳过验证阶段）"
-		}
+	}
+	if testReport == "" {
+		testReport = "（跳过验证阶段）"
+	}
 
 		// 审查验收
 		if !hasReviewer {
