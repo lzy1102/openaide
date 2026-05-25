@@ -19,8 +19,8 @@ var (
 )
 
 var (
-	symbolRe = regexp.MustCompile(`(?m)^\s*(?:func|type|const|var)\s+(?:\([^)]*\)\s+)?(\w+)`)
-	fileRe   = regexp.MustCompile(`\.go$`)
+	symbolRe = regexp.MustCompile(`(?m)^\s*(?:func|type|const|var|class|def|async\s+def|export\s+(?:const|function|class|interface|type|async\s+function))\s+(?:\([^)]*\)\s+)?(\w+)`)
+	fileRe   = regexp.MustCompile(`\.(go|ts|tsx|py|rs|js|jsx)$`)
 )
 
 // GenerateRepoMap 扫描项目生成符号地图（带缓存）
