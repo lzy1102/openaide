@@ -120,17 +120,31 @@ func EndToolSection() {
 	if len(currentToolSection.names) == 0 { return }
 
 	total := len(currentToolSection.names)
-	ok := 0
+	errors := 0
+	reads := 0
 	for _, e := range currentToolSection.errors {
-		if e == "" { ok++ }
+		if e != "" { errors++ } else { reads++ }
 	}
 
-	// Header
-	width := 60
-	fmt.Printf("\n  %s%s %s工具 %s(%d)%s %s", cBorder, boxTL, cReset, cDim, total, cReset, strings.Repeat(boxH, width-10-len(fmt.Sprintf("%d", total))))
-	fmt.Printf("%s%s\n", cBorder, boxTR)
+	// 只读工具折叠为一行摘要（Claude Code 风格）
+	if errors == 0 && total > 1 {
+		names := make([]string, 0)
+		seen := make(map[string]bool)
+		for _, n := range currentToolSection.names {
+			base := strings.TrimSuffix(n, "_file")
+			if !seen[base] { seen[base] = true; names = append(names, base) }
+		}
+		fmt.Printf("  %s📁%s %s%d tools%s (%s)\n",
+			cToolOK, cReset, cDim, total, cReset,
+			strings.Join(names, ", "))
+		return
+	}
 
-	// Each tool
+	// 有错误或单个工具：逐个展示
+	width := 55
+	fmt.Printf("\n  %s%s%s%s%s%s%s\n",
+		cBorder, boxTL, cDim, strings.Repeat(boxH, width-2), cReset, cBorder, boxTR)
+
 	for i, name := range currentToolSection.names {
 		marker := cToolOK + "✓" + cReset
 		if currentToolSection.errors[i] != "" {
@@ -138,13 +152,13 @@ func EndToolSection() {
 		}
 		summary := currentToolSection.results[i]
 		if summary == "" { summary = "ok" }
-		if len(summary) > 40 { summary = summary[:37] + "..." }
-		fmt.Printf("  %s%s %s %s%-30s%s %s%s%s\n",
+		if len(summary) > 35 { summary = summary[:32] + "..." }
+		fmt.Printf("  %s%s %s %s%-25s%s %s%s%s\n",
 			cBorder, boxV, marker, cToolName, name, cReset, cInfo, summary, cReset)
 	}
 
-	// Footer
-	fmt.Printf("  %s%s% s %s\n", cBorder, boxBL, strings.Repeat(boxH, width-4), cBorder, boxBR)
+	fmt.Printf("  %s%s%s%s%s%s\n",
+		cBorder, boxBL, cDim, strings.Repeat(boxH, width-2), cReset, boxBR)
 	Println()
 }
 
