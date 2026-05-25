@@ -178,6 +178,7 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string)
 	totalTools := 0
 	totalTokens := 0
 	var fullResponse strings.Builder
+	var toolNames []string
 	thinkShown := false
 
 	for chunk := range stream {
@@ -188,29 +189,36 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string)
 			break
 		}
 		if chunk.ReasoningContent != "" && !thinkShown {
-			PrintThinking(chunk.ReasoningContent)
+			// 只显示一行思考摘要，带工具上下文
+			firstLine := strings.SplitN(chunk.ReasoningContent, "\n", 2)[0]
+			if len(firstLine) > 100 { firstLine = firstLine[:97] + "..." }
+			fmt.Printf("\r\033[K  %s[think]%s %s%s%s\n", cThink, cReset, cDim, firstLine, cReset)
 			thinkShown = true
 		}
 		if chunk.Type == kernel.ChunkTypeToolCall && chunk.ToolName != "" {
-			PrintToolCall(chunk.ToolName)
+			toolNames = append(toolNames, chunk.ToolName)
 			totalTools++
 			thinkShown = false
-		}
-		if chunk.Type == kernel.ChunkTypeToolDone {
-			summary := ""
-			if chunk.ToolResult != nil {
-				raw := fmt.Sprintf("%v", chunk.ToolResult.Content)
-				summary = strings.TrimPrefix(strings.SplitN(raw, "\n", 2)[0], "// ")
-			}
-			PrintToolDone(summary)
+			// 实时更新工具状态行
+			display := toolNames
+			if len(display) > 4 { display = display[len(display)-4:] }
+			fmt.Printf("\r\033[K  %s🔧%s %s%s\n", cToolName, cReset, cDim, strings.Join(display, ", "), cReset)
+			fmt.Print("\033[1A") // cursor up to overwrite on next update
 		}
 	}
 	elapsed := time.Since(startTime)
 	cancel()
 
+	// 清除工具状态行
+	fmt.Print("\r\033[K")
+
 	if fullResponse.Len() > 0 {
+		// 渲染最终回答
+		rendered := RenderMarkdown(fullResponse.String())
+		// 用分隔线将回答与工具区隔开
 		fmt.Println()
-		fmt.Println(RenderMarkdown(fullResponse.String()))
+		fmt.Println(rendered)
+		fmt.Printf("\n%s──%s\n", cSep, cReset)
 	}
 	PrintStatusLine(totalTokens, totalTools, elapsed)
 }
