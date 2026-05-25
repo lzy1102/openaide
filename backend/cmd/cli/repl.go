@@ -63,9 +63,23 @@ func runREPL(app *infra.Application, continueSess bool) {
 		if len(sessions) > 0 {
 			sessionID = sessions[0].ID
 			msgCount := len(sessions[0].Messages)
-			fmt.Printf("  %s📋 恢复会话%s: %s (%d 条消息, %s)\n",
-				cGreen, cReset, sessionID[:8], msgCount,
-				sessions[0].UpdatedAt.Format("15:04"))
+			fmt.Printf("  %s📋 恢复会话%s: %s (%d 条消息)\n",
+				cGreen, cReset, sessionID[:8], msgCount)
+
+			// 显示最近几条历史消息
+			history, _ := app.Orchestrator.GetSessionHistory(context.Background(), sessionID, 3)
+			if len(history) > 0 {
+				fmt.Printf("  %s最近消息:%s\n", cInfo, cReset)
+				for _, msg := range history {
+					switch msg.Role {
+					case "user":
+						fmt.Printf("    %s▸ %s%s\n", cUser, trunc(msg.Content, 80), cReset)
+					case "assistant":
+						fmt.Printf("    %s✓ %s%s\n", cToolOK, trunc(msg.Content, 80), cReset)
+					}
+				}
+				fmt.Println()
+			}
 		}
 	}
 	if sessionID == "" {
