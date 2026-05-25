@@ -260,15 +260,27 @@ func (k *AgentKernel) buildMessages(session *Session, query *Query) []Message {
 		}
 		promptWithCWD := systemPrompt + fmt.Sprintf("\n\n[工作目录] %s%s", cwd, gitNote)
 
-		// 加载项目规则文件：优先 OPENAIDE.md，兼容 CLAUDE.md
-		ruleFile := ""
-		for _, name := range []string{"OPENAIDE.md", "CLAUDE.md"} {
-			if data, err := os.ReadFile(filepath.Join(cwd, name)); err == nil && len(data) > 0 {
-				ruleFile = fmt.Sprintf("\n\n[项目规则 %s]\n%s", name, string(data))
-				break
+		// 加载项目规则文件：OPENAIDE.md > 其他 Agent 规则文件
+		ruleFiles := []string{
+			"OPENAIDE.md",
+			"CLAUDE.md",
+			"CODEBUDDY.md",
+			"CONVENTIONS.md",
+			".github/copilot-instructions.md",
+		}
+		// Cursor 规则目录
+		if entries, err := os.ReadDir(filepath.Join(cwd, ".cursor/rules")); err == nil {
+			for _, e := range entries {
+				if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
+					ruleFiles = append(ruleFiles, ".cursor/rules/"+e.Name())
+				}
 			}
 		}
-		promptWithCWD += ruleFile
+		for _, name := range ruleFiles {
+			data, err := os.ReadFile(filepath.Join(cwd, name))
+			if err != nil || len(data) == 0 { continue }
+			promptWithCWD += fmt.Sprintf("\n\n[规则: %s]\n%s", name, string(data))
+		}
 
 		// RepoMap: 注入符号地图（缓存 5 分钟），LLM 一眼看清代码结构
 		if repoMap := GenerateRepoMap(cwd); repoMap != "" {
