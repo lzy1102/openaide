@@ -229,4 +229,41 @@ func RenderToolOutput(raw string) string {
 	return strings.TrimPrefix(firstLine, "// ")
 }
 
+// ── Rich Output ──────────────────────────────────────────
+
+// PrintTable 渲染简单表格
+func PrintTable(headers []string, rows [][]string) {
+	tbl := pterm.DefaultTable.WithHasHeader().WithData(pterm.TableData{
+		headers,
+	})
+	for _, row := range rows {
+		tbl.Data = append(tbl.Data, row)
+	}
+	tbl.Render()
+}
+
+// PrintQuote 渲染引用块
+func PrintQuote(text, source string) {
+	fmt.Printf("  %s│%s %s\n", cDim, cReset, text)
+	if source != "" {
+		fmt.Printf("  %s│%s %s─ %s%s\n", cDim, cReset, cDim, source, cReset)
+	}
+}
+
+// PrintList 渲染清单
+func PrintList(items []string, ordered bool) {
+	for i, item := range items {
+		if ordered {
+			fmt.Printf("  %s%d.%s %s\n", cDim, i+1, cReset, item)
+		} else {
+			fmt.Printf("  %s•%s %s\n", cDim, cReset, item)
+		}
+	}
+}
+
+// PrintPanel 渲染面板
+func PrintPanel(title, content string) {
+	pterm.DefaultBox.WithTitle(title).Print(content)
+}
+
 func Println() { fmt.Println() }

@@ -248,3 +248,40 @@ func TestRenderDiff(t *testing.T) {
 		t.Error("diff should be transformed with colors")
 	}
 }
+
+
+func TestPrintTable(t *testing.T) {
+	PrintTable([]string{"Name", "Value"}, [][]string{{"foo", "1"}, {"bar", "2"}})
+}
+
+func TestPrintQuote(t *testing.T) {
+	PrintQuote("The only way to do great work is to love what you do.", "Steve Jobs")
+}
+
+func TestPrintList(t *testing.T) {
+	PrintList([]string{"first", "second", "third"}, false)
+	PrintList([]string{"step one", "step two"}, true)
+}
+
+func TestIsDiff(t *testing.T) {
+	if IsDiff("hello world") {
+		t.Error("plain text should not be detected as diff")
+	}
+	diff := "--- a/file.go\n+++ b/file.go\n@@ -1,3 +1,4 @@\n unchanged\n-old\n+new"
+	if !IsDiff(diff) {
+		t.Error("diff format should be detected")
+	}
+}
+
+func TestRenderToolOutput(t *testing.T) {
+	out := RenderToolOutput("// path/to/file.go (262 lines)\n1 | package main")
+	if !strings.Contains(out, "path/to/file.go") {
+		t.Errorf("should extract first line: got %q", out)
+	}
+
+	diff := "--- a/file.go\n+++ b/file.go\n@@ -1 +1 @@\n-old\n+new"
+	out2 := RenderToolOutput(diff)
+	if !strings.Contains(out2, "old") {
+		t.Error("diff output should be rendered with colors")
+	}
+}

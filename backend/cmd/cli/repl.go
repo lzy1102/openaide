@@ -95,7 +95,7 @@ func runREPL(app *infra.Application, continueSess bool) {
 	rl.SetPrompt(PromptStyle(sessionID, modelName, false))
 	rl.HistoryAutoWrite = true
 
-	commands := []string{"/help", "/clear", "/model", "/lang", "/log", "/sessions", "/session",
+	commands := []string{"/help", "/clear", "/mode", "/model", "/lang", "/log", "/sessions", "/session",
 		"/handoff", "/exit", "/quit", "/q", "/analyst", "/coder", "/reviewer", "/executor", "/team"}
 	rl.TabCompleter = func(line []rune, pos int, _ readline.DelayedTabContext) *readline.TabCompleterReturnT {
 		prefix := string(line[:pos])
@@ -449,20 +449,31 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 		os.Exit(0)
 
 	case "/help":
-		fmt.Println()
-		fmt.Printf("  %sCommands%s\n", cBold, cReset)
-		fmt.Printf("  %s/h%s help              Help\n", cYellow, cReset)
-		fmt.Printf("  %s/c%s clear             Clear screen\n", cYellow, cReset)
-		fmt.Printf("  %s/m%s model [name]       View/switch model\n", cYellow, cReset)
-		fmt.Printf("  %s/l%s lang zh|en         Switch language\n", cYellow, cReset)
-		fmt.Printf("  %s/l%s log                Recent logs\n", cYellow, cReset)
-		fmt.Printf("  %s/s%s sessions           List sessions\n", cYellow, cReset)
-		fmt.Printf("  %s/a%s analyst <task>     Run analyst sub-agent\n", cYellow, cReset)
-		fmt.Printf("  %s/c%s coder <task>       Run coder sub-agent\n", cYellow, cReset)
-		fmt.Printf("  %s/r%s eviewer <task>     Run reviewer sub-agent\n", cYellow, cReset)
-		fmt.Printf("  %s/e%s xecutor <task>     Run executor sub-agent\n", cYellow, cReset)
-		fmt.Printf("  %s/t%s eam <task>         Run full team chain\n", cYellow, cReset)
-		fmt.Println()
+		Println()
+		PrintPanel("OpenAIDE", "通用 AI 助手 — 编程 · 写作 · 研究 · 日常")
+		Println()
+		PrintList([]string{
+			pterm.Cyan("/help") + " — 帮助",
+			pterm.Cyan("/clear") + " — 清屏",
+			pterm.Cyan("/mode [code|write|research|general]") + " — 切换模式",
+			pterm.Cyan("/model [name]") + " — 查看/切换模型",
+			pterm.Cyan("/lang zh|en") + " — 切换语言",
+			pterm.Cyan("/log") + " — 最近日志",
+			pterm.Cyan("/sessions") + " — 会话列表",
+			pterm.Cyan("/handoff") + " — 保存会话",
+			pterm.Cyan("/exit /quit /q") + " — 退出",
+		}, false)
+		Println()
+		PrintList([]string{
+			pterm.Cyan("/analyst <task>") + " — 分析任务",
+			pterm.Cyan("/coder <task>") + " — 编码任务",
+			pterm.Cyan("/reviewer <task>") + " — 审查任务",
+			pterm.Cyan("/executor <task>") + " — 执行/验证",
+			pterm.Cyan("/team <task>") + " — 完整团队链",
+		}, false)
+		Println()
+		pterm.Info.Println("Ctrl+C 中断 | Ctrl+R 搜索历史 | Tab 补全 | ↑↓ 历史")
+		Println()
 
 	case "/clear":
 		confirmed, _ := pterm.DefaultInteractiveConfirm.
@@ -605,6 +616,35 @@ case "/analyst", "/coder", "/reviewer", "/executor":
 		final := prevResults[len(prevResults)-1]
 		fmt.Println(RenderMarkdown(final))
 		PrintSuccess("team done")
+
+	case "/mode":
+		if len(parts) >= 2 {
+			switch parts[1] {
+			case "code", "coder", "dev":
+				PrintSuccess("模式: 编程助手")
+			case "write", "writer", "写作":
+				PrintSuccess("模式: 写作助手")
+			case "research", "研究", "分析":
+				PrintSuccess("模式: 研究分析")
+			case "general", "通用":
+				PrintSuccess("模式: 通用助手")
+			default:
+				PrintInfo("可用模式: code, write, research, general")
+			}
+		} else {
+			var options []string
+			for _, m := range []string{"code  编程开发", "write  写作创作", "research  研究分析", "general  通用助手"} {
+				options = append(options, m)
+			}
+			result, _ := pterm.DefaultInteractiveSelect.
+				WithOptions(options).
+				WithDefaultText("选择模式").
+				Show()
+			if result != "" {
+				PrintSuccess("已切换: " + result)
+			}
+		}
+		return
 
 	case "/handoff":
 		PrintSuccess("Session saved")
