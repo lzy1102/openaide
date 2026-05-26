@@ -197,19 +197,36 @@ func RenderDiff(text string) string {
 	var sb strings.Builder
 	for _, line := range strings.Split(text, "\n") {
 		switch {
-		case strings.HasPrefix(line, "+++") || strings.HasPrefix(line, "---"):
+		case strings.HasPrefix(line, "+++ ") || strings.HasPrefix(line, "--- "):
 			sb.WriteString(cBold + line + cReset + "\n")
-		case strings.HasPrefix(line, "@@"):
+		case strings.HasPrefix(line, "@@ "):
 			sb.WriteString(cCyan + line + cReset + "\n")
 		case strings.HasPrefix(line, "+"):
-			sb.WriteString(cGreen + line + cReset + "\n")
+			sb.WriteString(cGreen + cBold + line + cReset + "\n")
 		case strings.HasPrefix(line, "-"):
-			sb.WriteString(cRed + line + cReset + "\n")
+			sb.WriteString(cRed + cBold + line + cReset + "\n")
+		case strings.HasPrefix(line, "diff --git "):
+			sb.WriteString(cBold + line + cReset + "\n")
 		default:
 			sb.WriteString(line + "\n")
 		}
 	}
 	return sb.String()
+}
+
+// IsDiff 检测文本是否为 diff 格式
+func IsDiff(text string) bool {
+	return strings.Contains(text, "\n--- ") || strings.Contains(text, "\n+++ ") ||
+		strings.HasPrefix(text, "diff --git ") || strings.Contains(text, "\n@@ ")
+}
+
+// RenderToolOutput 智能渲染工具输出（diff 格式用高亮，其他用纯文本）
+func RenderToolOutput(raw string) string {
+	if IsDiff(raw) {
+		return "\n" + RenderDiff(raw)
+	}
+	firstLine := strings.SplitN(raw, "\n", 2)[0]
+	return strings.TrimPrefix(firstLine, "// ")
 }
 
 func Println() { fmt.Println() }
