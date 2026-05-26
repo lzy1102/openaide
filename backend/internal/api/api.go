@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -53,6 +54,7 @@ func NewServer(orch *orchestration.Orchestrator, addr string, authSvc *auth.Serv
 	mux.HandleFunc("/api/v1/channels", s.handleChannels)
 	mux.HandleFunc("/api/v1/auth/", authSvc.AuthHandler)
 	mux.HandleFunc("/api/v1/config", s.handleConfig)
+	mux.HandleFunc("/api/v1/projects", s.handleProjects)
 	mux.HandleFunc("/ws", s.handleWebSocket)
 	mux.HandleFunc("/health", s.handleHealth)
 	s.mux = mux
@@ -504,6 +506,7 @@ type ChatRequest struct {
 	Temperature float64  `json:"temperature,omitempty"`
 	MaxTokens   int      `json:"max_tokens,omitempty"`
 	Tools       []string `json:"tools,omitempty"`
+	WorkingDir  string   `json:"working_dir,omitempty"` // 项目工作目录（Server 模式）
 }
 
 // ChatResponse 聊天响应
@@ -599,6 +602,61 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"status":"ok"}`))
 		return
 	}
+	http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+}
+
+// handleProjects 项目管理（基于目录路径）
+func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
+	projectsFile := os.Getenv("HOME") + "/.openaide/projects.json"
+
+	type Project struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+		Path string `json:"path"`
+	}
+
+	loadProjects := func() []Project {
+		data, _ := os.ReadFile(projectsFile)
+		var projects []Project
+		json.Unmarshal(data, &projects)
+		return projects
+	}
+
+	saveProjects := func(projects []Project) {
+		data, _ := json.MarshalIndent(projects, "", "  ")
+		os.WriteFile(projectsFile, data, 0644)
+	}
+
+	if r.Method == http.MethodGet {
+		projects := loadProjects()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(projects)
+		return
+	}
+
+	if r.Method == http.MethodPost {
+		var proj Project
+		if err := json.NewDecoder(r.Body).Decode(&proj); err != nil {
+			http.Error(w, `{"error":"invalid json"}`, http.StatusBadRequest)
+			return
+		}
+		// 验证路径存在
+		if info, err := os.Stat(proj.Path); err != nil || !info.IsDir() {
+			http.Error(w, `{"error":"directory not found"}`, http.StatusBadRequest)
+			return
+		}
+		proj.ID = fmt.Sprintf("proj-%d", time.Now().UnixMilli())
+		if proj.Name == "" { proj.Name = filepath.Base(proj.Path) }
+
+		projects := loadProjects()
+		projects = append(projects, proj)
+		saveProjects(projects)
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(proj)
+		return
+	}
+
 	http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
 }
 

@@ -256,6 +256,10 @@ func (k *AgentKernel) buildMessages(session *Session, query *Query) []Message {
 	}
 	if systemPrompt != "" {
 		cwd, _ := os.Getwd()
+		// Server 模式：使用项目配置的工作目录
+		if k.queryOptions != nil && k.queryOptions.WorkingDir != "" {
+			cwd = k.queryOptions.WorkingDir
+		}
 		gitNote := ""
 		if out, err := runGitCmd("rev-parse", "--abbrev-ref", "HEAD"); err == nil && out != "" {
 			gitNote = fmt.Sprintf(" (分支: %s)", out)

@@ -57,23 +57,29 @@ export const authAPI = {
     },
 };
 
-// ============ 项目相关 API (后端无独立项目端点，本地存根) ============
+// ============ 项目相关 API ============
 
 export const projectAPI = {
-    listProjects: () => Promise.resolve([]),
+    listProjects: () =>
+        request('/projects'),
 
     createProject: (data) =>
-        Promise.resolve({
-            id: 'project-' + Date.now(),
-            name: data.name || 'Default',
-            is_default: true,
+        request('/projects', {
+            method: 'POST',
+            body: JSON.stringify(data),
         }),
 
-    getProject: () => Promise.resolve(null),
+    getProject: (id) =>
+        request('/projects/' + id),
 
-    updateProject: () => Promise.resolve(),
+    updateProject: (id, data) =>
+        request('/projects/' + id, {
+            method: 'PUT',
+            body: JSON.stringify(data),
+        }),
 
-    deleteProject: () => Promise.resolve(),
+    deleteProject: (id) =>
+        request('/projects/' + id, { method: 'DELETE' }),
 };
 
 // ============ 对话/会话相关 API ============
@@ -202,8 +208,9 @@ export const dialogueAPI = {
 
         const body = {
             message: content,
-            user_id: dialogueId, // 对话ID作为会话标识传给后端
+            user_id: dialogueId,
             model: modelID || undefined,
+            working_dir: options.working_dir || undefined,
         };
 
         return fetch(url, {

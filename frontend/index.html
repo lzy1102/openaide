@@ -172,13 +172,28 @@
 
         <!-- 设置页面 -->
         <div class="page hidden" id="page-settings">
-            <div class="container">
+            <div class="container" style="display: grid; gap: 1rem;">
+                <!-- 项目管理 -->
                 <div class="card">
-                    <h2>设置</h2>
+                    <h2>项目管理</h2>
                     <p style="color: var(--color-text-muted); margin-bottom: 1rem;">
-                        编辑配置文件 (YAML 格式)。保存后需重启服务生效。
+                        注册项目目录。选择项目后，AI 将基于该项目目录进行分析。
                     </p>
-                    <textarea id="config-editor" style="width: 100%; min-height: 400px;
+                    <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
+                        <input type="text" id="project-name" placeholder="项目名称" style="flex: 1;">
+                        <input type="text" id="project-path" placeholder="/path/to/project" style="flex: 2;">
+                        <button class="btn btn-primary" id="add-project">添加</button>
+                    </div>
+                    <div id="project-list" style="max-height: 200px; overflow-y: auto;"></div>
+                </div>
+
+                <!-- 配置编辑器 -->
+                <div class="card">
+                    <h2>配置文件</h2>
+                    <p style="color: var(--color-text-muted); margin-bottom: 1rem;">
+                        编辑 config.yaml (YAML 格式)。保存后需重启服务生效。
+                    </p>
+                    <textarea id="config-editor" style="width: 100%; min-height: 300px;
                         font-family: 'SF Mono', 'Cascadia Code', monospace; font-size: 13px;
                         background: var(--color-bg-secondary); color: var(--color-text);
                         border: 1px solid var(--color-border); border-radius: 6px;
@@ -736,12 +751,19 @@
 
                 let thinkingText = '';
 
+                // 查找项目的工作目录
+                let workingDir = '';
+                const currentProj = state.projects.find(p => p.id === state.currentProjectId);
+                if (currentProj && currentProj.path) {
+                    workingDir = currentProj.path;
+                }
+
                 await dialogueAPI.sendMessageStream(
                     state.currentDialogueId,
                     'user-001',
                     message,
                     state.currentModelId,
-                    {},
+                    { working_dir: workingDir },
                     (chunk) => {
                         if (chunk.content !== undefined) {
                             responseText += chunk.content;
@@ -978,7 +1000,52 @@
                 }
             };
 
-            // 初始加载
+            // 项目管理
+            async function renderProjects() {
+                const list = document.getElementById('project-list');
+                try {
+                    const resp = await fetch(apiBase + '/projects');
+                    const projects = await resp.json();
+                    state.projects = projects;
+                    let html = '';
+                    projects.forEach((p, i) => {
+                        html += '<div style="padding:0.5rem;border-bottom:1px solid var(--color-border);display:flex;justify-content:space-between;align-items:center">';
+                        html += '<span><strong>' + p.name + '</strong> <span style="color:var(--color-text-muted)">' + p.path + '</span></span>';
+                        html += '<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation()" data-del="' + i + '">删除</button>';
+                        html += '</div>';
+                    });
+                    list.innerHTML = html || '<p style="color:var(--color-text-muted)">暂无项目。添加上面的项目目录。</p>';
+                } catch(e) { list.innerHTML = '<p style="color:var(--color-error)">加载失败</p>'; }
+            }
+
+            document.getElementById('add-project').onclick = async () => {
+                const name = document.getElementById('project-name').value.trim();
+                const path = document.getElementById('project-path').value.trim();
+                if (!path) return alert('请输入项目路径');
+                try {
+                    await fetch(apiBase + '/projects', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({name: name || path.split('/').pop(), path})
+                    });
+                    document.getElementById('project-name').value = '';
+                    document.getElementById('project-path').value = '';
+                    await renderProjects();
+                } catch(e) { alert('添加失败: ' + e.message); }
+            };
+
+            document.getElementById('project-list').addEventListener('click', async (e) => {
+                if (e.target.dataset.del !== undefined) {
+                    const idx = parseInt(e.target.dataset.del);
+                    const p = state.projects[idx];
+                    if (p && confirm('删除项目 ' + p.name + '?')) {
+                        await fetch(apiBase + '/projects/' + p.id, {method: 'DELETE'});
+                        await renderProjects();
+                    }
+                }
+            });
+
+            renderProjects();
             document.getElementById('reload-config').click();
         }
 
