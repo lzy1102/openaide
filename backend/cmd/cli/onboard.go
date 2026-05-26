@@ -115,7 +115,11 @@ func runOnboarding(cfg *config.Config, promptsDir string) {
 	fmt.Println(t.concise)
 	fmt.Println(t.detailed)
 	fmt.Println(t.balanced)
-	fmt.Print("\n" + t.choice123[:len(t.choice123)-2] + "3): ")
+	if zh {
+		fmt.Print("\n    选择 (1-3): ")
+	} else {
+		fmt.Print("\n    Choice (1-3): ")
+	}
 	styleChoice := readLine(reader)
 
 	styleMap := map[string]string{"1": "concise", "2": "detailed", "3": "balanced"}
