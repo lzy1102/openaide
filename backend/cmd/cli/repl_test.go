@@ -1,6 +1,7 @@
 package main
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -191,5 +192,44 @@ func TestPromptStyleEdgeCases(t *testing.T) {
 	p2 := PromptStyle("ab", "m", false)
 	if p2 == "" {
 		t.Error("should return non-empty prompt for short ID")
+	}
+
+	// Extra suffix (token count)
+	p3 := PromptStyle("abc12345", "test", false, "[5k]")
+	if !strings.Contains(p3, "[5k]") {
+		t.Error("prompt should include extra suffix")
+	}
+}
+
+func TestSessionTokens(t *testing.T) {
+	sessionTokens = 0
+	PrintStatusBar(1000, 3, 1234567890, "test")
+	if sessionTokens != 1000 {
+		t.Errorf("sessionTokens should be 1000, got %d", sessionTokens)
+	}
+	PrintStatusBar(500, 1, 1234567890, "test")
+	if sessionTokens != 1500 {
+		t.Errorf("sessionTokens should be 1500, got %d", sessionTokens)
+	}
+}
+
+func TestFileAutocompletePattern(t *testing.T) {
+	// Verify filepath.Glob works for our use case
+	matches, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Skip("glob failed")
+	}
+	if len(matches) == 0 {
+		t.Skip("no .go files")
+	}
+	// Should find at least repl.go, repl_test.go, etc.
+	found := false
+	for _, m := range matches {
+		if strings.Contains(m, "repl") {
+			found = true; break
+		}
+	}
+	if !found {
+		t.Error("should find repl*.go files")
 	}
 }

@@ -112,9 +112,17 @@ func runREPL(app *infra.Application, continueSess bool) {
 				}
 			}
 		}
-		return &readline.TabCompleterReturnT{}
+	// 文件路径补全
+	if strings.Contains(prefix, "/") || strings.HasPrefix(prefix, ".") {
+		if matches, err := filepath.Glob(prefix + "*"); err == nil && len(matches) > 0 && len(matches) < 50 {
+			return &readline.TabCompleterReturnT{
+				Prefix: prefix, Suggestions: matches, Descriptions: make(map[string]string),
+			}
+		}
 	}
-	var history []string // 会话内查询历史（Ctrl+R 搜索）
+	return &readline.TabCompleterReturnT{}
+}
+var history []string // 会话内查询历史（Ctrl+R 搜索）
 
 	// Ctrl+R 历史搜索
 	rl.AutocompleteHistory = func(search string) ([]string, map[string]string) {
@@ -357,10 +365,19 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string)
 func executePlanQuery(app *infra.Application, query string, plan *orchestration.Plan) {
 	startTime := time.Now()
 
-	// Progress callback
+	// pterm 进度条
+	totalSteps := len(plan.Subtasks) + 2 // + verify + review
+	progressBar, _ := pterm.DefaultProgressbar.
+		WithTotal(totalSteps).
+		WithTitle("执行中").
+		WithShowCount(true).
+		WithShowPercentage(true).
+		WithRemoveWhenDone(true).
+		Start()
+
 	app.Orchestrator.OnProgress = func(phase, detail string) {
-		elapsed := time.Since(startTime).Round(time.Second)
-		fmt.Printf("\r\033[K  %s🔧%s %s %s(%v)%s\n", cYellow, cReset, detail, cInfo, elapsed, cReset)
+		progressBar.Add(1)
+		progressBar.UpdateTitle(detail)
 	}
 
 	fmt.Printf("  %s执行中…%s\n", cInfo, cReset)

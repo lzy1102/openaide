@@ -62,7 +62,7 @@ func RenderMarkdown(text string) string {
 
 // ── Prompt ────────────────────────────────────────────────
 
-func PromptStyle(sessionID, modelName string, busy bool) string {
+func PromptStyle(sessionID, modelName string, busy bool, extra ...string) string {
 	dot := cGreen + "●" + cReset
 	if busy { dot = cYellow + "◉" + cReset }
 	name := "openaide"
@@ -71,7 +71,9 @@ func PromptStyle(sessionID, modelName string, busy bool) string {
 	}
 	sid := sessionID
 	if len(sid) > 8 { sid = sid[:8] }
-	return fmt.Sprintf("%s %s%s %s %s❯%s ", dot, cDim, sid, cPrompt, name, cReset)
+	suffix := ""
+	if len(extra) > 0 { suffix = extra[0] }
+	return fmt.Sprintf("%s %s%s %s %s❯%s %s", dot, cDim, sid, cPrompt, name, cReset, suffix)
 }
 
 // ── Tool Section ──────────────────────────────────────────
@@ -161,13 +163,19 @@ func ShowProgress(total int, title string) *pterm.ProgressbarPrinter {
 
 // ── Status Bar ────────────────────────────────────────────
 
+var sessionTokens int // 会话累计 token
+
 func PrintStatusBar(tokens, tools int, elapsed time.Duration, model string) {
+	sessionTokens += tokens
 	var parts []string
 	if model != "" {
 		parts = append(parts, pterm.Gray(model))
 	}
 	if tokens > 0 {
 		parts = append(parts, fmt.Sprintf("%s⚡ %d tokens%s", cInfo, tokens, cReset))
+	}
+	if sessionTokens > 0 && sessionTokens != tokens {
+		parts = append(parts, fmt.Sprintf("%s累计 %dk%s", cInfo, sessionTokens/1000, cReset))
 	}
 	if tools > 0 {
 		parts = append(parts, fmt.Sprintf("%s🔧 %d tools%s", cInfo, tools, cReset))
