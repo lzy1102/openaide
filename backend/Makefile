@@ -14,11 +14,39 @@ deps:
 	go mod tidy
 	go mod download
 
-# 编译
+# 编译（当前平台）
 build:
 	@echo "Building..."
 	CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide-server ./cmd/server
 	CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide ./cmd/cli
+
+# 交叉编译全平台
+build-all: build-linux-amd64 build-linux-arm64 build-windows-amd64 build-darwin-amd64 build-darwin-arm64
+
+build-linux-amd64:
+	@echo "Building Linux amd64..."
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide-linux-amd64 ./cmd/cli
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide-server-linux-amd64 ./cmd/server
+
+build-linux-arm64:
+	@echo "Building Linux arm64..."
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide-linux-arm64 ./cmd/cli
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide-server-linux-arm64 ./cmd/server
+
+build-windows-amd64:
+	@echo "Building Windows amd64..."
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide-windows-amd64.exe ./cmd/cli
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide-server-windows-amd64.exe ./cmd/server
+
+build-darwin-amd64:
+	@echo "Building macOS amd64..."
+	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide-darwin-amd64 ./cmd/cli
+	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide-server-darwin-amd64 ./cmd/server
+
+build-darwin-arm64:
+	@echo "Building macOS arm64 (Apple Silicon)..."
+	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide-darwin-arm64 ./cmd/cli
+	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide-server-darwin-arm64 ./cmd/server
 
 # 运行
 run:
