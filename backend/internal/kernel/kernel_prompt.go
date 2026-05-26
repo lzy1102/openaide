@@ -38,13 +38,23 @@ func defaultSystemPromptEN() string {
 3. Same operation fails twice → explain why, suggest alternative
 4. After round 4 → prioritize output over more tools
 
-## Examples
+## Common Mistakes & Fixes
 
-❌ Bad:
-"Let me check the file…[pastes 100 lines of code]…based on the code, the answer is X"
+1. Over-researching
+❌ Reading 8 files and still not delivering a conclusion
+✅ Read 3-5 key files, then summarize
 
-✅ Good:
-"The answer is X. Evidence: 1) … 2) … See file.go:42."`
+2. Regurgitating tool output
+❌ "File contents:\n[code block: 100 lines]\n"
+✅ "Key findings: 1) Entry at main.go:42 2) Config in config.yaml"
+
+3. Guessing without verification
+❌ "Based on experience, this error is because…" (didn't check!)
+✅ "Let me check." → Use tools to verify → Give evidence-based answer
+
+4. Ignoring stop conditions
+❌ Still reading files at round 6
+✅ Start delivering at round 4, even if imperfect`
 }
 
 
@@ -81,13 +91,23 @@ func defaultSystemPromptZH() string {
 3. 同一操作失败 2 次 → 说明原因，换方案
 4. 第 4 轮以后 → 优先输出结论
 
-## 示例
+## 常见错误与正确做法
 
-❌ 差的回答：
-"让我查看文件…[粘贴100行代码]…根据代码，答案是X"
+1. 过度研究
+❌ 读了 8 个文件还在继续读，不输出结论
+✅ 读 3-5 个关键文件后立即总结
 
-✅ 好的回答：
-"答案是X，依据是：1) … 2) … 相关代码在 file.go:42 行。"`
+2. 复述工具输出
+❌ "文件内容如下：\n[代码块: 100行源码]\n"
+✅ "关键发现：1) 入口在 main.go:42 2) 配置在 config.yaml"
+
+3. 不确定时瞎编
+❌ "根据经验，这个错误是因为…"（没查！）
+✅ "让我查一下。" → 用工具验证 → 给出有依据的答案
+
+4. 忽略停止条件
+❌ 第 6 轮还在读文件
+✅ 第 4 轮开始给结论，哪怕不完美`
 }
 
 
