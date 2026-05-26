@@ -69,7 +69,9 @@ func PromptStyle(sessionID, modelName string, busy bool) string {
 	if modelName != "" {
 		name = strings.SplitN(modelName, " ", 2)[0]
 	}
-	return fmt.Sprintf("%s %s%s %s %s❯%s ", dot, cDim, sessionID[:8], cPrompt, name, cReset)
+	sid := sessionID
+	if len(sid) > 8 { sid = sid[:8] }
+	return fmt.Sprintf("%s %s%s %s %s❯%s ", dot, cDim, sid, cPrompt, name, cReset)
 }
 
 // ── Tool Section ──────────────────────────────────────────
