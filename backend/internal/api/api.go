@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -50,6 +52,7 @@ func NewServer(orch *orchestration.Orchestrator, addr string, authSvc *auth.Serv
 	mux.HandleFunc("/api/v1/metrics", s.handleMetrics)
 	mux.HandleFunc("/api/v1/channels", s.handleChannels)
 	mux.HandleFunc("/api/v1/auth/", authSvc.AuthHandler)
+	mux.HandleFunc("/api/v1/config", s.handleConfig)
 	mux.HandleFunc("/ws", s.handleWebSocket)
 	mux.HandleFunc("/health", s.handleHealth)
 	s.mux = mux
@@ -568,6 +571,35 @@ type MemorySearchResponse struct {
 	Query   string        `json:"query"`
 	Results []MessageInfo `json:"results"`
 	Score   float64       `json:"score"`
+}
+
+// handleConfig 读/写配置文件
+func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
+	configPath := os.Getenv("HOME") + "/.openaide/config.yaml"
+	if r.Method == http.MethodGet {
+		data, err := os.ReadFile(configPath)
+		if err != nil {
+			http.Error(w, `{"error":"config not found"}`, http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "text/yaml")
+		w.Write(data)
+		return
+	}
+	if r.Method == http.MethodPut || r.Method == http.MethodPost {
+		data, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, `{"error":"read body failed"}`, http.StatusBadRequest)
+			return
+		}
+		if err := os.WriteFile(configPath, data, 0644); err != nil {
+			http.Error(w, `{"error":"write config failed"}`, http.StatusInternalServerError)
+			return
+		}
+		w.Write([]byte(`{"status":"ok"}`))
+		return
+	}
+	http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
 }
 
 // ErrorResponse 错误响应
