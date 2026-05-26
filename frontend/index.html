@@ -9,6 +9,10 @@
     <title>OpenAIDE</title>
     <link rel="stylesheet" href="./src/styles/theme.css?v=2">
     <link rel="stylesheet" href="./src/styles/components.css?v=2">
+    <!-- Markdown 渲染 + 代码高亮 -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css">
+    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
 </head>
 <body>
     <!-- 应用头部 -->
@@ -241,6 +245,7 @@
         const STORAGE_KEY_LAST_PROJECT = 'openaide_last_project_id';
 
         async function init() {
+            initMarkdown();
             initTheme();
             initNavigation();
             initChat();
@@ -779,6 +784,28 @@
             }
         }
 
+        // 初始化 Markdown 渲染器
+        function initMarkdown() {
+            if (typeof marked === 'undefined') return;
+            marked.setOptions({
+                highlight: function(code, lang) {
+                    if (typeof hljs !== 'undefined' && lang && hljs.getLanguage(lang)) {
+                        return hljs.highlight(code, { language: lang }).value;
+                    }
+                    return code;
+                },
+                breaks: true,
+                gfm: true
+            });
+        }
+
+        function renderMarkdown(text) {
+            if (typeof marked !== 'undefined') {
+                return marked.parse(text);
+            }
+            return `<p>${text.replace(/\n/g, '<br>')}</p>`;
+        }
+
         function addMessage(sender, content) {
             const chatMessages = document.getElementById('chat-messages');
             const messageDiv = document.createElement('div');
@@ -792,7 +819,7 @@
 
             messageDiv.innerHTML = `
                 <div class="message-avatar">${avatar}</div>
-                <div class="message-content">${content}</div>
+                <div class="message-content">${renderMarkdown(content)}</div>
             `;
 
             chatMessages.appendChild(messageDiv);
@@ -801,15 +828,18 @@
             return messageId;
         }
 
-        // 更新消息内容
+        // 更新消息内容（流式时用）
         function updateMessage(messageId, content) {
             const messageDiv = document.getElementById(messageId);
             if (messageDiv) {
                 const contentDiv = messageDiv.querySelector('.message-content');
                 if (contentDiv) {
-                    contentDiv.innerHTML = `<p>${content}</p>`;
+                    contentDiv.innerHTML = renderMarkdown(content);
                 }
             }
+            // Auto-scroll
+            const chatMessages = document.getElementById('chat-messages');
+            if (chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
         }
 
         // 显示 Toast 通知
