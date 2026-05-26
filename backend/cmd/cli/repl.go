@@ -114,6 +114,21 @@ func runREPL(app *infra.Application, continueSess bool) {
 		}
 		return &readline.TabCompleterReturnT{}
 	}
+	var history []string // 会话内查询历史（Ctrl+R 搜索）
+
+	// Ctrl+R 历史搜索
+	rl.AutocompleteHistory = func(search string) ([]string, map[string]string) {
+		var matches []string
+		desc := make(map[string]string)
+		for i := len(history) - 1; i >= 0 && len(matches) < 20; i-- {
+			if strings.Contains(strings.ToLower(history[i]), strings.ToLower(search)) {
+				matches = append(matches, history[i])
+				desc[history[i]] = fmt.Sprintf("match %d", len(matches))
+			}
+		}
+		return matches, desc
+	}
+
 	rl.HintText = func(line []rune, pos int) []rune {
 		if len(line) == 0 {
 			return []rune("/help for commands")
@@ -141,6 +156,11 @@ func runREPL(app *infra.Application, continueSess bool) {
 		}
 		query := strings.TrimSpace(line)
 		if query == "" { continue }
+
+		// 添加到历史
+		if len(history) == 0 || history[len(history)-1] != query {
+			history = append(history, query)
+		}
 
 		if strings.HasPrefix(query, "/") {
 			handleREPLCommand(app, query, &sessionID, &modelName)
