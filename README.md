@@ -6,29 +6,46 @@ Go 编写的 AI Agent 内核，支持 CLI（REPL + TUI）和 HTTP API Server。
 
 ## 快速开始
 
+### Linux / macOS
+
+```bash
+# 一键安装
+curl -fsSL https://raw.githubusercontent.com/lzy1102/openaide/master/install.sh | bash
+
+# 编辑 API Key
+vi ~/.openaide/config.yaml
+
+# 启动
+openaide
+```
+
+### Windows
+
+```cmd
+:: 下载 install.bat，双击运行
+:: 或命令行：
+curl -o install.bat https://raw.githubusercontent.com/lzy1102/openaide/master/install.bat
+install.bat
+```
+
+详细说明见 [使用指南](docs/USAGE.md)。
+
+### 源码编译
+
 ```bash
 git clone https://github.com/lzy1102/openaide.git
 cd openaide/backend
 make build
-
-# 配置 API Key
-mkdir -p ~/.openaide && cp config.example.yaml ~/.openaide/config.yaml
-# 编辑 ~/.openaide/config.yaml，填入你的 API Key
-
-# REPL 模式（默认）
 ./bin/openaide
+```
 
-# TUI 模式
-./bin/openaide --tui
+### 常用命令
 
-# 恢复上次会话
-./bin/openaide -c
-
-# One-shot
-./bin/openaide "fix this bug"
-
-# 启动 API 服务器
-./bin/openaide-server
+```bash
+openaide              # REPL 交互模式
+openaide -c           # 恢复上次会话
+openaide "问题"        # 一次性问答
+openaide --verbose    # 调试模式
 ```
 
 ---
@@ -106,7 +123,9 @@ log:
 | 方式 | 适用场景 | 命令 |
 |------|----------|------|
 | **一键脚本** | 快速部署，生产环境 | `curl ... \| sudo bash` |
-| **本地编译** | 开发调试，定制修改 | `sudo bash install.sh --local` |
+| **Windows 安装** | 普通用户 | 双击 `install.bat` |
+| **PowerShell 安装** | Windows 高级用户 | `powershell -File install.ps1` |
+| **本地编译** | 开发调试 | `make build` |
 | **GitHub Release** | 指定版本，离线环境 | `VERSION=v1.0.0 curl ... \| bash` |
 | **Docker** | 容器化部署 | `docker-compose up -d` |
 
@@ -147,7 +166,9 @@ openaide-server
 ├── docs/                    # 文档
 ├── scripts/
 │   └── update.sh            # 更新脚本
-├── install.sh               # 安装脚本
+├── install.sh               # Linux/macOS 安装脚本
+├── install.bat              # Windows 批处理安装
+├── install.ps1              # Windows PowerShell 安装
 └── README.md
 ```
 
