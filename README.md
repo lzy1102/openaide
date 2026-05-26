@@ -1,6 +1,6 @@
 # OpenAIDE | AI Agent 内核平台
 
-Go 编写的 AI Agent 内核，支持 CLI（REPL + TUI）和 HTTP API Server。
+Go 编写的 AI Agent 内核，提供 **REPL 命令行** + **Web 前端** + **HTTP API Server**。
 
 ---
 
@@ -123,6 +123,7 @@ log:
 | 方式 | 适用场景 | 命令 |
 |------|----------|------|
 | **一键脚本** | 快速部署，生产环境 | `curl ... \| sudo bash` |
+| **Web 界面** | 团队共享 | `./bin/openaide-server` → http://localhost:8080 |
 | **Windows 安装** | 普通用户 | 双击 `install.bat` |
 | **PowerShell 安装** | Windows 高级用户 | `powershell -File install.ps1` |
 | **本地编译** | 开发调试 | `make build` |
@@ -201,8 +202,8 @@ git push origin v1.0.0
 - **ProjectMind 持续学习**: 跨会话积累项目知识，越用越聪明
 
 ### 核心架构
-- **REPL 默认模式**: rich readline + markdown 渲染 + 代码高亮 + tab 补全
-- **TUI 模式** (`--tui`): Bubble Tea 组件化 TUI
+- **REPL 模式**: rich readline + markdown 渲染 + 代码高亮 + tab 补全 + 交互式选择
+- **Web 前端**: 流式聊天 + 项目管理 + 配置编辑 + 多语言 + 暗色模式
 - **22个内置工具**: 文件读写/执行命令/Git深度/知识库/代码符号索引
 - **多 Agent Team**: /analyst /coder /reviewer /executor /team，独立会话+模型路由
 - **DeepPlan 深度规划**: 研究→方案对比→选择→计划→执行→自修正闭环
@@ -210,10 +211,19 @@ git push origin v1.0.0
 - **工具并发安全分区**: 只读工具并行，写工具串行
 - **会话检查点**: 文件 JSON，崩溃可恢复
 
+### Web 前端
+- **7 个页面**: 对话、模板、仪表盘、任务、模型、设置、思考过程
+- **Markdown 渲染**: marked.js + highlight.js 代码高亮
+- **流式聊天**: SSE 实时输出 + 思考可视化 + 工具调用展示
+- **项目管理**: 注册目录 → AI 基于项目目录分析
+- **配置管理**: Web 界面编辑 config.yaml
+- **多语言**: 中文/English/日本語/한국어
+- **暗色模式**: 自动/手动切换
+
 ### 扩展
 - **MCP 协议**: JSON-RPC stdio，外部工具生态
 - **插件系统**: Claude Code 官方格式兼容 (skills/MCP/hooks)
-- **Web 前端 + API Server**: HTTP/WebSocket/SSE
+- **API Server**: HTTP REST + WebSocket + SSE
 
 ## CLI
 
