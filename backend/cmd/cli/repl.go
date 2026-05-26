@@ -137,6 +137,25 @@ var history []string // 会话内查询历史（Ctrl+R 搜索）
 		return matches, desc
 	}
 
+	// 多行编辑：Alt+Enter → $EDITOR
+	rl.GetMultiLine = func(line []rune) []rune {
+		editor := os.Getenv("EDITOR")
+		if editor == "" { editor = "vim" }
+		tmp, _ := os.CreateTemp("", "openaide-*.md")
+		if tmp == nil { return line }
+		defer os.Remove(tmp.Name())
+		tmp.WriteString(string(line))
+		tmp.Close()
+		cmd := osexec.Command(editor, tmp.Name())
+		cmd.Stdin = os.Stdin; cmd.Stdout = os.Stdout; cmd.Stderr = os.Stderr
+		cmd.Run()
+		data, _ := os.ReadFile(tmp.Name())
+		if len(data) > 0 {
+			return []rune(strings.TrimSpace(string(data)))
+		}
+		return line
+	}
+
 	rl.HintText = func(line []rune, pos int) []rune {
 		if len(line) == 0 {
 			return []rune("/help for commands")

@@ -233,3 +233,18 @@ func TestFileAutocompletePattern(t *testing.T) {
 		t.Error("should find repl*.go files")
 	}
 }
+
+func TestRenderDiff(t *testing.T) {
+	input := "line1\n-line2\n+line3\n line4"
+	output := RenderDiff(input)
+	if !strings.Contains(output, "line2") {
+		t.Error("diff should contain removed line")
+	}
+	if !strings.Contains(output, "line3") {
+		t.Error("diff should contain added line")
+	}
+	// Should have ANSI codes for + and - lines
+	if output == input {
+		t.Error("diff should be transformed with colors")
+	}
+}

@@ -190,4 +190,26 @@ func PrintError(err string)   { pterm.Error.Println(err) }
 func PrintWarning(msg string) { pterm.Warning.Println(msg) }
 func PrintSuccess(msg string) { pterm.Success.Println(msg) }
 func PrintInfo(msg string)    { pterm.Info.Println(msg) }
-func Println()                { fmt.Println() }
+// ── Diff Highlighting ────────────────────────────────────
+
+// RenderDiff 渲染 diff 格式：绿 +、红 -
+func RenderDiff(text string) string {
+	var sb strings.Builder
+	for _, line := range strings.Split(text, "\n") {
+		switch {
+		case strings.HasPrefix(line, "+++") || strings.HasPrefix(line, "---"):
+			sb.WriteString(cBold + line + cReset + "\n")
+		case strings.HasPrefix(line, "@@"):
+			sb.WriteString(cCyan + line + cReset + "\n")
+		case strings.HasPrefix(line, "+"):
+			sb.WriteString(cGreen + line + cReset + "\n")
+		case strings.HasPrefix(line, "-"):
+			sb.WriteString(cRed + line + cReset + "\n")
+		default:
+			sb.WriteString(line + "\n")
+		}
+	}
+	return sb.String()
+}
+
+func Println() { fmt.Println() }
