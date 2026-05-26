@@ -272,12 +272,25 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string)
 	totalTools := 0
 	totalTokens := 0
 	var fullResponse strings.Builder
+	var streamBuffer strings.Builder // 增量渲染缓冲区
 	var toolNames []string
 	thinkShown := false
 
 	for chunk := range stream {
 		if chunk.Error != nil { PrintError(chunk.Error.Error()); break }
-		if chunk.Content != "" { fullResponse.WriteString(chunk.Content) }
+		if chunk.Content != "" {
+		fullResponse.WriteString(chunk.Content)
+		streamBuffer.WriteString(chunk.Content)
+		// 增量渲染：遇段落分隔或代码块闭合时立即输出
+		buf := streamBuffer.String()
+		if strings.Contains(buf, "\n\n") || strings.Contains(buf, "```") {
+			backtickCount := strings.Count(buf, "```")
+			if strings.Contains(buf, "\n\n") || backtickCount%2 == 0 {
+				fmt.Print(RenderMarkdown(buf))
+				streamBuffer.Reset()
+			}
+		}
+	}
 		if chunk.Done {
 			if chunk.Usage != nil { totalTokens = chunk.Usage.TotalTokens }
 			break
