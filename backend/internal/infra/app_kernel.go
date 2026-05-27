@@ -80,13 +80,17 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 		slog.Warn("Failed to create checkpointer, checkpoint disabled", "error", err)
 	}
 
-	if tracer, err := kernel.NewFileTracer(kernel.FileTracerConfig{
-		FilePath: cfg.Storage.DataDir + "/traces.jsonl",
-	}); err == nil {
-		agentKernel.SetTracer(tracer)
-		slog.Info("Tracing enabled", "file", cfg.Storage.DataDir+"/traces.jsonl")
+	if cfg.Log.PersistTraceEnabled() {
+		if tracer, err := kernel.NewFileTracer(kernel.FileTracerConfig{
+			FilePath: cfg.Storage.DataDir + "/traces.jsonl",
+		}); err == nil {
+			agentKernel.SetTracer(tracer)
+			slog.Info("Tracing enabled", "file", cfg.Storage.DataDir+"/traces.jsonl")
+		} else {
+			slog.Warn("Failed to create tracer, tracing disabled", "error", err)
+		}
 	} else {
-		slog.Warn("Failed to create tracer, tracing disabled", "error", err)
+		slog.Info("Trace persistence disabled in config")
 	}
 
 	// 接入插件管理器
@@ -114,7 +118,11 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 		slog.Info("Project identity detected", "type", projIdentity.ProjectType)
 	}
 	eventBus := event.NewBus()
-	eventBus.EnablePersistence(cfg.Storage.DataDir + "/events")
+	if cfg.Log.PersistEventEnabled() {
+		eventBus.EnablePersistence(cfg.Storage.DataDir + "/events")
+	} else {
+		slog.Info("Event persistence disabled in config")
+	}
 	agentKernel.SetContextCompressor(compress.NewLLMCompressor(gateway, compress.NewNovelCompressor()))
 
 	agentKernel.Subscribe(kernel.EventHandlerFunc(func(evt kernel.Event) {
