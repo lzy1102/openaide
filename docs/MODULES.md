@@ -28,12 +28,12 @@
 | **反馈** | `internal/feedback/` | 2 | 质量门控评分 |
 | **身份** | `internal/identity/` | 1 | 项目类型检测 |
 | **语言** | `internal/lang/` | 2 | 国际化 (zh/en)，LANG环境变量检测 |
-| **入口** | `cmd/server/`, `cmd/cli/` | 5 | API服务器 + Bubbletea TUI CLI + 首次引导 |
+| **入口** | `cmd/server/`, `cmd/cli/` | 5 | API 服务器 + REPL 交互式 CLI |
 
 ## 依赖关系
 
 ```
-cmd/cli (TUI + onboard)  ──→ infra ──→ kernel ──→ llm / tools / memory
+cmd/cli (REPL)          ──→ infra ──→ kernel ──→ llm / tools / memory
 cmd/server                 ──→ infra ──→ api ──→ orchestration ──→ kernel
                                           ├── auth / knowledge / feedback
                                           ├── channel (Webhook/飞书/Telegram)

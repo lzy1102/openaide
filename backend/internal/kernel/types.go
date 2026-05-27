@@ -68,11 +68,6 @@ type TokenUsage struct {
 	PromptCacheMissTokens  int `json:"prompt_cache_miss_tokens,omitempty"`
 }
 
-// ThinkingConfig 思考模式配置 (DeepSeek 特有)
-type ThinkingConfig struct {
-	Type string `json:"type"` // enabled / disabled
-}
-
 // StreamChunkType 流式块类型
 type StreamChunkType string
 
@@ -154,12 +149,14 @@ type QueryOptions struct {
 
 // Response 内核响应
 type Response struct {
-	Content    string        `json:"content"`
-	ToolCalls  int           `json:"tool_calls"`
-	TokensUsed int           `json:"tokens_used"`
-	Duration   time.Duration `json:"duration"`
-	Model      string        `json:"model"`
-	Error      string        `json:"error,omitempty"`
+	Content     string        `json:"content"`
+	ToolCalls   int           `json:"tool_calls"`
+	TokensUsed  int           `json:"tokens_used"`
+	CacheHit    int           `json:"-"` // prompt 缓存命中
+	CacheMiss   int           `json:"-"` // prompt 缓存未命中
+	Duration    time.Duration `json:"duration"`
+	Model       string        `json:"model"`
+	Error       string        `json:"error,omitempty"`
 }
 
 // Event 内核事件

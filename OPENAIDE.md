@@ -58,12 +58,18 @@ openaide --verbose    # 调试模式
 llm:
   providers:
     - name: deepseek
+      type: openai
+      base_url: https://api.deepseek.com/v1
+      api_key: sk-xxx
       default_model: deepseek-v4-pro
-      api_key: sk-xxx
       timeout: 300
+      thinking: true
+      reasoning_effort: max
     - name: deepseek-flash
-      default_model: deepseek-v4-flash
+      type: openai
+      base_url: https://api.deepseek.com/v1
       api_key: sk-xxx
+      default_model: deepseek-v4-flash
       timeout: 120
   model_routing:
     reasoning: deepseek-v4-pro   # analyst, reviewer
@@ -73,22 +79,8 @@ kernel:
   min_rounds: 8
 log:
   level: info
-  },
-  "llm": {
-    "default_provider": "openai",
-    "providers": [
-      {
-        "name": "openai",
-        "type": "openai",
-        "base_url": "https://api.openai.com/v1",
-        "api_key": "sk-your-real-api-key",
-        "default_model": "gpt-4o-mini",
-        "timeout": 60,
-        "enabled": true
-      }
-    ]
-  }
-}
+  lang: zh
+```
 ```
 
 ### 配置项说明

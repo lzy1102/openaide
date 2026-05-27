@@ -151,10 +151,17 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 				Timestamp: time.Now(),
 			})
 
+			cacheHit, cacheMiss := 0, 0
+			if llmResp.Usage != nil {
+				cacheHit = llmResp.Usage.PromptCacheHitTokens
+				cacheMiss = llmResp.Usage.PromptCacheMissTokens
+			}
 			return &Response{
 				Content:    llmResp.Content,
 				ToolCalls:  totalToolCalls,
 				TokensUsed: totalTokens,
+				CacheHit:   cacheHit,
+				CacheMiss:  cacheMiss,
 				Duration:   time.Since(start),
 				Model:      llmResp.Model,
 			}, nil
@@ -285,6 +292,8 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 		Content:    resp.Content,
 		ToolCalls:  totalToolCalls,
 		TokensUsed: totalTokens,
+		CacheHit:   resp.Usage.PromptCacheHitTokens,
+		CacheMiss:  resp.Usage.PromptCacheMissTokens,
 		Duration:   time.Since(start),
 		Model:      resp.Model,
 	}, nil

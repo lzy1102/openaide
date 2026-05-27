@@ -61,6 +61,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 		}
 		totalTokens := 0
 		totalToolCalls := 0
+		startTime := time.Now()
 
 		slog.Debug("ReAct stream loop start", "query", query.Content[:min(80, len(query.Content))], "max_rounds", maxRounds, "tools", len(tools), "history_msgs", len(messages))
 		for round := 0; round < maxRounds; round++ {
@@ -182,6 +183,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 					go k.doReflection(ctx, session.ID, query.Content, fullContent.String(), totalToolCalls)
 				}
 
+				slog.Debug("ReAct stream complete", "rounds", round+1, "tokens", totalTokens, "tools", totalToolCalls, "model", k.llmProvider.GetModelID(), "duration", time.Since(startTime))
 				k.setState(StateIdle)
 				k.publishEvent(Event{
 					Type:      EventResponseEnded,
@@ -337,7 +339,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 
 		// 超出最大轮次 → 合成最终回答（smolagents 风格）
 		k.setState(StateIdle)
-		slog.Debug("ReAct stream max rounds reached, synthesizing", "rounds", maxRounds, "msgs", len(messages))
+		slog.Debug("ReAct stream max rounds reached, synthesizing", "rounds", maxRounds, "msgs", len(messages), "tokens", totalTokens, "tools", totalToolCalls)
 		messages = append(messages, Message{
 			Role: "user",
 			Content: "已达到最大分析轮次。请基于以上所有发现，用中文给出一个完整的总结性回答。不要调用工具，直接输出最终结论。",
@@ -352,6 +354,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 		if resp.Usage != nil {
 			totalTokens += resp.Usage.TotalTokens
 		}
+		slog.Debug("ReAct stream synthesis complete", "tokens", totalTokens, "tools", totalToolCalls, "model", resp.Model, "duration", time.Since(startTime))
 		// 追加合成结果到消息历史
 		messages = append(messages, Message{
 			Role: "assistant", Content: resp.Content,

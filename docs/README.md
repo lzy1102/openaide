@@ -1,8 +1,6 @@
 # OpenAIDE 文档中心
 
-> 版本: v3.0.0-draft  
-> 日期: 2026-05-15  
-> 状态: 设计评审中
+> 日期: 2026-05-27
 
 ---
 
@@ -65,7 +63,7 @@ ARCHITECTURE.md → MODULES.md → MIGRATION.md → DEPLOYMENT.md
 |------|------|----------|
 | **纯文件存储** | Markdown + JSON + 二进制向量，零数据库依赖 | ARCHITECTURE.md 10.3 |
 | **零 CGO** | 所有存储纯 Go 实现，禁止 CGO | ARCHITECTURE.md 10.3 |
-| **混合运行模式** | 直接模式(默认) + 服务器模式 + TUI 模式 | ARCHITECTURE.md 3.x |
+| **混合运行模式** | REPL(默认) + API 服务器模式 | ARCHITECTURE.md 3.x |
 | **ReAct 内核** | Reasoning + Acting 循环作为核心 | ARCHITECTURE.md 3.1.3 |
 | **三级记忆** | L1 工作记忆 → L2 短期记忆 → L3 长期记忆 | MODULES.md 3.x |
 | **小说式压缩** | 章节/人物/伏笔/闪回多维度压缩 | MODULES.md 14.x |
@@ -76,12 +74,11 @@ ARCHITECTURE.md → MODULES.md → MIGRATION.md → DEPLOYMENT.md
 
 | 文档 | 状态 | 最后更新 |
 |------|------|----------|
-| ARCHITECTURE.md | 设计评审中 | 2026-05-15 |
-| MODULES.md | 设计评审中 | 2026-05-15 |
-| MIGRATION.md | 设计评审中 | 2026-05-15 |
-| QUICKSTART.md | 初稿完成 | 2026-05-15 |
+| ARCHITECTURE.md | 已更新 | 2026-05-27 |
+| MODULES.md | 已更新 | 2026-05-27 |
+| QUICKSTART.md | 已更新 | 2026-05-27 |
 | DEPLOYMENT.md | 初稿完成 | 2026-05-15 |
-| flowcharts.html | 初稿完成 | 2026-05-15 |
+| USAGE.md | 已更新 | 2026-05-27 |
 
 ---
 

@@ -328,16 +328,21 @@ func (p *OpenAIProvider) buildRequestBody(messages []kernel.Message, tools []ker
 	}
 
 	// DeepSeek 特有参数
+	thinkingEnabled := false
 	if p.isDeepSeek() {
 		// 支持 per-call 禁用 thinking（合成/分类等不需要推理的场景）
 		noThinking, _ := options["no_thinking"].(bool)
-		if !noThinking && p.config.Thinking != nil {
-			body["thinking"] = map[string]string{
-				"type": p.config.Thinking.Type,
-			}
+		if !noThinking && p.config.Thinking != nil && *p.config.Thinking {
+			body["thinking"] = map[string]string{"type": "enabled"}
+			thinkingEnabled = true
 		}
-		if !noThinking && p.config.ReasoningEffort != "" {
+		if !noThinking && thinkingEnabled && p.config.ReasoningEffort != "" {
 			body["reasoning_effort"] = p.config.ReasoningEffort
+		}
+		// 思考模式下不支持 temperature/top_p
+		if thinkingEnabled {
+			delete(body, "temperature")
+			delete(body, "top_p")
 		}
 	}
 
@@ -348,14 +353,25 @@ func (p *OpenAIProvider) buildRequestBody(messages []kernel.Message, tools []ker
 		}
 	}
 
+	// 安全传递外部参数（过滤内部路由参数和思考模式不支持的参数）
 	if options != nil {
 		if rf, ok := options["response_format"]; ok {
 			body["response_format"] = rf
 		}
 	}
+	internalKeys := map[string]bool{"route": true, "_force_provider": true, "no_thinking": true,
+		"model": true, "response_format": true, "thinking": true, "reasoning_effort": true}
 	if options != nil {
 		for k, v := range options {
-			body[k] = v
+			if internalKeys[k] {
+				continue
+			}
+			if thinkingEnabled && (k == "temperature" || k == "top_p") {
+				continue
+			}
+			if _, exists := body[k]; !exists {
+				body[k] = v
+			}
 		}
 	}
 

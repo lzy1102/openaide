@@ -132,44 +132,49 @@ export const dialogueAPI = {
     },
 
     // 创建新对话 (前端生成唯一ID，后端告知)
-    createDialogue: (userID, title, projectId) => {
-        const id =
-            'session-' +
-            Date.now() +
-            '-' +
-            Math.random().toString(36).slice(2, 8);
+    createDialogue: async (userID, title, projectId) => {
+        let realId = null;
+        try {
+            const session = await request('/sessions', {
+                method: 'POST',
+                body: JSON.stringify({ user_id: userID, project_id: projectId || '' }),
+            });
+            if (session && session.id) {
+                realId = session.id;
+            }
+        } catch (e) {
+            // 后端不可用时回退到本地 ID
+        }
+        const id = realId || ('session-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8));
         const dialogue = {
             id,
             title: title || 'New Chat',
             projectId: projectId || '',
             messages: [],
         };
-        // 同步保存到本地
         const local = loadLocalDialogues();
         local.unshift(dialogue);
         saveLocalDialogues(local);
-        // 可选：同步通知后端
-        request('/sessions', {
-            method: 'POST',
-            body: JSON.stringify({ user_id: id, project_id: projectId || '' }),
-        }).catch(() => {});
-        return Promise.resolve(dialogue);
+        return dialogue;
     },
 
     // 获取对话详情 (从后端加载历史消息)
     getDialogue: (id) =>
         request(`/sessions/${id}`)
-            .then((messages) => ({
-                id,
-                title: id.startsWith('session-') ? 'Chat' : id,
-                messages: (messages || []).map((m) => ({
-                    sender: m.role === 'user' ? 'user' : 'assistant',
-                    content: m.content || '',
-                })),
-            }))
+            .then((data) => {
+                const msgs = data.messages || [];
+                return {
+                    id,
+                    title: (data.session && data.session.id) ? data.session.id.substring(0, 8) : 'Chat',
+                    messages: msgs.map((m) => ({
+                        sender: m.role === 'user' ? 'user' : 'assistant',
+                        content: m.content || '',
+                    })),
+                };
+            })
             .catch(() => ({
                 id,
-                title: id.startsWith('session-') ? 'Chat' : id,
+                title: 'Chat',
                 messages: [],
             })),
 
@@ -186,7 +191,23 @@ export const dialogueAPI = {
     updateDialogue: () => Promise.resolve(),
 
     // 保存流式消息内容 (后端在chat/stream中自动保存)
-    saveStreamMessage: () => Promise.resolve(),
+    saveStreamMessage: (dialogueId, content, thinkingText) => {
+        const local = loadLocalDialogues();
+        const dialogue = local.find(d => d.id === dialogueId);
+        if (dialogue) {
+            dialogue.messages.push({
+                sender: 'assistant',
+                content: content,
+            });
+            if (thinkingText) {
+                dialogue.messages.push({
+                    sender: 'assistant',
+                    content: '[思考] ' + thinkingText,
+                });
+            }
+            saveLocalDialogues(local);
+        }
+    },
 
     // 获取对话消息 (通过getDialogue统一获取)
     getMessages: () => Promise.resolve([]),

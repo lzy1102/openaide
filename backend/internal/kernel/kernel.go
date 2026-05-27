@@ -399,8 +399,8 @@ func (k *AgentKernel) buildOptions(opts QueryOptions) map[string]interface{} {
 	options := make(map[string]interface{})
 	if opts.Temperature > 0 {
 		options["temperature"] = opts.Temperature
-	} else {
-		options["temperature"] = 0.7
+		// 思考模式下 temperature 不生效（deepseek/openai reasoning models），
+		// 但保留显式传入的值；由 provider 层根据 thinking 状态决定是否透传
 	}
 	if opts.MaxTokens > 0 {
 		options["max_tokens"] = opts.MaxTokens

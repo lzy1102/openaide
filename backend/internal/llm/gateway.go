@@ -48,7 +48,7 @@ type ProviderConfig struct {
 	Enabled        bool              `json:"enabled"`
 
 	// DeepSeek 特有配置
-	Thinking        *kernel.ThinkingConfig `json:"thinking,omitempty"`
+	Thinking        *bool  `json:"thinking,omitempty"`
 	ReasoningEffort string                 `json:"reasoning_effort,omitempty"`
 	JSONMode        bool                   `json:"json_mode,omitempty"`
 	StrictTools     bool                   `json:"strict_tools,omitempty"`

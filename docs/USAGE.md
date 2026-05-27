@@ -55,6 +55,8 @@ llm:
       api_key: sk-your-api-key-here
       default_model: deepseek-v4-pro
       timeout: 300
+      thinking: true
+      reasoning_effort: max
       enabled: true
     - name: deepseek-flash
       type: openai
@@ -80,12 +82,7 @@ log:
 openaide
 ```
 
-首次运行会进入配置引导：
-- 选择语言（中文/English）
-- 选择侧重领域（通用/编程/写作/研究/教学/商业）
-- 选择回复风格（简洁/详细/均衡）
-
-配置保存到 `~/.openaide/data/prompts/system.md`，可随时编辑。
+系统提示词自动写入 `~/.openaide/data/prompts/system.md`，可随时编辑。
 
 ## 基本使用
 
@@ -102,14 +99,13 @@ openaide "你的问题"    # 一次性问答
 | 命令 | 说明 |
 |------|------|
 | `/help` | 显示帮助 |
-| `/mode` | 切换模式（code/write/research/general） |
-| `/model` | 查看/切换模型 |
+| `/model` | 查看当前模型 |
 | `/model <name>` | 切换到指定模型 |
 | `/lang zh/en` | 切换语言 |
-| `/sessions` | 会话列表（↑↓ 选择） |
-| `/session <id>` | 切换到指定会话 |
+| `/sessions` | 会话列表 |
+| `/session <id>` | 切换会话 |
 | `/clear` | 清屏 |
-| `/log` | 查看最近日志 |
+| `/log` | 最近日志 |
 | `/handoff` | 保存会话状态 |
 | `/exit`, `/quit`, `/q` | 退出 |
 
@@ -117,10 +113,10 @@ openaide "你的问题"    # 一次性问答
 
 | 命令 | 说明 |
 |------|------|
-| `/analyst <task>` | 分析任务 |
-| `/coder <task>` | 编码任务 |
-| `/reviewer <task>` | 审查任务 |
-| `/executor <task>` | 执行/验证 |
+| `/analyst <task>` | 分析任务 (reasoning model) |
+| `/coder <task>` | 编码任务 (execution model) |
+| `/reviewer <task>` | 审查任务 (reasoning model) |
+| `/executor <task>` | 执行/验证 (execution model) |
 | `/team <task>` | 完整团队链 |
 
 ### 快捷键

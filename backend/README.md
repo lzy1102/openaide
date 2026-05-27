@@ -1,323 +1,128 @@
 # OpenAIDE Backend
 
-OpenAIDE is an intelligent assistant project supporting multi-model LLM integration, thinking & reasoning, auto correction, continuous learning, and knowledge base features.
+Go 编写的 AI Agent 内核。分层架构：Kernel → Orchestration → API → Infrastructure。
 
-## Table of Contents
-
-- [Features](#features)
-- [Project Structure](#project-structure)
-- [Getting Started](#getting-started)
-- [API Documentation](#api-documentation)
-- [Tech Stack](#tech-stack)
-- [Supported LLM Providers](#supported-llm-providers)
-
-## Features
-
-### Core Capabilities
-
-| Module | File | Status |
-|--------|------|--------|
-| LLM Multi-model Integration | `services/llm/` | ✅ |
-| Thinking & Reasoning | `services/thinking_service.go` | ✅ |
-| Auto Correction | `services/correction_service.go` | ✅ |
-| Continuous Learning | `services/learning_service.go` | ✅ |
-| Workflow Engine | `services/workflow_service.go` | ✅ |
-
-### Knowledge Base System
-
-| Module | File | Status |
-|--------|------|--------|
-| Knowledge Data Model | `models/knowledge.go` | ✅ |
-| Vector Embedding | `services/embedding_service.go` | ✅ |
-| Knowledge Service | `services/knowledge_service.go` | ✅ |
-| RAG Service | `services/rag_service.go` | ✅ |
-| Knowledge Extraction | `services/knowledge_extraction_service.go` | ✅ |
-| Document Import | `services/document_service.go` | ✅ |
-
-### Core Enhancement
-
-| Module | File | Status |
-|--------|------|--------|
-| Task Decomposition | `services/task_decompose_service.go` | ✅ |
-| Context Management | `services/context_manager.go` | ✅ |
-| Team Coordination | `services/team_coordinator.go` | ✅ |
-| Integration Testing | `services/integration_test.go` | ✅ |
-
-### New Features (Latest)
-
-| Module | Description | Status |
-|--------|-------------|--------|
-| **Function Calling** | Tool execution system for LLM-powered function calls | ✅ |
-| **Prompt Templates** | Template management with versioning and variables | ✅ |
-| **Usage Analytics** | Usage statistics and cost tracking | ✅ |
-| **Task Scheduler** | Cron-based scheduled tasks and reminders | ✅ |
-| **Self-Evolution** | Skill discovery, pattern detection, feedback collection, memory extraction, skill evolution | ✅ |
-| **Structured Planning** | 5-step pipeline with execution review and dynamic replanning | ✅ |
-| **Local Knowledge First** | Auto-extract knowledge, query local KB before LLM, high-confidence direct return | ✅ |
-| **Smart Token Management** | Token estimation, smart truncation, intelligent caching, cost optimization, token limits | ✅ |
-| **Extended Tools** | 22 built-in tools: dev tools, DevOps, system monitoring, network diagnostics | ✅ |
-
-## Project Structure
-
-```
-backend/src/
-├── models/
-│   ├── knowledge.go          # Knowledge model
-│   ├── task.go               # Task model
-│   ├── team.go               # Team model
-│   ├── thinking.go           # Thinking model
-│   ├── tool.go               # Tool/Function Calling model
-│   ├── prompt_template.go    # Prompt template model
-│   ├── usage.go              # Usage tracking model
-│   └── scheduler.go          # Scheduler model
-├── services/
-│   ├── llm/                  # LLM clients
-│   │   ├── llm_client.go     # Unified interface
-│   │   ├── openai_client.go
-│   │   ├── anthropic_client.go
-│   │   └── glm_client.go
-│   ├── thinking_service.go   # Thinking & reasoning
-│   ├── correction_service.go # Auto correction
-│   ├── learning_service.go   # Continuous learning
-│   ├── workflow_service.go   # Workflow engine
-│   ├── knowledge_service.go  # Knowledge service
-│   ├── embedding_service.go  # Vector generation
-│   ├── rag_service.go        # RAG service
-│   ├── task_decompose_service.go  # Task decomposition
-│   ├── context_manager.go    # Context management
-│   ├── team_coordinator.go   # Team coordination
-│   ├── tool_service.go       # Tool execution service
-│   ├── prompt_template_service.go  # Template service
-│   ├── usage_service.go      # Usage tracking service
-│   └── scheduler_service.go  # Scheduler service
-└── handlers/
-    ├── task_handler.go       # Task API
-    ├── tool_handler.go       # Tool API
-    ├── prompt_template_handler.go  # Template API
-    ├── usage_handler.go      # Usage API
-    └── scheduler_handler.go  # Scheduler API
-```
-
-## Getting Started
-
-### Prerequisites
-
-- Go 1.21+
-- SQLite
-
-### Installation
-
-```bash
-# Install dependencies
-go mod download
-
-# Run the server
-go run cmd/main.go
-```
-
-### Local Mode
-
-For local use without authentication:
-
-```bash
-# Enable local mode
-export OPENAIDE_LOCAL_MODE=true
-
-# Run server
-go run cmd/main.go
-```
-
-In local mode:
-- No registration or login required
-- All APIs accessible without authentication
-- Runs with admin privileges automatically
-
-### Configuration
-
-Configuration is loaded from environment variables or config files.
-
-## CLI
-
-### Interactive Chat (TUI)
-
-```bash
-openaide                          # Start interactive chat session
-openaide <prompt>                 # One-shot mode (non-interactive)
-openaide <file.go> <prompt>       # Include file context + prompt
-openaide -c                       # Continue last session
-openaide -y                       # Auto-approve all tool calls
-openaide --model <name>           # Override default model
-openaide --verbose                # Enable debug logging
-openaide -o json                  # Structured JSON output
-```
-
-### Subcommands
-
-```bash
-openaide help                     # Show help
-openaide version                  # Show version
-openaide update                   # Update to latest version
-openaide sessions                 # List sessions
-```
-
-### In-Chat Slash Commands
-
-| Command | Description |
-|---------|-------------|
-| `/help` | Show help |
-| `/clear` | Clear chat messages |
-| `/model [name]` | Show/switch current model |
-
-### Internationalization
-
-Language is auto-detected from `$LANG` / `$LC_MESSAGES` / `$LC_ALL`. Supports:
-- **zh_CN** — Chinese (Simplified)
-- **en_US** — English (fallback)
-
-```bash
-LANG=zh_CN.UTF-8 openaide help   # Chinese output
-LANG=en_US.UTF-8 openaide help   # English output
-```
-
-### Build from Source
+## 快速开始
 
 ```bash
 cd backend
-go build -o openaide ./cmd/cli
-./openaide
+make build
+# 输出: bin/openaide-server, bin/openaide
+
+# 启动 API 服务
+make run
+# 服务运行在 http://localhost:8080
+
+# 交互式 REPL
+./bin/openaide
 ```
 
-## API Documentation
-
-### Task Management
-
-- `POST /api/tasks/decompose` - Decompose task
-- `GET /api/tasks` - List tasks
-- `GET /api/tasks/:id` - Get task details
-- `PATCH /api/tasks/:id/status` - Update status
-
-### Knowledge Base
-
-- `POST /api/knowledge` - Create knowledge
-- `GET /api/knowledge/search` - Search knowledge
-- `POST /api/documents/import` - Import document
-
-### RAG
-
-- `POST /api/rag/query` - RAG query
-- `POST /api/rag/stream` - Streaming RAG
-
-### Function Calling (Tools)
-
-- `GET /api/tools` - List all tools
-- `GET /api/tools/definitions` - Get tool definitions for LLM
-- `GET /api/tools/:name` - Get tool details
-- `POST /api/tools` - Create/register a tool
-- `POST /api/tools/execute` - Execute a tool
-
-### Prompt Templates
-
-- `GET /api/prompt-templates` - List templates
-- `POST /api/prompt-templates` - Create template
-- `GET /api/prompt-templates/:id` - Get template
-- `PUT /api/prompt-templates/:id` - Update template
-- `DELETE /api/prompt-templates/:id` - Delete template
-- `POST /api/prompt-templates/:id/render` - Render template
-- `GET /api/prompt-templates/name/:name` - Get template by name
-- `POST /api/prompt-templates/name/:name/render` - Render by name
-- `POST /api/prompt-templates/:id/versions` - Create new version
-- `GET /api/prompt-templates/name/:name/versions` - Get version history
-- `POST /api/prompt-templates/extract-variables` - Extract variables
-- `POST /api/prompt-templates/export` - Export templates
-- `POST /api/prompt-templates/import` - Import templates
-
-### Usage Analytics
-
-- `GET /api/usage/stats` - Get usage statistics
-- `GET /api/usage/daily` - Get daily usage
-- `GET /api/usage/monthly` - Get monthly usage
-- `GET /api/usage/history` - Get usage history
-- `GET /api/usage/budget` - Get user budget
-- `POST /api/usage/budget` - Set user budget
-- `GET /api/usage/pricing` - Get model pricing
-- `POST /api/usage/pricing` - Update model pricing
-
-### Task Scheduler
-
-#### Scheduled Tasks
-- `GET /api/scheduler/tasks` - List tasks
-- `POST /api/scheduler/tasks` - Create task
-- `GET /api/scheduler/tasks/:id` - Get task details
-- `POST /api/scheduler/tasks/:id/pause` - Pause task
-- `POST /api/scheduler/tasks/:id/resume` - Resume task
-- `DELETE /api/scheduler/tasks/:id` - Delete task
-- `POST /api/scheduler/tasks/:id/execute` - Execute now
-- `GET /api/scheduler/tasks/:id/executions` - Get execution history
-
-#### Reminders
-- `GET /api/scheduler/reminders` - List reminders
-- `POST /api/scheduler/reminders` - Create reminder
-- `POST /api/scheduler/reminders/:id/snooze` - Snooze reminder
-- `DELETE /api/scheduler/reminders/:id` - Cancel reminder
-
-## Tech Stack
-
-- **Backend**: Go + Gin + GORM + SQLite
-- **LLM**: Multi-provider support (see below)
-- **Vector**: text-embedding-ada-002
-- **Frontend**: HTML/CSS/JavaScript
-
-## Supported LLM Providers
-
-The system now supports 17+ LLM providers through a unified interface.
-
-### Chinese LLMs (国内大模型)
-
-| Provider | Type | Client File | Default Model |
-|----------|------|-------------|---------------|
-| 通义千问 (Qwen) | OpenAI Compatible | `qwen_client.go` | qwen-turbo |
-| 文心一言 (ERNIE) | Custom API | `ernie_client.go` | ernie-bot-4 |
-| 混元 (Hunyuan) | OpenAI Compatible | `hunyuan_client.go` | hunyuan-lite |
-| 星火 (Spark) | Custom API | `spark_client.go` | spark-v3.5 |
-| Moonshot (Kimi) | OpenAI Compatible | `moonshot_client.go` | moonshot-v1-8k |
-| 百川 (Baichuan) | OpenAI Compatible | `baichuan_client.go` | Baichuan2-Turbo |
-| MiniMax | OpenAI Compatible | `minimax_client.go` | abab5.5-chat |
-| DeepSeek | OpenAI Compatible | `deepseek_client.go` | deepseek-chat |
-| **智谱 GLM** | OpenAI Compatible | `glm_client.go` | **glm-5** |
-
-> **GLM Latest Models**: glm-5 (旗舰), glm-4.7 (编程增强), glm-4-plus, glm-4-flash
-
-### International LLMs (国际大模型)
-
-| Provider | Type | Client File |
-|----------|------|-------------|
-| OpenAI | Native | `openai_client.go` |
-| Anthropic (Claude) | Native | `anthropic_client.go` |
-| Google Gemini | Custom API | `gemini_client.go` |
-| Mistral AI | OpenAI Compatible | `mistral_client.go` |
-| Cohere | Custom API | `cohere_client.go` |
-| Groq | OpenAI Compatible | `groq_client.go` |
-
-### Local Models (本地模型)
-
-| Provider | Type | Client File |
-|----------|------|-------------|
-| Ollama | OpenAI Compatible | `ollama_client.go` |
-| vLLM | OpenAI Compatible | `vllm_client.go` |
-
-## Architecture
+## 项目结构
 
 ```
-services/llm/
-├── llm_client.go              # Unified LLMClient interface & factory
-├── openai_compatible_client.go # Base class for OpenAI-compatible APIs
-├── openai_client.go           # OpenAI native client
-├── anthropic_client.go        # Anthropic/Claude client
-├── glm_client.go              # 智谱 GLM client
-├── [provider]_client.go       # Other provider clients
-└── llm_client_test.go         # Tests
+backend/
+├── cmd/
+│   ├── server/main.go     # API 服务器入口
+│   └── cli/                # REPL 交互式 CLI
+│       ├── main.go         # 入口、参数解析
+│       ├── repl.go         # REPL 主循环 (lmorg/readline + glamour)
+│       ├── repl_output.go  # Markdown 渲染、pterm 样式
+│       └── utils.go        # 工具函数
+├── internal/
+│   ├── infra/              # DI 容器 (Application)
+│   ├── kernel/             # Agent 内核 (ReAct、流式、反思、Skill、提示词)
+│   ├── llm/                # LLM 网关 (OpenAI 兼容 + Anthropic 原生)
+│   ├── tools/              # 22 个内置工具 (文件/命令/Git/知识库/符号/浏览器)
+│   ├── memory/             # 3 级文件记忆 + 语义搜索
+│   ├── orchestration/      # 编排器 + DeepPlan + Team 多 Agent
+│   ├── api/                # REST + SSE + WebSocket + JWT
+│   ├── plugin/             # Claude Code 插件格式兼容
+│   ├── mcp/                # MCP 协议 (stdio)
+│   ├── compress/           # LLM 语义压缩
+│   ├── knowledge/          # 知识库
+│   ├── event/              # 事件总线
+│   ├── channel/            # 外部渠道 (Webhook/飞书/Telegram)
+│   ├── config/             # YAML/JSON 配置
+│   ├── auth/               # JWT 认证
+│   ├── lang/               # 多语言 (zh/en)
+│   └── projectmind/        # 持续学习 (代码地图/风险/约定)
+├── Makefile
+├── Dockerfile
+└── docker-compose.yml
+```
+
+## 技术栈
+
+- **Go 1.25**, 纯标准库 `net/http` (非 Gin)
+- **文件 JSON 存储** (非 GORM/SQLite)
+- **REPL**: lmorg/readline v4 + glamour (Markdown) + pterm (富文本)
+- **LLM**: OpenAI 兼容协议 + Anthropic 原生 API
+- **WebSocket**: gorilla/websocket
+- **认证**: JWT HMAC-SHA256
+
+## 配置
+
+`~/.openaide/config.yaml`:
+
+```yaml
+llm:
+  providers:
+    - name: deepseek
+      type: openai
+      base_url: https://api.deepseek.com/v1
+      api_key: sk-xxx
+      default_model: deepseek-v4-pro
+      timeout: 300
+      thinking: true
+      reasoning_effort: max
+    - name: deepseek-flash
+      type: openai
+      base_url: https://api.deepseek.com/v1
+      api_key: sk-xxx
+      default_model: deepseek-v4-flash
+      timeout: 120
+  model_routing:
+    reasoning: deepseek-v4-pro   # analyst, reviewer
+    execution: deepseek-v4-flash # coder, executor, synthesis
+kernel:
+  max_rounds: 30
+  min_rounds: 8
+log:
+  level: info
+  lang: zh
+```
+
+**Architect/Editor 模型路由**: analyst/reviewer → reasoning model (pro)，coder/executor → execution model (flash)。
+
+## API 端点
+
+| 路由 | 方法 | 说明 |
+|------|------|------|
+| `/api/v1/chat` | POST | 同步聊天 |
+| `/api/v1/chat/stream` | POST | 流式聊天 (SSE) |
+| `/api/v1/sessions` | GET/POST | 会话列表 / 创建 |
+| `/api/v1/sessions/{id}` | GET/DELETE | 会话详情 / 删除 |
+| `/api/v1/memory/search?q=` | GET | 记忆搜索 |
+| `/api/v1/tools` | GET | 工具列表 |
+| `/api/v1/stats` | GET | 系统统计 |
+| `/api/v1/metrics` | GET | 运行时指标 |
+| `/api/v1/config` | GET/PUT | 读写配置 |
+| `/api/v1/projects` | GET/POST | 项目列表 / 创建 |
+| `/api/v1/projects/{id}` | GET/PUT/DELETE | 单个项目操作 |
+| `/api/v1/channels` | GET | 渠道列表 |
+| `/api/v1/auth/register` | POST | 注册 |
+| `/api/v1/auth/login` | POST | 登录 |
+| `/ws` | GET | WebSocket |
+| `/health` | GET | 健康检查 |
+
+## 测试
+
+```bash
+make test
+make test-coverage
+go test -v ./internal/kernel/...
 ```
 
 ## License
 
-MIT License
+MIT

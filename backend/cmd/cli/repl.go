@@ -318,6 +318,8 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string)
 	startTime := time.Now()
 	totalTools := 0
 	totalTokens := 0
+	cacheHit := 0
+	cacheMiss := 0
 	var fullResponse strings.Builder
 	var streamBuffer strings.Builder // 增量渲染缓冲区
 	var toolNames []string
@@ -339,7 +341,7 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string)
 		}
 	}
 		if chunk.Done {
-			if chunk.Usage != nil { totalTokens = chunk.Usage.TotalTokens }
+			if chunk.Usage != nil { totalTokens = chunk.Usage.TotalTokens; cacheHit = chunk.Usage.PromptCacheHitTokens; cacheMiss = chunk.Usage.PromptCacheMissTokens }
 			break
 		}
 		if chunk.ReasoningContent != "" && !thinkShown {
@@ -376,7 +378,7 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string)
 		fmt.Println(rendered)
 		fmt.Printf("\n%s──%s\n", cInfo, cReset)
 	}
-	PrintStatusBar(totalTokens, totalTools, elapsed, "deepseek-v4-pro")
+	PrintStatusBar(totalTokens, totalTools, elapsed, "deepseek-v4-pro", cacheHit, cacheMiss)
 }
 
 // ── Complex Query (sub-agent team execution) ──────────────
@@ -436,7 +438,7 @@ func executePlanQuery(app *infra.Application, query string, plan *orchestration.
 		fmt.Println()
 		fmt.Println(RenderMarkdown(resp.Content))
 	}
-	PrintStatusBar(resp.TokensUsed, totalTools, elapsed, "deepseek-v4-pro")
+	PrintStatusBar(resp.TokensUsed, totalTools, elapsed, "deepseek-v4-pro", resp.CacheHit, resp.CacheMiss)
 }
 
 // ── Commands ──────────────────────────────────────────────

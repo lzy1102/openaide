@@ -55,6 +55,7 @@ func NewServer(orch *orchestration.Orchestrator, addr string, authSvc *auth.Serv
 	mux.HandleFunc("/api/v1/auth/", authSvc.AuthHandler)
 	mux.HandleFunc("/api/v1/config", s.handleConfig)
 	mux.HandleFunc("/api/v1/projects", s.handleProjects)
+	mux.HandleFunc("/api/v1/projects/", s.handleProjectDetail)
 	mux.HandleFunc("/ws", s.handleWebSocket)
 	mux.HandleFunc("/health", s.handleHealth)
 	s.mux = mux
@@ -658,6 +659,94 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+}
+
+// handleProjectDetail 单个项目操作 (GET/PUT/DELETE)
+// 路由: /api/v1/projects/{id}
+func (s *Server) handleProjectDetail(w http.ResponseWriter, r *http.Request) {
+	projectID := r.URL.Path[len("/api/v1/projects/"):]
+	if projectID == "" {
+		http.Error(w, `{"error":"project ID required"}`, http.StatusBadRequest)
+		return
+	}
+
+	projectsFile := os.Getenv("HOME") + "/.openaide/projects.json"
+
+	type Project struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+		Path string `json:"path"`
+	}
+
+	loadProjects := func() []Project {
+		data, _ := os.ReadFile(projectsFile)
+		var projects []Project
+		json.Unmarshal(data, &projects)
+		return projects
+	}
+
+	saveProjects := func(projects []Project) {
+		data, _ := json.MarshalIndent(projects, "", "  ")
+		os.WriteFile(projectsFile, data, 0644)
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		for _, p := range loadProjects() {
+			if p.ID == projectID {
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(p)
+				return
+			}
+		}
+		http.Error(w, `{"error":"project not found"}`, http.StatusNotFound)
+
+	case http.MethodPut:
+		var updated Project
+		if err := json.NewDecoder(r.Body).Decode(&updated); err != nil {
+			http.Error(w, `{"error":"invalid json"}`, http.StatusBadRequest)
+			return
+		}
+		projects := loadProjects()
+		found := false
+		for i, p := range projects {
+			if p.ID == projectID {
+				updated.ID = projectID
+				projects[i] = updated
+				found = true
+				break
+			}
+		}
+		if !found {
+			http.Error(w, `{"error":"project not found"}`, http.StatusNotFound)
+			return
+		}
+		saveProjects(projects)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(updated)
+
+	case http.MethodDelete:
+		projects := loadProjects()
+		filtered := make([]Project, 0, len(projects))
+		deleted := false
+		for _, p := range projects {
+			if p.ID == projectID {
+				deleted = true
+			} else {
+				filtered = append(filtered, p)
+			}
+		}
+		if !deleted {
+			http.Error(w, `{"error":"project not found"}`, http.StatusNotFound)
+			return
+		}
+		saveProjects(filtered)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
+
+	default:
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+	}
 }
 
 // ErrorResponse 错误响应

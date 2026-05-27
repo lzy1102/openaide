@@ -81,13 +81,12 @@ log:
 ```yaml
 providers:
   - name: "deepseek"
-    type: "openai-compatible"
+    type: "openai"
     base_url: "https://api.deepseek.com/v1"
     api_key: "sk-your-key"
-    default_model: "deepseek-chat"
-    thinking:
-      type: "enabled"        # DeepSeek thinking mode (enabled/disabled)
-    reasoning_effort: "medium" # low/medium/high
+    default_model: "deepseek-v4-pro"
+    thinking: true
+    reasoning_effort: "max"  # low/medium/high/max (Agent 推荐 max)
     json_mode: false
     enabled: true
 ```
@@ -237,13 +236,12 @@ log:
 ```yaml
 providers:
   - name: "deepseek"
-    type: "openai-compatible"
+    type: "openai"
     base_url: "https://api.deepseek.com/v1"
     api_key: "sk-your-key"
-    default_model: "deepseek-chat"
-    thinking:
-      type: "enabled"        # thinking mode
-    reasoning_effort: "medium"
+    default_model: "deepseek-v4-pro"
+    thinking: true
+    reasoning_effort: "max"  # Agent 推荐 max
     json_mode: false
     enabled: true
 ```
@@ -263,9 +261,17 @@ providers:
 | `/api/v1/memory/search?q=` | GET | 搜索记忆 |
 | `/api/v1/tools` | GET | 工具列表 |
 | `/api/v1/stats` | GET | 系统统计 |
+| `/api/v1/metrics` | GET | 运行时指标 |
+| `/api/v1/config` | GET/PUT | 读写配置 |
+| `/api/v1/projects` | GET/POST | 项目列表/创建 |
+| `/api/v1/projects/{id}` | GET/PUT/DELETE | 单个项目操作 |
+| `/api/v1/channels` | GET | 渠道列表 |
+| `/api/v1/auth/register` | POST | 注册 |
+| `/api/v1/auth/login` | POST | 登录 |
+| `/ws` | GET | WebSocket |
 | `/health` | GET | 健康检查 |
 
-目前无认证机制（认证计划中但尚未实现）。
+JWT 认证默认关闭，开启后在请求头中携带 `Authorization: Bearer <token>`。
 
 ### 测试
 
@@ -307,8 +313,8 @@ make docker-stop     # 停止容器
 backend/
 ├── cmd/
 │   ├── server/main.go        # API 服务器入口
-│   ├── cli/main.go            # 交互式 CLI 入口
-│   └── cli/onboard.go         # 首次运行引导
+│   ├── cli/main.go            # 交互式 REPL 入口
+│   └── cli/                    # REPL (repl.go, repl_output.go, utils.go)
 ├── internal/
 │   ├── infra/   (4 files)     # DI 容器
 │   ├── kernel/  (18 files)    # Agent 内核 (process/stream/prompt + enhancements)
@@ -330,17 +336,21 @@ backend/
 
 ## 与旧版文档的差异 | Differences from Legacy Docs
 
-旧版文档（`docs/ARCHITECTURE.md`、`docs/MODULES.md`）描述的是一个设计阶段的架构，部分功能尚未实现：
+旧版文档描述的设计阶段架构已全部更新。当前实际状态：
 
-| 文档描述 | 当前状态 |
-|----------|----------|
-| Gin 框架 / GORM | 使用 `net/http` 标准库，无 ORM |
-| 端口 19375 | 端口 8080 |
-| JWT 认证 | 未实现 |
-| 多数据库 (SQLite/PG/MySQL) | 文件 JSON + 内存存储 |
-| Redis 缓存 | 未实现 |
-| HNSW 向量存储 | 记忆搜索为简单文本匹配 |
-| WebSocket | 未实现 |
-| Skill 系统 / 插件系统 | 未实现 |
-| 多模态 | 未实现 |
-| 单独 Anthropic provider | 统一走 OpenAI 兼容协议 |
+| 项目 | 当前状态 |
+|------|----------|
+| HTTP 框架 | `net/http` 标准库 (非 Gin) |
+| 数据存储 | 文件 JSON + 内存 (非 GORM/SQLite) |
+| 端口 | 8080 |
+| JWT 认证 | 已实现 |
+| REPL | lmorg/readline + glamour + pterm (非 Bubble Tea) |
+| 22 个内置工具 | 已实现 |
+| MCP 协议 | 已实现 (stdio) |
+| 插件系统 (Claude 格式) | 已实现 |
+| Anthropic 原生 API | 已实现 |
+| WebSocket | 已实现 |
+| DeepPlan 深度规划 | 已实现 |
+| ProjectMind 持续学习 | 已实现 |
+| LLM 语义压缩 | 已实现 |
+| 外部渠道 (Webhook/飞书/Telegram) | 已实现 |

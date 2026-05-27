@@ -165,14 +165,18 @@ func ShowProgress(total int, title string) *pterm.ProgressbarPrinter {
 
 var sessionTokens int // 会话累计 token
 
-func PrintStatusBar(tokens, tools int, elapsed time.Duration, model string) {
+func PrintStatusBar(tokens, tools int, elapsed time.Duration, model string, cacheHit, cacheMiss int) {
 	sessionTokens += tokens
 	var parts []string
 	if model != "" {
 		parts = append(parts, pterm.Gray(model))
 	}
 	if tokens > 0 {
-		parts = append(parts, fmt.Sprintf("%s⚡ %d tokens%s", cInfo, tokens, cReset))
+		parts = append(parts, fmt.Sprintf("%s⚡ %dk tokens%s", cInfo, tokens/1000, cReset))
+	}
+	if cacheHit > 0 {
+		pct := cacheHit * 100 / (cacheHit + cacheMiss)
+		parts = append(parts, fmt.Sprintf("%s💾 cache %d%%%s", cInfo, pct, cReset))
 	}
 	if sessionTokens > 0 && sessionTokens != tokens {
 		parts = append(parts, fmt.Sprintf("%s累计 %dk%s", cInfo, sessionTokens/1000, cReset))
