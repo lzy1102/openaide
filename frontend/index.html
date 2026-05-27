@@ -9,10 +9,11 @@
     <title>OpenAIDE</title>
     <link rel="stylesheet" href="./src/styles/theme.css?v=2">
     <link rel="stylesheet" href="./src/styles/components.css?v=2">
-    <!-- Markdown 渲染 + 代码高亮 -->
+    <!-- Markdown 渲染 + 代码高亮 + YAML 解析 -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css">
     <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
 </head>
 <body>
     <!-- 应用头部 -->
@@ -595,30 +596,21 @@
             }
         }
 
-        // 模型页 — 从 /config 读取 providers
+        // 模型页 — 从 /config 读取 providers（js-yaml 解析）
         async function loadModelsPage() {
             try {
                 const resp = await fetch('http://localhost:8080/api/v1/config');
-                const yaml = await resp.text();
-                const providers = [];
-                let current = null;
-                for (const line of yaml.split('\n')) {
-                    const m = line.match(/^\s*-\s+name:\s*(.+)/);
-                    if (m) { current = { name: m[1].trim(), type: '', model: '', base_url: '', thinking: false, effort: '' }; providers.push(current); }
-                    if (current) {
-                        const t = line.match(/^\s+type:\s*(.+)/);
-                        if (t) current.type = t[1].trim();
-                        const dm = line.match(/^\s+default_model:\s*(.+)/);
-                        if (dm) current.model = dm[1].trim();
-                        const bu = line.match(/^\s+base_url:\s*(.+)/);
-                        if (bu) current.base_url = bu[1].trim();
-                        const th = line.match(/^\s+thinking:\s*(.+)/);
-                        if (th) current.thinking = th[1].trim() === 'true';
-                        const re = line.match(/^\s+reasoning_effort:\s*(.+)/);
-                        if (re) current.effort = re[1].trim();
-                    }
-                }
-                const html = providers.map(p => `
+                const yamlText = await resp.text();
+                const config = jsyaml.load(yamlText);
+                const providers = (config.llm && config.llm.providers || []).map(p => ({
+                    name: p.name || '',
+                    type: p.type || '',
+                    model: p.default_model || '',
+                    base_url: p.base_url || '',
+                    thinking: p.thinking === true,
+                    effort: p.reasoning_effort || ''
+                }));
+const html = providers.map(p => `
                     <div class="card">
                         <div style="display:flex;justify-content:space-between;align-items:center">
                             <h3 style="display:flex;align-items:center;gap:8px">
