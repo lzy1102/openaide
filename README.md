@@ -77,6 +77,8 @@ llm:
 kernel:
   max_rounds: 30
   min_rounds: 8
+search:
+  searxng_url: http://localhost:8888  # SearXNG 实例，不配则用 DuckDuckGo
 log:
   level: info
   lang: zh

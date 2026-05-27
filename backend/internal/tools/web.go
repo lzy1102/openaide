@@ -25,6 +25,7 @@ func webToolDefs() []kernel.ToolDefinition {
 					"properties": map[string]interface{}{
 						"query": map[string]interface{}{"type": "string", "description": "搜索关键词"},
 						"limit": map[string]interface{}{"type": "integer", "description": "结果数量（默认5）"},
+					"engine": map[string]interface{}{"type": "string", "description": "搜索引擎: duckduckgo, searxng（默认 searxng）"},
 					},
 					"required": []string{"query"},
 				},
@@ -81,6 +82,9 @@ func handleWebSearch(ctx context.Context, arguments string) (*kernel.ToolResult,
 	}
 	if args.Engine == "" {
 		args.Engine = "duckduckgo"
+		if searXNGURL != "" {
+			args.Engine = "searxng"
+		}
 	}
 
 	results, err := searchWeb(ctx, args.Query, args.Limit, args.Engine)
@@ -159,7 +163,9 @@ func handleAISearch(ctx context.Context, arguments string) (*kernel.ToolResult, 
 	}
 
 	// 1. 搜索
-	results, err := searchWeb(ctx, args.Query, 5, "duckduckgo")
+	engine := "duckduckgo"
+		if searXNGURL != "" { engine = "searxng" }
+		results, err := searchWeb(ctx, args.Query, 5, engine)
 	if err != nil {
 		return &kernel.ToolResult{Error: err.Error()}, nil
 	}
@@ -193,8 +199,18 @@ type searchResult struct {
 	Snippet string
 }
 
+var searXNGURL string // 由 infra/app 注入
+
+// SetSearXNGURL 设置 SearXNG 实例地址
+func SetSearXNGURL(url string) { searXNGURL = url }
+
 func searchWeb(ctx context.Context, query string, limit int, engine string) ([]searchResult, error) {
 	switch engine {
+	case "searxng":
+		if searXNGURL != "" {
+			return searchSearXNG(ctx, query, limit)
+		}
+		return searchDuckDuckGo(ctx, query, limit)
 	case "duckduckgo":
 		return searchDuckDuckGo(ctx, query, limit)
 	default:
@@ -251,6 +267,63 @@ func parseDuckDuckGoHTML(html string, limit int) []searchResult {
 	}
 
 	return results
+}
+
+// searxngResult SearXNG JSON API 返回的单个结果
+type searxngResult struct {
+	Title   string `json:"title"`
+	URL     string `json:"url"`
+	Content string `json:"content"`
+	Engine  string `json:"engine"`
+}
+
+// searxngResponse SearXNG /search?format=json 响应
+type searxngResponse struct {
+	Results []searxngResult `json:"results"`
+}
+
+// searchSearXNG 通过 SearXNG 实例搜索（免费、自部署、无 API Key）
+func searchSearXNG(ctx context.Context, query string, limit int) ([]searchResult, error) {
+	url := fmt.Sprintf("%s/search?q=%s&format=json&categories=general", searXNGURL, strings.ReplaceAll(query, " ", "+"))
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "OpenAIDE/3.0")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("searxng failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var data searxngResponse
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return nil, fmt.Errorf("searxng parse: %w", err)
+	}
+
+	var results []searchResult
+	for i, r := range data.Results {
+		if i >= limit {
+			break
+		}
+		results = append(results, searchResult{
+			Title:   r.Title,
+			URL:     r.URL,
+			Snippet: truncateStr(r.Content, 300),
+		})
+	}
+	return results, nil
+}
+
+func truncateStr(s string, n int) string {
+	runes := []rune(s)
+	if len(runes) <= n {
+		return s
+	}
+	return string(runes[:n]) + "…"
 }
 
 // ============ 页面抓取 ============

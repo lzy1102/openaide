@@ -1,7 +1,17 @@
 // API服务，用于与后端API进行通信
-// 后端 Go API server 默认运行在 localhost:8080
+// 自动检测：同源优先 > 环境变量 > 默认 localhost:8080
 
-const API_BASE_URL = 'http://localhost:8080/api/v1';
+const API_BASE_URL = (() => {
+    if (typeof window !== 'undefined') {
+        // 同源部署：前端和后端在同一 host，直接用相对路径
+        if (!window.location.port || window.location.port === '8080') {
+            // 可能在本地开发，优先用当前 host
+            return window.location.protocol + '//' + window.location.hostname + ':8080/api/v1';
+        }
+        return window.location.protocol + '//' + window.location.host + '/api/v1';
+    }
+    return 'http://localhost:8080/api/v1';
+})();
 
 // ============ 通用请求函数 ============
 
@@ -326,45 +336,6 @@ export const dialogueAPI = {
     },
 };
 
-// ============ 工作流相关 API (后端无端点，本地存根) ============
-
-export const workflowAPI = {
-    listWorkflows: () => Promise.resolve([]),
-    createWorkflow: () => Promise.resolve({ id: 'wf-' + Date.now() }),
-    getWorkflow: () => Promise.resolve(null),
-    updateWorkflow: () => Promise.resolve(),
-    deleteWorkflow: () => Promise.resolve(),
-    createWorkflowInstance: () => Promise.resolve({ id: 'wfi-' + Date.now() }),
-    executeWorkflowInstance: () => Promise.resolve({}),
-};
-
-// ============ 技能相关 API (后端无端点，本地存根) ============
-
-export const skillAPI = {
-    listSkills: () => Promise.resolve([]),
-    createSkill: () => Promise.resolve({ id: 'skill-' + Date.now() }),
-    getSkill: () => Promise.resolve(null),
-    updateSkill: () => Promise.resolve(),
-    deleteSkill: () => Promise.resolve(),
-    createSkillInstance: () => Promise.resolve({ id: 'ski-' + Date.now() }),
-    executeSkillInstance: () => Promise.resolve({}),
-};
-
-// ============ 插件相关 API (后端无端点，本地存根) ============
-
-export const pluginAPI = {
-    listPlugins: () => Promise.resolve([]),
-    createPlugin: () => Promise.resolve({ id: 'plugin-' + Date.now() }),
-    getPlugin: () => Promise.resolve(null),
-    updatePlugin: () => Promise.resolve(),
-    deletePlugin: () => Promise.resolve(),
-    installPlugin: () => Promise.resolve({}),
-    enablePlugin: () => Promise.resolve(),
-    disablePlugin: () => Promise.resolve(),
-    createPluginInstance: () => Promise.resolve({ id: 'pli-' + Date.now() }),
-    executePluginInstance: () => Promise.resolve({}),
-};
-
 // ============ 模型相关 API (后端无独立 CRUD 端点，可尝试从 stats 获取基础模型) ============
 
 let _cachedModels = null;
@@ -396,111 +367,3 @@ export const modelAPI = {
     executeModelInstance: () => Promise.resolve({}),
 };
 
-// ============ 自动化相关 API (后端无端点，本地存根) ============
-
-export const automationAPI = {
-    listExecutions: () => Promise.resolve([]),
-    createExecution: () => Promise.resolve({ id: 'exec-' + Date.now() }),
-    getExecution: () => Promise.resolve(null),
-    deleteExecution: () => Promise.resolve(),
-    execute: () => Promise.resolve({}),
-};
-
-// ============ 代码执行相关 API (后端无端点，本地存根) ============
-
-export const codeAPI = {
-    listExecutions: () => Promise.resolve([]),
-    createExecution: () => Promise.resolve({ id: 'code-exec-' + Date.now() }),
-    getExecution: () => Promise.resolve(null),
-    deleteExecution: () => Promise.resolve(),
-    execute: () => Promise.resolve({}),
-};
-
-// ============ 确认相关 API (后端无端点，本地存根) ============
-
-export const confirmationAPI = {
-    listConfirmations: () => Promise.resolve([]),
-    createConfirmation: () => Promise.resolve({ id: 'conf-' + Date.now() }),
-    getConfirmation: () => Promise.resolve(null),
-    deleteConfirmation: () => Promise.resolve(),
-    confirm: () => Promise.resolve({}),
-    reject: () => Promise.resolve({}),
-};
-
-// ============ 输入相关 API (后端无端点，本地存根) ============
-
-export const inputAPI = {
-    listActions: () => Promise.resolve([]),
-    createAction: () => Promise.resolve({ id: 'action-' + Date.now() }),
-    getAction: () => Promise.resolve(null),
-    updateAction: () => Promise.resolve(),
-    deleteAction: () => Promise.resolve(),
-    disableAction: () => Promise.resolve(),
-    enableAction: () => Promise.resolve(),
-    createInstance: () => Promise.resolve({ id: 'inst-' + Date.now() }),
-    executeAction: () => Promise.resolve({}),
-};
-
-// ============ 思考相关 API (后端无端点，本地存根) ============
-
-export const thinkingAPI = {
-    listThoughts: () => Promise.resolve([]),
-    createThought: () => Promise.resolve({ id: 'thought-' + Date.now() }),
-    getThought: () => Promise.resolve(null),
-    deleteThought: () => Promise.resolve(),
-    createCorrection: () => Promise.resolve({ id: 'corr-' + Date.now() }),
-    listCorrections: () => Promise.resolve([]),
-    resolveCorrection: () => Promise.resolve({}),
-    deleteCorrection: () => Promise.resolve(),
-};
-
-// ============ 提示词模板相关 API (后端无端点，本地存根) ============
-
-export const templateAPI = {
-    listTemplates: () => Promise.resolve([]),
-    createTemplate: () => Promise.resolve({ id: 'tpl-' + Date.now() }),
-    getTemplate: () => Promise.resolve(null),
-    updateTemplate: () => Promise.resolve(),
-    deleteTemplate: () => Promise.resolve(),
-    renderTemplate: () => Promise.resolve(''),
-};
-
-// ============ 使用量统计相关 API ============
-// 后端: GET /stats 返回系统统计 (可能不包含前端指标，使用混合模式：后端 + 模拟回退)
-
-export const dashboardAPI = {
-    getUsageStats: (timeRange) =>
-        request('/stats').catch(() => null),
-
-    getCostStats: () => Promise.resolve(null),
-    getBudgetStatus: () => Promise.resolve(null),
-    updateBudget: () => Promise.resolve(),
-    getRecentActivity: () => Promise.resolve([]),
-    getModelUsage: () => Promise.resolve([]),
-};
-
-// ============ 定时任务相关 API (后端无端点，本地存根) ============
-
-export const scheduledTaskAPI = {
-    listTasks: () => Promise.resolve([]),
-    createTask: () => Promise.resolve({ id: 'task-' + Date.now() }),
-    getTask: () => Promise.resolve(null),
-    updateTask: () => Promise.resolve(),
-    deleteTask: () => Promise.resolve(),
-    executeTask: () => Promise.resolve({}),
-    pauseTask: () => Promise.resolve(),
-    resumeTask: () => Promise.resolve(),
-    getExecutionHistory: () => Promise.resolve([]),
-    validateCron: () => Promise.resolve({ valid: true }),
-};
-
-// ============ 工具调用相关 API ============
-// 后端: GET /tools 返回工具统计数据
-
-export const toolCallAPI = {
-    listToolCalls: () =>
-        request('/tools').catch(() => []),
-
-    getToolCall: () => Promise.resolve(null),
-    executeTool: () => Promise.resolve({}),
-};

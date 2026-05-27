@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -91,6 +93,29 @@ func (s *Server) Stop(ctx context.Context) error {
 
 // ============ HTTP Handlers ============
 
+type ctxKey string
+
+// withTrace 从请求头提取或生成 trace ID，注入 context
+func withTrace(r *http.Request) context.Context {
+	ctx := r.Context()
+	tid := r.Header.Get("X-Trace-ID")
+	if tid == "" {
+		b := make([]byte, 6)
+		rand.Read(b)
+		tid = hex.EncodeToString(b)
+	}
+	slog.Debug("api request start", "trace_id", tid, "method", r.Method, "path", r.URL.Path)
+	return context.WithValue(ctx, ctxKey("trace_id"), tid)
+}
+
+// traceID 从 context 提取 trace ID
+func traceID(ctx context.Context) string {
+	if id, ok := ctx.Value(ctxKey("trace_id")).(string); ok {
+		return id
+	}
+	return "-"
+}
+
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -103,7 +128,8 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := r.Context()
+	ctx := withTrace(r)
+	defer slog.Debug("api request end", "trace_id", traceID(ctx))
 	resp, err := s.orchestrator.ProcessQuery(ctx, req.UserID, req.ProjectID, req.Message, kernel.QueryOptions{
 		ModelID:      req.Model,
 		Temperature:  req.Temperature,
@@ -150,7 +176,8 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := r.Context()
+	ctx := withTrace(r)
+	defer slog.Debug("api stream end", "trace_id", traceID(ctx))
 	stream, err := s.orchestrator.ProcessQueryStream(ctx, req.UserID, req.ProjectID, req.Message, kernel.QueryOptions{
 		ModelID:      req.Model,
 		Temperature:  req.Temperature,

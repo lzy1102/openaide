@@ -36,6 +36,13 @@ func main() {
 	}
 
 	// 启动应用
+	// 配置文件热加载
+	reloader := infra.NewConfigReloader(configPath, app)
+	if err := reloader.Start(); err != nil {
+		slog.Warn("Config hot-reload unavailable", "error", err)
+	}
+	defer reloader.Stop()
+
 	go func() {
 		if err := app.Start(); err != nil {
 			slog.Error("Application error", "error", err)

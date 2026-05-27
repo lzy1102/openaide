@@ -7,8 +7,9 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"sync"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 
 	"openaide/backend/internal/kernel"
 	"openaide/backend/internal/projectmind"
@@ -34,6 +35,9 @@ type Orchestrator struct {
 	// 可配置参数
 	PreviewTimeout time.Duration
 	DeepTimeout    time.Duration
+
+	// Agent 间共享工作区
+	workspace *Workspace
 
 	// 项目持久记忆（跨会话积累）
 	mind *projectmind.ProjectMind
@@ -159,6 +163,11 @@ func (o *Orchestrator) RunSubAgent(ctx context.Context, userID, projectID, roleN
 		input.WriteString(o.projectFacts)
 		input.WriteString("\n\n")
 	}
+	if o.workspace != nil {
+		if ws := o.workspace.Summary(); ws != "" {
+			input.WriteString(ws + "\n\n")
+		}
+	}
 	if o.mind != nil {
 		conventions := o.mind.ConventionsForPrompt()
 		if conventions != "" { input.WriteString(conventions + "\n\n") }
@@ -180,6 +189,9 @@ func (o *Orchestrator) RunSubAgent(ctx context.Context, userID, projectID, roleN
 	if err != nil {
 		slog.Warn("SubAgent failed", "role", roleName, "error", err)
 		return "", fmt.Errorf("sub-agent %s failed: %w", roleName, err)
+	}
+	if o.workspace != nil {
+		o.workspace.Put(roleName+"_result", "result", resp.Content, roleName)
 	}
 	slog.Debug("SubAgent done", "role", roleName, "output_len", len(resp.Content), "tool_calls", resp.ToolCalls, "tokens", resp.TokensUsed)
 	return resp.Content, nil
@@ -524,11 +536,9 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 	groups := groupByDependency(plan.Subtasks)
 	results = make([]string, len(plan.Subtasks))
 	for _, group := range groups {
-		var wg sync.WaitGroup
+		g, gCtx := errgroup.WithContext(ctx)
 		for _, st := range group {
-			wg.Add(1)
-			go func(st SubTask) {
-				defer wg.Done()
+			g.Go(func() error {
 				roleName := roleMap[st.ID-1]
 				if roleName == "" { roleName = "coder" }
 				// 只传递已完成的依赖结果
@@ -543,25 +553,28 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 				if o.OnProgress != nil {
 					o.OnProgress("execute", fmt.Sprintf("步骤%d/%d: %s [%s]", st.ID, len(plan.Subtasks), st.Title, roleName))
 				}
-				content, err := o.RunSubAgent(ctx, userID, projectID, roleName, task, deps)
+				content, err := o.RunSubAgent(gCtx, userID, projectID, roleName, task, deps)
 				if err != nil {
 					results[st.ID-1] = fmt.Sprintf("❌ 步骤%d(%s)失败: %v", st.ID, st.Title, err)
-					return
+					return err
 				}
-			results[st.ID-1] = fmt.Sprintf("### 步骤%d: %s [%s]\n%s", st.ID, st.Title, roleName, content)
+				results[st.ID-1] = fmt.Sprintf("### 步骤%d: %s [%s]\n%s", st.ID, st.Title, roleName, content)
 
-			// 检测是否需要开启分支
-			if needsBranch, branchTask := detectBranchSignal(content); needsBranch {
-				slog.Info("Branch created", "trigger", branchTask[:min(50, len(branchTask))])
-				branch := o.executeBranch(ctx, userID, projectID, branchTask, results, &branches)
-				branches = append(branches, branch)
-				// 分支结果注入到当前步骤结果
-				results[st.ID-1] += fmt.Sprintf("\n\n### 🔀 分支: %s\n%s", branch.Trigger, branch.Result)
-				totalTools++
-			}
-		}(st)
-	}
-	wg.Wait()
+				// 检测是否需要开启分支
+				if needsBranch, branchTask := detectBranchSignal(content); needsBranch {
+					slog.Info("Branch created", "trigger", branchTask[:min(50, len(branchTask))])
+					branch := o.executeBranch(gCtx, userID, projectID, branchTask, results, &branches)
+					branches = append(branches, branch)
+					// 分支结果注入到当前步骤结果
+					results[st.ID-1] += fmt.Sprintf("\n\n### 🔀 分支: %s\n%s", branch.Trigger, branch.Result)
+					totalTools++
+				}
+				return nil
+			})
+		}
+		if err := g.Wait(); err != nil {
+			slog.Warn("Subtask group had errors", "error", err)
+		}
 		totalTools += len(group)
 	}
 

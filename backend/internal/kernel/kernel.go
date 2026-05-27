@@ -141,6 +141,12 @@ type QualityGate interface {
 
 func (k *AgentKernel) SetApprover(a Approver) { k.approver = a }
 func (k *AgentKernel) SetAdaptiveRounds(ar *AdaptiveRounds) { k.adaptiveRounds = ar }
+func (k *AgentKernel) SetMaxRounds(n int) {
+	if n > 0 { k.maxRounds = n; slog.Info("Kernel max_rounds updated", "value", n) }
+}
+func (k *AgentKernel) SetMaxTokens(n int) {
+	if n > 0 { k.maxTokens = n; slog.Info("Kernel max_tokens updated", "value", n) }
+}
 
 func (k *AgentKernel) SetTracer(t Tracer) {
 	k.tracer = t

@@ -26,6 +26,9 @@ type Config struct {
 	// 记忆配置
 	Memory MemoryConfig `json:"memory" yaml:"memory"`
 
+	// 搜索配置
+	Search SearchConfig `json:"search" yaml:"search"`
+
 	// 工具配置
 	Tools ToolsConfig `json:"tools" yaml:"tools"`
 
@@ -99,6 +102,11 @@ type ProviderConfig struct {
 // MemoryConfig 记忆配置
 type MemoryConfig struct {
 	DataDir string `json:"data_dir" yaml:"data_dir"`
+}
+
+// SearchConfig 搜索配置
+type SearchConfig struct {
+	SearXNGURL string `json:"searxng_url" yaml:"searxng_url"` // SearXNG 实例地址
 }
 
 // ToolsConfig 工具配置
@@ -207,6 +215,9 @@ func DefaultConfig() *Config {
 		},
 		Memory: MemoryConfig{
 			DataDir: "~/.openaide/data/memory",
+		},
+		Search: SearchConfig{
+			SearXNGURL: "http://localhost:8888",
 		},
 		Tools: ToolsConfig{
 			DangerousTools: []string{"execute_command", "write_file"},

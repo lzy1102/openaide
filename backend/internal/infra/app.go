@@ -51,6 +51,9 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 	// 3. 工具注册表 + MCP
 	tools.LoadIgnorePatterns(".")
 	tools.SetBrowserEnabled(cfg.Browser.Enabled)
+	if cfg.Search.SearXNGURL != "" {
+		tools.SetSearXNGURL(cfg.Search.SearXNGURL)
+	}
 	toolRegistry := tools.NewRegistry()
 	if err := tools.RegisterBuiltins(toolRegistry); err != nil {
 		return nil, fmt.Errorf("register builtin tools failed: %w", err)

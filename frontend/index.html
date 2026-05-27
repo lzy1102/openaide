@@ -27,9 +27,7 @@
             </div>
             <nav class="app-nav">
                 <a href="#" class="nav-link active" data-page="chat" data-i18n="nav.chat">对话</a>
-                <a href="#" class="nav-link" data-page="templates" data-i18n="nav.templates">模板</a>
                 <a href="#" class="nav-link" data-page="dashboard" data-i18n="nav.dashboard">仪表盘</a>
-                <a href="#" class="nav-link" data-page="tasks" data-i18n="nav.tasks">任务</a>
                 <a href="#" class="nav-link" data-page="models" data-i18n="nav.models">模型</a>
                 <a href="#" class="nav-link" data-page="settings" data-i18n="nav.settings">设置</a>
             </nav>
@@ -150,24 +148,27 @@
             </div>
         </div>
 
-        <!-- 模板管理页面 -->
-        <div class="page hidden" id="page-templates">
-            <div class="templates-page" id="templates-page-container"></div>
-        </div>
-
-        <!-- 使用量统计仪表板 -->
+        <!-- 仪表盘 — 实时系统统计 -->
         <div class="page hidden" id="page-dashboard">
-            <div class="dashboard-page" id="dashboard-page-container"></div>
+            <div class="container">
+                <h2 style="margin-bottom: var(--space);">系统概览</h2>
+                <div class="stats-grid" id="dashboard-stats">
+                    <div class="stat-card"><div class="stat-value" id="stat-requests">-</div><div class="stat-label">总请求数</div></div>
+                    <div class="stat-card"><div class="stat-value" id="stat-tokens">-</div><div class="stat-label">总 Token</div></div>
+                    <div class="stat-card"><div class="stat-value" id="stat-tools">-</div><div class="stat-label">工具调用</div></div>
+                    <div class="stat-card"><div class="stat-value" id="stat-errors">-</div><div class="stat-label">错误数</div></div>
+                    <div class="stat-card"><div class="stat-value" id="stat-state">-</div><div class="stat-label">内核状态</div></div>
+                    <div class="stat-card"><div class="stat-value" id="stat-toolcount">-</div><div class="stat-label">可用工具</div></div>
+                </div>
+            </div>
         </div>
 
-        <!-- 定时任务管理页面 -->
-        <div class="page hidden" id="page-tasks">
-            <div class="scheduled-tasks-page" id="scheduled-tasks-page-container"></div>
-        </div>
-
-        <!-- 模型管理页面 -->
+        <!-- 模型信息 — 从配置读取 -->
         <div class="page hidden" id="page-models">
-            <div class="models-page" id="models-page-container"></div>
+            <div class="container">
+                <h2 style="margin-bottom: var(--space);">模型配置</h2>
+                <div id="models-config-list" style="display: grid; gap: var(--space);"></div>
+            </div>
         </div>
 
         <!-- 设置页面 -->
@@ -246,11 +247,7 @@
         import { ThinkingVisualizer } from './src/components/thinking-visualizer.js';
         import { CorrectionPanel } from './src/components/correction-panel.js';
         import { ToolCallDisplay } from './src/components/tool-call-display.js';
-        import { ModelsPage } from './src/pages/models-page.js';
-        import { TemplatesPage } from './src/pages/templates-page.js';
-        import { DashboardPage } from './src/pages/dashboard-page.js';
-        import { ScheduledTasksPage } from './src/pages/scheduled-tasks-page.js';
-        import { dialogueAPI, thinkingAPI, modelAPI, projectAPI } from './src/services/api.js';
+        import { dialogueAPI, modelAPI, projectAPI } from './src/services/api.js';
 
         // 初始化国际化
         i18n.updatePageContent();
@@ -274,10 +271,7 @@
             thinkingVisualizer: null,
             correctionPanel: null,
             toolCallDisplay: null,
-            modelsPage: null,
-            templatesPage: null,
-            dashboardPage: null,
-            scheduledTasksPage: null
+            modelsPage: null
         };
 
         const STORAGE_KEY_LAST_DIALOGUE = 'openaide_last_dialogue_id';
@@ -498,14 +492,10 @@
                     }
 
                     // 特殊处理各个页面
-                    if (pageName === 'models' && !state.modelsPage) {
-                        await initModelsPage();
-                    } else if (pageName === 'templates' && !state.templatesPage) {
-                        await initTemplatesPage();
-                    } else if (pageName === 'dashboard' && !state.dashboardPage) {
-                        await initDashboardPage();
-                    } else if (pageName === 'tasks' && !state.scheduledTasksPage) {
-                        await initScheduledTasksPage();
+                    if (pageName === 'dashboard') {
+                        loadDashboard();
+                    } else if (pageName === 'models') {
+                        loadModelsPage();
                     }
 
                     state.currentPage = pageName;
@@ -584,32 +574,70 @@
             });
         }
 
-        // 初始化模型页面
-        async function initModelsPage() {
-            const container = document.getElementById('models-page-container');
-            state.modelsPage = new ModelsPage(container);
-            await state.modelsPage.render();
+        // 仪表盘 — 从 /stats + /metrics 拉取实时数据
+        async function loadDashboard() {
+            const fmt = (n) => n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? (n/1e3).toFixed(1)+'K' : String(n);
+            try {
+                const [stats, metrics] = await Promise.all([
+                    fetch('http://localhost:8080/api/v1/stats').catch(() => ({json: ()=>({})})),
+                    fetch('http://localhost:8080/api/v1/metrics').catch(() => ({json: ()=>({})}))
+                ]);
+                const s = await stats.json();
+                const m = await metrics.json();
+                document.getElementById('stat-requests').textContent = fmt(m.requests_total || 0);
+                document.getElementById('stat-tokens').textContent = fmt(m.tokens_total || 0);
+                document.getElementById('stat-tools').textContent = fmt(m.tool_calls_total || 0);
+                document.getElementById('stat-errors').textContent = fmt(m.errors_total || 0);
+                document.getElementById('stat-state').textContent = s.kernel_state || '-';
+                document.getElementById('stat-toolcount').textContent = s.tool_count || '-';
+            } catch(e) {
+                console.error('Dashboard load failed', e);
+            }
         }
 
-        // 初始化模板页面
-        async function initTemplatesPage() {
-            const container = document.getElementById('templates-page-container');
-            state.templatesPage = new TemplatesPage(container);
-            await state.templatesPage.render();
-        }
-
-        // 初始化仪表板页面
-        async function initDashboardPage() {
-            const container = document.getElementById('dashboard-page-container');
-            state.dashboardPage = new DashboardPage(container);
-            await state.dashboardPage.render();
-        }
-
-        // 初始化定时任务页面
-        async function initScheduledTasksPage() {
-            const container = document.getElementById('scheduled-tasks-page-container');
-            state.scheduledTasksPage = new ScheduledTasksPage(container);
-            await state.scheduledTasksPage.render();
+        // 模型页 — 从 /config 读取 providers
+        async function loadModelsPage() {
+            try {
+                const resp = await fetch('http://localhost:8080/api/v1/config');
+                const yaml = await resp.text();
+                const providers = [];
+                let current = null;
+                for (const line of yaml.split('\n')) {
+                    const m = line.match(/^\s*-\s+name:\s*(.+)/);
+                    if (m) { current = { name: m[1].trim(), type: '', model: '', base_url: '', thinking: false, effort: '' }; providers.push(current); }
+                    if (current) {
+                        const t = line.match(/^\s+type:\s*(.+)/);
+                        if (t) current.type = t[1].trim();
+                        const dm = line.match(/^\s+default_model:\s*(.+)/);
+                        if (dm) current.model = dm[1].trim();
+                        const bu = line.match(/^\s+base_url:\s*(.+)/);
+                        if (bu) current.base_url = bu[1].trim();
+                        const th = line.match(/^\s+thinking:\s*(.+)/);
+                        if (th) current.thinking = th[1].trim() === 'true';
+                        const re = line.match(/^\s+reasoning_effort:\s*(.+)/);
+                        if (re) current.effort = re[1].trim();
+                    }
+                }
+                const html = providers.map(p => `
+                    <div class="card">
+                        <div style="display:flex;justify-content:space-between;align-items:center">
+                            <h3 style="display:flex;align-items:center;gap:8px">
+                                <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--success)"></span>
+                                ${p.name}
+                            </h3>
+                            <span class="badge" style="background:var(--primary-light);color:var(--primary);padding:2px 8px;border-radius:4px;font-size:11px">${p.type}</span>
+                        </div>
+                        <div style="margin-top:8px;font-size:13px;color:var(--text-secondary)">
+                            <div>Model: <code>${p.model}</code></div>
+                            <div>Base URL: <code style="font-size:11px">${p.base_url}</code></div>
+                            ${p.thinking ? '<div style="color:var(--primary)">thinking: true | effort: '+p.effort+'</div>' : ''}
+                        </div>
+                    </div>
+                `).join('');
+                document.getElementById('models-config-list').innerHTML = html || '<p style="color:var(--text-muted)">未找到模型配置</p>';
+            } catch(e) {
+                console.error('Models load failed', e);
+            }
         }
 
         async function createDialogue() {

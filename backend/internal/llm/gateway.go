@@ -78,6 +78,32 @@ func (g *Gateway) RegisterProvider(name string, provider Provider, config *Provi
 // SetPromptCache 设置提示词缓存
 func (g *Gateway) SetPromptCache(pc *PromptCache) { g.cache = pc }
 
+// ReloadConfig 热更新 LLM 配置（不重建 provider，只更新模型和路由）
+func (g *Gateway) ReloadConfig(newModels map[string]string, reasoningModel, executionModel string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	for name, model := range newModels {
+		if config, ok := g.configs[name]; ok {
+			config.DefaultModel = model
+		}
+		if prov, ok := g.providers[name]; ok {
+			if model != "" {
+				prov.SetModelID(model)
+			}
+		}
+	}
+
+	if reasoningModel != "" {
+		g.ReasoningModel = reasoningModel
+	}
+	if executionModel != "" {
+		g.ExecutionModel = executionModel
+	}
+
+	slog.Info("LLM gateway config reloaded", "reasoning", g.ReasoningModel, "execution", g.ExecutionModel)
+}
+
 // Shutdown 优雅关闭网关（停止缓存清理协程等）
 func (g *Gateway) Shutdown() {
 	if g.cache != nil {
