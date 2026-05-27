@@ -178,16 +178,8 @@ func main() {
 		}
 	}
 
-	promptsDir := cfg.Storage.DataDir + "/prompts"
-	firstRun := kernel.IsFirstRun(promptsDir) && flags.prompt == ""
-
 	// 加载全局语言偏好
 	loadGlobalLang(cfg)
-
-	// 首次运行：模板引导（不需要 LLM）
-	if firstRun {
-		runOnboarding(cfg, promptsDir)
-	}
 
 	app, err := infra.NewApplication(cfg)
 	if err != nil {
@@ -196,11 +188,6 @@ func main() {
 	}
 	if flags.yes {
 		app.SetAutoApprove(true)
-	}
-
-	// 首次运行：LLM 深度引导（需要内核就绪）
-	if firstRun {
-		runLLMOnboarding(app, promptsDir)
 	}
 
 	// One-shot: prompt from positional args
