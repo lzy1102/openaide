@@ -146,7 +146,7 @@ openaide-server
 ├── bin/
 │   ├── openaide-server      # API 服务器
 │   └── openaide         # 命令行客户端
-├── config.json              # 用户配置
+├── config.yaml              # 用户配置
 ├── data/                    # 用户数据
 │   ├── memory/              # 记忆
 │   ├── sessions/            # 会话
@@ -204,7 +204,7 @@ git push origin v1.0.0
 - **会话检查点**: 文件 JSON，崩溃可恢复
 
 ### Web 前端
-- **7 个页面**: 对话、模板、仪表盘、任务、模型、设置、思考过程
+- **4 个页面**: 对话、仪表盘、模型配置、设置管理
 - **Markdown 渲染**: marked.js + highlight.js 代码高亮
 - **流式聊天**: SSE 实时输出 + 思考可视化 + 工具调用展示
 - **项目管理**: 注册目录 → AI 基于项目目录分析
@@ -221,7 +221,7 @@ git push origin v1.0.0
 
 ```bash
 # Interactive chat
-openaide                          # Bubbletea TUI
+openaide                          # REPL 交互模式
 openaide <prompt>                 # One-shot mode
 openaide <file.go> <prompt>       # File + prompt
 openaide -c                       # Continue last session
@@ -239,18 +239,27 @@ openaide update                   # Update
 openaide version                  # Version
 openaide help                     # Show help
 
-# Slash commands (inside TUI)
+# Slash commands (inside REPL)
   /help           Show help
   /clear          Clear chat messages
   /model [name]   Show/switch current model
+  /analyst        Analyze task (reasoning model)
+  /coder          Code task (execution model)
+  /reviewer       Review code
+  /executor       Execute/verify
+  /team           Full team pipeline
+  /sessions       List sessions
+  /lang zh/en     Switch language
   /<skill-name>   Activate a skill (builtin or from plugins)
 
-# Keybindings (inside TUI)
+# Keybindings (inside REPL)
   Ctrl+C / Ctrl+D    Quit / stop streaming
   Ctrl+S             Open session list
+  Ctrl+R             Search history
   F1 / Ctrl+H        Show help
   ↑ / ↓              Input history
   PgUp / PgDown      Scroll chat
+  Tab                补全命令/文件路径
 ```
 
 ## API 端点
@@ -266,6 +275,13 @@ openaide help                     # Show help
 | `GET /api/v1/memory/search?q=xxx` | 记忆搜索 (需认证) |
 | `GET /api/v1/tools` | 工具列表 (需认证) |
 | `GET /api/v1/stats` | 系统统计 (需认证) |
+| `GET /api/v1/metrics` | 运行时指标 (需认证) |
+| `GET /api/v1/config` | 读取配置 |
+| `PUT /api/v1/config` | 写入配置 |
+| `GET /api/v1/projects` | 项目列表 |
+| `POST /api/v1/projects` | 创建项目 |
+| `DELETE /api/v1/projects/{id}` | 删除项目 |
+| `GET /api/v1/channels` | 渠道列表 |
 | `GET /ws` | WebSocket (需认证) |
 | `GET /health` | 健康检查 |
 

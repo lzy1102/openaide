@@ -196,8 +196,9 @@ git push origin v1.0.0
 
 ### 核心架构
 - **REPL 模式**: rich readline + markdown 渲染 + 代码高亮 + tab 补全 + 交互式选择
-- **Web 前端**: 流式聊天 + 项目管理 + 配置编辑 + 多语言 + 暗色模式
-- **22个内置工具**: 文件读写/执行命令/Git深度/知识库/代码符号索引
+- **Web 前端**: 流式聊天 + 仪表盘 + 模型配置 + 设置管理 + 多语言 + 暗色模式
+- **搜索**: DuckDuckGo + SearXNG（自部署，聚合多引擎，无 API Key）
+- **22个内置工具**: 文件读写/执行命令/Git深度/知识库/代码符号/联网搜索
 - **多 Agent Team**: /analyst /coder /reviewer /executor /team，独立会话+模型路由
 - **DeepPlan 深度规划**: 研究→方案对比→选择→计划→执行→自修正闭环
 - **LLM 全决策引擎**: 角色分配/风险评估/技能检测全部由 LLM 判断
@@ -205,13 +206,14 @@ git push origin v1.0.0
 - **会话检查点**: 文件 JSON，崩溃可恢复
 
 ### Web 前端
-- **7 个页面**: 对话、模板、仪表盘、任务、模型、设置、思考过程
+- **4 个页面**: 对话、仪表盘、模型配置、设置管理
 - **Markdown 渲染**: marked.js + highlight.js 代码高亮
 - **流式聊天**: SSE 实时输出 + 思考可视化 + 工具调用展示
 - **项目管理**: 注册目录 → AI 基于项目目录分析
-- **配置管理**: Web 界面编辑 config.yaml
+- **配置管理**: Web 界面编辑 config.yaml，js-yaml 解析
 - **多语言**: 中文/English/日本語/한국어
 - **暗色模式**: 自动/手动切换
+- **动态 API URL**: 自动适配部署 host:port
 
 ### 扩展
 - **MCP 协议**: JSON-RPC stdio，外部工具生态
@@ -240,18 +242,27 @@ openaide update                   # Update
 openaide version                  # Version
 openaide help                     # Show help
 
-# Slash commands (inside TUI)
+# Slash commands (inside REPL)
   /help           Show help
   /clear          Clear chat messages
   /model [name]   Show/switch current model
+  /analyst        Analyze task (reasoning model)
+  /coder          Code task (execution model)
+  /reviewer       Review code
+  /executor       Execute/verify
+  /team           Full team pipeline
+  /sessions       List sessions
+  /lang zh/en     Switch language
   /<skill-name>   Activate a skill (builtin or from plugins)
 
-# Keybindings (inside TUI)
+# Keybindings (inside REPL)
   Ctrl+C / Ctrl+D    Quit / stop streaming
   Ctrl+S             Open session list
+  Ctrl+R             Search history
   F1 / Ctrl+H        Show help
   ↑ / ↓              Input history
   PgUp / PgDown      Scroll chat
+  Tab                补全命令/文件路径
 ```
 
 ## API 端点
