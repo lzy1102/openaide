@@ -196,21 +196,15 @@ type QueueConfig struct {
 
 // LogConfig 日志配置
 type LogConfig struct {
-	Level         string `json:"level" yaml:"level"`
-	Format        string `json:"format" yaml:"format"`
-	Lang          string `json:"lang" yaml:"lang"`                     // "zh" / "en" — 全局语言偏好
-	PersistTraces *bool  `json:"persist_traces,omitempty" yaml:"persist_traces,omitempty"` // 持久化 trace，默认 true（nil = true）
-	PersistEvents *bool  `json:"persist_events,omitempty" yaml:"persist_events,omitempty"` // 持久化 event，默认 true（nil = true）
+	Level   string `json:"level" yaml:"level"`
+	Format  string `json:"format" yaml:"format"`
+	Lang    string `json:"lang" yaml:"lang"`       // "zh" / "en" — 全局语言偏好
+	Persist *bool  `json:"persist,omitempty" yaml:"persist,omitempty"` // 持久化 trace/event，默认 true（nil = true）
 }
 
-// PersistTraceEnabled 判断是否启用 trace 持久化，nil 或 true 视为启用
-func (l *LogConfig) PersistTraceEnabled() bool {
-	return l.PersistTraces == nil || *l.PersistTraces
-}
-
-// PersistEventEnabled 判断是否启用 event 持久化，nil 或 true 视为启用
-func (l *LogConfig) PersistEventEnabled() bool {
-	return l.PersistEvents == nil || *l.PersistEvents
+// PersistEnabled 判断是否启用持久化，nil 或 true 视为启用
+func (l *LogConfig) PersistEnabled() bool {
+	return l.Persist == nil || *l.Persist
 }
 
 // DefaultConfig 默认配置

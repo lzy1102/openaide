@@ -80,8 +80,7 @@ kernel:
 log:
   level: info
   lang: zh
-  persist_traces: false  # 本地工具可关闭，减少磁盘写入
-  persist_events: false
+  persist: false  # 本地可关，减少磁盘写入
 ```
 ```
 
