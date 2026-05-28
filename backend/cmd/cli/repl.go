@@ -263,9 +263,9 @@ var history []string // 会话内查询历史（Ctrl+R 搜索）
 
 			// 交互确认
 			confirmed, _ := pterm.DefaultInteractiveConfirm.
-				WithDefaultText(fmt.Sprintf("执行此计划? (%d 个子任务)", len(plan.Subtasks))).
-				WithConfirmText("执行").
-				WithRejectText("直接回答").
+				WithDefaultText(fmt.Sprintf("Execute plan? (%d subtasks)", len(plan.Subtasks))).
+				WithConfirmText("y").
+				WithRejectText("n").
 				Show()
 
 			if confirmed {
@@ -293,17 +293,17 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string)
 	opts := kernel.QueryOptions{
 		OnApproval: func(tool, path string) bool {
 			result, _ := pterm.DefaultInteractiveConfirm.
-				WithDefaultText(fmt.Sprintf("%s %s 允许?", pterm.Yellow(tool), path)).
-				WithConfirmText("允许").
-				WithRejectText("拒绝").
+				WithDefaultText(fmt.Sprintf("Allow %s %s?", pterm.Yellow(tool), path)).
+				WithConfirmText("y").
+				WithRejectText("n").
 				Show()
 			return result
 		},
 		OnBudgetExhausted: func(round, maxRounds int) bool {
 			result, _ := pterm.DefaultInteractiveConfirm.
-				WithDefaultText(fmt.Sprintf("轮次用尽 (%d/%d)，继续分析?", round, maxRounds)).
-				WithConfirmText("继续").
-				WithRejectText("总结").
+				WithDefaultText(fmt.Sprintf("Rounds exhausted (%d/%d), continue?", round, maxRounds)).
+				WithConfirmText("y").
+				WithRejectText("n").
 				Show()
 			return result
 		},
@@ -479,9 +479,9 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 
 	case "/clear":
 		confirmed, _ := pterm.DefaultInteractiveConfirm.
-			WithDefaultText("清空所有会话消息?").
-			WithConfirmText("清空").
-			WithRejectText("取消").
+			WithDefaultText("Clear all messages?").
+			WithConfirmText("y").
+			WithRejectText("n").
 			Show()
 		if confirmed {
 			fmt.Print("\033[2J\033[H")
