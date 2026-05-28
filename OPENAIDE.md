@@ -77,9 +77,10 @@ llm:
 kernel:
   max_rounds: 30
   min_rounds: 8
+server:
+  lang: zh                 # UI 语言：zh / en
 log:
   level: info
-  lang: zh
   persist: false  # 本地可关，减少磁盘写入
 ```
 ```

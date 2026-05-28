@@ -59,6 +59,7 @@ type ServerConfig struct {
 	Host string `json:"host" yaml:"host"`
 	Port int    `json:"port" yaml:"port"`
 	Mode string `json:"mode" yaml:"mode"` // direct, server, tui
+	Lang string `json:"lang" yaml:"lang"` // "zh" / "en" — UI 语言
 }
 
 // LLMConfig LLM 配置
@@ -198,7 +199,6 @@ type QueueConfig struct {
 type LogConfig struct {
 	Level   string `json:"level" yaml:"level"`
 	Format  string `json:"format" yaml:"format"`
-	Lang    string `json:"lang" yaml:"lang"`       // "zh" / "en" — 全局语言偏好
 	Persist *bool  `json:"persist,omitempty" yaml:"persist,omitempty"` // 持久化 trace/event，默认 true（nil = true）
 }
 

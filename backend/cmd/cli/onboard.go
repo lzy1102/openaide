@@ -67,8 +67,8 @@ var enText = onboardText{
 
 func runOnboarding(cfg *config.Config, promptsDir string) {
 	// 全局语言偏好已设置 → 跳过引导
-	zh := cfg.Log.Lang == "zh"
-	skipLang := cfg.Log.Lang != ""
+	zh := cfg.Server.Lang == "zh"
+	skipLang := cfg.Server.Lang != ""
 
 	reader := bufio.NewReader(os.Stdin)
 
@@ -84,7 +84,7 @@ func runOnboarding(cfg *config.Config, promptsDir string) {
 		fmt.Print("\n  Choice / 选择 (1-2): ")
 		langChoice := readLine(reader)
 		zh = langChoice == "1"
-		if zh { cfg.Log.Lang = "zh" } else { cfg.Log.Lang = "en" }
+		if zh { cfg.Server.Lang = "zh" } else { cfg.Server.Lang = "en" }
 		cfg.Save(defaultConfigPath())
 	}
 

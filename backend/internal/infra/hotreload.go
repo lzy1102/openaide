@@ -95,8 +95,8 @@ func (r *ConfigReloader) doReload() {
 		}
 
 		// Language
-		if cfg.Log.Lang != "" && cfg.Log.Lang != r.app.Config.Log.Lang {
-			reloadLang(cfg.Log.Lang)
+		if cfg.Server.Lang != "" && cfg.Server.Lang != r.app.Config.Server.Lang {
+			reloadLang(cfg.Server.Lang)
 		}
 
 		// Kernel settings (hot-reloadable via concrete type)

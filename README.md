@@ -79,9 +79,10 @@ kernel:
   min_rounds: 8
 search:
   searxng_url: http://localhost:8888  # SearXNG 实例，不配则用 DuckDuckGo
+server:
+  lang: zh                 # UI 语言：zh / en
 log:
   level: info
-  lang: zh
   persist: false  # 本地可关，减少磁盘写入
 ```
 
