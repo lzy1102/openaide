@@ -192,8 +192,12 @@
                 <!-- 配置编辑器 -->
                 <div class="card">
                     <h2>配置文件</h2>
+                    <p style="color: var(--color-text-muted); margin-bottom: 0.5rem;">
+                        最简单的配置只需 3 行：
+                    </p>
+                    <pre style="background:var(--bg-tertiary);padding:8px 12px;border-radius:6px;font-size:12px;margin-bottom:1rem;">api_key: sk-你的-key<br>model: deepseek-v4-pro<br>base_url: https://api.deepseek.com/v1  <span style="color:var(--text-muted)"># 中转站填这里</span></pre>
                     <p style="color: var(--color-text-muted); margin-bottom: 1rem;">
-                        编辑 config.yaml (YAML 格式)。保存后需重启服务生效。
+                        编辑后保存。配置热加载已启用，无需重启。
                     </p>
                     <textarea id="config-editor" style="width: 100%; min-height: 300px;
                         font-family: 'SF Mono', 'Cascadia Code', monospace; font-size: 13px;
@@ -319,13 +323,24 @@
                 const enabledModels = list.filter(m => m.status === 'enabled');
                 if (enabledModels.length > 0) {
                     state.currentModelId = enabledModels[0].id;
-                    console.log('Default model loaded:', state.currentModelId);
                 } else {
-                    console.warn('No enabled models found');
+                    showNoApiKeyWarning();
                 }
             } catch (error) {
-                console.error('加载模型列表失败:', error);
+                showNoApiKeyWarning();
             }
+        }
+
+        function showNoApiKeyWarning() {
+            const el = document.getElementById('chat-messages');
+            const warn = document.createElement('div');
+            warn.className = 'message assistant';
+            warn.innerHTML = '<div class="message-avatar" style="background:var(--warning-light);color:var(--warning)">⚠</div>' +
+                '<div class="message-content" style="border-color:var(--warning)">' +
+                '<p><b>No API key detected</b></p>' +
+                '<p style="font-size:13px">Go to <a href="#" onclick="document.querySelector(\'[data-page=settings]\').click()" style="color:var(--primary)">Settings</a> to edit config.yaml</p>' +
+                '</div>';
+            el.insertBefore(warn, el.firstChild);
         }
 
         async function loadProjects() {
