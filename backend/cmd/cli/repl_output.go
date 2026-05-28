@@ -69,15 +69,21 @@ func PromptStyle(sessionID, modelName string, busy bool, extra ...string) string
 	if modelName != "" {
 		name = strings.SplitN(modelName, " ", 2)[0]
 	}
-	sid := sessionID
-	if len(sid) > 8 { sid = sid[:8] }
+	// Session display: title > first msg > hash
+	sid := ""
+	if len(extra) > 0 && extra[0] != "" {
+		sid = trunc(extra[0], 24) // use session title or first query
+	} else {
+		sid = sessionID
+		if len(sid) > 8 { sid = sid[:8] }
+	}
 	// Git dirty indicator
 	gitStatus := ""
 	if out, err := execCmd("git", "diff", "--shortstat"); err == nil && out != "" {
 		gitStatus = cYellow + "*" + cReset
 	}
 	suffix := ""
-	if len(extra) > 0 { suffix = extra[0] }
+	if len(extra) > 1 { suffix = extra[1] }
 	return fmt.Sprintf("%s %s%s %s%s %s❯%s %s", dot, cDim, sid, gitStatus, cPrompt, name, cReset, suffix)
 }
 

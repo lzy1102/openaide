@@ -94,9 +94,10 @@ func runREPL(app *infra.Application, continueSess bool) {
 		sess, _ := app.Orchestrator.CreateSession(context.Background(), "default", "cli-user")
 		sessionID = sess.ID
 	}
+	sessionTitle := ""
 
 	rl := readline.NewInstance()
-	rl.SetPrompt(PromptStyle(sessionID, modelName, false))
+	rl.SetPrompt(PromptStyle(sessionID, modelName, false, sessionTitle))
 	rl.HistoryAutoWrite = true
 
 	commands := []string{"/help", "/clear", "/mode", "/model", "/lang", "/log", "/sessions", "/session",
@@ -190,6 +191,8 @@ var history []string // 会话内查询历史（Ctrl+R 搜索）
 
 		// @file 引用：自动读取文件内容拼入 prompt
 		query = expandAtRefs(query)
+		// Set session title from first query
+		if sessionTitle == "" { sessionTitle = trunc(query, 30) }
 
 		// 添加到历史
 		if len(history) == 0 || history[len(history)-1] != query {
@@ -198,7 +201,7 @@ var history []string // 会话内查询历史（Ctrl+R 搜索）
 
 		if strings.HasPrefix(query, "/") {
 			handleREPLCommand(app, query, &sessionID, &modelName)
-			rl.SetPrompt(PromptStyle(sessionID, modelName, false))
+			rl.SetPrompt(PromptStyle(sessionID, modelName, false, sessionTitle))
 			continue
 		}
 
@@ -296,7 +299,7 @@ var history []string // 会话内查询历史（Ctrl+R 搜索）
 			}
 
 		}
-		rl.SetPrompt(PromptStyle(sessionID, modelName, false))
+		rl.SetPrompt(PromptStyle(sessionID, modelName, false, sessionTitle))
 	}
 }
 
