@@ -65,13 +65,13 @@ func runREPL(app *infra.Application, continueSess bool) {
 			if len(s.Messages) > 0 { // 跳过空会话
 				sessionID = s.ID
 				msgCount := len(s.Messages)
-				fmt.Printf("  %s📋 恢复会话%s: %s (%d 条消息)\n",
+				fmt.Printf("  %s📋 Resume session%s: %s (%d msgs)\n",
 					cGreen, cReset, sessionID[:8], msgCount)
 
 				// 显示最近几条历史消息
 				history, _ := app.Orchestrator.GetSessionHistory(context.Background(), sessionID, 3)
 				if len(history) > 0 {
-					fmt.Printf("  %s最近消息:%s\n", cInfo, cReset)
+					fmt.Printf("  %sRecent:%s\n", cInfo, cReset)
 					for _, msg := range history {
 						switch msg.Role {
 						case "user":
@@ -197,7 +197,7 @@ var history []string // 会话内查询历史（Ctrl+R 搜索）
 
 		// ── Smart routing: PreviewPlan → direct or team execution ──
 		fmt.Println()
-		fmt.Printf("  %s分析任务…%s", cInfo, cReset)
+		fmt.Printf("  %sAnalyzing…%s", cInfo, cReset)
 		planCtx, planCancel := context.WithTimeout(context.Background(), app.Orchestrator.PreviewTimeout)
 		plan, planErr := app.Orchestrator.PreviewPlan(planCtx, query)
 		planCancel()
@@ -207,13 +207,13 @@ var history []string // 会话内查询历史（Ctrl+R 搜索）
 			executeStreamQuery(app, query, &sessionID)
 		} else if len(plan.Subtasks) >= 4 {
 			// DeepPlan: 深度研究 + 方案对比
-			pterm.Info.Println("复杂任务，启动深度分析…")
+			pterm.Info.Println("Complex task, deep analysis…")
 			deepCtx, deepCancel := context.WithTimeout(context.Background(), app.Orchestrator.DeepTimeout)
 			deepResult, deepErr := app.Orchestrator.DeepPlan(deepCtx, query)
 			deepCancel()
 
 			if deepErr != nil || deepResult == nil || len(deepResult.Proposals.Options) == 0 {
-				PrintWarning("深度分析失败，使用默认计划")
+				PrintWarning("Deep analysis failed, using default plan")
 				executePlanQuery(app, query, plan)
 			} else {
 				// 交互式方案选择
@@ -223,7 +223,7 @@ var history []string // 会话内查询历史（Ctrl+R 搜索）
 				}
 				result, _ := pterm.DefaultInteractiveSelect.
 					WithOptions(options).
-					WithDefaultText("选择方案 (\u2191\u2193 移动, Enter 确认)").
+					WithDefaultText("Select approach (↑↓ move, Enter select)").
 					WithMaxHeight(10).
 					Show()
 
@@ -233,10 +233,10 @@ var history []string // 会话内查询历史（Ctrl+R 搜索）
 							selectedPlan, planErr := app.Orchestrator.DeepPlanFinalize(
 								context.Background(), query, deepResult, i)
 							if planErr != nil || selectedPlan == nil {
-								PrintWarning("计划生成失败，使用默认计划")
+								PrintWarning("Plan generation failed, using default")
 								executePlanQuery(app, query, plan)
 							} else {
-								pterm.Success.Printfln("已选择: %s", deepResult.Proposals.Options[i].Name)
+								pterm.Success.Printfln("Selected: %s", deepResult.Proposals.Options[i].Name)
 								executePlanQuery(app, query, selectedPlan)
 							}
 							break
@@ -390,7 +390,7 @@ func executePlanQuery(app *infra.Application, query string, plan *orchestration.
 	totalSteps := len(plan.Subtasks) + 2 // + verify + review
 	progressBar, _ := pterm.DefaultProgressbar.
 		WithTotal(totalSteps).
-		WithTitle("执行中").
+		WithTitle("Executing").
 		WithShowCount(true).
 		WithShowPercentage(true).
 		WithRemoveWhenDone(true).
@@ -401,7 +401,7 @@ func executePlanQuery(app *infra.Application, query string, plan *orchestration.
 		progressBar.UpdateTitle(detail)
 	}
 
-	fmt.Printf("  %s执行中…%s\n", cInfo, cReset)
+	fmt.Printf("  %sExecuting…%s\n", cInfo, cReset)
 
 	// Heartbeat goroutine
 	done := make(chan struct{})
@@ -452,29 +452,29 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 
 	case "/help":
 		Println()
-		PrintPanel("OpenAIDE", "通用 AI 助手 — 编程 · 写作 · 研究 · 日常")
+		PrintPanel("OpenAIDE", "General AI assistant — coding, writing, research")
 		Println()
 		PrintList([]string{
-			pterm.Cyan("/help") + " — 帮助",
-			pterm.Cyan("/clear") + " — 清屏",
-			pterm.Cyan("/mode [code|write|research|general]") + " — 切换模式",
-			pterm.Cyan("/model [name]") + " — 查看/切换模型",
-			pterm.Cyan("/lang zh|en") + " — 切换语言",
-			pterm.Cyan("/log") + " — 最近日志",
-			pterm.Cyan("/sessions") + " — 会话列表",
-			pterm.Cyan("/handoff") + " — 保存会话",
-			pterm.Cyan("/exit /quit /q") + " — 退出",
+			pterm.Cyan("/help") + " — help",
+			pterm.Cyan("/clear") + " — clear screen",
+			pterm.Cyan("/mode [code|write|research|general]") + " — switch mode",
+			pterm.Cyan("/model [name]") + " — view/switch model",
+			pterm.Cyan("/lang zh|en") + " — switch language",
+			pterm.Cyan("/log") + " — recent logs",
+			pterm.Cyan("/sessions") + " — session list",
+			pterm.Cyan("/handoff") + " — save session",
+			pterm.Cyan("/exit /quit /q") + " — exit",
 		}, false)
 		Println()
 		PrintList([]string{
-			pterm.Cyan("/analyst <task>") + " — 分析任务",
-			pterm.Cyan("/coder <task>") + " — 编码任务",
-			pterm.Cyan("/reviewer <task>") + " — 审查任务",
-			pterm.Cyan("/executor <task>") + " — 执行/验证",
-			pterm.Cyan("/team <task>") + " — 完整团队链",
+			pterm.Cyan("/analyst <task>") + " — analyze",
+			pterm.Cyan("/coder <task>") + " — code",
+			pterm.Cyan("/reviewer <task>") + " — review",
+			pterm.Cyan("/executor <task>") + " — execute/verify",
+			pterm.Cyan("/team <task>") + " — full team pipeline",
 		}, false)
 		Println()
-		pterm.Info.Println("Ctrl+C 中断 | Ctrl+R 搜索历史 | Tab 补全 | ↑↓ 历史")
+		pterm.Info.Println("Ctrl+C interrupt | Ctrl+R search | Tab complete | ↑↓ history")
 		Println()
 
 	case "/clear":
@@ -493,7 +493,7 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 			PrintSuccess("Model: " + parts[1])
 		} else {
 			info := app.LLMGateway.GetProviderInfos()
-			if len(info) == 0 { PrintInfo("没有可用的模型"); return }
+			if len(info) == 0 { PrintInfo("No models available"); return }
 
 			var options []string
 			for _, p := range info {
@@ -503,7 +503,7 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 
 			result, _ := pterm.DefaultInteractiveSelect.
 				WithOptions(options).
-				WithDefaultText("选择模型 (\u2191\u2193 移动, Enter 确认, Esc 取消)").
+				WithDefaultText("Select model (↑↓ move, Enter select, Esc cancel)").
 				WithMaxHeight(10).
 				Show()
 
@@ -515,7 +515,7 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 					PrintSuccess("Model: " + fields[2])
 				}
 			} else {
-				PrintInfo("已取消")
+				PrintInfo("Canceled")
 			}
 		}
 		return
@@ -523,7 +523,7 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 	case "/lang":
 		if len(parts) >= 2 {
 			switch parts[1] {
-			case "zh": lang.SetLang(lang.ZH); PrintSuccess("中文")
+			case "zh": lang.SetLang(lang.ZH); PrintSuccess("中文 (Chinese)")
 			case "en": lang.SetLang(lang.EN); PrintSuccess("English")
 			}
 		}
@@ -535,7 +535,7 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 
 		case "/sessions":
 		sessions, _ := app.Orchestrator.ListSessions(context.Background(), "default", "cli-user", 10, 0)
-		if len(sessions) == 0 { PrintInfo("没有会话"); return }
+		if len(sessions) == 0 { PrintInfo("No sessions"); return }
 
 		var options []string
 		for _, s := range sessions {
@@ -551,7 +551,7 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 		// 交互式选择（上下键 + Enter）
 		result, _ := pterm.DefaultInteractiveSelect.
 			WithOptions(options).
-			WithDefaultText("选择会话 (↑↓ 移动, Enter 确认, Esc 取消)").
+			WithDefaultText("Select session (↑↓ move, Enter select, Esc cancel)").
 			WithMaxHeight(10).
 			Show()
 
@@ -559,12 +559,12 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 			for i, opt := range options {
 				if opt == result {
 					*sessionID = sessions[i].ID
-					pterm.Success.Printfln("已切换到会话 %s", trunc(sessions[i].ID, 8))
+					pterm.Success.Printfln("Switched to session %s", trunc(sessions[i].ID, 8))
 					return
 				}
 			}
 		}
-		PrintInfo("已取消")
+		PrintInfo("Canceled")
 		return
 
 	case "/session":
@@ -579,12 +579,12 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 				for j := len(sessions[idx-1].Messages) - 1; j >= 0; j-- {
 					if sessions[idx-1].Messages[j].Role == "user" { title = trunc(sessions[idx-1].Messages[j].Content, 30); break }
 				}
-				fmt.Printf("  %s✓ 切换到会话 %s (%d 条消息)%s\n", cSuccess, title, msgCount, cReset)
+				fmt.Printf("  %s✓ Switched to session %s (%d msgs)%s\n", cSuccess, title, msgCount, cReset)
 			} else {
-				PrintWarning("无效的会话编号")
+				PrintWarning("Invalid session number")
 			}
 		} else {
-			PrintInfo("用法: /session <编号>")
+			PrintInfo("Usage: /session <number>")
 		}
 		return
 
@@ -623,24 +623,24 @@ case "/analyst", "/coder", "/reviewer", "/executor":
 		if len(parts) >= 2 {
 			switch parts[1] {
 			case "code", "coder", "dev":
-				PrintSuccess("模式: 编程助手")
+				PrintSuccess("Mode: coding")
 			case "write", "writer", "写作":
-				PrintSuccess("模式: 写作助手")
+				PrintSuccess("Mode: writing")
 			case "research", "研究", "分析":
-				PrintSuccess("模式: 研究分析")
+				PrintSuccess("Mode: research")
 			case "general", "通用":
-				PrintSuccess("模式: 通用助手")
+				PrintSuccess("Mode: general")
 			default:
-				PrintInfo("可用模式: code, write, research, general")
+				PrintInfo("Available: code, write, research, general")
 			}
 		} else {
 			var options []string
-			for _, m := range []string{"code  编程开发", "write  写作创作", "research  研究分析", "general  通用助手"} {
+			for _, m := range []string{"code  dev/coding", "write  writing", "research  analysis", "general  assistant"} {
 				options = append(options, m)
 			}
 			result, _ := pterm.DefaultInteractiveSelect.
 				WithOptions(options).
-				WithDefaultText("选择模式").
+				WithDefaultText("Select mode").
 				Show()
 			if result != "" {
 				PrintSuccess("已切换: " + result)
