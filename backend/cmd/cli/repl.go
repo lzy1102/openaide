@@ -343,7 +343,8 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string)
 	cacheHit := 0
 	cacheMiss := 0
 	var fullResponse strings.Builder
-	var streamBuffer strings.Builder // 增量渲染缓冲区
+	var streamBuffer strings.Builder // 未完成行缓冲
+	var rendered int               // 已渲染位置
 	var toolNames []string
 	thinkShown := false
 
@@ -352,14 +353,19 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string)
 		if chunk.Content != "" {
 		fullResponse.WriteString(chunk.Content)
 		streamBuffer.WriteString(chunk.Content)
-		// 增量渲染：遇段落分隔或代码块闭合时立即输出
+		// 逐行增量渲染：遇到 \n 就立即输出已完成的行
 		buf := streamBuffer.String()
-		if strings.Contains(buf, "\n\n") || strings.Contains(buf, "```") {
-			backtickCount := strings.Count(buf, "```")
-			if strings.Contains(buf, "\n\n") || backtickCount%2 == 0 {
-				fmt.Print(RenderMarkdown(buf))
-				streamBuffer.Reset()
+		lastNL := strings.LastIndex(buf, "\n")
+		if lastNL >= 0 {
+			complete := buf[:lastNL+1]
+			if len(complete) > rendered {
+				newPart := complete[rendered:]
+				fmt.Print(RenderMarkdown(newPart))
+				rendered = len(complete)
 			}
+			streamBuffer.Reset()
+			streamBuffer.WriteString(buf[lastNL+1:])
+			rendered = 0
 		}
 	}
 		if chunk.Done {
@@ -609,6 +615,7 @@ func expandAtRefs(query string) string {
 	return sb.String()
 }
 
+// expandAtRefs finds @filename references and prepends file content
 func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, modelName *string) {
 	parts := strings.Fields(cmd)
 	switch parts[0] {
