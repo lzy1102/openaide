@@ -20,6 +20,15 @@ build:
 	CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide-server ./cmd/server
 	CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide ./cmd/cli
 
+# 安装到系统路径
+install: build
+	@mkdir -p ~/.openaide/bin
+	@cp bin/openaide ~/.openaide/bin/openaide
+	@cp bin/openaide-server ~/.openaide/bin/openaide-server
+	@echo "Installed to ~/.openaide/bin/"
+	@echo "Make sure ~/.openaide/bin is in your PATH:"
+	@echo "  export PATH=\$$HOME/.openaide/bin:\$$PATH"
+
 # 交叉编译全平台
 build-all: build-linux-amd64 build-linux-arm64 build-windows-amd64 build-darwin-amd64 build-darwin-arm64
 
