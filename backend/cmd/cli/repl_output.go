@@ -71,9 +71,14 @@ func PromptStyle(sessionID, modelName string, busy bool, extra ...string) string
 	}
 	sid := sessionID
 	if len(sid) > 8 { sid = sid[:8] }
+	// Git dirty indicator
+	gitStatus := ""
+	if out, err := execCmd("git", "diff", "--shortstat"); err == nil && out != "" {
+		gitStatus = cYellow + "*" + cReset
+	}
 	suffix := ""
 	if len(extra) > 0 { suffix = extra[0] }
-	return fmt.Sprintf("%s %s%s %s %s❯%s %s", dot, cDim, sid, cPrompt, name, cReset, suffix)
+	return fmt.Sprintf("%s %s%s %s%s %s❯%s %s", dot, cDim, sid, gitStatus, cPrompt, name, cReset, suffix)
 }
 
 // ── Tool Section ──────────────────────────────────────────

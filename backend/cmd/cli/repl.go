@@ -6,6 +6,7 @@ import (
 	"os"
 	osexec "os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -186,6 +187,9 @@ var history []string // 会话内查询历史（Ctrl+R 搜索）
 		}
 		query := strings.TrimSpace(line)
 		if query == "" { continue }
+
+		// @file 引用：自动读取文件内容拼入 prompt
+		query = expandAtRefs(query)
 
 		// 添加到历史
 		if len(history) == 0 || history[len(history)-1] != query {
@@ -576,6 +580,33 @@ func handleInit(app *infra.Application) {
 
 	os.WriteFile(filepath.Join(cwd, "OPENAIDE.md"), []byte(resp.Content), 0644)
 	pterm.Success.Printfln("OPENAIDE.md generated (%d chars) — will be loaded in future sessions", len(resp.Content))
+}
+
+// expandAtRefs finds @filename references in the query and prepends their content
+func expandAtRefs(query string) string {
+	re := regexp.MustCompile(`@(\S+)`)
+	matches := re.FindAllStringSubmatch(query, -1)
+	if len(matches) == 0 { return query }
+
+	var files []string
+	for _, m := range matches {
+		path := m[1]
+		// Try relative and absolute paths
+		if _, err := os.ReadFile(path); err == nil {
+			files = append(files, path)
+			fmt.Printf("  %s@%s%s %s\n", cGreen, path, cReset, cDim+"(included)"+cReset)
+		}
+	}
+	if len(files) == 0 { return query }
+
+	// Build prompt with file contents
+	var sb strings.Builder
+	for _, path := range files {
+		data, _ := os.ReadFile(path)
+		sb.WriteString(fmt.Sprintf("Content of %s:\n---\n%s\n---\n\n", path, string(data)))
+	}
+	sb.WriteString("User prompt: " + query)
+	return sb.String()
 }
 
 func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, modelName *string) {
