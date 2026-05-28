@@ -342,9 +342,9 @@ func cmdUpdate(args []string) {
 
 // loadGlobalLang 从全局配置加载语言偏好
 func loadGlobalLang(cfg *config.Config) {
-	if cfg.Server.Lang == "zh" {
+	if cfg.Lang == "zh" {
 		lang.SetLang(lang.ZH)
-	} else if cfg.Server.Lang == "en" {
+	} else if cfg.Lang == "en" {
 		lang.SetLang(lang.EN)
 	}
 }

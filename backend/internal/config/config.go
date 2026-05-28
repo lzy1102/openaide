@@ -17,6 +17,9 @@ type Config struct {
 	// 服务器配置
 	Server ServerConfig `json:"server" yaml:"server"`
 
+	// 全局语言偏好 ("zh" / "en")，REPL 和 Server 共用
+	Lang string `json:"lang" yaml:"lang"`
+
 	// LLM 配置
 	LLM LLMConfig `json:"llm" yaml:"llm"`
 
@@ -59,7 +62,6 @@ type ServerConfig struct {
 	Host string `json:"host" yaml:"host"`
 	Port int    `json:"port" yaml:"port"`
 	Mode string `json:"mode" yaml:"mode"` // direct, server, tui
-	Lang string `json:"lang" yaml:"lang"` // "zh" / "en" — UI 语言
 }
 
 // LLMConfig LLM 配置
