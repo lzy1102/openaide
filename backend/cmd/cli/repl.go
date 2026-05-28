@@ -65,13 +65,13 @@ func runREPL(app *infra.Application, continueSess bool) {
 			if len(s.Messages) > 0 { // 跳过空会话
 				sessionID = s.ID
 				msgCount := len(s.Messages)
-				fmt.Printf("  %s📋 Resume session%s: %s (%d msgs)\n",
+				fmt.Printf("  %s" + lang.T("repl.resume") + "%s: %s (%d msgs)\n",
 					cGreen, cReset, sessionID[:8], msgCount)
 
 				// 显示最近几条历史消息
 				history, _ := app.Orchestrator.GetSessionHistory(context.Background(), sessionID, 3)
 				if len(history) > 0 {
-					fmt.Printf("  %sRecent:%s\n", cInfo, cReset)
+					fmt.Printf("  %s" + lang.T("repl.recent") + ":%s\n", cInfo, cReset)
 					for _, msg := range history {
 						switch msg.Role {
 						case "user":
@@ -178,7 +178,7 @@ var history []string // 会话内查询历史（Ctrl+R 搜索）
 	for {
 		line, err := rl.Readline()
 		if err != nil {
-			fmt.Println("\n  Goodbye.")
+			fmt.Println("\n  " + lang.T("repl.goodbye"))
 			return
 		}
 		query := strings.TrimSpace(line)
@@ -197,7 +197,7 @@ var history []string // 会话内查询历史（Ctrl+R 搜索）
 
 		// ── Smart routing: PreviewPlan → direct or team execution ──
 		fmt.Println()
-		fmt.Printf("  %sAnalyzing…%s", cInfo, cReset)
+		fmt.Printf("  %s" + lang.T("repl.analyzing") + "%s", cInfo, cReset)
 		planCtx, planCancel := context.WithTimeout(context.Background(), app.Orchestrator.PreviewTimeout)
 		plan, planErr := app.Orchestrator.PreviewPlan(planCtx, query)
 		planCancel()
@@ -207,19 +207,19 @@ var history []string // 会话内查询历史（Ctrl+R 搜索）
 			executeStreamQuery(app, query, &sessionID)
 		} else if len(plan.Subtasks) >= 4 {
 			// DeepPlan: 深度研究 + 方案对比
-			pterm.Info.Println("Complex task, deep analysis…")
+			pterm.Info.Println(lang.T("repl.deep_analysis"))
 			deepCtx, deepCancel := context.WithTimeout(context.Background(), app.Orchestrator.DeepTimeout)
 			deepResult, deepErr := app.Orchestrator.DeepPlan(deepCtx, query)
 			deepCancel()
 
 			if deepErr != nil || deepResult == nil || len(deepResult.Proposals.Options) == 0 {
-				PrintWarning("Deep analysis failed, using default plan")
+				PrintWarning(lang.T("repl.deep_failed"))
 				executePlanQuery(app, query, plan)
 			} else {
 				// 交互式方案选择
 				var options []string
 				for _, opt := range deepResult.Proposals.Options {
-					options = append(options, fmt.Sprintf("%s  (风险:%s 工作量:%s)", opt.Name, opt.Risk, opt.Effort))
+					options = append(options, fmt.Sprintf("%s  "+lang.T("repl.risk_effort"), opt.Name, opt.Risk, opt.Effort))
 				}
 				result, _ := pterm.DefaultInteractiveSelect.
 					WithOptions(options).
@@ -233,10 +233,10 @@ var history []string // 会话内查询历史（Ctrl+R 搜索）
 							selectedPlan, planErr := app.Orchestrator.DeepPlanFinalize(
 								context.Background(), query, deepResult, i)
 							if planErr != nil || selectedPlan == nil {
-								PrintWarning("Plan generation failed, using default")
+								PrintWarning(lang.T("repl.plan_failed"))
 								executePlanQuery(app, query, plan)
 							} else {
-								pterm.Success.Printfln("Selected: %s", deepResult.Proposals.Options[i].Name)
+								pterm.Success.Printfln(lang.T("repl.selected", deepResult.Proposals.Options[i].Name))
 								executePlanQuery(app, query, selectedPlan)
 							}
 							break
@@ -263,7 +263,7 @@ var history []string // 会话内查询历史（Ctrl+R 搜索）
 
 			// 交互确认
 			confirmed, _ := pterm.DefaultInteractiveConfirm.
-				WithDefaultText(fmt.Sprintf("Execute plan? (%d subtasks)", len(plan.Subtasks))).
+				WithDefaultText(fmt.Sprintf(lang.T("repl.exec_plan", len(plan.Subtasks)), len(plan.Subtasks))).
 				WithConfirmText("y").
 				WithRejectText("n").
 				Show()
@@ -293,7 +293,7 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string)
 	opts := kernel.QueryOptions{
 		OnApproval: func(tool, path string) bool {
 			result, _ := pterm.DefaultInteractiveConfirm.
-				WithDefaultText(fmt.Sprintf("Allow %s %s?", pterm.Yellow(tool), path)).
+				WithDefaultText(fmt.Sprintf(lang.T("repl.allow_tool", tool, path), pterm.Yellow(tool), path)).
 				WithConfirmText("y").
 				WithRejectText("n").
 				Show()
@@ -301,7 +301,7 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string)
 		},
 		OnBudgetExhausted: func(round, maxRounds int) bool {
 			result, _ := pterm.DefaultInteractiveConfirm.
-				WithDefaultText(fmt.Sprintf("Rounds exhausted (%d/%d), continue?", round, maxRounds)).
+				WithDefaultText(fmt.Sprintf(lang.T("repl.rounds_exhausted", round, maxRounds), round, maxRounds)).
 				WithConfirmText("y").
 				WithRejectText("n").
 				Show()
@@ -390,7 +390,7 @@ func executePlanQuery(app *infra.Application, query string, plan *orchestration.
 	totalSteps := len(plan.Subtasks) + 2 // + verify + review
 	progressBar, _ := pterm.DefaultProgressbar.
 		WithTotal(totalSteps).
-		WithTitle("Executing").
+		WithTitle(lang.T("repl.executing")).
 		WithShowCount(true).
 		WithShowPercentage(true).
 		WithRemoveWhenDone(true).
@@ -401,7 +401,7 @@ func executePlanQuery(app *infra.Application, query string, plan *orchestration.
 		progressBar.UpdateTitle(detail)
 	}
 
-	fmt.Printf("  %sExecuting…%s\n", cInfo, cReset)
+	fmt.Printf("  %s" + lang.T("repl.executing") + "…%s\n", cInfo, cReset)
 
 	// Heartbeat goroutine
 	done := make(chan struct{})
@@ -452,29 +452,29 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 
 	case "/help":
 		Println()
-		PrintPanel("OpenAIDE", "General AI assistant — coding, writing, research")
+		PrintPanel("OpenAIDE", lang.T("repl.help_title"))
 		Println()
 		PrintList([]string{
-			pterm.Cyan("/help") + " — help",
-			pterm.Cyan("/clear") + " — clear screen",
-			pterm.Cyan("/mode [code|write|research|general]") + " — switch mode",
-			pterm.Cyan("/model [name]") + " — view/switch model",
-			pterm.Cyan("/lang zh|en") + " — switch language",
-			pterm.Cyan("/log") + " — recent logs",
-			pterm.Cyan("/sessions") + " — session list",
-			pterm.Cyan("/handoff") + " — save session",
-			pterm.Cyan("/exit /quit /q") + " — exit",
+			pterm.Cyan("/help") + " — " + lang.T("cli.help"),
+			pterm.Cyan("/clear") + " — " + lang.T("repl.help_clear"),
+			pterm.Cyan("/mode [code|write|research|general]") + " — " + lang.T("repl.help_mode"),
+			pterm.Cyan("/model [name]") + " — " + lang.T("repl.help_model"),
+			pterm.Cyan("/lang zh|en") + " — " + lang.T("repl.help_lang"),
+			pterm.Cyan("/log") + " — " + lang.T("repl.help_log"),
+			pterm.Cyan("/sessions") + " — " + lang.T("repl.help_sessions"),
+			pterm.Cyan("/handoff") + " — " + lang.T("repl.help_handoff"),
+			pterm.Cyan("/exit /quit /q") + " — " + lang.T("repl.help_exit"),
 		}, false)
 		Println()
 		PrintList([]string{
-			pterm.Cyan("/analyst <task>") + " — analyze",
-			pterm.Cyan("/coder <task>") + " — code",
-			pterm.Cyan("/reviewer <task>") + " — review",
-			pterm.Cyan("/executor <task>") + " — execute/verify",
-			pterm.Cyan("/team <task>") + " — full team pipeline",
+			pterm.Cyan("/analyst <task>") + " — " + lang.T("repl.help_analyst"),
+			pterm.Cyan("/coder <task>") + " — " + lang.T("repl.help_coder"),
+			pterm.Cyan("/reviewer <task>") + " — " + lang.T("repl.help_reviewer"),
+			pterm.Cyan("/executor <task>") + " — " + lang.T("repl.help_executor"),
+			pterm.Cyan("/team <task>") + " — " + lang.T("repl.help_team"),
 		}, false)
 		Println()
-		pterm.Info.Println("Ctrl+C interrupt | Ctrl+R search | Tab complete | ↑↓ history")
+		pterm.Info.Println(lang.T("repl.help_intro"))
 		Println()
 
 	case "/clear":
@@ -493,7 +493,7 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 			PrintSuccess("Model: " + parts[1])
 		} else {
 			info := app.LLMGateway.GetProviderInfos()
-			if len(info) == 0 { PrintInfo("No models available"); return }
+			if len(info) == 0 { PrintInfo(lang.T("repl.no_models")); return }
 
 			var options []string
 			for _, p := range info {
@@ -515,7 +515,7 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 					PrintSuccess("Model: " + fields[2])
 				}
 			} else {
-				PrintInfo("Canceled")
+				PrintInfo(lang.T("repl.canceled"))
 			}
 		}
 		return
@@ -523,7 +523,7 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 	case "/lang":
 		if len(parts) >= 2 {
 			switch parts[1] {
-			case "zh": lang.SetLang(lang.ZH); PrintSuccess("中文 (Chinese)")
+			case "zh": lang.SetLang(lang.ZH); PrintSuccess(lang.T("repl.lang_zh"))
 			case "en": lang.SetLang(lang.EN); PrintSuccess("English")
 			}
 		}
@@ -535,7 +535,7 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 
 		case "/sessions":
 		sessions, _ := app.Orchestrator.ListSessions(context.Background(), "default", "cli-user", 10, 0)
-		if len(sessions) == 0 { PrintInfo("No sessions"); return }
+		if len(sessions) == 0 { PrintInfo(lang.T("repl.no_sessions")); return }
 
 		var options []string
 		for _, s := range sessions {
@@ -551,7 +551,7 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 		// 交互式选择（上下键 + Enter）
 		result, _ := pterm.DefaultInteractiveSelect.
 			WithOptions(options).
-			WithDefaultText("Select session (↑↓ move, Enter select, Esc cancel)").
+			WithDefaultText(lang.T("repl.select_session")).
 			WithMaxHeight(10).
 			Show()
 
@@ -559,12 +559,12 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 			for i, opt := range options {
 				if opt == result {
 					*sessionID = sessions[i].ID
-					pterm.Success.Printfln("Switched to session %s", trunc(sessions[i].ID, 8))
+					pterm.Success.Printfln(lang.T("repl.switched_sess", trunc(sessions[i].ID, 8)), trunc(sessions[i].ID, 8))
 					return
 				}
 			}
 		}
-		PrintInfo("Canceled")
+		PrintInfo(lang.T("repl.canceled"))
 		return
 
 	case "/session":
@@ -579,12 +579,12 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 				for j := len(sessions[idx-1].Messages) - 1; j >= 0; j-- {
 					if sessions[idx-1].Messages[j].Role == "user" { title = trunc(sessions[idx-1].Messages[j].Content, 30); break }
 				}
-				fmt.Printf("  %s✓ Switched to session %s (%d msgs)%s\n", cSuccess, title, msgCount, cReset)
+				fmt.Printf("  %s"+lang.T("repl.switched_sess", title, msgCount)+"%s\n", cSuccess, cReset)
 			} else {
-				PrintWarning("Invalid session number")
+				PrintWarning(lang.T("repl.invalid_sess"))
 			}
 		} else {
-			PrintInfo("Usage: /session <number>")
+			PrintInfo(lang.T("repl.usage_sess"))
 		}
 		return
 
@@ -623,24 +623,24 @@ case "/analyst", "/coder", "/reviewer", "/executor":
 		if len(parts) >= 2 {
 			switch parts[1] {
 			case "code", "coder", "dev":
-				PrintSuccess("Mode: coding")
+				PrintSuccess(lang.T("repl.mode_coding"))
 			case "write", "writer", "写作":
-				PrintSuccess("Mode: writing")
+				PrintSuccess(lang.T("repl.mode_writing"))
 			case "research", "研究", "分析":
-				PrintSuccess("Mode: research")
+				PrintSuccess(lang.T("repl.mode_research"))
 			case "general", "通用":
-				PrintSuccess("Mode: general")
+				PrintSuccess(lang.T("repl.mode_general"))
 			default:
-				PrintInfo("Available: code, write, research, general")
+				PrintInfo(lang.T("repl.mode_available"))
 			}
 		} else {
 			var options []string
-			for _, m := range []string{"code  dev/coding", "write  writing", "research  analysis", "general  assistant"} {
+			for _, m := range []string{lang.T("repl.mode_code_label"), lang.T("repl.mode_write_label"), lang.T("repl.mode_research_label"), lang.T("repl.mode_general_label")} {
 				options = append(options, m)
 			}
 			result, _ := pterm.DefaultInteractiveSelect.
 				WithOptions(options).
-				WithDefaultText("Select mode").
+				WithDefaultText(lang.T("repl.select_mode")).
 				Show()
 			if result != "" {
 				PrintSuccess("已切换: " + result)
