@@ -309,31 +309,35 @@ func generateSampleConfig(path string) *Config {
 # 全局语言: zh (中文) / en (English)
 lang: zh
 
+# LLM 配置 — 最简单写法（系统自动识别提供商）
 llm:
-  providers:
-    # 推理模型（analyst / reviewer）
-    - name: deepseek
-      type: openai
-      base_url: https://api.deepseek.com/v1
-      api_key: sk-你的-api-key       # ← 改成你的 API Key
-      default_model: deepseek-v4-pro
-      timeout: 300
-      thinking: true
-      reasoning_effort: max
-    # 执行模型（coder / executor）
-    - name: deepseek-flash
-      type: openai
-      base_url: https://api.deepseek.com/v1
-      api_key: sk-你的-api-key       # ← 同上
-      default_model: deepseek-v4-flash
-      timeout: 120
-  model_routing:
-    reasoning: deepseek-v4-pro
-    execution: deepseek-v4-flash
+  api_key: sk-你的-api-key       # ← 改成你的 API Key
+  model: deepseek-v4-pro         # 选一个: gpt-4o / claude-sonnet-4-6 / deepseek-v4-pro
+  execution_model: deepseek-v4-flash  # 快速执行模型（可选）
+
+# 高级：双模型路由（Architect/Editor 模式）
+# llm:
+#   providers:
+#     - name: deepseek
+#       type: openai
+#       base_url: https://api.deepseek.com/v1
+#       api_key: sk-你的-api-key
+#       default_model: deepseek-v4-pro
+#       timeout: 300
+#       thinking: true
+#       reasoning_effort: max
+#     - name: deepseek-flash
+#       type: openai
+#       base_url: https://api.deepseek.com/v1
+#       api_key: sk-你的-api-key
+#       default_model: deepseek-v4-flash
+#       timeout: 120
+#   model_routing:
+#     reasoning: deepseek-v4-pro
+#     execution: deepseek-v4-flash
 
 kernel:
   max_rounds: 30
-  min_rounds: 8
 
 log:
   level: info
