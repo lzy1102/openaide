@@ -99,7 +99,7 @@ func runREPL(app *infra.Application, continueSess bool) {
 	rl.HistoryAutoWrite = true
 
 	commands := []string{"/help", "/clear", "/mode", "/model", "/lang", "/log", "/sessions", "/session",
-		"/handoff", "/exit", "/quit", "/q", "/analyst", "/coder", "/reviewer", "/executor", "/team", "/tree"}
+		"/handoff", "/exit", "/quit", "/q", "/analyst", "/coder", "/reviewer", "/executor", "/team", "/tree", "/init"}
 	rl.TabCompleter = func(line []rune, pos int, _ readline.DelayedTabContext) *readline.TabCompleterReturnT {
 		prefix := string(line[:pos])
 		if strings.HasPrefix(prefix, "/") {
@@ -509,6 +509,75 @@ func showFileTree() {
 }
 
 
+// handleInit analyzes the current project and generates OPENAIDE.md
+func handleInit(app *infra.Application) {
+	cwd, _ := os.Getwd()
+	projectName := filepath.Base(cwd)
+
+	// Check if OPENAIDE.md already exists
+	if _, err := os.Stat(filepath.Join(cwd, "OPENAIDE.md")); err == nil {
+		pterm.Warning.Println("OPENAIDE.md already exists. Delete it first to regenerate, or edit it directly.")
+		return
+	}
+
+	// Collect project context
+	var ctx strings.Builder
+	ctx.WriteString(fmt.Sprintf("Project directory: %s\n", cwd))
+	ctx.WriteString(fmt.Sprintf("Project name: %s\n\n", projectName))
+
+	// Scan for key files
+	entries, _ := os.ReadDir(cwd)
+	fileTypes := map[string]int{}
+	var keyFiles []string
+	keyNames := map[string]bool{
+		"go.mod": true, "package.json": true, "Cargo.toml": true, "Makefile": true,
+		"pyproject.toml": true, "requirements.txt": true, "CMakeLists.txt": true,
+		"Dockerfile": true, "docker-compose.yml": true, "docker-compose.yaml": true,
+		".gitignore": true, "README.md": true,
+	}
+	for _, e := range entries {
+		if e.IsDir() { continue }
+		ext := filepath.Ext(e.Name())
+		if ext != "" { fileTypes[ext]++ }
+		if keyNames[e.Name()] { keyFiles = append(keyFiles, e.Name()) }
+	}
+	ctx.WriteString(fmt.Sprintf("File types: %v\n", fileTypes))
+	ctx.WriteString(fmt.Sprintf("Key files: %v\n\n", keyFiles))
+
+	// Top-level directories
+	ctx.WriteString("Top-level directories:\n")
+	for _, e := range entries {
+		if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
+			ctx.WriteString(fmt.Sprintf("  %s/\n", e.Name()))
+		}
+	}
+
+	spinner, _ := pterm.DefaultSpinner.Start("Analyzing project and generating OPENAIDE.md…")
+	queryContent := fmt.Sprintf(
+		"Based on this project analysis, write an OPENAIDE.md file. Include:\n"+
+			"1. Project name and one-line summary\n"+
+			"2. Common commands (build, test, run)\n"+
+			"3. Architecture overview (key directories and their purposes)\n"+
+			"4. Conventions observed from file types\n\n"+
+			"%s\n\nWrite ONLY the OPENAIDE.md content, no preamble. Use Markdown format. Keep it concise.",
+		ctx.String())
+	resp, err := app.Orchestrator.ProcessQuery(context.Background(), "cli-user", "default", queryContent, kernel.QueryOptions{MaxTokens: 2000})
+	spinner.Stop()
+	fmt.Print("\r\033[K")
+
+	if err != nil {
+		PrintError(fmt.Sprintf("Failed: %v", err))
+		return
+	}
+	if resp.Content == "" {
+		PrintWarning("Empty response, try again")
+		return
+	}
+
+	os.WriteFile(filepath.Join(cwd, "OPENAIDE.md"), []byte(resp.Content), 0644)
+	pterm.Success.Printfln("OPENAIDE.md generated (%d chars) — will be loaded in future sessions", len(resp.Content))
+}
+
 func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, modelName *string) {
 	parts := strings.Fields(cmd)
 	switch parts[0] {
@@ -539,6 +608,7 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 			pterm.Cyan("/executor <task>") + " — " + lang.T("repl.help_executor"),
 			pterm.Cyan("/team <task>") + " — " + lang.T("repl.help_team"),
 		pterm.Cyan("/tree") + " — browse project files",
+		pterm.Cyan("/init") + " — generate OPENAIDE.md for this project",
 		}, false)
 		Println()
 		pterm.Info.Println(lang.T("repl.help_intro"))
@@ -589,6 +659,10 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 
 	case "/tree":
 		showFileTree()
+		return
+
+	case "/init":
+		handleInit(app)
 		return
 
 	case "/lang":
