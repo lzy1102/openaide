@@ -252,7 +252,7 @@ func (g *Gateway) Chat(ctx context.Context, messages []kernel.Message, tools []k
 		providerName = forcePn
 	}
 	if providerName == "" {
-		return nil, fmt.Errorf("no provider configured")
+		return nil, fmt.Errorf("no provider configured — edit ~/.openaide/config.yaml and add your API key, then restart")
 	}
 	return g.ChatWithProvider(ctx, providerName, messages, tools, options)
 }
@@ -307,7 +307,7 @@ func (g *Gateway) ChatStream(ctx context.Context, messages []kernel.Message, too
 	}
 	providerName := g.routeProvider(query)
 	if providerName == "" {
-		return nil, fmt.Errorf("no provider configured")
+		return nil, fmt.Errorf("no provider configured — edit ~/.openaide/config.yaml and add your API key, then restart")
 	}
 	return g.ChatStreamWithProvider(ctx, providerName, messages, tools, options)
 }

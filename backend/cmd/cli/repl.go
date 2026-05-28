@@ -46,6 +46,9 @@ func runREPL(app *infra.Application, continueSess bool) {
 	fmt.Println()
 	if modelName != "" {
 		fmt.Printf("  %s%s%s", cGreen, modelName, cReset)
+	} else {
+		fmt.Printf("  %s⚠ No API key configured%s\n", pterm.Yellow(""), cReset)
+		fmt.Printf("  %s→ Edit ~/.openaide/config.yaml and add your API key%s\n", cInfo, cReset)
 	}
 	if gitBranch != "" {
 		fmt.Printf("  %s%s%s", cInfo, "  ◆  "+gitBranch, cReset)

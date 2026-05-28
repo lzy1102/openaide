@@ -274,6 +274,10 @@ func DefaultConfig() *Config {
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
+		if os.IsNotExist(err) {
+			// 首次运行：生成示例配置
+			return generateSampleConfig(path), nil
+		}
 		return nil, fmt.Errorf("read config file failed: %w", err)
 	}
 
@@ -293,6 +297,54 @@ func Load(path string) (*Config, error) {
 	config.normalize()
 	config.resolvePaths()
 	return config, nil
+}
+
+// generateSampleConfig 首次运行生成带注释的配置模板
+func generateSampleConfig(path string) *Config {
+	os.MkdirAll(filepath.Dir(path), 0755)
+
+	sample := `# OpenAIDE 配置文件 — 编辑此文件后重新运行 openaide
+# 文档: https://github.com/lzy1102/openaide
+
+# 全局语言: zh (中文) / en (English)
+lang: zh
+
+llm:
+  providers:
+    # 推理模型（analyst / reviewer）
+    - name: deepseek
+      type: openai
+      base_url: https://api.deepseek.com/v1
+      api_key: sk-你的-api-key       # ← 改成你的 API Key
+      default_model: deepseek-v4-pro
+      timeout: 300
+      thinking: true
+      reasoning_effort: max
+    # 执行模型（coder / executor）
+    - name: deepseek-flash
+      type: openai
+      base_url: https://api.deepseek.com/v1
+      api_key: sk-你的-api-key       # ← 同上
+      default_model: deepseek-v4-flash
+      timeout: 120
+  model_routing:
+    reasoning: deepseek-v4-pro
+    execution: deepseek-v4-flash
+
+kernel:
+  max_rounds: 30
+  min_rounds: 8
+
+log:
+  level: info
+  persist: false
+`
+	os.WriteFile(path, []byte(sample), 0644)
+
+	// 返回一个有提示信息的默认配置
+	cfg := DefaultConfig()
+	cfg.LLM.Providers = nil // 清空，让用户看到提示后自己去编辑
+	return cfg
 }
 
 // normalize 将扁平简化配置展开为完整内部格式
