@@ -99,7 +99,7 @@ func runREPL(app *infra.Application, continueSess bool) {
 	rl.HistoryAutoWrite = true
 
 	commands := []string{"/help", "/clear", "/mode", "/model", "/lang", "/log", "/sessions", "/session",
-		"/handoff", "/exit", "/quit", "/q", "/analyst", "/coder", "/reviewer", "/executor", "/team"}
+		"/handoff", "/exit", "/quit", "/q", "/analyst", "/coder", "/reviewer", "/executor", "/team", "/tree"}
 	rl.TabCompleter = func(line []rune, pos int, _ readline.DelayedTabContext) *readline.TabCompleterReturnT {
 		prefix := string(line[:pos])
 		if strings.HasPrefix(prefix, "/") {
@@ -200,10 +200,11 @@ var history []string // 会话内查询历史（Ctrl+R 搜索）
 
 		// ── Smart routing: PreviewPlan → direct or team execution ──
 		fmt.Println()
-		fmt.Printf("  %s" + lang.T("repl.analyzing") + "%s", cInfo, cReset)
+		spinner, _ := pterm.DefaultSpinner.WithShowTimer(false).Start(lang.T("repl.analyzing"))
 		planCtx, planCancel := context.WithTimeout(context.Background(), app.Orchestrator.PreviewTimeout)
 		plan, planErr := app.Orchestrator.PreviewPlan(planCtx, query)
 		planCancel()
+		spinner.Stop()
 		fmt.Print("\r\033[K")
 
 		if planErr != nil || plan == nil || len(plan.Subtasks) <= 1 {
@@ -372,6 +373,8 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string)
 			toolNames = append(toolNames, chunk.ToolName)
 			totalTools++
 			thinkShown = false
+			icon := toolIcon(chunk.ToolName)
+			fmt.Printf("\r\033[K  %s%s %s%s\n", cYellow, icon, chunk.ToolName, cReset)
 			// 实时更新工具状态行
 			display := toolNames
 			if len(display) > 4 { display = display[len(display)-4:] }
@@ -460,6 +463,52 @@ func executePlanQuery(app *infra.Application, query string, plan *orchestration.
 
 // ── Commands ──────────────────────────────────────────────
 
+// toolIcon returns a color-coded icon for the tool
+func toolIcon(name string) string {
+	switch name {
+	case "read_file", "list_directory", "search_files", "search_symbols", "search_knowledge":
+		return pterm.Cyan("📖") // read-only
+	case "write_file", "diff_edit", "execute_command":
+		return pterm.Yellow("✏️") // write
+	case "web_search", "web_fetch", "ai_search":
+		return pterm.Magenta("🌐") // network
+	case "git_status", "git_diff", "git_log", "git_blame":
+		return pterm.Green("🔀") // git
+	default:
+		return "🔧"
+	}
+}
+
+// showFileTree prints a directory tree using pterm
+func showFileTree() {
+	cwd, _ := os.Getwd()
+	var items []pterm.TreeNode
+	filepath.WalkDir(cwd, func(path string, d os.DirEntry, err error) error {
+		if err != nil { return nil }
+		rel, _ := filepath.Rel(cwd, path)
+		if rel == "." { return nil }
+		// Skip hidden dirs
+		if d.IsDir() && strings.HasPrefix(d.Name(), ".") && d.Name() != "." {
+			return filepath.SkipDir
+		}
+		// Limit depth
+		depth := len(strings.Split(rel, string(filepath.Separator)))
+		if depth > 4 { return filepath.SkipDir }
+		if d.IsDir() {
+			items = append(items, pterm.TreeNode{Text: pterm.Cyan("📁 " + d.Name()), Children: []pterm.TreeNode{}})
+		} else {
+			items = append(items, pterm.TreeNode{Text: "  " + d.Name()})
+		}
+		return nil
+	})
+	if len(items) > 50 {
+		items = items[:50]
+		pterm.Info.Println("(showing first 50 entries)")
+	}
+	pterm.DefaultTree.WithRoot(pterm.TreeNode{Text: pterm.Green("📁 " + filepath.Base(cwd)), Children: items}).Render()
+}
+
+
 func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, modelName *string) {
 	parts := strings.Fields(cmd)
 	switch parts[0] {
@@ -489,6 +538,7 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 			pterm.Cyan("/reviewer <task>") + " — " + lang.T("repl.help_reviewer"),
 			pterm.Cyan("/executor <task>") + " — " + lang.T("repl.help_executor"),
 			pterm.Cyan("/team <task>") + " — " + lang.T("repl.help_team"),
+		pterm.Cyan("/tree") + " — browse project files",
 		}, false)
 		Println()
 		pterm.Info.Println(lang.T("repl.help_intro"))
@@ -535,6 +585,10 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 				PrintInfo(lang.T("repl.canceled"))
 			}
 		}
+		return
+
+	case "/tree":
+		showFileTree()
 		return
 
 	case "/lang":
