@@ -264,18 +264,32 @@ var history []string // 会话内查询历史（Ctrl+R 搜索）
 			pterm.DefaultBulletList.WithItems(items).Render()
 			Println()
 
-			// 交互确认
-			confirmed, _ := pterm.DefaultInteractiveConfirm.
-				WithDefaultText(fmt.Sprintf(lang.T("repl.exec_plan", len(plan.Subtasks)), len(plan.Subtasks))).
-				WithConfirmText("y").
-				WithRejectText("n").
+			// 勾选要执行的子任务（空格=选中/取消，回车=确认）
+			var taskOpts []string
+			taskMap := make(map[string]int)
+			for i, st := range plan.Subtasks {
+				label := fmt.Sprintf("  %d. %s", i+1, st.Title)
+				taskOpts = append(taskOpts, label)
+				taskMap[label] = i
+			}
+			selected, _ := pterm.DefaultInteractiveMultiselect.
+				WithOptions(taskOpts).
+				WithDefaultText(fmt.Sprintf("Select subtasks (%d total, space=toggle, enter=confirm)", len(plan.Subtasks))).
+				WithMaxHeight(12).
 				Show()
-
-			if confirmed {
+			if len(selected) > 0 {
+				var filtered []orchestration.SubTask
+				for _, label := range selected {
+					if idx, ok := taskMap[label]; ok {
+						filtered = append(filtered, plan.Subtasks[idx])
+					}
+				}
+				plan.Subtasks = filtered
 				executePlanQuery(app, query, plan)
 			} else {
 				executeStreamQuery(app, query, &sessionID)
 			}
+
 		}
 		rl.SetPrompt(PromptStyle(sessionID, modelName, false))
 	}
