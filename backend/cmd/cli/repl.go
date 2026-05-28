@@ -57,9 +57,13 @@ func runREPL(app *infra.Application, continueSess bool) {
 	fmt.Printf("  %s%s%s", cInfo, "  ◆  "+filepath.Base(cwd), cReset)
 	fmt.Println()
 	fmt.Println()
-	fmt.Printf("  %s/h%s help  %s|%s  %s/q%s quit  %s|%s  Ctrl+C interrupt", cYellow, cReset, cInfo, cReset, cYellow, cReset, cInfo, cReset)
+	fmt.Printf("  %s/h%s help  %s|%s  %s/q%s quit  %s|%s  @file  Ctrl+C interrupt", cYellow, cReset, cInfo, cReset, cYellow, cReset, cInfo, cReset)
 	fmt.Println()
-	fmt.Println()
+	// First-time hint
+	if len(info) == 0 {
+		fmt.Printf("  %s→ Edit ~/.openaide/config.yaml to add your API key, then restart%s\n", cYellow, cReset)
+		fmt.Println()
+	}
 
 	// Session: resume or create
 	var sessionID string
@@ -91,6 +95,10 @@ func runREPL(app *infra.Application, continueSess bool) {
 		}
 	}
 	if sessionID == "" {
+		if continueSess {
+			fmt.Printf("  %sNo previous sessions — starting a new one%s\n", cInfo, cReset)
+			fmt.Println()
+		}
 		sess, _ := app.Orchestrator.CreateSession(context.Background(), "default", "cli-user")
 		sessionID = sess.ID
 	}
@@ -726,8 +734,15 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 		var options []string
 		for _, s := range sessions {
 			title := s.ID[:8]
-			for j := len(s.Messages) - 1; j >= 0; j-- {
-				if s.Messages[j].Role == "user" { title = trunc(s.Messages[j].Content, 40); break }
+			// Use metadata title or first user message
+			if t, ok := s.Metadata["title"]; ok {
+				if ts, ok2 := t.(string); ok2 && ts != "" {
+					title = trunc(ts, 30)
+				}
+			} else {
+				for j := len(s.Messages) - 1; j >= 0; j-- {
+					if s.Messages[j].Role == "user" { title = trunc(s.Messages[j].Content, 40); break }
+				}
 			}
 			marker := " "
 			if s.ID == *sessionID { marker = "●" }
