@@ -55,34 +55,45 @@ openaide --verbose    # 调试模式
 `~/.openaide/config.yaml`:
 
 ```yaml
+# 简单写法（推荐）—— 系统自动识别提供商
 llm:
-  providers:
-    - name: deepseek
-      type: openai
-      base_url: https://api.deepseek.com/v1
-      api_key: sk-xxx
-      default_model: deepseek-v4-pro
-      timeout: 300
-      thinking: true
-      reasoning_effort: max       # Agent 任务推荐 max
-    - name: deepseek-flash
-      type: openai
-      base_url: https://api.deepseek.com/v1
-      api_key: sk-xxx
-      default_model: deepseek-v4-flash
-      timeout: 120
-  model_routing:
-    reasoning: deepseek-v4-pro   # analyst, reviewer
-    execution: deepseek-v4-flash # coder, executor, synthesis
+  api_key: sk-xxx              # ← 改成你的 API Key
+  model: deepseek-v4-pro       # gpt-4o / claude-sonnet-4-6 / deepseek-v4-pro
+  execution_model: deepseek-v4-flash  # 快速模型（可选）
+  # base_url: https://api.deepseek.com/v1  # 中转站/自定义地址
+
+lang: zh                       # UI 语言：zh / en
+
 kernel:
   max_rounds: 30
-  min_rounds: 8
+
+# 高级：双模型路由（Architect/Editor 模式）
+# llm:
+#   providers:
+#     - name: deepseek
+#       type: openai
+#       base_url: https://api.deepseek.com/v1
+#       api_key: sk-xxx
+#       default_model: deepseek-v4-pro
+#       timeout: 300
+#       thinking: true
+#       reasoning_effort: max
+#     - name: deepseek-flash
+#       type: openai
+#       base_url: https://api.deepseek.com/v1
+#       api_key: sk-xxx
+#       default_model: deepseek-v4-flash
+#       timeout: 120
+#   model_routing:
+#     reasoning: deepseek-v4-pro
+#     execution: deepseek-v4-flash
+
 search:
-  searxng_url: http://localhost:8888  # SearXNG 实例，不配则用 DuckDuckGo
-lang: zh                     # UI 语言：zh / en
+  searxng_url: http://localhost:8888  # SearXNG 实例（可选）
+
 log:
   level: info
-  persist: false  # 本地可关，减少磁盘写入
+  persist: false
 ```
 
 ### 配置项说明
