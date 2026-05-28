@@ -309,11 +309,12 @@ func generateSampleConfig(path string) *Config {
 # 全局语言: zh (中文) / en (English)
 lang: zh
 
-# LLM 配置 — 最简单写法（系统自动识别提供商）
+# LLM 配置 — 最简单写法（系统自动识别提供商和 API 地址）
 llm:
   api_key: sk-你的-api-key       # ← 改成你的 API Key
   model: deepseek-v4-pro         # 选一个: gpt-4o / claude-sonnet-4-6 / deepseek-v4-pro
   execution_model: deepseek-v4-flash  # 快速执行模型（可选）
+  # base_url: https://api.deepseek.com/v1  # 中转站用户填自己的地址，不填自动识别
 
 # 高级：双模型路由（Architect/Editor 模式）
 # llm:
