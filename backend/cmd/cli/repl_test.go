@@ -119,7 +119,7 @@ func TestRenderMarkdown(t *testing.T) {
 
 func TestPrintStatusBar(t *testing.T) {
 	// Just verify it doesn't panic
-	PrintStatusBar(1000, 5, 1234567890, "test-model")
+	PrintStatusBar(1000, 5, 1234567890, "test-model", 0, 0)
 }
 
 func TestPrintError(t *testing.T) {
@@ -203,11 +203,11 @@ func TestPromptStyleEdgeCases(t *testing.T) {
 
 func TestSessionTokens(t *testing.T) {
 	sessionTokens = 0
-	PrintStatusBar(1000, 3, 1234567890, "test")
+	PrintStatusBar(1000, 3, 1234567890, "test", 0, 0)
 	if sessionTokens != 1000 {
 		t.Errorf("sessionTokens should be 1000, got %d", sessionTokens)
 	}
-	PrintStatusBar(500, 1, 1234567890, "test")
+	PrintStatusBar(500, 1, 1234567890, "test", 0, 0)
 	if sessionTokens != 1500 {
 		t.Errorf("sessionTokens should be 1500, got %d", sessionTokens)
 	}

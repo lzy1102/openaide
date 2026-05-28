@@ -255,7 +255,7 @@ var history []string // 会话内查询历史（Ctrl+R 搜索）
 								PrintWarning(lang.T("repl.plan_failed"))
 								executePlanQuery(app, query, plan)
 							} else {
-								pterm.Success.Printfln(lang.T("repl.selected", deepResult.Proposals.Options[i].Name))
+								fmt.Println("  "+lang.T("repl.selected", deepResult.Proposals.Options[i].Name))
 								executePlanQuery(app, query, selectedPlan)
 							}
 							break
