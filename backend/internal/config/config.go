@@ -209,6 +209,8 @@ func (l *LogConfig) PersistEnabled() bool {
 
 // DefaultConfig 默认配置
 func DefaultConfig() *Config {
+	home, _ := os.UserHomeDir()
+	if home == "" { home = "." }
 	return &Config{
 		Server: ServerConfig{
 			Host: "0.0.0.0",
@@ -220,7 +222,7 @@ func DefaultConfig() *Config {
 			Providers:       []ProviderConfig{},
 		},
 		Memory: MemoryConfig{
-			DataDir: "~/.openaide/data/memory",
+			DataDir: home + "/.openaide/data/memory",
 		},
 		Search: SearchConfig{
 			SearXNGURL: "http://localhost:8888",
@@ -241,7 +243,7 @@ func DefaultConfig() *Config {
 			MaxProposals:   3,
 		},
 		Storage: StorageConfig{
-			DataDir: "~/.openaide/data",
+			DataDir: home + "/.openaide/data",
 		},
 		Browser: BrowserConfig{
 			Enabled: false,
