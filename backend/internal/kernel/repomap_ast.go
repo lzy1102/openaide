@@ -199,7 +199,7 @@ func parsePythonRegex(path string) []astSymbol {
 	}
 
 	for typ, pat := range patterns {
-		re := regexp.MustCompile(pat)
+		re := regexp.MustCompile(`(?m)` + pat) // multiline mode: ^ matches line start
 		for _, m := range re.FindAllStringSubmatch(content, -1) {
 			if len(m) >= 2 {
 				symbols = append(symbols, astSymbol{
@@ -222,12 +222,12 @@ func parseJSRegex(path string) []astSymbol {
 	var symbols []astSymbol
 
 	patterns := map[string]string{
-		"class":    `^\s*(?:export\s+)?(?:abstract\s+)?class\s+(\w+)`,
-		"func":     `^\s*(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(`,
-		"arrow":    `^\s*(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?\(`,
-		"method":   `^\s+(?:async\s+)?(\w+)\s*\([^)]*\)\s*{`,
-		"import":   `^\s*import\s+.*?(?:from\s+)?['"]([^'"]+)['"]`,
-		"export":   `^\s*export\s+(?:const|let|var|function|class)\s+(\w+)`,
+		"class":    `(?m)^\s*(?:export\s+)?(?:abstract\s+)?class\s+(\w+)`,
+		"func":     `(?m)^\s*(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(`,
+		"arrow":    `(?m)^\s*(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?\(`,
+		"method":   `(?m)^\s+(?:async\s+)?(\w+)\s*\([^)]*\)\s*{`,
+		"import":   `(?m)^\s*import\s+.*?(?:from\s+)?['"]([^'"]+)['"]`,
+		"export":   `(?m)^\s*export\s+(?:const|let|var|function|class)\s+(\w+)`,
 	}
 
 	for typ, pat := range patterns {
