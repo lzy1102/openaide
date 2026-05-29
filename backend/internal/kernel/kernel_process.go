@@ -303,6 +303,11 @@ func (k *AgentKernel) doReflection(ctx context.Context, sessionID, query, respon
 		return
 	}
 
+	// Skill feedback: record quality for the activated skill
+	if k.skillManager != nil {
+		k.skillManager.RecordLastSkillUsage(result.Quality)
+	}
+
 	// 存储反思结果到会话 + 知识使用反馈
 	if result != nil && k.sessionStore != nil {
 		session, err := k.sessionStore.Get(ctx, sessionID)

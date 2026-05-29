@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"log/slog"
+	"time"
 )
 
 // Skill 可插拔的能力模块
@@ -15,18 +16,25 @@ type Skill struct {
 	ID          string   `json:"id"`
 	Name        string   `json:"name"`
 	Description string   `json:"description"`
-	Prompt      string   `json:"prompt"`     // 注入 system prompt 的内容
-	Keywords    []string `json:"keywords"`   // 意图检测关键词（命中任一即激活）
-	Tools       []string `json:"tools"`      // 激活后推荐启用的工具
+	Prompt      string   `json:"prompt"`
+	Keywords    []string `json:"keywords"`
+	Tools       []string `json:"tools"`
 	Enabled     bool     `json:"enabled"`
+
+	// Feedback tracking for smart activation
+	UsageCount   int       `json:"usage_count"`
+	SuccessCount int       `json:"success_count"`
+	Confidence   float64   `json:"confidence"` // 0-1, start at 0.5, auto-disable <0.3
+	LastUsed     time.Time `json:"last_used"`
 }
 
 // SkillManager 技能管理器
 type SkillManager struct {
 	skills    map[string]*Skill
 	dir       string
-	autoDetect bool
-	llm       LLMProvider // 可选：LLM 语义匹配技能
+	autoDetect    bool
+	llm          LLMProvider
+	lastActivated string     // skill activated in current query (for feedback)
 }
 
 // NewSkillManager 创建技能管理器
@@ -172,6 +180,7 @@ func (sm *SkillManager) loadBuiltins() {
 	}
 	for i := range builtins {
 		sm.skills[builtins[i].ID] = &builtins[i]
+		sm.initSkillConfidence(builtins[i].ID)
 	}
 }
 
@@ -191,6 +200,7 @@ func (sm *SkillManager) loadFromDisk() {
 		var skill Skill
 		if json.Unmarshal(data, &skill) == nil {
 			sm.skills[skill.ID] = &skill
+			sm.initSkillConfidence(skill.ID)
 		}
 	}
 }
@@ -224,6 +234,58 @@ func (sm *SkillManager) EnabledSkills() []*Skill {
 }
 
 // DetectSkill 自动检测用户意图并匹配技能（LLM 优先，关键词兜底）
+
+// RecordSkillUsage records that a skill was activated and whether it was helpful.
+// qualityScore: reflection quality 1-10. >=6 = success.
+func (sm *SkillManager) RecordSkillUsage(skillID string, qualityScore int) {
+	if skill, ok := sm.skills[skillID]; ok {
+		skill.UsageCount++
+		skill.LastUsed = time.Now()
+		if qualityScore >= 6 {
+			skill.SuccessCount++
+			skill.Confidence = min(0.95, skill.Confidence+0.05)
+		} else {
+			skill.Confidence = max(0.1, skill.Confidence-0.1)
+		}
+		if skill.Confidence < 0.3 {
+			skill.Enabled = false
+			slog.Info("Skill auto-disabled due to low confidence", "id", skillID, "confidence", skill.Confidence)
+		} else if !skill.Enabled && skill.Confidence >= 0.5 {
+			skill.Enabled = true
+			slog.Info("Skill re-enabled after confidence recovered", "id", skillID, "confidence", skill.Confidence)
+		}
+	}
+}
+
+// RecordLastSkillUsage records quality feedback for the most recently activated skill.
+// Call this after reflection completes with the quality score.
+func (sm *SkillManager) RecordLastSkillUsage(qualityScore int) {
+	if sm.lastActivated != "" {
+		sm.RecordSkillUsage(sm.lastActivated, qualityScore)
+		sm.lastActivated = "" // consume
+	}
+}
+
+// DecayUnusedSkills decreases confidence for skills not used in 7 days.
+func (sm *SkillManager) DecayUnusedSkills() {
+	now := time.Now()
+	for id, skill := range sm.skills {
+		if skill.LastUsed.IsZero() { continue }
+		if now.Sub(skill.LastUsed) > 7*24*time.Hour {
+			skill.Confidence = max(0.1, skill.Confidence-0.05)
+			if skill.Confidence < 0.3 { skill.Enabled = false }
+		}
+		_ = id
+	}
+}
+
+// Initialize new skills with default confidence
+func (sm *SkillManager) initSkillConfidence(id string) {
+	if skill, ok := sm.skills[id]; ok && skill.Confidence == 0 {
+		skill.Confidence = 0.5
+	}
+}
+
 func (sm *SkillManager) DetectSkill(query string) *Skill {
 	slog.Debug("Skill detect", "query", query[:min(80, len(query))])
 	if !sm.autoDetect {

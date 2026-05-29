@@ -83,6 +83,8 @@ func (k *AgentKernel) finalizeResponse(ctx context.Context, session *Session, qu
 		go k.doReflection(ctx, session.ID, query.Content, response, toolCalls, 0)
 	}
 	go k.compressMemory(ctx, session.ID)
+	// Periodically decay unused skills
+	if k.skillManager != nil { go k.skillManager.DecayUnusedSkills() }
 }
 
 // executeToolBatch runs a group of tool calls concurrently (all are parallel-safe).
