@@ -1,3 +1,16 @@
+// Extract meaningful title from session data
+const extractTitle = (data) => {
+    const meta = (data.session && data.session.Metadata) || {};
+    if (meta.title) return meta.title.substring(0, 30);
+    const msgs = data.messages || [];
+    for (const m of msgs) {
+        if (m.role === 'user' && m.content) {
+            return m.content.substring(0, 30);
+        }
+    }
+    return (data.session && data.session.id) ? data.session.id.substring(0, 8) : 'Chat';
+};
+
 // API服务，用于与后端API进行通信
 // 自动检测：同源优先 > 环境变量 > 默认 localhost:8080
 
@@ -175,7 +188,7 @@ export const dialogueAPI = {
                 const msgs = data.messages || [];
                 return {
                     id,
-                    title: (data.session && data.session.id) ? data.session.id.substring(0, 8) : 'Chat',
+                    title: extractTitle(data),
                     messages: msgs.map((m) => ({
                         sender: m.role === 'user' ? 'user' : 'assistant',
                         content: m.content || '',

@@ -730,10 +730,10 @@ const html = providers.map(p => `
                 const deleteBtn = document.createElement('button');
                 deleteBtn.className = 'btn-icon dialogue-delete-btn';
                 deleteBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 2L10 10M10 2L2 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
-                deleteBtn.title = '删除';
+                deleteBtn.title = 'Delete';
                 deleteBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
-                    if (confirm('确定要删除这个对话吗？')) {
+                    if (confirm('Delete this conversation?')) {
                         deleteDialogue(d.id);
                     }
                 });
