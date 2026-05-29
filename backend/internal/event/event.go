@@ -145,6 +145,18 @@ func (b *Bus) persistEvent(event kernel.Event) {
 		return
 	}
 	os.WriteFile(path, data, 0644)
+
+	// Rotate: keep only the last 1000 event files
+	entries, _ := os.ReadDir(b.dataDir)
+	if len(entries) > 1100 {
+		// Sort by name (which is time-sorted since names are timestamps)
+		cutoff := len(entries) - 1000
+		for _, e := range entries[:cutoff] {
+			if strings.HasSuffix(e.Name(), ".json") {
+				os.Remove(filepath.Join(b.dataDir, e.Name()))
+			}
+		}
+	}
 }
 
 func (b *Bus) loadEvents() error {

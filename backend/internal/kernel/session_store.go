@@ -243,7 +243,7 @@ func (s *SessionStoreAdapter) Get(ctx context.Context, sessionID string) (*Sessi
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if session, ok := s.sessions[sessionID]; ok {
-		return session, nil
+		return session.SafeCopy(), nil
 	}
 	return nil, fmt.Errorf("session not found: %s", sessionID)
 }
