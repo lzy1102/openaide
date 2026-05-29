@@ -60,11 +60,19 @@ func runREPL(app *infra.Application, continueSess bool) {
 	fmt.Println()
 	fmt.Printf("  %s/h%s help  %s|%s  %s/q%s quit  %s|%s  @file  Ctrl+C interrupt", cYellow, cReset, cInfo, cReset, cYellow, cReset, cInfo, cReset)
 	fmt.Println()
-	// First-time hint
-	if len(info) == 0 {
-		fmt.Printf("  %s→ Edit ~/.openaide/config.yaml to add your API key, then restart%s\n", cYellow, cReset)
-		fmt.Println()
+	// Project context: OPENAIDE.md status
+	if _, err := os.Stat(filepath.Join(cwd, "OPENAIDE.md")); err == nil {
+		fmt.Printf("  %s📋 OPENAIDE.md loaded%s\n", cGreen, cReset)
 	}
+
+	// Provider status
+	if len(info) > 0 {
+		fmt.Printf("  %s✓ %d provider(s) ready%s\n", cGreen, len(info), cReset)
+	} else {
+		fmt.Printf("  %s⚠ No provider configured%s\n", pterm.Yellow(""), cReset)
+		fmt.Printf("  %s→ Edit ~/.openaide/config.yaml to add your API key, then restart%s\n", cInfo, cReset)
+	}
+	fmt.Println()
 
 	// Session: resume or create
 	var sessionID string
