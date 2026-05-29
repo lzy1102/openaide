@@ -258,123 +258,131 @@ func (k *AgentKernel) getOrCreateSession(ctx context.Context, query *Query) (*Se
 }
 
 func (k *AgentKernel) buildMessages(ctx context.Context, session *Session, query *Query) []Message {
+	// ── Stable Prefix: System Message (Layers 0-2,5; prompt cache friendly) ──
+	systemMsg := k.buildSystemLayer(query)
 	messages := make([]Message, 0)
-
-	// === P0: 静态前缀（Prompt Cache 友好） ===
-	// 系统提示词放最前且保持不变，最大化 API 前缀缓存命中
-	k.promptMu.RLock()
-	systemPrompt := k.systemPrompt
-	k.promptMu.RUnlock()
-	if k.skillManager != nil {
-		systemPrompt = k.skillManager.InjectPrompt(query.Content, systemPrompt)
-	}
-	if systemPrompt != "" {
-		cwd, _ := os.Getwd()
-		// Server 模式：使用项目配置的工作目录
-		if k.queryOptions != nil && k.queryOptions.WorkingDir != "" {
-			cwd = k.queryOptions.WorkingDir
-		}
-		gitNote := ""
-		if out, err := runGitCmd("rev-parse", "--abbrev-ref", "HEAD"); err == nil && out != "" {
-			gitNote = fmt.Sprintf(" (分支: %s)", out)
-		}
-		promptWithCWD := systemPrompt + fmt.Sprintf("\n\n[工作目录] %s%s", cwd, gitNote)
-
-		// 加载项目规则文件：OPENAIDE.md > 其他 Agent 规则文件
-		ruleFiles := []string{
-			"OPENAIDE.md",
-			"CLAUDE.md",
-			"CODEBUDDY.md",
-			"CONVENTIONS.md",
-			".github/copilot-instructions.md",
-		}
-		// Cursor 规则目录
-		if entries, err := os.ReadDir(filepath.Join(cwd, ".cursor/rules")); err == nil {
-			for _, e := range entries {
-				if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
-					ruleFiles = append(ruleFiles, ".cursor/rules/"+e.Name())
-				}
-			}
-		}
-		for _, name := range ruleFiles {
-			data, err := os.ReadFile(filepath.Join(cwd, name))
-			if err != nil || len(data) == 0 { continue }
-			promptWithCWD += fmt.Sprintf("\n\n[规则: %s]\n%s", name, string(data))
-		}
-
-		// RepoMap: 注入符号地图（缓存 5 分钟），LLM 一眼看清代码结构
-		if repoMap := GenerateRepoMap(cwd); repoMap != "" {
-			promptWithCWD += "\n\n" + repoMap
-		}
-		messages = append(messages, Message{
-			Role:    "system",
-			Content: promptWithCWD,
-		})
+	if systemMsg != "" {
+		messages = append(messages, Message{Role: "system", Content: systemMsg})
 	}
 
-	// 加载历史对话（紧接系统提示词，保持前缀稳定）
+	// History (adjacent to system, stable)
 	if k.memory != nil && len(session.Messages) > 0 {
-		history, err := k.memory.Load(ctx, session.ID, 20)
-		if err == nil && len(history) > 0 {
-			messages = append(messages, history...)
+		history, _ := k.memory.Load(ctx, session.ID, 20)
+		messages = append(messages, history...)
+	}
+
+	// User query
+	messages = append(messages, Message{Role: "user", Content: query.Content})
+
+	// ── Dynamic Tail: Layers 3-6 (after user query, varies per query) ──
+
+	// L3: Strategy hints (complex tasks only)
+	if needsStrategyAdvice(query) {
+		if hint := k.buildStrategyLayer(query); hint != "" {
+			messages = append(messages, Message{Role: "system", Content: hint})
 		}
 	}
 
-	// 用户当前查询
-	messages = append(messages, Message{
-		Role:    "user",
-		Content: query.Content,
-	})
-
-	// === 动态尾部：反思/学习/知识放在用户查询之后，不影响前缀缓存 ===
-
-	// 注入上轮反思结果
+	// L4: Previous-round reflection
 	if session.Metadata != nil {
 		if ref, ok := session.Metadata["reflection"]; ok {
 			if r, ok := ref.(*ReflectionResult); ok && r != nil {
-				hint := fmt.Sprintf("[上轮反思] 质量评分: %d/10", r.Quality)
-				if len(r.Issues) > 0 {
-					hint += fmt.Sprintf(" | 问题: %s", strings.Join(r.Issues, "; "))
-				}
-				if len(r.Suggestions) > 0 {
-					hint += fmt.Sprintf(" | 建议: %s", strings.Join(r.Suggestions, "; "))
-				}
+				hint := fmt.Sprintf("[Reflection] Quality:%d/10", r.Quality)
+				if len(r.Issues) > 0 { hint += fmt.Sprintf(" Issues:%s", strings.Join(r.Issues, ";")) }
+				if len(r.Suggestions) > 0 { hint += fmt.Sprintf(" Tips:%s", strings.Join(r.Suggestions, ";")) }
 				messages = append(messages, Message{Role: "system", Content: hint})
 			}
 			delete(session.Metadata, "reflection")
 		}
 	}
 
-	// 注入跨会话学习洞察
+	// L5b: Cross-session learner insights
 	if k.learner != nil {
-		insights, err := k.learner.GetInsights(ctx, query.Content)
-		if err == nil && len(insights) > 0 {
-			messages = append(messages, Message{
-				Role: "system", Content: "[历史学习] " + strings.Join(insights, " | "),
-			})
+		insights, _ := k.learner.GetInsights(ctx, query.Content)
+		if len(insights) > 0 {
+			messages = append(messages, Message{Role: "system", Content: "[Learned] " + strings.Join(insights, " | ")})
 		}
 	}
 
-	// 注入知识库上下文
+	// L6: Knowledge base RAG
 	if k.knowledgeCollector != nil {
-		ctx := context.Background()
-		kbCtx, docIDs, err := k.knowledgeCollector.InjectContext(ctx, query.Content, 500)
-		if err == nil && kbCtx != "" {
-			messages = append(messages, Message{Role: "system", Content: kbCtx})
-			if len(docIDs) > 0 {
-				if session.Metadata == nil {
-					session.Metadata = make(map[string]interface{})
-				}
-				session.Metadata["knowledge_doc_ids"] = docIDs
-			}
+		kbCtx, _, _ := k.knowledgeCollector.InjectContext(ctx, query.Content, 500)
+		if kbCtx != "" {
+			messages = append(messages, Message{Role: "system", Content: "[Knowledge] " + kbCtx})
 		}
 	}
-
-	// 旧工具输出衰减裁剪
-	snipOldToolOutputs(messages)
 
 	return messages
 }
+
+// ── Layer Builders ──────────────────────────────────────────
+// Each layer has a clear activation condition and injection point.
+
+// buildSystemLayer (L0+L1+L2+L5): Identity + Rules + Project Context + Skill
+func (k *AgentKernel) buildSystemLayer(query *Query) string {
+	k.promptMu.RLock()
+	sp := k.systemPrompt
+	k.promptMu.RUnlock()
+
+	// L5: Skill prompt injection (activated by keyword match on query)
+	if k.skillManager != nil {
+		sp = k.skillManager.InjectPrompt(query.Content, sp)
+	}
+	if sp == "" { return "" }
+
+	// L2: Project context (always injected, short)
+	cwd, _ := os.Getwd()
+	if k.queryOptions != nil && k.queryOptions.WorkingDir != "" {
+		cwd = k.queryOptions.WorkingDir
+	}
+	gitNote := ""
+	if out, err := runGitCmd("rev-parse", "--abbrev-ref", "HEAD"); err == nil && out != "" {
+		gitNote = fmt.Sprintf(" (branch: %s)", out)
+	}
+	sp += fmt.Sprintf("\n\n[WorkingDir] %s%s", cwd, gitNote)
+
+	// L2b: Project rules (OPENAIDE.md, CLAUDE.md, etc.)
+	ruleFiles := []string{"OPENAIDE.md", "CLAUDE.md", "CODEBUDDY.md", "CONVENTIONS.md", ".github/copilot-instructions.md"}
+	if entries, _ := os.ReadDir(filepath.Join(cwd, ".cursor/rules")); entries != nil {
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
+				ruleFiles = append(ruleFiles, ".cursor/rules/"+e.Name())
+			}
+		}
+	}
+	for _, name := range ruleFiles {
+		data, err := os.ReadFile(filepath.Join(cwd, name))
+		if err != nil || len(data) == 0 { continue }
+		sp += fmt.Sprintf("\n\n[Rules:%s]\n%s", name, string(data))
+	}
+
+	// L2c: RepoMap project symbol map (5-min TTL cache)
+	if repoMap := GenerateRepoMap(cwd); repoMap != "" {
+		sp += "\n\n" + repoMap
+	}
+
+	return sp
+}
+
+// needsStrategyAdvice checks if the query warrants strategy injection (L3).
+// Activated by: long queries, build/implement/refactor keywords.
+func needsStrategyAdvice(query *Query) bool {
+	return len(query.Content) > 200 ||
+		strings.Contains(query.Content, "build") || strings.Contains(query.Content, "implement") ||
+		strings.Contains(query.Content, "refactor") || strings.Contains(query.Content, "design") ||
+		strings.Contains(query.Content, "构建") || strings.Contains(query.Content, "实现") ||
+		strings.Contains(query.Content, "重构") || strings.Contains(query.Content, "设计")
+}
+
+// buildStrategyLayer (L3): Experience-based strategy hints for complex tasks.
+// Activated only by needsStrategyAdvice. Injects learner insights.
+func (k *AgentKernel) buildStrategyLayer(query *Query) string {
+	if k.learner == nil { return "" }
+	insights, _ := k.learner.GetInsights(context.Background(), query.Content)
+	if len(insights) == 0 { return "" }
+	return "[Strategy] " + strings.Join(insights, "; ")
+}
+
 
 func runGitCmd(args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
