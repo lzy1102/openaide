@@ -355,7 +355,8 @@ func handleDesktopScreenshot(ctx context.Context, arguments string) (*kernel.Too
 
 func handleDesktopClick(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
 	var args struct {
-		X, Y   int    `json:"x,y"`
+		X      int    `json:"x"`
+		Y      int    `json:"y"`
 		Button string `json:"button,omitempty"`
 		Double bool   `json:"double,omitempty"`
 	}
@@ -393,7 +394,7 @@ func handleDesktopKey(ctx context.Context, arguments string) (*kernel.ToolResult
 }
 
 func handleDesktopScroll(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
-	var args struct{ X, Y int `json:"x,y"` }
+	var args struct{ X, Y int  }
 	json.Unmarshal([]byte(arguments), &args)
 	cmd := scrollCmd(args.X, args.Y)
 	if cmd == nil {
@@ -404,7 +405,7 @@ func handleDesktopScroll(ctx context.Context, arguments string) (*kernel.ToolRes
 }
 
 func handleDesktopMove(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
-	var args struct{ X, Y int `json:"x,y"` }
+	var args struct{ X, Y int  }
 	json.Unmarshal([]byte(arguments), &args)
 	cmd := moveCmd(args.X, args.Y)
 	if cmd == nil {
@@ -415,7 +416,7 @@ func handleDesktopMove(ctx context.Context, arguments string) (*kernel.ToolResul
 }
 
 func handleDesktopDrag(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
-	var args struct{ X1, Y1, X2, Y2 int `json:"x1,y1,x2,y2"` }
+	var args struct{ X1, Y1, X2, Y2 int  }
 	json.Unmarshal([]byte(arguments), &args)
 	cmd := dragCmd(args.X1, args.Y1, args.X2, args.Y2)
 	if cmd == nil {
