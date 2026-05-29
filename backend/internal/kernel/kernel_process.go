@@ -46,26 +46,15 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 
 	// 3. 构建消息列表
 	messages := k.buildMessages(ctx, session, query)
-	// 4. 获取工具定义
-	tools := k.toolExecutor.GetDefinitions()
-	if len(query.Options.ToolFilter) > 0 {
-		tools = k.toolExecutor.GetDefinitionsByNames(query.Options.ToolFilter)
-	} else if k.skillManager != nil {
-		// 技能激活时，限制工具为技能推荐的工具集
-		if skillTools := k.skillManager.GetTools(query.Content); len(skillTools) > 0 {
-			tools = k.toolExecutor.GetDefinitionsByNames(skillTools)
-		}
-	}
+	// 4. Get tool definitions (skill-filtered if applicable)
+	tools := k.getToolDefinitions(query.Content, query.Options)
 
 	// 5. ReAct 循环
 	k.setState(StateThinking)
 	totalToolCalls := 0
 	totalTokens := 0
 
-	maxRounds := k.maxRounds
-	if k.adaptiveRounds != nil {
-		maxRounds = k.adaptiveRounds.Calculate(query.Content, len(session.Messages))
-	}
+	maxRounds := k.determineMaxRounds(query.Content, len(session.Messages))
 	slog.Debug("ReAct loop start", "query", query.Content[:min(80, len(query.Content))], "max_rounds", maxRounds, "tools", len(tools), "history_msgs", len(messages))
 	for round := 0; round < maxRounds; round++ {
 		// 检查上下文长度，必要时压缩

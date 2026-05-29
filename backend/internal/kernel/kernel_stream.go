@@ -29,14 +29,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 
 	messages := k.buildMessages(ctx, session, query)
 
-	tools := k.toolExecutor.GetDefinitions()
-	if len(query.Options.ToolFilter) > 0 {
-		tools = k.toolExecutor.GetDefinitionsByNames(query.Options.ToolFilter)
-	} else if k.skillManager != nil {
-		if skillTools := k.skillManager.GetTools(query.Content); len(skillTools) > 0 {
-			tools = k.toolExecutor.GetDefinitionsByNames(skillTools)
-		}
-	}
+	tools := k.getToolDefinitions(query.Content, query.Options)
 
 	resultChan := make(chan StreamChunk, 100)
 
