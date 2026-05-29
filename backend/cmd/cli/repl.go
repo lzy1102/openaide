@@ -648,6 +648,21 @@ func expandAtRefs(query string) string {
 }
 
 // expandAtRefs finds @filename references and prepends file content
+// handleUndo restores the session to the last checkpoint
+func handleUndo(app *infra.Application, sessionID string) {
+	ctx := context.Background()
+	if ak, ok := app.Kernel.(*kernel.AgentKernel); ok {
+		msgs, _, found, err := ak.ResumeSession(ctx, sessionID)
+		if err != nil || !found || len(msgs) == 0 {
+			PrintWarning("No checkpoint to restore")
+			return
+		}
+		pterm.Success.Printfln("Restored checkpoint (%d messages)", len(msgs))
+		// Clear screen to show fresh context
+		fmt.Print("[2J[H")
+	}
+}
+
 func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, modelName *string) {
 	parts := strings.Fields(cmd)
 	switch parts[0] {
@@ -678,6 +693,7 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 			pterm.Cyan("/team <task>") + " — " + lang.T("repl.help_team"),
 		pterm.Cyan("/tree") + " — browse project files",
 		pterm.Cyan("/status") + " — system health & providers",
+		pterm.Cyan("/undo") + " — rollback to last checkpoint",
 		pterm.Cyan("/init") + " — generate OPENAIDE.md for this project",
 		}, false)
 		Println()

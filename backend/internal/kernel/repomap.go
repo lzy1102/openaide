@@ -37,6 +37,11 @@ var (
 
 // GenerateRepoMap 扫描项目生成符号地图（带缓存）
 func GenerateRepoMap(root string) string {
+	// Use AST-based parsing for Go files, regex for others
+	if astMap := GenerateASTRepoMap(root); astMap != "" {
+		return astMap
+	}
+
 	repoMapMu.Lock()
 	defer repoMapMu.Unlock()
 

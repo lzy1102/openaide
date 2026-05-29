@@ -981,6 +981,21 @@ func groupByDependency(subtasks []SubTask) [][]SubTask {
 	return groups
 }
 
+// extractErrorSummary returns a short summary from lint errors for pattern tracking.
+func extractErrorSummary(errors map[string]bool) string {
+	count := 0
+	var sample string
+	for e := range errors {
+		if count >= 3 { break }
+		e = strings.TrimSpace(e)
+		if len(e) > 60 { e = e[:57] + "..." }
+		if sample != "" { sample += "; " }
+		sample += e
+		count++
+	}
+	return sample
+}
+
 // lintRepairLoop 自动运行 linter，错误反馈给 LLM 修复（Aider 风格）
 // 最多重试 3 次，每次只反馈新增的 lint 错误
 func (o *Orchestrator) lintRepairLoop(ctx context.Context, userID, projectID, fixContent string, results []string) string {
@@ -990,7 +1005,8 @@ func (o *Orchestrator) lintRepairLoop(ctx context.Context, userID, projectID, fi
 	for retry := 0; retry < maxRetries; retry++ {
 		lintOutput := runLint()
 		if lintOutput == "" {
-			return fixContent // 没有 lint 错误，完成
+			if o.mind != nil && retry > 0 { o.mind.AddLearning("pattern", "lint-fix: "+extractErrorSummary(prevErrors)) }
+		return fixContent
 		}
 
 		// 只反馈新增的错误（去重）
@@ -1012,6 +1028,7 @@ func (o *Orchestrator) lintRepairLoop(ctx context.Context, userID, projectID, fi
 		lintFix, err := o.RunSubAgent(ctx, userID, projectID, "coder", lintFixTask, results)
 		if err != nil {
 			slog.Warn("Lint/Repair: coder failed", "error", err)
+			if o.mind != nil { o.mind.AddLearning("convention", "lint-fail: "+extractErrorSummary(prevErrors)) }
 			return fixContent
 		}
 		if strings.Contains(lintFix, "[BLOCKED:") {
