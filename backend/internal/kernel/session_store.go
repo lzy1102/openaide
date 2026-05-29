@@ -81,7 +81,7 @@ func (s *FileSessionStore) Get(ctx context.Context, sessionID string) (*Session,
 	s.mu.RUnlock()
 
 	if ok {
-		return session, nil
+		return session.SafeCopy(), nil
 	}
 
 	// 尝试从磁盘加载（可能在其他实例创建或索引未加载）

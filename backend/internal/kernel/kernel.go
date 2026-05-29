@@ -48,6 +48,7 @@ type AgentKernel struct {
 	// 事件系统
 	eventHandlers []EventHandler
 	eventMu       sync.RWMutex
+	eventSem      chan struct{} // 限制并发 handler goroutine 数量
 
 	// 状态管理
 	state     KernelState
@@ -97,6 +98,7 @@ func NewAgentKernel(
 		systemPrompt:  config.SystemPrompt,
 		state:         StateIdle,
 		eventHandlers: make([]EventHandler, 0),
+			eventSem:      make(chan struct{}, 16),
 	}
 
 	// 默认使用简单压缩器
@@ -531,7 +533,10 @@ func (k *AgentKernel) publishEvent(event Event) {
 	k.eventMu.RUnlock()
 
 	for _, h := range handlers {
+		h := h
+		k.eventSem <- struct{}{}
 		go func(handler EventHandler) {
+			defer func() { <-k.eventSem }()
 			done := make(chan struct{}, 1)
 			go func() {
 				handler.HandleEvent(event)

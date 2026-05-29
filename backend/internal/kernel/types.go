@@ -108,6 +108,20 @@ type Session struct {
 	Metadata  map[string]interface{} `json:"metadata,omitempty"`
 }
 
+// SafeCopy returns a deep copy of the session for concurrent-safe use
+func (s *Session) SafeCopy() *Session {
+	c := *s
+	c.Messages = make([]Message, len(s.Messages))
+	copy(c.Messages, s.Messages)
+	if s.Metadata != nil {
+		c.Metadata = make(map[string]interface{}, len(s.Metadata))
+		for k, v := range s.Metadata {
+			c.Metadata[k] = v
+		}
+	}
+	return &c
+}
+
 // Query 用户查询
 type Query struct {
 	SessionID string `json:"session_id"`
