@@ -18,8 +18,9 @@ type Skill struct {
 	Description string   `json:"description"`
 	Prompt      string   `json:"prompt"`
 	Keywords    []string `json:"keywords"`
-	Tools       []string `json:"tools"`
-	Enabled     bool     `json:"enabled"`
+	Tools        []string `json:"tools"`
+	AllowedTools []string `json:"allowed_tools"` // empty = all tools allowed
+	Enabled      bool     `json:"enabled"`
 
 	// Feedback tracking for smart activation
 	UsageCount   int       `json:"usage_count"`
@@ -119,6 +120,7 @@ func (sm *SkillManager) loadBuiltins() {
 5. 最佳实践 (SOLID、DRY、KISS)
 输出格式: 问题严重度 + 文件:行号 + 问题描述 + 修复建议`,
 			Tools:   []string{"read_file", "search_files", "git_status"},
+			AllowedTools: []string{"read_file", "search_files", "search_symbols", "git_status", "git_diff", "git_log", "git_blame"},
 			Enabled: true,
 		},
 		{
@@ -363,8 +365,8 @@ func (sm *SkillManager) InjectPrompt(query string, basePrompt string) string {
 // GetTools 获取技能需要的工具列表
 func (sm *SkillManager) GetTools(query string) []string {
 	skill := sm.DetectSkill(query)
-	if skill == nil {
-		return nil
-	}
+	if skill == nil { return nil }
+	// AllowedTools takes priority over Tools
+	if len(skill.AllowedTools) > 0 { return skill.AllowedTools }
 	return skill.Tools
 }
