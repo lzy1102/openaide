@@ -183,7 +183,7 @@ git push origin v1.0.0
 - **ProjectMind 持续学习**: 跨会话积累项目知识，越用越聪明
 
 ### 核心架构
-- **REPL 模式**: rich readline + markdown 渲染 + 代码高亮 + tab 补全 + 交互式选择
+- **REPL 模式**: 逐行流式渲染 + @file 引用 + 模糊搜索 + 多选勾选 + 会话标题 + Git 指示
 - **Web 前端**: 流式聊天 + 项目管理 + 配置编辑 + 多语言 + 暗色模式
 - **22个内置工具**: 文件读写/执行命令/Git深度/知识库/代码符号索引
 - **多 Agent Team**: /analyst /coder /reviewer /executor /team，独立会话+模型路由
@@ -238,6 +238,8 @@ openaide help                     # Show help
   /executor       Execute/verify
   /team           Full team pipeline
   /sessions       List sessions
+  /init           Generate OPENAIDE.md
+  /tree           Browse project file tree
   /lang zh/en     Switch language
   /<skill-name>   Activate a skill (builtin or from plugins)
 
