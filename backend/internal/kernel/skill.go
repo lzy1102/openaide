@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"log/slog"
 	"time"
 )
@@ -31,6 +32,7 @@ type Skill struct {
 
 // SkillManager 技能管理器
 type SkillManager struct {
+	mu        sync.RWMutex
 	skills    map[string]*Skill
 	dir       string
 	autoDetect    bool
@@ -53,6 +55,8 @@ func NewSkillManager(skillsDir string) *SkillManager {
 
 // AddClaudeSkill 从 Claude 插件格式添加技能（由外部调用，避免循环导入）
 func (sm *SkillManager) AddClaudeSkill(id, name, description, prompt string, tools, keywords []string) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
 	if _, exists := sm.skills[id]; exists {
 		return
 	}
@@ -217,6 +221,8 @@ func (sm *SkillManager) Get(id string) *Skill {
 
 // List 列出所有技能
 func (sm *SkillManager) List() []*Skill {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
 	var result []*Skill
 	for _, s := range sm.skills {
 		result = append(result, s)
@@ -240,6 +246,8 @@ func (sm *SkillManager) EnabledSkills() []*Skill {
 // RecordSkillUsage records that a skill was activated and whether it was helpful.
 // qualityScore: reflection quality 1-10. >=6 = success.
 func (sm *SkillManager) RecordSkillUsage(skillID string, qualityScore int) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
 	if skill, ok := sm.skills[skillID]; ok {
 		skill.UsageCount++
 		skill.LastUsed = time.Now()
@@ -292,6 +300,8 @@ func (sm *SkillManager) initSkillConfidence(id string) {
 }
 
 func (sm *SkillManager) DetectSkill(query string) *Skill {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
 	slog.Debug("Skill detect", "query", query[:min(80, len(query))])
 	if !sm.autoDetect {
 		return nil

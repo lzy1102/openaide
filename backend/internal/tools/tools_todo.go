@@ -81,6 +81,13 @@ func handleTodoWrite(ctx context.Context, arguments string) (*kernel.ToolResult,
 
 	todoMu.Lock()
 	todoStore[sessionID] = items
+	// Cleanup old entries (keep last 100 sessions)
+	if len(todoStore) > 100 {
+		for k := range todoStore {
+			if len(todoStore) <= 100 { break }
+			delete(todoStore, k)
+		}
+	}
 	todoMu.Unlock()
 
 	var out strings.Builder

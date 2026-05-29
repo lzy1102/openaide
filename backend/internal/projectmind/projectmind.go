@@ -402,6 +402,8 @@ func (pm *ProjectMind) InvalidateConvention(rule string) {
 
 // DecayConventions ages unvalidated conventions (call from ExpireOldFacts).
 func (pm *ProjectMind) DecayConventions() {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
 	now := time.Now()
 	for i, c := range pm.Conventions {
 		if c.Invalid { continue }
@@ -418,6 +420,8 @@ func (pm *ProjectMind) DecayConventions() {
 
 // CleanupDeadConventions removes invalidated and very-low-confidence conventions.
 func (pm *ProjectMind) CleanupDeadConventions() {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
 	filtered := make([]Convention, 0, len(pm.Conventions))
 	for _, c := range pm.Conventions {
 		if !c.Invalid && c.Confidence >= 0.3 {

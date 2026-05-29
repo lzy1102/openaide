@@ -160,7 +160,10 @@ func (p *OpenAIProvider) ChatStream(ctx context.Context, messages []kernel.Messa
 
 			data := strings.TrimPrefix(line, "data: ")
 			if data == "[DONE]" {
-				resultChan <- kernel.StreamChunk{Done: true}
+				select {
+			case resultChan <- kernel.StreamChunk{Done: true}:
+			case <-ctx.Done():
+			}
 				return
 			}
 
