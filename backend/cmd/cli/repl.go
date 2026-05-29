@@ -109,7 +109,7 @@ func runREPL(app *infra.Application, continueSess bool) {
 	rl.HistoryAutoWrite = true
 
 	commands := []string{"/help", "/clear", "/mode", "/model", "/lang", "/log", "/sessions", "/session",
-		"/handoff", "/exit", "/quit", "/q", "/analyst", "/coder", "/reviewer", "/executor", "/team", "/tree", "/init", "/project"}
+		"/handoff", "/exit", "/quit", "/q", "/analyst", "/coder", "/reviewer", "/executor", "/team", "/tree", "/init"}
 	rl.TabCompleter = func(line []rune, pos int, _ readline.DelayedTabContext) *readline.TabCompleterReturnT {
 		prefix := string(line[:pos])
 		if strings.HasPrefix(prefix, "/") {
@@ -658,7 +658,6 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 			pterm.Cyan("/team <task>") + " — " + lang.T("repl.help_team"),
 		pterm.Cyan("/tree") + " — browse project files",
 		pterm.Cyan("/init") + " — generate OPENAIDE.md for this project",
-		pterm.Cyan("/project [path]") + " — show/switch project directory",
 		}, false)
 		Println()
 		pterm.Info.Println(lang.T("repl.help_intro"))
@@ -707,20 +706,8 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 		}
 		return
 
-	case "/project":
-		if len(parts) >= 2 {
-			newPath := strings.TrimSpace(strings.TrimPrefix(cmd, "/project"))
-			if info, err := os.Stat(newPath); err == nil && info.IsDir() {
-				os.Chdir(newPath)
-				wd, _ := os.Getwd()
-				PrintSuccess(fmt.Sprintf("Project: %s", filepath.Base(wd)))
-			} else {
-				PrintWarning(fmt.Sprintf("Directory not found: %s", newPath))
-			}
-		} else {
-			wd, _ := os.Getwd()
-			PrintInfo(fmt.Sprintf("Current: %s  |  Use /project <path> to switch", filepath.Base(wd)))
-		}
+	case "/tree":
+		showFileTree()
 		return
 
 	case "/init":
