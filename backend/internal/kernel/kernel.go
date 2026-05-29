@@ -199,6 +199,7 @@ func (k *AgentKernel) SetSkillEvolution(se *SkillEvolution) {
 	k.skillEvolution = se
 }
 
+func (k *AgentKernel) GetSkillManager() *SkillManager { return k.skillManager }
 func (k *AgentKernel) SetQualityGate(gate QualityGate) {
 	k.qualityGate = gate
 }

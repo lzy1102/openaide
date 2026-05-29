@@ -735,6 +735,10 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 			o.mind.SyncToKnowledgeBase(o.knowledge)
 			if o.mind.HasHighConfidenceConventions() {
 				o.mind.SyncToSystemPrompt(o.promptsDir, o.lang)
+				// Auto-create skills from high-confidence conventions
+				if ak, ok := o.kernel.(*kernel.AgentKernel); ok {
+					o.mind.SyncConventionsToSkills(ak.GetSkillManager())
+				}
 			}
 		}
 	}

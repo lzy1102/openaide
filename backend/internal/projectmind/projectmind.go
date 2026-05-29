@@ -263,6 +263,30 @@ func (pm *ProjectMind) SyncToSystemPrompt(promptsDir, lang string) error {
 	return nil
 }
 
+// SyncConventionsToSkills auto-creates skills from high-confidence conventions.
+func (pm *ProjectMind) SyncConventionsToSkills(sm interface {
+	AddClaudeSkill(id, name, description, prompt string, tools, keywords []string)
+}) {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+	for _, conv := range pm.Conventions {
+		if conv.Invalid || conv.Confidence < 0.9 { continue }
+		// Generate a clean skill ID from the convention rule
+		name := conv.Rule
+		if len(name) > 40 { name = name[:40] }
+		id := "auto-conv-" + strings.ToLower(strings.ReplaceAll(name, " ", "-"))
+		id = strings.Map(func(r rune) rune {
+			if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' { return r }
+			return '-'
+		}, id)
+		sm.AddClaudeSkill(id, conv.Rule,
+			fmt.Sprintf("Auto-generated from convention (confidence: %.0f%%)", conv.Confidence*100),
+			conv.Rule+"\n\nThis rule was learned from repeated project experience.",
+			[]string{"search_files", "read_file"},
+			[]string{strings.ToLower(conv.Rule[:min(20, len(conv.Rule))])})
+	}
+}
+
 // ExpireOldFacts 标记过期事实（降置信度）
 func (pm *ProjectMind) ExpireOldFacts() {
 	pm.DecayConventions()
