@@ -178,7 +178,7 @@ git push origin v1.0.0
 - **Lint/Repair 循环**: 代码修改后自动 lint → 错误反馈 LLM 修复 → 循环直到干净
 - **Architect/Editor 模型路由**: analyst/reviewer→推理模型，coder/executor→执行模型
 - **预算注入**: LLM 感知剩余轮次，主动收敛而非突然截断
-- **ProjectMind 持续学习**: 跨会话积累项目知识，越用越聪明
+- **ProjectMind 持续学习**: 纠正/衰减/清零，自动进化系统提示词
 
 ### 核心架构
 - **REPL 模式**: 逐行流式渲染 + @file 引用 + 模糊搜索 + 多选勾选 + 会话标题 + Git 指示
