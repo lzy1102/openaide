@@ -174,7 +174,7 @@ git push origin v1.0.0
 ## 核心能力
 
 ### 智能增强（Aider 风格）
-- **RepoMap 符号地图**: 项目符号自动提取注入 prompt，LLM 一眼看清代码结构
+- **RepoMap 符号地图**: Go AST + regex 多语言解析，注入 prompt，LLM 一眼看清代码结构
 - **Lint/Repair 循环**: 代码修改后自动 lint → 错误反馈 LLM 修复 → 循环直到干净
 - **Architect/Editor 模型路由**: analyst/reviewer→推理模型，coder/executor→执行模型
 - **预算注入**: LLM 感知剩余轮次，主动收敛而非突然截断
@@ -221,7 +221,7 @@ openaide                          # REPL 交互模式
 openaide <prompt>                 # One-shot mode
 openaide <file.go> <prompt>       # File + prompt
 openaide -c                       # Continue last session
-openaide -y                       # Auto-approve all tool calls
+openaide -y                       # Fully autonomous: skip all confirmations
 openaide --model <name>           # Override model
 openaide --verbose                # Debug logging
 openaide -o json                  # Structured JSON output
@@ -248,6 +248,7 @@ openaide help                     # Show help
   /init           Generate OPENAIDE.md
   /tree           Browse project file tree
   /status         System health & providers
+  /undo           Rollback to last checkpoint
   /lang zh/en     Switch language
   /<skill-name>   Activate a skill (builtin or from plugins)
 
