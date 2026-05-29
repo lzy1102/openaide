@@ -132,7 +132,6 @@ type PlanningConfig struct {
 	Enabled        bool `json:"enabled" yaml:"enabled"`                 // 启用规划（默认true）
 	DeepTimeout    int  `json:"deep_timeout" yaml:"deep_timeout"`       // 深度分析超时秒（默认120）
 	PreviewTimeout int  `json:"preview_timeout" yaml:"preview_timeout"` // 预览超时秒（默认15）
-	MaxProposals   int  `json:"max_proposals" yaml:"max_proposals"`     // 最大方案数（默认3）
 }
 
 // StorageConfig 存储配置
@@ -242,7 +241,6 @@ func DefaultConfig() *Config {
 			Enabled:        true,
 			DeepTimeout:    300,
 			PreviewTimeout: 30,
-			MaxProposals:   3,
 		},
 		Storage: StorageConfig{
 			DataDir: home + "/.openaide/data",

@@ -51,7 +51,8 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 			defer k.tracer.EndSpan(traceCtx, nil, nil)
 		}
 
-		maxRounds := k.maxRounds
+		k.queryOptions = &query.Options
+	maxRounds := k.maxRounds
 		if k.adaptiveRounds != nil {
 			maxRounds = k.adaptiveRounds.Calculate(query.Content, len(session.Messages))
 		}

@@ -40,9 +40,15 @@ func (k *AgentKernel) prepareReActRound(messages []Message, round, maxRounds int
 				round, maxRounds, remaining),
 		})
 	} else if round >= maxRounds-1 {
-		messages = append(messages, Message{
-			Role: "user", Content: "[System] Final round — must give final answer. Do NOT call any tools.",
-		})
+		// Check if user wants to continue beyond budget
+	if k.queryOptions != nil && k.queryOptions.OnBudgetExhausted != nil {
+		if k.queryOptions.OnBudgetExhausted(round, maxRounds) {
+			return messages // Callback says continue without forced stop
+		}
+	}
+	messages = append(messages, Message{
+		Role: "user", Content: "[System] Final round — must give final answer. Do NOT call any tools.",
+	})
 	}
 	return messages
 }

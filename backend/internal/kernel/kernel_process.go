@@ -49,6 +49,9 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 	// 4. Get tool definitions (skill-filtered if applicable)
 	tools := k.getToolDefinitions(query.Content, query.Options)
 
+	// Store query options for callback access during ReAct loop
+	k.queryOptions = &query.Options
+
 	// 5. ReAct 循环
 	k.setState(StateThinking)
 	totalToolCalls := 0
