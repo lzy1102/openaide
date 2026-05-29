@@ -199,7 +199,16 @@ git push origin v1.0.0
 - **多语言**: 中文/English/日本語/한국어
 - **暗色模式**: 自动/手动切换
 
+### 技能系统（自主学习）
+- **自动提炼**: 重复模式→自动生成技能
+- **LLM 生成**: 实际上下文生成（非模板）
+- **置信度反馈**: 效果好+0.05，差-0.1，<0.3 禁用
+- **Convention→Skill**: 高置信度规则→自动技能
+- **allowed-tools**: 工具白名单安全模型
+- **跨系统协同**: Skill↔Learner↔ProjectMind↔Knowledge 全联通
+
 ### 扩展
+- **Computer Use**: 桌面+浏览器自动化（Linux/macOS/Windows）
 - **MCP 协议**: JSON-RPC stdio，外部工具生态
 - **插件系统**: Claude Code 官方格式兼容 (skills/MCP/hooks)
 - **API Server**: HTTP REST + WebSocket + SSE
@@ -238,6 +247,7 @@ openaide help                     # Show help
   /sessions       List sessions
   /init           Generate OPENAIDE.md
   /tree           Browse project file tree
+  /status         System health & providers
   /lang zh/en     Switch language
   /<skill-name>   Activate a skill (builtin or from plugins)
 
