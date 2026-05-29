@@ -122,6 +122,8 @@ func BuiltinTools() []kernel.ToolDefinition {
 	tools = append(tools, fileEditToolDefs()...)
 	tools = append(tools, gitToolDefs()...)
 	tools = append(tools, webToolDefs()...)
+	tools = append(tools, todoToolDefs()...)
+	tools = append(tools, askToolDefs()...)
 	tools = append(tools, browserToolDefs()...)
 	tools = append(tools, browserExtendedDefs()...)
 	tools = append(tools, desktopToolDefs()...)
@@ -163,6 +165,9 @@ func BuiltinHandlers() map[string]kernel.ToolHandler {
 		"desktop_key":       handleDesktopKey,
 		"desktop_scroll":    handleDesktopScroll,
 		"desktop_move":      handleDesktopMove,
+		"todo_write":       handleTodoWrite,
+		"todo_read":        handleTodoRead,
+		"ask_user":         handleAskUser,
 		"desktop_drag":      handleDesktopDrag,
 	}
 }
