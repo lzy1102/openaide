@@ -354,8 +354,10 @@
         }
 
         async function switchProject(projectId) {
+            const proj = state.projects.find(p => p.id === projectId);
             state.currentProjectId = projectId;
             localStorage.setItem(STORAGE_KEY_LAST_PROJECT, projectId);
+            clearChat();
             renderProjectList();
             await loadDialogues();
             if (state.dialogues.length > 0) {
@@ -363,11 +365,13 @@
             } else {
                 await createDialogue();
             }
+            if (proj) showToast('Switched to: ' + proj.name, 'info');
         }
 
         async function createProject() {
-            const name = prompt('项目名称:');
+            const name = prompt('Project name:');
             if (!name || !name.trim()) return;
+            const path = prompt('Project path (e.g. /home/user/my-project):', '');
             try {
                 const project = await projectAPI.createProject({
                     name: name.trim(),
@@ -376,7 +380,7 @@
                     icon: '',
                     system_prompt: '',
                     model_id: '',
-                    working_dir: '',
+                    working_dir: path.trim(),
                 });
                 state.projects.push(project);
                 state.currentProjectId = project.id;
@@ -437,7 +441,7 @@
                 const nameSpan = document.createElement('span');
                 nameSpan.className = 'project-name';
                 nameSpan.textContent = p.name;
-                nameSpan.title = p.name;
+                nameSpan.title = (p.path || p.working_dir) ? p.name + ' (' + (p.path || p.working_dir) + ')' : p.name;
                 nameSpan.addEventListener('click', () => switchProject(p.id));
 
                 if (!p.is_default) {
