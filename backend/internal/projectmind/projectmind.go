@@ -118,6 +118,7 @@ func (pm *ProjectMind) AddLearning(category, content string) {
 		pm.Learnings.Patterns = appendUnique(pm.Learnings.Patterns, content)
 	case "convention":
 		pm.Learnings.Conventions = appendUnique(pm.Learnings.Conventions, content)
+	pm.ConfirmConvention(content)
 	case "pitfall":
 		pm.Learnings.Pitfalls = appendUnique(pm.Learnings.Pitfalls, content)
 	}
@@ -207,8 +208,9 @@ func (pm *ProjectMind) GenerateLearnedRules() string {
 
 	var sb strings.Builder
 	for _, conv := range pm.Conventions {
+		if conv.Invalid { continue }
 		if conv.Confidence >= 0.8 {
-			sb.WriteString("- " + conv.Rule + "\n")
+			sb.WriteString(fmt.Sprintf("- %s  (conf:%.0f%%)\n", conv.Rule, conv.Confidence*100))
 		}
 	}
 	for _, p := range pm.Learnings.Pitfalls {
@@ -234,6 +236,7 @@ func (pm *ProjectMind) HasHighConfidenceConventions() bool {
 
 // SyncToSystemPrompt writes learned rules into the system prompt file.
 func (pm *ProjectMind) SyncToSystemPrompt(promptsDir, lang string) error {
+	pm.CleanupDeadConventions()
 	rules := pm.GenerateLearnedRules()
 	if rules == "" {
 		return nil
@@ -262,6 +265,7 @@ func (pm *ProjectMind) SyncToSystemPrompt(promptsDir, lang string) error {
 
 // ExpireOldFacts 标记过期事实（降置信度）
 func (pm *ProjectMind) ExpireOldFacts() {
+	pm.DecayConventions()
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 	now := time.Now()
@@ -310,10 +314,90 @@ type StrategyStats struct {
 
 // Convention 从错误中学习的项目约定
 type Convention struct {
-	Rule       string  `json:"rule"`
-	Source     string  `json:"source"`
-	Confidence float64 `json:"confidence"`
-	LearnedAt  time.Time `json:"learned_at"`
+	Rule        string    `json:"rule"`
+	Source      string    `json:"source"`
+	Confidence  float64   `json:"confidence"`
+	LearnedAt   time.Time `json:"learned_at"`
+	ValidatedAt time.Time `json:"validated_at"` // last confirmed or contradicted
+	Invalid     bool      `json:"invalid"`      // explicitly marked as wrong
+}
+
+// ConfirmConvention boosts confidence when the pattern is observed again.
+func (pm *ProjectMind) ConfirmConvention(rule string) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	for i, c := range pm.Conventions {
+		if c.Rule == rule && !c.Invalid {
+			c.Confidence = min(0.95, c.Confidence+0.1)
+			c.ValidatedAt = time.Now()
+			pm.Conventions[i] = c
+			return
+		}
+	}
+	// New convention
+	pm.Conventions = append(pm.Conventions, Convention{
+		Rule: rule, Confidence: 0.5, Source: "observation",
+		LearnedAt: time.Now(), ValidatedAt: time.Now(),
+	})
+}
+
+// ContradictConvention decreases confidence when evidence contradicts.
+// Returns true if the convention should be removed from the active prompt.
+func (pm *ProjectMind) ContradictConvention(rule string) bool {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	for i, c := range pm.Conventions {
+		if c.Rule == rule && !c.Invalid {
+			c.Confidence = max(0.1, c.Confidence-0.25)
+			c.ValidatedAt = time.Now()
+			if c.Confidence < 0.3 { c.Invalid = true }
+			pm.Conventions[i] = c
+			return c.Invalid
+		}
+	}
+	return false
+}
+
+// InvalidateConvention marks a convention as explicitly wrong.
+func (pm *ProjectMind) InvalidateConvention(rule string) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	for i, c := range pm.Conventions {
+		if c.Rule == rule {
+			c.Confidence = 0
+			c.Invalid = true
+			c.ValidatedAt = time.Now()
+			pm.Conventions[i] = c
+			return
+		}
+	}
+}
+
+// DecayConventions ages unvalidated conventions (call from ExpireOldFacts).
+func (pm *ProjectMind) DecayConventions() {
+	now := time.Now()
+	for i, c := range pm.Conventions {
+		if c.Invalid { continue }
+		if now.Sub(c.ValidatedAt) > 14*24*time.Hour {
+			c.Confidence *= 0.85
+			pm.Conventions[i] = c
+		}
+		if now.Sub(c.ValidatedAt) > 30*24*time.Hour {
+			c.Confidence *= 0.7
+			pm.Conventions[i] = c
+		}
+	}
+}
+
+// CleanupDeadConventions removes invalidated and very-low-confidence conventions.
+func (pm *ProjectMind) CleanupDeadConventions() {
+	filtered := make([]Convention, 0, len(pm.Conventions))
+	for _, c := range pm.Conventions {
+		if !c.Invalid && c.Confidence >= 0.3 {
+			filtered = append(filtered, c)
+		}
+	}
+	pm.Conventions = filtered
 }
 
 // RecordExecution 记录一次任务执行
