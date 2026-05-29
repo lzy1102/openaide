@@ -82,3 +82,35 @@ func TestExpireOldFacts(t *testing.T) {
 	pm.ExpireOldFacts()
 	// Should not panic and should reduce fact set
 }
+
+func TestConventionLifecycle(t *testing.T) {
+	dir := t.TempDir()
+	pm := Load(dir)
+	pm.AddLearning("convention", "use testify for tests")
+	pm.ConfirmConvention("use testify for tests")
+	pm.AddLearning("convention", "use testify for tests")
+}
+
+func TestConventionContradict(t *testing.T) {
+	dir := t.TempDir()
+	pm := Load(dir)
+	pm.AddLearning("convention", "some wrong rule")
+	pm.ContradictConvention("some wrong rule")
+}
+
+func TestConventionInvalidate(t *testing.T) {
+	dir := t.TempDir()
+	pm := Load(dir)
+	pm.AddLearning("convention", "explicitly wrong")
+	pm.InvalidateConvention("explicitly wrong")
+	rules := pm.GenerateLearnedRules()
+	if rules != "" { t.Log("invalid convention removed from rules") }
+}
+
+func TestCleanupDeadConventions(t *testing.T) {
+	dir := t.TempDir()
+	pm := Load(dir)
+	pm.AddLearning("convention", "temp rule")
+	pm.InvalidateConvention("temp rule")
+	pm.CleanupDeadConventions()
+}

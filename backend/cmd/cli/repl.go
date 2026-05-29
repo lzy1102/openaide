@@ -780,8 +780,18 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 		if result != "" {
 			for i, opt := range options {
 				if opt == result {
-					*sessionID = sessions[i].ID
-					pterm.Success.Printfln(lang.T("repl.switched_sess", trunc(sessions[i].ID, 8)), trunc(sessions[i].ID, 8))
+					action, _ := pterm.DefaultInteractiveSelect.
+						WithOptions([]string{"Switch to session", "Delete session", "Cancel"}).
+						WithDefaultText("Action:").
+						WithMaxHeight(5).
+						Show()
+					if strings.HasPrefix(action, "Switch") {
+						*sessionID = sessions[i].ID
+						pterm.Success.Printfln("Switched to %s", trunc(sessions[i].ID, 8))
+					} else if strings.HasPrefix(action, "Delete") {
+						app.Orchestrator.DeleteSession(context.Background(), sessions[i].ID)
+						pterm.Success.Printfln("Deleted %s", trunc(sessions[i].ID, 8))
+					}
 					return
 				}
 			}
