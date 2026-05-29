@@ -217,7 +217,7 @@ var history []string // 会话内查询历史（Ctrl+R 搜索）
 		}
 
 		if strings.HasPrefix(query, "/") {
-			handleREPLCommand(app, query, &sessionID, &modelName)
+			handleREPLCommand(app, query, &sessionID, &modelName, &autoYes)
 			rl.SetPrompt(PromptStyle(sessionID, modelName, false, sessionTitle))
 			continue
 		}
@@ -665,7 +665,7 @@ func handleUndo(app *infra.Application, sessionID string) {
 	}
 }
 
-func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, modelName *string) {
+func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, modelName *string, autoYes *bool) {
 	parts := strings.Fields(cmd)
 	switch parts[0] {
 	case "/exit", "/quit", "/q":
@@ -696,6 +696,7 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 		pterm.Cyan("/tree") + " — browse project files",
 		pterm.Cyan("/status") + " — system health & providers",
 		pterm.Cyan("/undo") + " — rollback to last checkpoint",
+		pterm.Cyan("/auto") + " — toggle autonomous (goal-driven) mode",
 		pterm.Cyan("/init") + " — generate OPENAIDE.md for this project",
 		}, false)
 		Println()
