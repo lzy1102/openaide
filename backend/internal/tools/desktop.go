@@ -7,11 +7,15 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 
 	"openaide/backend/internal/kernel"
 )
+
+// detectOS returns "linux", "darwin", or "windows"
+func detectOS() string { return runtime.GOOS }
 
 func desktopToolDefs() []kernel.ToolDefinition {
 	return []kernel.ToolDefinition{
@@ -131,160 +135,292 @@ func desktopToolDefs() []kernel.ToolDefinition {
 	}
 }
 
-func handleDesktopScreenshot(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
-	var args struct {
-		Region string `json:"region,omitempty"`
+// ── Cross-platform desktop helpers ─────────────────────────
+
+func screenshotCmd(region string) *exec.Cmd {
+	tmpFile := "/tmp/openaide_screenshot.png"
+	switch detectOS() {
+	case "linux":
+		switch region {
+		case "active_window":
+			if _, err := exec.LookPath("gnome-screenshot"); err == nil {
+				return exec.Command("gnome-screenshot", "-w", "-f", tmpFile)
+			}
+			return exec.Command("scrot", "-u", tmpFile)
+		case "selection":
+			return exec.Command("gnome-screenshot", "-a", "-f", tmpFile)
+		default:
+			if _, err := exec.LookPath("gnome-screenshot"); err == nil {
+				return exec.Command("gnome-screenshot", "-f", tmpFile)
+			}
+			return exec.Command("scrot", tmpFile)
+		}
+	case "darwin":
+		switch region {
+		case "selection":
+			return exec.Command("screencapture", "-i", tmpFile)
+		case "active_window":
+			return exec.Command("screencapture", "-w", tmpFile)
+		default:
+			return exec.Command("screencapture", "-x", tmpFile)
+		}
+	case "windows":
+		// PowerShell: capture screen to file
+		script := fmt.Sprintf(
+			`Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; `+
+				`$screen = [System.Windows.Forms.Screen]::PrimaryScreen; `+
+				`$bmp = New-Object System.Drawing.Bitmap($screen.Bounds.Width, $screen.Bounds.Height); `+
+				`$g = [System.Drawing.Graphics]::FromImage($bmp); `+
+				`$g.CopyFromScreen(0,0,0,0,$bmp.Size); $bmp.Save('%s'); $g.Dispose(); $bmp.Dispose()`,
+			strings.ReplaceAll(tmpFile, "/", "\\"))
+		return exec.Command("powershell", "-Command", script)
 	}
+	return nil
+}
+
+func clickCmd(x, y int, button string, double bool) *exec.Cmd {
+	switch detectOS() {
+	case "linux":
+		args := []string{"mousemove", strconv.Itoa(x), strconv.Itoa(y), "click"}
+		btnMap := map[string]string{"left": "1", "middle": "2", "right": "3"}
+		btn := btnMap[button]
+		if btn == "" { btn = "1" }
+		if double {
+			args = append(args, "--repeat", "2", btn)
+		} else {
+			args = append(args, btn)
+		}
+		return exec.Command("xdotool", args...)
+	case "darwin":
+		// AppleScript click at coordinates
+		clicks := "click"
+		if double { clicks = "double click" }
+		script := fmt.Sprintf(
+			`tell application "System Events" to %s at {%d, %d}`,
+			clicks, x, y)
+		return exec.Command("osascript", "-e", script)
+	case "windows":
+		// PowerShell + mouse_event via C#
+		script := fmt.Sprintf(
+			`Add-Type -AssemblyName System.Windows.Forms; `+
+				`[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(%d,%d); `+
+				`Add-Type -MemberDefinition '[DllImport("user32.dll")] public static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);' `+
+				`-Name Win32 -Namespace Mouse; `+
+				`[Mouse.Win32]::mouse_event(0x0002,0,0,0,0); [Mouse.Win32]::mouse_event(0x0004,0,0,0,0)`,
+			x, y)
+		if double {
+			script = strings.Replace(script, "0x0004", "0x0004", 1)
+			script += `; Start-Sleep -Milliseconds 100; [Mouse.Win32]::mouse_event(0x0002,0,0,0,0); [Mouse.Win32]::mouse_event(0x0004,0,0,0,0)`
+		}
+		return exec.Command("powershell", "-Command", script)
+	}
+	return nil
+}
+
+func typeCmd(text string) *exec.Cmd {
+	switch detectOS() {
+	case "linux":
+		return exec.Command("xdotool", "type", "--", text)
+	case "darwin":
+		script := fmt.Sprintf(`tell application "System Events" to keystroke "%s"`, text)
+		return exec.Command("osascript", "-e", script)
+	case "windows":
+		script := fmt.Sprintf(
+			`Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('%s')`,
+			text)
+		return exec.Command("powershell", "-Command", script)
+	}
+	return nil
+}
+
+func keyCmd(keys string) *exec.Cmd {
+	k := strings.ToLower(keys)
+	k = strings.ReplaceAll(k, " ", "+")
+	switch detectOS() {
+	case "linux":
+		k = strings.ReplaceAll(k, "enter", "Return")
+		k = strings.ReplaceAll(k, "esc", "Escape")
+		return exec.Command("xdotool", "key", k)
+	case "darwin":
+		// Map common keys to AppleScript key codes
+		k = strings.ReplaceAll(k, "enter", "return")
+		k = strings.ReplaceAll(k, "esc", "escape")
+		k = strings.ReplaceAll(k, "ctrl", "control")
+		script := fmt.Sprintf(`tell application "System Events" to keystroke (%s)`, k)
+		return exec.Command("osascript", "-e", script)
+	case "windows":
+		script := fmt.Sprintf(
+			`Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('{%s}')`,
+			k)
+		return exec.Command("powershell", "-Command", script)
+	}
+	return nil
+}
+
+func scrollCmd(x, y int) *exec.Cmd {
+	switch detectOS() {
+	case "linux":
+		// xdotool: button 4=up, 5=down, 6=left, 7=right
+		args := []string{}
+		for i := 0; i > y; i-- { args = append(args, "click", "4") }
+		for i := 0; i < y; i++ { args = append(args, "click", "5") }
+		for i := 0; i > x; i-- { args = append(args, "click", "6") }
+		for i := 0; i < x; i++ { args = append(args, "click", "7") }
+		return exec.Command("xdotool", args...)
+	case "darwin":
+		count := abs(y)
+		if count == 0 { count = 1 }
+		script := fmt.Sprintf(`repeat %d times\ntell application "System Events" to key code %s\nend repeat`,
+			count, map[bool]string{true: "126", false: "125"}[y < 0])
+		return exec.Command("osascript", "-e", script)
+	case "windows":
+		script := fmt.Sprintf(
+			`Add-Type -MemberDefinition '[DllImport("user32.dll")] public static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);' `+
+				`-Name Win32 -Namespace Mouse; [Mouse.Win32]::mouse_event(0x0800,0,0,%d,0)`,
+			y*120)
+		return exec.Command("powershell", "-Command", script)
+	}
+	return nil
+}
+
+func moveCmd(x, y int) *exec.Cmd {
+	switch detectOS() {
+	case "linux":
+		return exec.Command("xdotool", "mousemove", strconv.Itoa(x), strconv.Itoa(y))
+	case "darwin":
+		script := fmt.Sprintf(
+			`tell application "System Events" to set position of mouse to {%d, %d}`, x, y)
+		return exec.Command("osascript", "-e", script)
+	case "windows":
+		script := fmt.Sprintf(
+			`Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(%d,%d)`,
+			x, y)
+		return exec.Command("powershell", "-Command", script)
+	}
+	return nil
+}
+
+func dragCmd(x1, y1, x2, y2 int) *exec.Cmd {
+	switch detectOS() {
+	case "linux":
+		return exec.Command("xdotool", "mousemove", strconv.Itoa(x1), strconv.Itoa(y1),
+			"mousedown", "1", "mousemove", strconv.Itoa(x2), strconv.Itoa(y2), "mouseup", "1")
+	case "darwin":
+		script := fmt.Sprintf(
+			`tell application "System Events"
+	tell process "Finder"
+		set position of mouse to {%d, %d}
+		click and drag to {%d, %d}
+	end tell
+end tell`, x1, y1, x2, y2)
+		return exec.Command("osascript", "-e", script)
+	case "windows":
+		script := fmt.Sprintf(
+			`Add-Type -AssemblyName System.Windows.Forms; `+
+				`Add-Type -MemberDefinition '[DllImport("user32.dll")] public static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo); public static extern bool SetCursorPos(int X, int Y);' `+
+				`-Name Win32 -Namespace Mouse; `+
+				`[Mouse.Win32]::SetCursorPos(%d,%d); [Mouse.Win32]::mouse_event(0x0002,0,0,0,0); `+
+				`[Mouse.Win32]::SetCursorPos(%d,%d); [Mouse.Win32]::mouse_event(0x0004,0,0,0,0)`,
+			x1, y1, x2, y2)
+		return exec.Command("powershell", "-Command", script)
+	}
+	return nil
+}
+
+func abs(n int) int {
+	if n < 0 { return -n }
+	return n
+}
+
+// ── Tool handlers ─────────────────────────────────────
+
+func handleDesktopScreenshot(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
+	var args struct{ Region string `json:"region,omitempty"` }
 	json.Unmarshal([]byte(arguments), &args)
 
-	tmpFile := "/tmp/openaide_desktop_screenshot.png"
-
-	var cmd *exec.Cmd
-	switch args.Region {
-	case "active_window":
-		cmd = exec.Command("gnome-screenshot", "-w", "-f", tmpFile)
-		if _, err := exec.LookPath("gnome-screenshot"); err != nil {
-			// Fallback: use scrot
-			cmd = exec.Command("scrot", "-u", tmpFile)
-		}
-	case "selection":
-		cmd = exec.Command("gnome-screenshot", "-a", "-f", tmpFile)
-	default:
-		cmd = exec.Command("gnome-screenshot", "-f", tmpFile)
-		if _, err := exec.LookPath("gnome-screenshot"); err != nil {
-			cmd = exec.Command("scrot", tmpFile)
-		}
+	tmpFile := "/tmp/openaide_screenshot.png"
+	cmd := screenshotCmd(args.Region)
+	if cmd == nil {
+		return &kernel.ToolResult{Error: "screenshot not supported on " + detectOS()}, nil
 	}
 	if err := cmd.Run(); err != nil {
-		return &kernel.ToolResult{Error: fmt.Sprintf("screenshot failed: %v (install gnome-screenshot or scrot)", err)}, nil
+		return &kernel.ToolResult{Error: fmt.Sprintf("screenshot failed: %v (install gnome-screenshot/scrot/screencapture)", err)}, nil
 	}
 
-	data, err := os.ReadFile(tmpFile)
-	if err != nil {
-		return &kernel.ToolResult{Error: fmt.Sprintf("read screenshot: %v", err)}, nil
-	}
-
+	data, _ := os.ReadFile(tmpFile)
 	b64 := base64.StdEncoding.EncodeToString(data)
 	os.Remove(tmpFile)
-
-	// Returns base64 so the multimodal model can "see" the screen
-	return &kernel.ToolResult{
-		Content: fmt.Sprintf("data:image/png;base64,%s", b64),
-	}, nil
+	return &kernel.ToolResult{Content: fmt.Sprintf("data:image/png;base64,%s", b64)}, nil
 }
 
 func handleDesktopClick(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
 	var args struct {
-		X      int    `json:"x"`
-		Y      int    `json:"y"`
+		X, Y   int    `json:"x,y"`
 		Button string `json:"button,omitempty"`
 		Double bool   `json:"double,omitempty"`
 	}
 	json.Unmarshal([]byte(arguments), &args)
-	if args.Button == "" {
-		args.Button = "left"
-	}
+	if args.Button == "" { args.Button = "left" }
 
-	btnMap := map[string]string{"left": "1", "middle": "2", "right": "3"}
-	btn := btnMap[args.Button]
-	if btn == "" {
-		btn = "1"
+	cmd := clickCmd(args.X, args.Y, args.Button, args.Double)
+	if cmd == nil {
+		return &kernel.ToolResult{Error: "desktop click not supported on " + detectOS()}, nil
 	}
-
-	xdotool("mousemove", strconv.Itoa(args.X), strconv.Itoa(args.Y))
-	if args.Double {
-		xdotool("click", "--repeat", "2", btn)
-	} else {
-		xdotool("click", btn)
-	}
-
-	return &kernel.ToolResult{Content: fmt.Sprintf("// Clicked %s at (%d, %d)", args.Button, args.X, args.Y)}, nil
+	cmd.Run()
+	return &kernel.ToolResult{Content: fmt.Sprintf("// Clicked %s at (%d,%d)", args.Button, args.X, args.Y)}, nil
 }
 
 func handleDesktopType(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
-	var args struct {
-		Text string `json:"text"`
-	}
+	var args struct{ Text string `json:"text"` }
 	json.Unmarshal([]byte(arguments), &args)
-
-	xdotool("type", "--", args.Text)
+	cmd := typeCmd(args.Text)
+	if cmd == nil {
+		return &kernel.ToolResult{Error: "desktop type not supported on " + detectOS()}, nil
+	}
+	cmd.Run()
 	return &kernel.ToolResult{Content: fmt.Sprintf("// Typed %d chars", len(args.Text))}, nil
 }
 
 func handleDesktopKey(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
-	var args struct {
-		Keys string `json:"keys"`
-	}
+	var args struct{ Keys string `json:"keys"` }
 	json.Unmarshal([]byte(arguments), &args)
-
-	// Parse key combo: "ctrl+c" → "ctrl+c"
-	keys := strings.ToLower(args.Keys)
-	keys = strings.ReplaceAll(keys, " ", "+")
-	// Handle common aliases
-	keys = strings.ReplaceAll(keys, "enter", "Return")
-	keys = strings.ReplaceAll(keys, "esc", "Escape")
-	xdotool("key", keys)
+	cmd := keyCmd(args.Keys)
+	if cmd == nil {
+		return &kernel.ToolResult{Error: "desktop key not supported on " + detectOS()}, nil
+	}
+	cmd.Run()
 	return &kernel.ToolResult{Content: fmt.Sprintf("// Pressed: %s", args.Keys)}, nil
 }
 
 func handleDesktopScroll(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
-	var args struct {
-		X int `json:"x,omitempty"`
-		Y int `json:"y,omitempty"`
-	}
+	var args struct{ X, Y int `json:"x,y"` }
 	json.Unmarshal([]byte(arguments), &args)
-
-	// xdotool click 4 = scroll up, 5 = scroll down
-	if args.Y < 0 {
-		for i := 0; i > args.Y; i-- {
-			xdotool("click", "4")
-		}
-	} else if args.Y > 0 {
-		for i := 0; i < args.Y; i++ {
-			xdotool("click", "5")
-		}
+	cmd := scrollCmd(args.X, args.Y)
+	if cmd == nil {
+		return &kernel.ToolResult{Error: "desktop scroll not supported on " + detectOS()}, nil
 	}
-	if args.X < 0 {
-		for i := 0; i > args.X; i-- {
-			xdotool("click", "6")
-		}
-	} else if args.X > 0 {
-		for i := 0; i < args.X; i++ {
-			xdotool("click", "7")
-		}
-	}
+	cmd.Run()
 	return &kernel.ToolResult{Content: fmt.Sprintf("// Scrolled (x:%d y:%d)", args.X, args.Y)}, nil
 }
 
 func handleDesktopMove(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
-	var args struct {
-		X int `json:"x"`
-		Y int `json:"y"`
-	}
+	var args struct{ X, Y int `json:"x,y"` }
 	json.Unmarshal([]byte(arguments), &args)
-
-	xdotool("mousemove", strconv.Itoa(args.X), strconv.Itoa(args.Y))
-	return &kernel.ToolResult{Content: fmt.Sprintf("// Moved to (%d, %d)", args.X, args.Y)}, nil
+	cmd := moveCmd(args.X, args.Y)
+	if cmd == nil {
+		return &kernel.ToolResult{Error: "desktop move not supported on " + detectOS()}, nil
+	}
+	cmd.Run()
+	return &kernel.ToolResult{Content: fmt.Sprintf("// Moved to (%d,%d)", args.X, args.Y)}, nil
 }
 
 func handleDesktopDrag(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
-	var args struct {
-		X1 int `json:"x1"`
-		Y1 int `json:"y1"`
-		X2 int `json:"x2"`
-		Y2 int `json:"y2"`
-	}
+	var args struct{ X1, Y1, X2, Y2 int `json:"x1,y1,x2,y2"` }
 	json.Unmarshal([]byte(arguments), &args)
-
-	xdotool("mousemove", strconv.Itoa(args.X1), strconv.Itoa(args.Y1))
-	xdotool("mousedown", "1")
-	xdotool("mousemove", strconv.Itoa(args.X2), strconv.Itoa(args.Y2))
-	xdotool("mouseup", "1")
-	return &kernel.ToolResult{Content: fmt.Sprintf("// Dragged from (%d,%d) to (%d,%d)", args.X1, args.Y1, args.X2, args.Y2)}, nil
-}
-
-// xdotool runs xdotool with arguments, logging failures
-func xdotool(args ...string) {
-	cmd := exec.Command("xdotool", args...)
-	cmd.Run() // Best-effort, errors logged by caller if needed
+	cmd := dragCmd(args.X1, args.Y1, args.X2, args.Y2)
+	if cmd == nil {
+		return &kernel.ToolResult{Error: "desktop drag not supported on " + detectOS()}, nil
+	}
+	cmd.Run()
+	return &kernel.ToolResult{Content: fmt.Sprintf("// Dragged (%d,%d)→(%d,%d)", args.X1, args.Y1, args.X2, args.Y2)}, nil
 }
