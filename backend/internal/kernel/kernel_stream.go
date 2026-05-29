@@ -45,7 +45,10 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 		defer func() {
 			if r := recover(); r != nil {
 				slog.Error("panic in stream goroutine", "panic", r)
-				resultChan <- StreamChunk{Type: ChunkTypeError, Error: fmt.Errorf("internal error: %v", r), Done: true}
+				select {
+			case resultChan <- StreamChunk{Type: ChunkTypeError, Error: fmt.Errorf("internal error: %v", r), Done: true}:
+			default:
+			}
 			}
 		}()
 
@@ -92,10 +95,9 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 
 			// 发送 thinking 事件
 			k.setState(StateThinking)
-			resultChan <- StreamChunk{
-				Type:   ChunkTypeThinking,
-				Round:  round,
-				TotalRounds: maxRounds,
+			select {
+			case resultChan <- StreamChunk{Type: ChunkTypeThinking, Round: round, TotalRounds: maxRounds}:
+			default:
 			}
 
 			if query.Options.ModelID != "" {
@@ -110,7 +112,10 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 					})
 				}
 				k.setState(StateError)
-				resultChan <- StreamChunk{Type: ChunkTypeError, Error: err, Done: true}
+				select {
+			case resultChan <- StreamChunk{Type: ChunkTypeError, Error: err, Done: true}:
+			case <-ctx.Done():
+			}
 				return
 			}
 
@@ -121,7 +126,10 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 
 			for chunk := range llmStream {
 				if chunk.Error != nil {
-					resultChan <- StreamChunk{Type: ChunkTypeError, Error: chunk.Error, Done: true}
+					select {
+				case resultChan <- StreamChunk{Type: ChunkTypeError, Error: chunk.Error, Done: true}:
+				case <-ctx.Done():
+				}
 					k.setState(StateError)
 					return
 				}
@@ -176,8 +184,16 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 				session.Messages = messages
 				session.UpdatedAt = time.Now()
 				ensureSessionTitle(session)
-				k.sessionStore.Update(ctx, session)
-				go k.generateSessionTitle(session, query.Content)
+				if err := k.sessionStore.Update(ctx, session); err != nil {
+		slog.Warn("session update failed", "error", err)
+	}
+				// Copy metadata to avoid concurrent map access in goroutine
+	titleMeta := make(map[string]interface{})
+	for k, v := range session.Metadata {
+		titleMeta[k] = v
+	}
+	session.Metadata = titleMeta
+	go k.generateSessionTitle(session, query.Content)
 
 				if k.reflection != nil {
 					go k.doReflection(ctx, session.ID, query.Content, fullContent.String(), totalToolCalls)
@@ -192,10 +208,9 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 					Timestamp: time.Now(),
 				})
 
-				resultChan <- StreamChunk{
-					Type:  ChunkTypeDone,
-					Done:  true,
-					Usage: lastUsage,
+				select {
+				case resultChan <- StreamChunk{Type: ChunkTypeDone, Done: true, Usage: lastUsage}:
+				case <-ctx.Done():
 				}
 				return
 			}
@@ -348,7 +363,10 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 		if err != nil {
 			slog.Warn("Stream final synthesis failed", "error", err)
 			lastMsg := messages[len(messages)-1]
-			resultChan <- StreamChunk{Type: ChunkTypeDone, Done: true, Usage: &TokenUsage{TotalTokens: totalTokens}, Content: lastMsg.Content}
+			select {
+			case resultChan <- StreamChunk{Type: ChunkTypeDone, Done: true, Usage: &TokenUsage{TotalTokens: totalTokens}, Content: lastMsg.Content}:
+			case <-ctx.Done():
+			}
 			return
 		}
 		if resp.Usage != nil {
@@ -363,7 +381,9 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 		session.Messages = messages
 		session.UpdatedAt = time.Now()
 		ensureSessionTitle(session)
-		k.sessionStore.Update(ctx, session)
+		if err := k.sessionStore.Update(ctx, session); err != nil {
+		slog.Warn("session update failed", "error", err)
+	}
 
 		if k.reflection != nil {
 			go k.doReflection(ctx, session.ID, query.Content, resp.Content, totalToolCalls)

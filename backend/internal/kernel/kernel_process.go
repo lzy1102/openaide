@@ -136,8 +136,16 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 			session.Messages = messages
 			session.UpdatedAt = time.Now()
 			ensureSessionTitle(session)
-			k.sessionStore.Update(ctx, session)
-			go k.generateSessionTitle(session, query.Content)
+			if err := k.sessionStore.Update(ctx, session); err != nil {
+		slog.Warn("session update failed", "error", err)
+	}
+			// Copy metadata before async goroutine
+	titleCopy := make(map[string]interface{})
+	for k, v := range session.Metadata {
+		titleCopy[k] = v
+	}
+	session.Metadata = titleCopy
+	go k.generateSessionTitle(session, query.Content)
 
 			// 触发反思（如果启用）
 			if k.reflection != nil {
@@ -237,7 +245,14 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 					k.publishEvent(Event{Type: EventToolCallEnded, Source: "kernel", Data: map[string]interface{}{"tool": call.Function.Name, "success": r.Error == "", "session_id": session.ID}, Timestamp: time.Now()})
 				}(i, task.ToolCall)
 			}
-			wg.Wait()
+			// Check for cancellation while waiting for tool execution
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-ctx.Done():
+		return &Response{Content: "", Error: ctx.Err().Error()}, nil
+	}
 		}
 		totalToolCalls += len(results)
 
@@ -326,7 +341,9 @@ func (k *AgentKernel) doReflection(ctx context.Context, sessionID, query, respon
 				session.Metadata = make(map[string]interface{})
 			}
 			session.Metadata["reflection"] = result
-			k.sessionStore.Update(ctx, session)
+			if err := k.sessionStore.Update(ctx, session); err != nil {
+		slog.Warn("session update failed", "error", err)
+	}
 
 			// 反馈：本次使用的知识质量如何
 			if k.knowledgeCollector != nil {
@@ -356,7 +373,9 @@ func (k *AgentKernel) doReflection(ctx context.Context, sessionID, query, respon
 					session.Metadata = make(map[string]interface{})
 				}
 				session.Metadata["patterns"] = patterns
-				k.sessionStore.Update(ctx, session)
+				if err := k.sessionStore.Update(ctx, session); err != nil {
+		slog.Warn("session update failed", "error", err)
+	}
 
 				// 技能自动进化：从检测到的模式中创建新技能
 				if k.skillEvolution != nil {

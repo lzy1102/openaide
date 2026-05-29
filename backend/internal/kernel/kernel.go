@@ -40,6 +40,8 @@ type AgentKernel struct {
 	tracer  Tracer
 	traceMu sync.Mutex
 
+	promptMu sync.RWMutex // protects systemPrompt
+
 	// 检查点系统
 	checkpointer Checkpointer
 
@@ -199,9 +201,11 @@ func (k *AgentKernel) SetQualityGate(gate QualityGate) {
 	k.qualityGate = gate
 }
 
-// SetSystemPrompt 热更新系统提示词（无需重启内核）
+// SetSystemPrompt 热更新系统提示词（线程安全）
 func (k *AgentKernel) SetSystemPrompt(prompt string) {
+	k.promptMu.Lock()
 	k.systemPrompt = prompt
+	k.promptMu.Unlock()
 }
 
 // GetState 获取当前状态
@@ -256,7 +260,9 @@ func (k *AgentKernel) buildMessages(ctx context.Context, session *Session, query
 
 	// === P0: 静态前缀（Prompt Cache 友好） ===
 	// 系统提示词放最前且保持不变，最大化 API 前缀缓存命中
+	k.promptMu.RLock()
 	systemPrompt := k.systemPrompt
+	k.promptMu.RUnlock()
 	if k.skillManager != nil {
 		systemPrompt = k.skillManager.InjectPrompt(query.Content, systemPrompt)
 	}
