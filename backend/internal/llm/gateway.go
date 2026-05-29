@@ -283,13 +283,28 @@ func (g *Gateway) ChatWithProvider(ctx context.Context, providerName string, mes
 
 	start := time.Now()
 	slog.Debug("LLM chat start", "provider", providerName, "model", provider.GetModelID(), "msgs", len(messages), "tools", len(tools))
-	resp, err := provider.Chat(ctx, messages, tools, options)
+
+	var resp *kernel.LLMResponse
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		resp, err = provider.Chat(ctx, messages, tools, options)
+		if err == nil { break }
+		if attempt < 2 {
+			d := time.Duration(1<<attempt) * time.Second
+			slog.Warn("LLM chat retry", "provider", providerName, "attempt", attempt+1, "wait", d, "error", err)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(d):
+			}
+		}
+	}
 	if err != nil {
 		slog.Error("LLM chat failed", "provider", providerName, "error", err, "duration", time.Since(start))
 		return nil, err
 	}
 
-	if g.cache != nil && err == nil {
+	if g.cache != nil {
 		g.cache.Set(messages, tools, g.GetDefaultProvider(), resp)
 	}
 	slog.Debug("LLM chat success", "provider", providerName, "model", resp.Model, "tokens", resp.Usage, "duration", time.Since(start))
@@ -323,7 +338,23 @@ func (g *Gateway) ChatStreamWithProvider(ctx context.Context, providerName strin
 	}
 
 	slog.Debug("LLM chat stream start", "provider", providerName, "model", provider.GetModelID(), "msgs", len(messages), "tools", len(tools))
-	return provider.ChatStream(ctx, messages, tools, options)
+
+	var ch <-chan kernel.StreamChunk
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		ch, err = provider.ChatStream(ctx, messages, tools, options)
+		if err == nil { break }
+		if attempt < 2 {
+			d := time.Duration(1<<attempt) * time.Second
+			slog.Warn("LLM stream retry", "provider", providerName, "attempt", attempt+1, "wait", d, "error", err)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(d):
+			}
+		}
+	}
+	return ch, err
 }
 
 // SetDefaultModel 设置默认提供商的模型
