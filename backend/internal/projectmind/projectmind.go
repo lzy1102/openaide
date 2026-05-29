@@ -200,6 +200,66 @@ func (pm *ProjectMind) RisksForPlanning() string {
 	return strings.Join(risks, "; ")
 }
 
+// GenerateLearnedRules returns high-confidence conventions formatted as system prompt rules.
+func (pm *ProjectMind) GenerateLearnedRules() string {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	var sb strings.Builder
+	for _, conv := range pm.Conventions {
+		if conv.Confidence >= 0.8 {
+			sb.WriteString("- " + conv.Rule + "\n")
+		}
+	}
+	for _, p := range pm.Learnings.Pitfalls {
+		sb.WriteString("- ⚠ " + p + "\n")
+	}
+	if sb.Len() == 0 {
+		return ""
+	}
+	return "\n## 学到的规则（自动生成，跨会话积累）\n" + sb.String()
+}
+
+// HasHighConfidenceConventions returns true if there are rules ready to promote.
+func (pm *ProjectMind) HasHighConfidenceConventions() bool {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+	for _, conv := range pm.Conventions {
+		if conv.Confidence >= 0.8 {
+			return true
+		}
+	}
+	return false
+}
+
+// SyncToSystemPrompt writes learned rules into the system prompt file.
+func (pm *ProjectMind) SyncToSystemPrompt(promptsDir, lang string) error {
+	rules := pm.GenerateLearnedRules()
+	if rules == "" {
+		return nil
+	}
+
+	suffix := ".en"
+	if lang == "zh" {
+		suffix = ".zh"
+	}
+	path := filepath.Join(promptsDir, "system"+suffix+".md")
+
+	data, _ := os.ReadFile(path)
+	current := strings.TrimRight(string(data), "\n")
+
+	// Remove previous learned rules block
+	marker := "\n## 学到的规则（自动生成"
+	if idx := strings.Index(current, marker); idx >= 0 {
+		current = current[:idx]
+	}
+
+	current += "\n" + rules + "\n"
+	os.MkdirAll(promptsDir, 0755)
+	os.WriteFile(path, []byte(current), 0644)
+	return nil
+}
+
 // ExpireOldFacts 标记过期事实（降置信度）
 func (pm *ProjectMind) ExpireOldFacts() {
 	pm.mu.Lock()

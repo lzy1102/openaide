@@ -45,6 +45,9 @@ type Orchestrator struct {
 	// 模型路由配置
 	ModelRouting ModelRouting
 
+	promptsDir string // 系统提示词目录（用于自适应更新）
+	lang      string
+
 	// 项目知识缓存（跨子Agent共享，避免重复读取）
 	projectFacts string
 
@@ -730,6 +733,9 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 		o.mind.Save()
 		if o.knowledge != nil {
 			o.mind.SyncToKnowledgeBase(o.knowledge)
+			if o.mind.HasHighConfidenceConventions() {
+				o.mind.SyncToSystemPrompt(o.promptsDir, o.lang)
+			}
 		}
 	}
 

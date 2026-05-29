@@ -211,7 +211,11 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 	}
 	orch.SetTeam(orchestration.NewTeam(orch))
 	// 加载项目持久记忆
-	orch.SetProjectMind(projectmind.Load("."))
+	pm := projectmind.Load(".")
+	orch.SetProjectMind(pm)
+	if pm.HasHighConfidenceConventions() {
+		pm.SyncToSystemPrompt(cfg.Storage.DataDir+"/prompts", cfg.Lang)
+	}
 	// 配置模型路由
 	orch.ModelRouting = orchestration.ModelRouting{
 		Reasoning: cfg.LLM.ModelRouting.Reasoning,
