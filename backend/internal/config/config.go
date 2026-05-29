@@ -233,10 +233,10 @@ func DefaultConfig() *Config {
 			DangerousTools: []string{"execute_command", "write_file"},
 		},
 		Kernel: KernelConfig{
-			MaxRounds:    30,
+			MaxRounds:    50, // 安全上限，实际由上下文窗口驱动收敛
 			MaxTokens:    200000,
 			MinRounds:    8,
-			MaxRoundsCap: 30,
+			MaxRoundsCap: 50,
 		},
 		Planning: PlanningConfig{
 			Enabled:        true,
@@ -351,9 +351,6 @@ llm:
 #   model_routing:
 #     reasoning: deepseek-v4-pro
 #     execution: deepseek-v4-flash
-
-kernel:
-  max_rounds: 30
 
 log:
   level: info

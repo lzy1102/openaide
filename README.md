@@ -64,8 +64,6 @@ llm:
 
 lang: zh                       # UI 语言：zh / en
 
-kernel:
-  max_rounds: 30
 
 # 高级：双模型路由（Architect/Editor 模式）
 # llm:
@@ -106,7 +104,7 @@ log:
 | `llm.default_provider` | 默认 LLM 提供商名称 | `""` |
 | `llm.providers` | 提供商列表 | `[]` |
 | `memory.data_dir` | 记忆数据目录 | `./data/memory` |
-| `kernel.max_rounds` | 最大 ReAct 轮数 | `10` |
+| `kernel.max_rounds` | 最大 ReAct 轮数（安全上限，默认50） | `50` |
 | `log.level` | 日志级别：`debug`/`info`/`warn`/`error` | `info` |
 
 ### 支持的 LLM 提供商
