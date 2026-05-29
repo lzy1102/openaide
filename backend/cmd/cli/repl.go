@@ -22,7 +22,7 @@ import (
 
 // ── REPL ──────────────────────────────────────────────────
 
-func runREPL(app *infra.Application, continueSess bool) {
+func runREPL(app *infra.Application, continueSess, autoYes bool) {
 	info := app.LLMGateway.GetProviderInfos()
 	modelName := ""
 	if len(info) > 0 {
@@ -232,7 +232,7 @@ var history []string // 会话内查询历史（Ctrl+R 搜索）
 		fmt.Print("\r\033[K")
 
 		if planErr != nil || plan == nil || len(plan.Subtasks) <= 1 {
-			executeStreamQuery(app, query, &sessionID)
+			executeStreamQuery(app, query, &sessionID, autoYes)
 		} else if len(plan.Subtasks) >= 4 {
 			// DeepPlan: 深度研究 + 方案对比
 			pterm.Info.Println(lang.T("repl.deep_analysis"))
@@ -271,7 +271,7 @@ var history []string // 会话内查询历史（Ctrl+R 搜索）
 						}
 					}
 				} else {
-					executeStreamQuery(app, query, &sessionID)
+					executeStreamQuery(app, query, &sessionID, autoYes)
 				}
 			}
 		} else {
@@ -312,7 +312,7 @@ var history []string // 会话内查询历史（Ctrl+R 搜索）
 				plan.Subtasks = filtered
 				executePlanQuery(app, query, plan)
 			} else {
-				executeStreamQuery(app, query, &sessionID)
+				executeStreamQuery(app, query, &sessionID, autoYes)
 			}
 
 		}
@@ -330,10 +330,11 @@ func execCmd(name string, args ...string) (string, error) {
 
 // ── Simple Query (direct ReAct stream) ────────────────────
 
-func executeStreamQuery(app *infra.Application, query string, sessionID *string) {
+func executeStreamQuery(app *infra.Application, query string, sessionID *string, autoYes bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	opts := kernel.QueryOptions{
 		OnApproval: func(tool, path string) bool {
+			if autoYes { return true }
 			result, _ := pterm.DefaultInteractiveConfirm.
 				WithDefaultText(fmt.Sprintf(lang.T("repl.allow_tool", tool, path), pterm.Yellow(tool), path)).
 				WithConfirmText("y").
@@ -342,6 +343,7 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string)
 			return result
 		},
 		OnBudgetExhausted: func(round, maxRounds int) bool {
+			if autoYes { return true }
 			result, _ := pterm.DefaultInteractiveConfirm.
 				WithDefaultText(fmt.Sprintf(lang.T("repl.rounds_exhausted", round, maxRounds), round, maxRounds)).
 				WithConfirmText("y").

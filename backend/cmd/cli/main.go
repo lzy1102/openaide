@@ -224,7 +224,7 @@ func main() {
 	}
 
 	// REPL 模式
-	runREPL(app, flags.continueSess)
+	runREPL(app, flags.continueSess, flags.yes)
 }
 
 func printHelp() {
