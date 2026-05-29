@@ -677,6 +677,7 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 			pterm.Cyan("/executor <task>") + " — " + lang.T("repl.help_executor"),
 			pterm.Cyan("/team <task>") + " — " + lang.T("repl.help_team"),
 		pterm.Cyan("/tree") + " — browse project files",
+		pterm.Cyan("/status") + " — system health & providers",
 		pterm.Cyan("/init") + " — generate OPENAIDE.md for this project",
 		}, false)
 		Println()
