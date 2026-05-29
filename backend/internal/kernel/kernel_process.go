@@ -71,7 +71,8 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 		// 检查上下文长度，必要时压缩
 		if k.compressor != nil {
 			tokenCount := k.compressor.EstimateTokens(messages)
-			if tokenCount > k.maxTokens {
+			// 90% 窗口阈值触发压缩（Claude Code 用 92%）
+			if tokenCount > k.maxTokens*9/10 {
 				compressed, saved, err := k.compressor.Compress(messages, k.maxTokens)
 				if err == nil {
 					messages = compressed

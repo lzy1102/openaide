@@ -49,22 +49,53 @@ func (c *SimpleCompressor) Compress(messages []Message, maxTokens int) ([]Messag
 	return result, saved, nil
 }
 
-// EstimateTokens 估算 Token 数（简单估算：中文字符按 1.5 token，英文按 0.75 token）
+// EstimateTokens 估算 Token 数（采样估算：长文本抽样，短文本精确）
+// 经验值：英文 ~4chars/token, 中文 ~2chars/token, 代码 ~3.5chars/token
 func (c *SimpleCompressor) EstimateTokens(messages []Message) int {
 	total := 0
 	for _, msg := range messages {
-		content := msg.Content
-		for _, r := range content {
-			if r > 127 {
-				total += 2 // 中文字符约 2 token
-			} else {
-				total += 1 // 英文字符约 1 token
-			}
-		}
-		// 消息格式开销
-		total += 4
+		total += estimateTextTokens(msg.Content)
+		total += 4 // message overhead
+		if len(msg.ToolCalls) > 0 { total += 20 } // tool call overhead
+		if msg.ReasoningContent != "" { total += estimateTextTokens(msg.ReasoningContent) }
 	}
 	return total
+}
+
+// estimateTextTokens 对文本做 token 估算：短文本逐字符，长文本抽样
+func estimateTextTokens(text string) int {
+	if len(text) < 500 {
+		return charBasedTokenEstimate(text)
+	}
+	// 抽样：每 10 行抽样 1 行，用样本来估算全文
+	lines := strings.Split(text, "\n")
+	sampleLines := 0
+	sampleTokens := 0
+	for i, line := range lines {
+		if i%10 == 0 {
+			sampleTokens += charBasedTokenEstimate(line)
+			sampleLines++
+		}
+	}
+	if sampleLines == 0 { return charBasedTokenEstimate(text) }
+	return sampleTokens * len(lines) / sampleLines
+}
+
+// charBasedTokenEstimate 基于字符的 token 粗略估算
+func charBasedTokenEstimate(text string) int {
+	ascii := 0
+	cjk := 0
+	for _, r := range text {
+		if r > 0x2E80 { // CJK 范围
+			cjk++
+		} else if r > 127 {
+			ascii++ // 其他非 ASCII
+		} else {
+			ascii++
+		}
+	}
+	// ASCII ~4chars/token, CJK ~2chars/token
+	return ascii/4 + cjk/2 + 1
 }
 
 // summarize 生成消息摘要
