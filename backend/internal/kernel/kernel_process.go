@@ -52,6 +52,7 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 	// 5. ReAct 循环
 	k.setState(StateThinking)
 	totalToolCalls := 0
+	toolErrors := 0
 	totalTokens := 0
 
 	maxRounds := k.determineMaxRounds(query.Content, len(session.Messages))
@@ -138,7 +139,7 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 
 			// 触发反思（如果启用）
 			if k.reflection != nil {
-				go k.doReflection(ctx, session.ID, query.Content, llmResp.Content, totalToolCalls)
+				go k.doReflection(ctx, session.ID, query.Content, llmResp.Content, totalToolCalls, toolErrors)
 			}
 
 			k.setState(StateIdle)
@@ -229,7 +230,7 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 					}
 					content := fmt.Sprintf("%v", r.Content)
 					errStr := ""
-					if r.Error != "" { errStr = r.Error; content = fmt.Sprintf("Error: %s", r.Error) }
+					if r.Error != "" { errStr = r.Error; content = fmt.Sprintf("Error: %s", r.Error); toolErrors++ }
 					results[idx] = toolResult{id: call.ID, name: call.Function.Name, content: content, err: errStr}
 					k.publishEvent(Event{Type: EventToolCallEnded, Source: "kernel", Data: map[string]interface{}{"tool": call.Function.Name, "success": r.Error == "", "session_id": session.ID}, Timestamp: time.Now()})
 				}(i, task.ToolCall)
@@ -304,7 +305,7 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 	}, nil
 }
 
-func (k *AgentKernel) doReflection(ctx context.Context, sessionID, query, response string, toolCalls int) {
+func (k *AgentKernel) doReflection(ctx context.Context, sessionID, query, response string, toolCalls, toolErrors int) {
 	if k.reflection == nil {
 		return
 	}
@@ -312,7 +313,7 @@ func (k *AgentKernel) doReflection(ctx context.Context, sessionID, query, respon
 	record := ExecutionRecord{
 		Query:     query,
 		Response:  response,
-		Success:   true,
+		Success:   toolErrors == 0,
 		ToolCalls: make([]ToolCall, 0),
 	}
 
@@ -368,7 +369,11 @@ func (k *AgentKernel) doReflection(ctx context.Context, sessionID, query, respon
 
 				// 技能自动进化：从检测到的模式中创建新技能
 				if k.skillEvolution != nil {
-					go k.skillEvolution.Evolve(ctx, patterns, nil)
+					var insights []Insight
+					if l, ok := k.learner.(*SimpleLearner); ok {
+						insights = l.GetAllInsights()
+					}
+				go k.skillEvolution.Evolve(ctx, patterns, insights)
 				}
 			}
 		}

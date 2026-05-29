@@ -57,6 +57,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 		}
 		totalTokens := 0
 		totalToolCalls := 0
+		toolErrors := 0
 		startTime := time.Now()
 
 		slog.Debug("ReAct stream loop start", "query", query.Content[:min(80, len(query.Content))], "max_rounds", maxRounds, "tools", len(tools), "history_msgs", len(messages))
@@ -189,7 +190,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 	go k.generateSessionTitle(session, query.Content)
 
 				if k.reflection != nil {
-					go k.doReflection(ctx, session.ID, query.Content, fullContent.String(), totalToolCalls)
+					go k.doReflection(ctx, session.ID, query.Content, fullContent.String(), totalToolCalls, toolErrors)
 				}
 
 				slog.Debug("ReAct stream complete", "rounds", round+1, "tokens", totalTokens, "tools", totalToolCalls, "model", k.llmProvider.GetModelID(), "duration", time.Since(startTime))
@@ -288,7 +289,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 							k.tracer.EndSpan(toolCtx, map[string]interface{}{"tool": call.Function.Name, "content": r.Content}, toolErr)
 						}
 						content := fmt.Sprintf("%v", r.Content)
-						if r.Error != "" { content = fmt.Sprintf("Error: %s", r.Error) }
+						if r.Error != "" { content = fmt.Sprintf("Error: %s", r.Error); toolErrors++ }
 						results[idx] = toolResult{id: call.ID, name: call.Function.Name, msg: Message{Role: "tool", Content: content, ToolCallID: call.ID}}
 						k.publishEvent(Event{Type: EventToolCallEnded, Source: "kernel", Data: map[string]interface{}{"tool": call.Function.Name, "success": r.Error == "", "session_id": session.ID}, Timestamp: time.Now()})
 					}(i, task.ToolCall)
@@ -379,7 +380,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 	}
 
 		if k.reflection != nil {
-			go k.doReflection(ctx, session.ID, query.Content, resp.Content, totalToolCalls)
+			go k.doReflection(ctx, session.ID, query.Content, resp.Content, totalToolCalls, toolErrors)
 		}
 
 		k.setState(StateIdle)

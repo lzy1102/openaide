@@ -74,8 +74,9 @@ func (k *AgentKernel) finalizeResponse(ctx context.Context, session *Session, qu
 	// Async: generate meaningful title and run reflection
 	go k.generateSessionTitle(session, query.Content)
 	if k.reflection != nil {
-		go k.doReflection(ctx, session.ID, query.Content, response, toolCalls)
+		go k.doReflection(ctx, session.ID, query.Content, response, toolCalls, 0)
 	}
+	go k.compressMemory(ctx, session.ID)
 }
 
 // executeToolBatch runs a group of tool calls concurrently (all are parallel-safe).
@@ -205,4 +206,19 @@ func (k *AgentKernel) determineMaxRounds(queryContent string, historyLen int) in
 		return k.adaptiveRounds.Calculate(queryContent, historyLen)
 	}
 	return k.maxRounds
+}
+
+// compressMemory compresses old working memory items into short-term summaries.
+// This prevents unlimited growth of per-message memory files.
+func (k *AgentKernel) compressMemory(ctx context.Context, sessionID string) {
+	if k.memory == nil { return }
+	// Type-assert to access the Compress method (not in the interface)
+	type memoryCompressor interface {
+		Compress(ctx context.Context, sessionID string) error
+	}
+	if mc, ok := k.memory.(memoryCompressor); ok {
+		if err := mc.Compress(ctx, sessionID); err != nil {
+			slog.Debug("memory compression skipped", "session", sessionID[:8], "error", err)
+		}
+	}
 }
