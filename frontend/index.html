@@ -770,6 +770,7 @@ const html = providers.map(p => `
 
             try {
                 let responseText = '';
+                let lastRender = 0;
                 const messageElement = document.getElementById(loadingId);
                 if (messageElement) {
                     const contentDiv = messageElement.querySelector('.message-content');
@@ -806,7 +807,12 @@ const html = providers.map(p => `
                     (chunk) => {
                         if (chunk.content !== undefined) {
                             responseText += chunk.content;
-                            updateMessage(loadingId, responseText);
+                            // Throttle Markdown rendering to every 50ms for smooth display
+                            const now = Date.now();
+                            if (now - lastRender > 50 || chunk.done) {
+                                updateMessage(loadingId, responseText);
+                                lastRender = now;
+                            }
                         }
                         if (chunk.thinking) {
                             thinkingText += chunk.thinking;

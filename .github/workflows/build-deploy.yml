@@ -197,3 +197,27 @@ INSTALLER_EOF
         run: |
           sleep 5
           ssh -F ~/.ssh/config deploy "curl -fsS http://localhost:8080/health || echo 'Health check failed'"
+
+  docker:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: openaide-linux-amd64
+          path: backend/bin/
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build Docker image
+        run: |
+          cd backend
+          docker build -t openaide:${GITHUB_REF_NAME#v} .
+          docker tag openaide:${GITHUB_REF_NAME#v} openaide:latest
+      - name: Push to GitHub Container Registry
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          docker tag openaide:${GITHUB_REF_NAME#v} ghcr.io/${{ github.repository }}/openaide:${GITHUB_REF_NAME#v}
+          docker push ghcr.io/${{ github.repository }}/openaide:${GITHUB_REF_NAME#v}

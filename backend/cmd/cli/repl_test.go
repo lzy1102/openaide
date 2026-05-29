@@ -2,6 +2,7 @@ package main
 
 import (
 	"path/filepath"
+	"os"
 	"strings"
 	"testing"
 )
@@ -283,5 +284,43 @@ func TestRenderToolOutput(t *testing.T) {
 	out2 := RenderToolOutput(diff)
 	if !strings.Contains(out2, "old") {
 		t.Error("diff output should be rendered with colors")
+	}
+}
+
+func TestToolIcon(t *testing.T) {
+	tests := []struct{ tool, want string }{
+		{"read_file", "📖"}, {"write_file", "✏️"},
+		{"web_search", "🌐"}, {"git_status", "🔀"}, {"unknown", "🔧"},
+	}
+	for _, tt := range tests {
+		got := toolIcon(tt.tool)
+		if !strings.Contains(got, tt.want) {
+			t.Errorf("toolIcon(%q) = %q, should contain %q", tt.tool, got, tt.want)
+		}
+	}
+}
+
+func TestExpandAtRefs_NoMatch(t *testing.T) {
+	if got := expandAtRefs("hello"); got != "hello" {
+		t.Errorf("expected unchanged, got %q", got)
+	}
+}
+
+func TestExpandAtRefs_ValidFile(t *testing.T) {
+	dir := t.TempDir()
+	f := dir + "/ref.txt"
+	os.WriteFile(f, []byte("content"), 0644)
+	got := expandAtRefs("@" + f + " explain")
+	if !strings.Contains(got, "content") { t.Error("missing file content") }
+}
+
+func TestPromptStyle_WithTitle(t *testing.T) {
+	s := PromptStyle("abc12345", "m", false, "fix login bug")
+	if !strings.Contains(s, "fix login bug") { t.Error("no title in prompt") }
+}
+
+func TestPromptStyle_Busy(t *testing.T) {
+	if s := PromptStyle("abc", "", true); !strings.Contains(s, "◉") {
+		t.Error("no busy indicator")
 	}
 }
