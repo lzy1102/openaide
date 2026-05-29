@@ -251,7 +251,7 @@ func (k *AgentKernel) getOrCreateSession(ctx context.Context, query *Query) (*Se
 	return session, nil
 }
 
-func (k *AgentKernel) buildMessages(session *Session, query *Query) []Message {
+func (k *AgentKernel) buildMessages(ctx context.Context, session *Session, query *Query) []Message {
 	messages := make([]Message, 0)
 
 	// === P0: 静态前缀（Prompt Cache 友好） ===
@@ -306,7 +306,7 @@ func (k *AgentKernel) buildMessages(session *Session, query *Query) []Message {
 
 	// 加载历史对话（紧接系统提示词，保持前缀稳定）
 	if k.memory != nil && len(session.Messages) > 0 {
-		history, err := k.memory.Load(context.Background(), session.ID, 20)
+		history, err := k.memory.Load(ctx, session.ID, 20)
 		if err == nil && len(history) > 0 {
 			messages = append(messages, history...)
 		}
@@ -339,7 +339,7 @@ func (k *AgentKernel) buildMessages(session *Session, query *Query) []Message {
 
 	// 注入跨会话学习洞察
 	if k.learner != nil {
-		insights, err := k.learner.GetInsights(context.Background(), query.Content)
+		insights, err := k.learner.GetInsights(ctx, query.Content)
 		if err == nil && len(insights) > 0 {
 			messages = append(messages, Message{
 				Role: "system", Content: "[历史学习] " + strings.Join(insights, " | "),

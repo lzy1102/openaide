@@ -45,7 +45,7 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 	}
 
 	// 3. 构建消息列表
-	messages := k.buildMessages(session, query)
+	messages := k.buildMessages(ctx, session, query)
 	// 4. 获取工具定义
 	tools := k.toolExecutor.GetDefinitions()
 	if len(query.Options.ToolFilter) > 0 {
@@ -87,11 +87,11 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 		if round >= maxRounds/2 && round < maxRounds-1 {
 			remaining := maxRounds - round
 			messages = append(messages, Message{
-				Role: "user", Content: fmt.Sprintf("[系统] 已使用 %d/%d 轮，剩余 %d 轮。如信息足够请直接给出结论。", round, maxRounds, remaining),
+				Role: "user", Content: fmt.Sprintf("[System] Used %d/%d rounds, %d remaining. Give your final answer now if you have enough information.", round, maxRounds, remaining),
 			})
 		} else if round >= maxRounds-1 {
 			messages = append(messages, Message{
-				Role: "user", Content: "[系统] 最后一轮，必须给出最终结论，禁止调用工具。",
+				Role: "user", Content: "[System] Final round — must give final answer. Do NOT call any tools.",
 			})
 		}
 		// 调用 LLM（如果指定了模型，临时切换）
@@ -278,7 +278,7 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 	slog.Debug("ReAct max rounds reached, synthesizing final answer", "rounds", maxRounds, "msgs", len(messages))
 	messages = append(messages, Message{
 		Role: "user",
-		Content: "已达到最大分析轮次。请基于以上所有发现，用中文给出一个完整的总结性回答。不要调用工具，直接输出最终结论。",
+		Content: "Max rounds reached. Based on all findings above, provide a complete summary. Do NOT call tools — output your final answer directly.",
 	})
 	resp, err := k.llmProvider.Chat(ctx, messages, nil, map[string]interface{}{"temperature": 0.3, "max_tokens": 4000, "route": "execution"})
 	if err != nil {
