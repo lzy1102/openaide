@@ -123,6 +123,8 @@ func BuiltinTools() []kernel.ToolDefinition {
 	tools = append(tools, gitToolDefs()...)
 	tools = append(tools, webToolDefs()...)
 	tools = append(tools, browserToolDefs()...)
+	tools = append(tools, browserExtendedDefs()...)
+	tools = append(tools, desktopToolDefs()...)
 	tools = append(tools, multimodalToolDefs()...)
 	return tools
 }
@@ -152,6 +154,16 @@ func BuiltinHandlers() map[string]kernel.ToolHandler {
 		"browser_screenshot": handleBrowserScreenshot,
 		"browser_click":      handleBrowserClick,
 		"browser_fill":       handleBrowserFill,
+		"browser_click_at":  handleBrowserClickAt,
+		"browser_scroll":    handleBrowserScroll,
+		"browser_type":      handleBrowserType,
+		"desktop_screenshot": handleDesktopScreenshot,
+		"desktop_click":     handleDesktopClick,
+		"desktop_type":      handleDesktopType,
+		"desktop_key":       handleDesktopKey,
+		"desktop_scroll":    handleDesktopScroll,
+		"desktop_move":      handleDesktopMove,
+		"desktop_drag":      handleDesktopDrag,
 	}
 }
 
