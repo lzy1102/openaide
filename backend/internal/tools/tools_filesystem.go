@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"regexp"
 	"strings"
 	"time"
@@ -218,7 +219,12 @@ func handleExecuteCommand(ctx context.Context, arguments string) (*kernel.ToolRe
 	execCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(execCtx, "sh", "-c", args.Command)
+	var cmd *exec.Cmd
+		if runtime.GOOS == "windows" {
+			cmd = exec.CommandContext(execCtx, "cmd", "/c", args.Command)
+		} else {
+			cmd = exec.CommandContext(execCtx, "sh", "-c", args.Command)
+		}
 	if args.WorkingDir != "" {
 		absDir, err := safeAbsPath(args.WorkingDir)
 		if err != nil {
