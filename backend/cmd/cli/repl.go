@@ -17,6 +17,7 @@ import (
 	"openaide/backend/internal/kernel"
 	"openaide/backend/internal/lang"
 	"openaide/backend/internal/orchestration"
+	"openaide/backend/internal/tools"
 )
 
 // ── REPL ──────────────────────────────────────────────────
@@ -420,6 +421,12 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string)
 		fmt.Printf("\n%s──%s\n", cInfo, cReset)
 	}
 	PrintStatusBar(totalTokens, totalTools, elapsed, "deepseek-v4-pro", cacheHit, cacheMiss)
+	if qs := tools.GetPendingQuestions(); len(qs) > 0 {
+		fmt.Println()
+		for _, q := range qs {
+			fmt.Printf("  %s❓ %s%s\n", pterm.Yellow(""), q, cReset)
+		}
+	}
 }
 
 // ── Complex Query (sub-agent team execution) ──────────────
@@ -480,6 +487,12 @@ func executePlanQuery(app *infra.Application, query string, plan *orchestration.
 		fmt.Println(RenderMarkdown(resp.Content))
 	}
 	PrintStatusBar(resp.TokensUsed, totalTools, elapsed, "deepseek-v4-pro", resp.CacheHit, resp.CacheMiss)
+	if qs := tools.GetPendingQuestions(); len(qs) > 0 {
+		fmt.Println()
+		for _, q := range qs {
+			fmt.Printf("  %s❓ %s%s\n", pterm.Yellow(""), q, cReset)
+		}
+	}
 }
 
 // ── Commands ──────────────────────────────────────────────
