@@ -268,6 +268,9 @@ func (sm *SkillManager) RecordLastSkillUsage(qualityScore int) {
 	}
 }
 
+// LastActivated returns the ID of the most recently activated skill.
+func (sm *SkillManager) LastActivated() string { return sm.lastActivated }
+
 // DecayUnusedSkills decreases confidence for skills not used in 7 days.
 func (sm *SkillManager) DecayUnusedSkills() {
 	now := time.Now()
