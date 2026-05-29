@@ -118,7 +118,10 @@ func (pm *ProjectMind) AddLearning(category, content string) {
 		pm.Learnings.Patterns = appendUnique(pm.Learnings.Patterns, content)
 	case "convention":
 		pm.Learnings.Conventions = appendUnique(pm.Learnings.Conventions, content)
-	pm.ConfirmConvention(content)
+			for i, cv := range pm.Conventions {
+				if cv.Rule == content && !cv.Invalid { cv.Confidence = min(0.95, cv.Confidence+0.1); cv.ValidatedAt = time.Now(); pm.Conventions[i] = cv; return }
+			}
+			pm.Conventions = append(pm.Conventions, Convention{Rule: content, Confidence: 0.5, Source: "observation", LearnedAt: time.Now(), ValidatedAt: time.Now()})
 	case "pitfall":
 		pm.Learnings.Pitfalls = appendUnique(pm.Learnings.Pitfalls, content)
 	}
