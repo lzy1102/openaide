@@ -58,32 +58,9 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 	maxRounds := k.determineMaxRounds(query.Content, len(session.Messages))
 	slog.Debug("ReAct loop start", "query", query.Content[:min(80, len(query.Content))], "max_rounds", maxRounds, "tools", len(tools), "history_msgs", len(messages))
 	for round := 0; round < maxRounds; round++ {
-		// 检查上下文长度，必要时压缩
-		if k.compressor != nil {
-			tokenCount := k.compressor.EstimateTokens(messages)
-			// 90% 窗口阈值触发压缩（Claude Code 用 92%）
-			if tokenCount > k.maxTokens*9/10 {
-				compressed, saved, err := k.compressor.Compress(messages, k.maxTokens)
-				if err == nil {
-					messages = compressed
-					slog.Debug("Context compressed", "saved_tokens", saved)
-				}
-			}
-		}
-
+		// Prepare context: compress, snip old output, inject budget hints
+		messages = k.prepareReActRound(messages, round, maxRounds)
 		slog.Debug("ReAct round start", "round", round, "state", k.state, "msg_count", len(messages))
-		snipOldToolOutputs(messages)
-		// 预算注入：过半后提醒 LLM 剩余轮次
-		if round >= maxRounds/2 && round < maxRounds-1 {
-			remaining := maxRounds - round
-			messages = append(messages, Message{
-				Role: "user", Content: fmt.Sprintf("[System] Used %d/%d rounds, %d remaining. Give your final answer now if you have enough information.", round, maxRounds, remaining),
-			})
-		} else if round >= maxRounds-1 {
-			messages = append(messages, Message{
-				Role: "user", Content: "[System] Final round — must give final answer. Do NOT call any tools.",
-			})
-		}
 		// 调用 LLM（如果指定了模型，临时切换）
 		if query.Options.ModelID != "" {
 			k.llmProvider.SetModelID(query.Options.ModelID)
@@ -194,7 +171,7 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 
 		results := make([]toolResult, len(tasks))
 
-		// 按并发安全性分组：安全工具可并行，不安全工具单独成组串行
+		// Partition by concurrency safety
 		type batch struct{ indices []int }
 		var batches []batch
 		current := batch{}

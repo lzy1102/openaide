@@ -108,7 +108,7 @@ func runREPL(app *infra.Application, continueSess bool) {
 	rl.SetPrompt(PromptStyle(sessionID, modelName, false, sessionTitle))
 	rl.HistoryAutoWrite = true
 
-	commands := []string{"/help", "/clear", "/mode", "/model", "/lang", "/log", "/sessions", "/session",
+	commands := []string{"/help", "/clear", "/model", "/lang", "/log", "/sessions", "/session",
 		"/handoff", "/exit", "/quit", "/q", "/analyst", "/coder", "/reviewer", "/executor", "/team", "/tree", "/init"}
 	rl.TabCompleter = func(line []rune, pos int, _ readline.DelayedTabContext) *readline.TabCompleterReturnT {
 		prefix := string(line[:pos])
@@ -641,8 +641,7 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 		PrintList([]string{
 			pterm.Cyan("/help") + " — " + lang.T("cli.help"),
 			pterm.Cyan("/clear") + " — " + lang.T("repl.help_clear"),
-			pterm.Cyan("/mode [code|write|research|general]") + " — " + lang.T("repl.help_mode"),
-			pterm.Cyan("/model [name]") + " — " + lang.T("repl.help_model"),
+						pterm.Cyan("/model [name]") + " — " + lang.T("repl.help_model"),
 			pterm.Cyan("/lang zh|en") + " — " + lang.T("repl.help_lang"),
 			pterm.Cyan("/log") + " — " + lang.T("repl.help_log"),
 			pterm.Cyan("/sessions") + " — " + lang.T("repl.help_sessions"),
@@ -820,34 +819,6 @@ case "/analyst", "/coder", "/reviewer", "/executor":
 		fmt.Println(RenderMarkdown(final))
 		PrintSuccess("team done")
 
-	case "/mode":
-		if len(parts) >= 2 {
-			switch parts[1] {
-			case "code", "coder", "dev":
-				PrintSuccess(lang.T("repl.mode_coding"))
-			case "write", "writer", "写作":
-				PrintSuccess(lang.T("repl.mode_writing"))
-			case "research", "研究", "分析":
-				PrintSuccess(lang.T("repl.mode_research"))
-			case "general", "通用":
-				PrintSuccess(lang.T("repl.mode_general"))
-			default:
-				PrintInfo(lang.T("repl.mode_available"))
-			}
-		} else {
-			var options []string
-			for _, m := range []string{lang.T("repl.mode_code_label"), lang.T("repl.mode_write_label"), lang.T("repl.mode_research_label"), lang.T("repl.mode_general_label")} {
-				options = append(options, m)
-			}
-			result, _ := pterm.DefaultInteractiveSelect.
-				WithOptions(options).
-				WithDefaultText(lang.T("repl.select_mode")).
-				Show()
-			if result != "" {
-				PrintSuccess("已切换: " + result)
-			}
-		}
-		return
 
 	case "/handoff":
 		PrintSuccess("Session saved")
