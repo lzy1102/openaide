@@ -175,23 +175,23 @@
         <!-- 设置页面 -->
         <div class="page hidden" id="page-settings">
             <div class="container" style="display: grid; gap: 1rem;">
-                <!-- 项目管理 -->
+                <!-- Project Management -->
                 <div class="card">
-                    <h2>项目管理</h2>
+                    <h2>Project Management</h2>
                     <p style="color: var(--color-text-muted); margin-bottom: 1rem;">
-                        注册项目目录。选择项目后，AI 将基于该项目目录进行分析。
+                        Register project directories. AI will analyze based on the selected project.
                     </p>
                     <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
-                        <input type="text" id="project-name" placeholder="项目名称" style="flex: 1;">
+                        <input type="text" id="project-name" placeholder="Project Name" style="flex: 1;">
                         <input type="text" id="project-path" placeholder="/path/to/project" style="flex: 2;">
-                        <button class="btn btn-primary" id="add-project">添加</button>
+                        <button class="btn btn-primary" id="add-project">Add</button>
                     </div>
                     <div id="project-list" style="max-height: 200px; overflow-y: auto;"></div>
                 </div>
 
                 <!-- 配置编辑器 -->
                 <div class="card">
-                    <h2>配置文件</h2>
+                    <h2>Configuration</h2>
                     <p style="color: var(--color-text-muted); margin-bottom: 0.5rem;">
                         最简单的配置只需 3 行：
                     </p>
@@ -206,8 +206,8 @@
                         padding: 1rem; line-height: 1.5; resize: vertical;"
                         spellcheck="false"></textarea>
                     <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
-                        <button class="btn btn-primary" id="save-config">保存配置</button>
-                        <button class="btn btn-secondary" id="reload-config">重新加载</button>
+                        <button class="btn btn-primary" id="save-config">Save Config</button>
+                        <button class="btn btn-secondary" id="reload-config">Reload</button>
                         <span id="config-status" style="margin-left: 1rem; line-height: 2rem;"></span>
                     </div>
                 </div>
@@ -348,7 +348,7 @@
                 const result = await projectAPI.listProjects();
                 state.projects = Array.isArray(result) ? result : [];
             } catch (error) {
-                console.error('加载项目列表失败:', error);
+                console.error('Failed to load projects:', error);
                 state.projects = [];
             }
         }
@@ -388,10 +388,10 @@
                 renderProjectList();
                 await loadDialogues();
                 await createDialogue();
-                showToast('项目已创建', 'success');
+                showToast('Project created', 'success');
             } catch (error) {
-                console.error('创建项目失败:', error);
-                showToast('创建项目失败', 'error');
+                console.error('Failed to create project:', error);
+                showToast('Failed to create project', 'error');
             }
         }
 
@@ -399,10 +399,10 @@
             const project = state.projects.find(p => p.id === projectId);
             if (!project) return;
             if (project.is_default) {
-                showToast('不能删除默认项目', 'warning');
+                showToast('Cannot delete default project', 'warning');
                 return;
             }
-            if (!confirm(`确定要删除项目 "${project.name}" 吗？该项目下的对话将移至无项目状态。`)) return;
+            if (!confirm(`确定要Delete Project "${project.name}" 吗？该项目下的对话将移至无项目状态。`)) return;
             try {
                 await projectAPI.deleteProject(projectId);
                 state.projects = state.projects.filter(p => p.id !== projectId);
@@ -419,10 +419,10 @@
                 } else {
                     renderProjectList();
                 }
-                showToast('项目已删除', 'success');
+                showToast('Project deleted', 'success');
             } catch (error) {
-                console.error('删除项目失败:', error);
-                showToast('删除项目失败', 'error');
+                console.error('Delete Project失败:', error);
+                showToast('Delete Project失败', 'error');
             }
         }
 
@@ -448,7 +448,7 @@
                     const deleteBtn = document.createElement('button');
                     deleteBtn.className = 'btn-icon project-delete-btn';
                     deleteBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 2L10 10M10 2L2 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
-                    deleteBtn.title = '删除项目';
+                    deleteBtn.title = 'Delete Project';
                     deleteBtn.addEventListener('click', (e) => {
                         e.stopPropagation();
                         deleteProject(p.id);
@@ -759,7 +759,7 @@ const html = providers.map(p => `
             input.value = '';
             input.style.height = 'auto';
 
-            // 添加用户消息
+            // Add用户消息
             addMessage('user', message);
 
             // 显示加载状态
@@ -867,6 +867,14 @@ const html = providers.map(p => `
                     dialogueAPI.saveStreamMessage(state.currentDialogueId, responseText, thinkingText).catch(err => {
                         console.error('Failed to save stream message:', err);
                     });
+                }
+
+                // Show agent questions if any
+                if (responseText && responseText.includes('Question for user')) {
+                    const q = responseText.match(/Question for user:\s*(.+?)(?:\n|$)/);
+                    if (q) {
+                        setTimeout(() => showToast('❓ Agent: ' + q[1], 'info'), 500);
+                    }
                 }
 
             } catch (error) {
@@ -1030,7 +1038,7 @@ const html = providers.map(p => `
                 }
             };
 
-            // 保存配置
+            // Save Config
             document.getElementById('save-config').onclick = async () => {
                 try {
                     const resp = await fetch(apiBase + '/config', {
@@ -1045,7 +1053,7 @@ const html = providers.map(p => `
                 }
             };
 
-            // 项目管理
+            // Project Management
             async function renderProjects() {
                 const list = document.getElementById('project-list');
                 try {
@@ -1059,7 +1067,7 @@ const html = providers.map(p => `
                         html += '<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation()" data-del="' + i + '">删除</button>';
                         html += '</div>';
                     });
-                    list.innerHTML = html || '<p style="color:var(--color-text-muted)">暂无项目。添加上面的项目目录。</p>';
+                    list.innerHTML = html || '<p style="color:var(--color-text-muted)">暂无项目。Add上面的项目目录。</p>';
                 } catch(e) { list.innerHTML = '<p style="color:var(--color-error)">加载失败</p>'; }
             }
 
@@ -1076,14 +1084,14 @@ const html = providers.map(p => `
                     document.getElementById('project-name').value = '';
                     document.getElementById('project-path').value = '';
                     await renderProjects();
-                } catch(e) { alert('添加失败: ' + e.message); }
+                } catch(e) { alert('Add失败: ' + e.message); }
             };
 
             document.getElementById('project-list').addEventListener('click', async (e) => {
                 if (e.target.dataset.del !== undefined) {
                     const idx = parseInt(e.target.dataset.del);
                     const p = state.projects[idx];
-                    if (p && confirm('删除项目 ' + p.name + '?')) {
+                    if (p && confirm('Delete Project ' + p.name + '?')) {
                         await fetch(apiBase + '/projects/' + p.id, {method: 'DELETE'});
                         await renderProjects();
                     }
