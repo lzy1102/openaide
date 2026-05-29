@@ -54,7 +54,9 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 		slog.Warn("Failed to create learner, learning disabled", "error", err)
 	}
 	agentKernel.SetPatternDetector(kernel.NewSimplePatternDetector())
-	agentKernel.SetSkillEvolution(kernel.NewSkillEvolution(sm, cfg.Storage.DataDir+"/skills"))
+	se := kernel.NewSkillEvolution(sm, cfg.Storage.DataDir+"/skills")
+		se.SetLLM(gateway)
+		agentKernel.SetSkillEvolution(se)
 	approver := kernel.NewAutoApprover()
 	approver.SetLLM(gateway)
 	if cfg.Kernel.UnsafeMode != nil {

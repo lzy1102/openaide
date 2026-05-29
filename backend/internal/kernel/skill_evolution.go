@@ -16,12 +16,18 @@ import (
 type SkillEvolution struct {
 	skillManager *SkillManager
 	dir          string
+	llm          LLMProvider // LLM 用于生成有意义的技能描述
 }
 
 // NewSkillEvolution 创建技能进化器
 func NewSkillEvolution(skillManager *SkillManager, dir string) *SkillEvolution {
 	os.MkdirAll(dir, 0755)
 	return &SkillEvolution{skillManager: skillManager, dir: dir}
+}
+
+// SetLLM sets the LLM provider for generating skill prompts
+func (se *SkillEvolution) SetLLM(llm LLMProvider) {
+	se.llm = llm
 }
 
 // Evolve 根据模式和洞察进化技能
@@ -56,97 +62,101 @@ func (se *SkillEvolution) Evolve(ctx context.Context, patterns []Pattern, insigh
 }
 
 func (se *SkillEvolution) createSkillFromPattern(p Pattern) {
-	// 提取查询关键词作为 skill 名
 	desc := p.Description
 	name := extractSkillName(desc, "query")
-
-	// 检查是否已有近似 skill
-	if se.skillManager.Get(name) != nil {
-		return // 已存在，跳过
-	}
+	if se.skillManager.Get(name) != nil { return }
 
 	keywords := extractKeywords(desc)
+	prompt := se.generateSkillPrompt("repeated user query", desc, keywords)
 	skill := &Skill{
-		ID:          name,
-		Name:        fmt.Sprintf("自动技能: %s", name),
-		Description: desc,
-		Keywords:    keywords,
-		Prompt: fmt.Sprintf(`## 自动技能: %s
-根据历史对话模式总结的技能:
-- 用户经常询问此类问题
-- 建议预先准备相关知识
-- 给出清晰、结构化的回答
-- 必要时使用工具验证信息`, name),
-		Tools:   []string{"search_files", "read_file"},
-		Enabled: true,
+		ID: name, Name: "Auto: " + name, Description: desc,
+		Keywords: keywords, Prompt: prompt,
+		Tools: []string{"search_files", "read_file"}, Enabled: true,
 	}
-
 	se.saveSkill(skill)
-	slog.Info("Auto-created skill from pattern", "id", skill.ID, "pattern", p.Type)
+	slog.Info("Auto-created skill", "id", skill.ID)
 }
 
 func (se *SkillEvolution) createSkillFromToolSequence(p Pattern) {
 	desc := p.Description
 	name := extractSkillName(desc, "tool")
+	if se.skillManager.Get(name) != nil { return }
 
-	if se.skillManager.Get(name) != nil {
-		return
-	}
-
-	// 从描述中提取工具名
 	tools := extractToolNames(desc)
-	if len(tools) == 0 {
-		tools = []string{"execute_command", "read_file"}
-	}
-
+	if len(tools) == 0 { tools = []string{"execute_command", "read_file"} }
 	keywords := extractKeywords(desc)
+	prompt := se.generateSkillPrompt("successful tool sequence", desc, keywords)
 	skill := &Skill{
-		ID:          name,
-		Name:        fmt.Sprintf("工作流: %s", name),
-		Description: desc,
-		Keywords:    keywords,
-		Prompt: fmt.Sprintf(`## 工作流: %s
-根据历史成功经验总结的工作流:
-1. 按已验证的顺序执行工具
-2. 每一步检查结果后再继续
-3. 遇到错误时回退到上一步`, name),
-		Tools:   tools,
-		Enabled: true,
+		ID: name, Name: "Workflow: " + name, Description: desc,
+		Keywords: keywords, Prompt: prompt, Tools: tools, Enabled: true,
 	}
-
 	se.saveSkill(skill)
-	slog.Info("Auto-created skill from tool sequence", "id", skill.ID, "pattern", p.Type)
+	slog.Info("Auto-created workflow skill", "id", skill.ID)
 }
 
 func (se *SkillEvolution) evolveSkillFromInsight(in Insight) {
-	// 根据用户偏好优化匹配关键词 — 目前只是记录
-	// 未来可调整 skill 的 Prompt 内容
+	// Use LLM to refine existing skill keywords or prompt based on preference
+	if se.llm == nil { return }
+	// For now: add the insight content as a keyword to matching skills
+	for _, skill := range se.skillManager.List() {
+		if skill.ID == "general" || skill.ID == "error-recovery" { continue }
+		skill.Keywords = append(skill.Keywords, in.Content)
+	}
 }
 
 func (se *SkillEvolution) createSkillFromErrorPattern(p Pattern) {
 	name := "error-recovery"
-	if se.skillManager.Get(name) != nil {
-		return
-	}
+	if se.skillManager.Get(name) != nil { return }
 
+	prompt := se.generateSkillPrompt("frequent errors and failures", p.Description, nil)
 	skill := &Skill{
-		ID:          name,
-		Name:        "错误恢复",
-		Description: p.Description,
-		Keywords:    []string{"error", "失败", "错误", "timeout", "报错"},
-		Prompt: `## 错误恢复模式
-系统检测到频繁错误。请按以下步骤排查:
-1. 检查上一步操作的输入/参数是否正确
-2. 使用更短的命令或更小的改动范围重试
-3. 如果工具超时，尝试增加超时时间或分解操作
-4. 如果权限错误，检查文件路径和权限
-5. 持续失败时，换一种完全不同的实现方式`,
-		Tools:   []string{"execute_command", "read_file", "search_files"},
+		ID: name, Name: "Error Recovery", Description: p.Description,
+		Keywords: []string{"error", "failed", "timeout", "错误", "失败"},
+		Prompt: prompt, Tools: []string{"execute_command", "read_file", "search_files"},
 		Enabled: true,
 	}
-
 	se.saveSkill(skill)
-	slog.Info("Auto-created error-recovery skill from error pattern", "count", p.Frequency)
+	slog.Info("Auto-created error-recovery skill", "count", p.Frequency)
+}
+
+// generateSkillPrompt uses LLM to create a meaningful skill prompt from pattern data.
+// Falls back to template if LLM is unavailable.
+func (se *SkillEvolution) generateSkillPrompt(category, desc string, keywords []string) string {
+	if se.llm == nil {
+		return se.fallbackPrompt(category, desc)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	messages := []Message{
+		{Role: "user", Content: fmt.Sprintf(
+			"You are creating an AI skill definition. Write a SHORT skill prompt (3-5 bullet points) "+
+				"for this skill based on observed patterns:\n"+
+				"Category: %s\nDescription: %s\nKeywords: %v\n\n"+
+				"The prompt should guide an AI on HOW to handle this type of request. "+
+				"Be specific, actionable, and concise. Output ONLY the bullet points, no intro.",
+			category, desc, keywords),
+		},
+	}
+	resp, err := se.llm.Chat(ctx, messages, nil, map[string]interface{}{
+		"max_tokens": 300, "temperature": 0.3, "route": "execution",
+	})
+	if err != nil || resp.Content == "" {
+		return se.fallbackPrompt(category, desc)
+	}
+	// Clean up and prefix
+	cleaned := strings.TrimSpace(resp.Content)
+	cleaned = strings.TrimPrefix(cleaned, "- ")
+	return fmt.Sprintf("## Auto-generated Skill: %s\n%s", strings.ToTitle(category), cleaned)
+}
+
+// fallbackPrompt returns a template when LLM is unavailable.
+func (se *SkillEvolution) fallbackPrompt(category, desc string) string {
+	return fmt.Sprintf("## %s\n"+
+		"Based on observed patterns: %s\n"+
+		"- Follow the proven approach for this type of task\n"+
+		"- Verify results at each step\n"+
+		"- Adapt based on specific context", strings.ToTitle(category), desc)
 }
 
 func (se *SkillEvolution) saveSkill(skill *Skill) {
