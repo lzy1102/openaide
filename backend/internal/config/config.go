@@ -296,7 +296,22 @@ func Load(path string) (*Config, error) {
 
 	config.normalize()
 	config.resolvePaths()
+	config.autoDetectMaxTokens()
 	return config, nil
+}
+
+// autoDetectMaxTokens 从模型名自动推断上下文大小
+// 仅当用户未显式设置 max_tokens 且小于 200K 时生效（即使用了默认值）
+func (c *Config) autoDetectMaxTokens() {
+	// 已有 providers 配置 → 从 default_model 推断
+	if len(c.LLM.Providers) > 0 {
+		dm := strings.ToLower(c.LLM.Providers[0].DefaultModel)
+		if d := guessContextSize(dm); d > 200000 && c.Kernel.MaxTokens <= 200000 {
+			c.Kernel.MaxTokens = d - 20000
+		}
+		return
+	}
+	// 简单格式已在 normalize() 中处理
 }
 
 // generateSampleConfig 首次运行生成带注释的配置模板
