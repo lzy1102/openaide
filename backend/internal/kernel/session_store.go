@@ -94,9 +94,9 @@ func (s *FileSessionStore) Update(ctx context.Context, session *Session) error {
 
 	s.mu.Lock()
 	s.sessions[session.ID] = session
+	err := s.save(session) // inside lock: prevents concurrent file writes
 	s.mu.Unlock()
-
-	return s.save(session)
+	return err
 }
 
 func (s *FileSessionStore) List(ctx context.Context, projectID, userID string, limit, offset int) ([]*Session, error) {

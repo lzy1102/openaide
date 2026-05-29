@@ -79,8 +79,8 @@ func Load(projectDir string) *ProjectMind {
 // Save 持久化
 func (pm *ProjectMind) Save() error {
 	slog.Debug("ProjectMind save", "path", pm.path)
-	pm.mu.RLock()
-	defer pm.mu.RUnlock()
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
 	pm.UpdatedAt = time.Now()
 	os.MkdirAll(filepath.Dir(pm.path), 0755)
 	data, err := json.MarshalIndent(pm, "", "  ")
