@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
+	"sync/atomic"
 
 	"openaide/backend/internal/kernel"
 )
@@ -34,12 +34,11 @@ type EventHook func(ctx context.Context, event kernel.Event)
 
 // Manager 插件管理器
 type Manager struct {
-	mu          sync.RWMutex
-	dir         string
-	plugins     map[string]*Plugin
-	onLoad      []func(*Plugin)
-	messageHooks []MessageHook
-	eventHooks   []EventHook
+	plugins      *kernel.SafeMap[string, *Plugin]
+	dir          string
+	onLoad       atomic.Value // []func(*Plugin)
+	messageHooks atomic.Value // []MessageHook
+	eventHooks   atomic.Value // []EventHook
 }
 
 // NewManager 创建插件管理器
@@ -47,8 +46,11 @@ func NewManager(dir string) *Manager {
 	os.MkdirAll(dir, 0755)
 	m := &Manager{
 		dir:     dir,
-		plugins: make(map[string]*Plugin),
+		plugins: kernel.NewSafeMap[string, *Plugin](8),
 	}
+	m.onLoad.Store([]func(*Plugin){})
+	m.messageHooks.Store([]MessageHook{})
+	m.eventHooks.Store([]EventHook{})
 	m.loadFromDisk()
 	m.loadClaudeFromDisk()
 	return m
@@ -58,15 +60,19 @@ func NewManager(dir string) *Manager {
 func (m *Manager) loadClaudeFromDisk() {
 	claudePlugins := DiscoverClaudePlugins(m.dir)
 	for _, p := range claudePlugins {
-		if _, exists := m.plugins[p.ID]; !exists {
-			m.plugins[p.ID] = p
+		if _, exists := m.plugins.Load(p.ID); !exists {
+			m.plugins.Store(p.ID, p)
 		}
 	}
 }
 
 // OnLoad 注册加载回调
 func (m *Manager) OnLoad(fn func(*Plugin)) {
-	m.onLoad = append(m.onLoad, fn)
+	old := m.onLoad.Load().([]func(*Plugin))
+	newSlice := make([]func(*Plugin), len(old)+1)
+	copy(newSlice, old)
+	newSlice[len(old)] = fn
+	m.onLoad.Store(newSlice)
 }
 
 // Install 安装插件
@@ -80,78 +86,64 @@ func (m *Manager) Install(manifestJSON string) error {
 	}
 	p.Enabled = true
 
-	m.mu.Lock()
-	m.plugins[p.ID] = &p
-	m.mu.Unlock()
-
+	m.plugins.Store(p.ID, &p)
+	for _, fn := range m.onLoad.Load().([]func(*Plugin)) {
+		fn(&p)
+	}
 	return m.save(p.ID, &p)
 }
 
 // Uninstall 卸载插件
 func (m *Manager) Uninstall(id string) error {
-	m.mu.Lock()
-	delete(m.plugins, id)
-	m.mu.Unlock()
+	m.plugins.Delete(id)
 	return os.Remove(filepath.Join(m.dir, id+".json"))
 }
 
 // Enable 启用插件
 func (m *Manager) Enable(id string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if p, ok := m.plugins[id]; ok {
-		p.Enabled = true
-		return m.save(id, p)
-	}
-	return fmt.Errorf("plugin not found: %s", id)
+	p, ok := m.plugins.Load(id)
+	if !ok { return fmt.Errorf("plugin not found: %s", id) }
+	p.Enabled = true
+	return m.save(id, p)
 }
 
 // Disable 禁用插件
 func (m *Manager) Disable(id string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if p, ok := m.plugins[id]; ok {
-		p.Enabled = false
-		return m.save(id, p)
-	}
-	return fmt.Errorf("plugin not found: %s", id)
+	p, ok := m.plugins.Load(id)
+	if !ok { return fmt.Errorf("plugin not found: %s", id) }
+	p.Enabled = false
+	return m.save(id, p)
 }
 
 // List 列出所有插件
 func (m *Manager) List() []*Plugin {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
 	var result []*Plugin
-	for _, p := range m.plugins {
+	m.plugins.Range(func(_ string, p *Plugin) bool {
 		result = append(result, p)
-	}
+		return true
+	})
 	return result
 }
 
 // Reload rescans the plugins directory and picks up newly added plugins.
 // Existing plugins are not modified. Returns IDs of newly loaded plugins.
 func (m *Manager) Reload() []string {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	prev := make(map[string]bool, len(m.plugins))
-	for id := range m.plugins {
-		prev[id] = true
-	}
+	prev := make(map[string]bool)
+	m.plugins.Range(func(id string, _ *Plugin) bool { prev[id] = true; return true })
 
 	m.loadFromDisk()
 	m.loadClaudeFromDisk()
 
 	var newIDs []string
-	for id, p := range m.plugins {
+	m.plugins.Range(func(id string, p *Plugin) bool {
 		if !prev[id] {
 			newIDs = append(newIDs, id)
-			// Fire onLoad callback for new plugin
-			for _, fn := range m.onLoad {
+			for _, fn := range m.onLoad.Load().([]func(*Plugin)) {
 				fn(p)
 			}
 		}
-	}
+		return true
+	})
 	if len(newIDs) > 0 {
 		var names []string
 		for _, id := range newIDs {
@@ -163,25 +155,26 @@ func (m *Manager) Reload() []string {
 
 // OnMessage 注册消息钩子
 func (m *Manager) OnMessage(hook MessageHook) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.messageHooks = append(m.messageHooks, hook)
+	old := m.messageHooks.Load().([]MessageHook)
+	newSlice := make([]MessageHook, len(old)+1)
+	copy(newSlice, old)
+	newSlice[len(old)] = hook
+	m.messageHooks.Store(newSlice)
 }
 
 // OnEvent 注册事件钩子
 func (m *Manager) OnEvent(hook EventHook) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.eventHooks = append(m.eventHooks, hook)
+	old := m.eventHooks.Load().([]EventHook)
+	newSlice := make([]EventHook, len(old)+1)
+	copy(newSlice, old)
+	newSlice[len(old)] = hook
+	m.eventHooks.Store(newSlice)
 }
 
 // RunMessageHooks 依次执行所有消息钩子
 // 任一钩子返回 error 将中止后续钩子并返回错误
 func (m *Manager) RunMessageHooks(ctx context.Context, msg *kernel.Message) (*kernel.Message, error) {
-	m.mu.RLock()
-	hooks := make([]MessageHook, len(m.messageHooks))
-	copy(hooks, m.messageHooks)
-	m.mu.RUnlock()
+	hooks := m.messageHooks.Load().([]MessageHook)
 
 	current := msg
 	for _, hook := range hooks {
@@ -199,10 +192,7 @@ func (m *Manager) RunMessageHooks(ctx context.Context, msg *kernel.Message) (*ke
 
 // RunEventHooks 依次执行所有事件钩子
 func (m *Manager) RunEventHooks(ctx context.Context, event kernel.Event) {
-	m.mu.RLock()
-	hooks := make([]EventHook, len(m.eventHooks))
-	copy(hooks, m.eventHooks)
-	m.mu.RUnlock()
+	hooks := m.eventHooks.Load().([]EventHook)
 
 	for _, hook := range hooks {
 		hook(ctx, event)
@@ -211,14 +201,13 @@ func (m *Manager) RunEventHooks(ctx context.Context, event kernel.Event) {
 
 // GetPrompt 获取所有启用插件的提示词注入
 func (m *Manager) GetPrompt() string {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
 	var parts []string
-	for _, p := range m.plugins {
+	m.plugins.Range(func(_ string, p *Plugin) bool {
 		if p.Enabled && p.SystemPrompt != "" {
 			parts = append(parts, fmt.Sprintf("## 插件: %s\n%s", p.Name, p.SystemPrompt))
 		}
-	}
+		return true
+	})
 	return strings.Join(parts, "\n\n")
 }
 
@@ -236,8 +225,8 @@ func (m *Manager) loadFromDisk() {
 		data, _ := os.ReadFile(filepath.Join(m.dir, e.Name()))
 		var p Plugin
 		if json.Unmarshal(data, &p) == nil {
-			m.plugins[p.ID] = &p
-			for _, fn := range m.onLoad {
+			m.plugins.Store(p.ID, &p)
+			for _, fn := range m.onLoad.Load().([]func(*Plugin)) {
 				fn(&p)
 			}
 		}

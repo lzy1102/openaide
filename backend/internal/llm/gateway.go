@@ -12,12 +12,11 @@ import (
 
 // Gateway LLM 网关 - 统一接入所有提供商
 type Gateway struct {
-	providers       map[string]Provider
-	configs         map[string]*ProviderConfig
+	providers       *kernel.SafeMap[string, Provider]
+	configs         *kernel.SafeMap[string, *ProviderConfig]
 	defaultProvider string
 	cache           *PromptCache
 	router          *Router
-	mu              sync.RWMutex
 
 	// 成本感知路由：小调用走 execution，核心推理走 reasoning
 	ExecutionModel string
@@ -57,18 +56,15 @@ type ProviderConfig struct {
 // NewGateway 创建 LLM 网关
 func NewGateway() *Gateway {
 	return &Gateway{
-		providers: make(map[string]Provider),
-		configs:   make(map[string]*ProviderConfig),
+		providers: kernel.NewSafeMap[string, Provider](4),
+		configs:   kernel.NewSafeMap[string, *ProviderConfig](4),
 	}
 }
 
 // RegisterProvider 注册提供商
 func (g *Gateway) RegisterProvider(name string, provider Provider, config *ProviderConfig) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	g.providers[name] = provider
-	g.configs[name] = config
+	g.providers.Store(name, provider)
+	g.configs.Store(name, config)
 
 	if config.Enabled && g.defaultProvider == "" {
 		g.defaultProvider = name
@@ -80,19 +76,18 @@ func (g *Gateway) SetPromptCache(pc *PromptCache) { g.cache = pc }
 
 // ReloadConfig 热更新 LLM 配置（不重建 provider，只更新模型和路由）
 func (g *Gateway) ReloadConfig(newModels map[string]string, reasoningModel, executionModel string) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	for name, model := range newModels {
-		if config, ok := g.configs[name]; ok {
+	g.configs.Range(func(name string, config *ProviderConfig) bool {
+		if model, ok := newModels[name]; ok {
 			config.DefaultModel = model
 		}
-		if prov, ok := g.providers[name]; ok {
-			if model != "" {
-				prov.SetModelID(model)
-			}
+		return true
+	})
+	g.providers.Range(func(name string, prov Provider) bool {
+		if model, ok := newModels[name]; ok && model != "" {
+			prov.SetModelID(model)
 		}
-	}
+		return true
+	})
 
 	if reasoningModel != "" {
 		g.ReasoningModel = reasoningModel
@@ -113,34 +108,21 @@ func (g *Gateway) Shutdown() {
 
 // SetDefaultProvider 设置默认提供商
 func (g *Gateway) SetDefaultProvider(name string) error {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	if _, ok := g.providers[name]; !ok {
+	if _, ok := g.providers.Load(name); !ok {
 		return fmt.Errorf("provider not found: %s", name)
 	}
-
 	g.defaultProvider = name
 	return nil
 }
 
 // GetDefaultProvider 获取默认提供商
 func (g *Gateway) GetDefaultProvider() string {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
 	return g.defaultProvider
 }
 
 // GetProviders 获取所有提供商名称
 func (g *Gateway) GetProviders() []string {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-
-	names := make([]string, 0, len(g.providers))
-	for name := range g.providers {
-		names = append(names, name)
-	}
-	return names
+	return g.providers.Keys()
 }
 
 // ProviderInfo 提供商概要信息
@@ -152,32 +134,26 @@ type ProviderInfo struct {
 
 // GetProviderInfos 返回所有提供商及其当前模型
 func (g *Gateway) GetProviderInfos() []ProviderInfo {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-
-	infos := make([]ProviderInfo, 0, len(g.providers))
-	for name, p := range g.providers {
+	infos := make([]ProviderInfo, 0)
+	g.providers.Range(func(name string, p Provider) bool {
 		info := ProviderInfo{
 			Name:    name,
 			Model:   p.GetModelID(),
 			Default: name == g.defaultProvider,
 		}
 		infos = append(infos, info)
-	}
+		return true
+	})
 	return infos
 }
 
 // GetEnabledProviders 获取启用的提供商
 func (g *Gateway) GetEnabledProviders() []string {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-
 	var names []string
-	for name, config := range g.configs {
-		if config.Enabled {
-			names = append(names, name)
-		}
-	}
+	g.configs.Range(func(name string, config *ProviderConfig) bool {
+		if config.Enabled { names = append(names, name) }
+		return true
+	})
 	return names
 }
 
@@ -187,21 +163,22 @@ func (g *Gateway) SetRouter(r *Router) { g.router = r }
 // routeProvider 根据用户输入选择最佳 provider
 // findProviderForModel 查找默认模型匹配指定名称的 provider
 func (g *Gateway) findProviderForModel(model string) string {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	for name, p := range g.providers {
+	var result string
+	g.providers.Range(func(name string, p Provider) bool {
 		if p.GetModelID() == model {
-			return name
+			result = name
+			return false
 		}
-	}
-	return ""
+		return true
+	})
+	return result
 }
 
 func (g *Gateway) routeProvider(query string) string {
 	if g.router != nil {
 		provider, _, matched := g.router.Route(query)
 		if matched && provider != "" {
-			if _, ok := g.providers[provider]; ok {
+			if _, ok := g.providers.Load(provider); ok {
 				return provider
 			}
 		}
@@ -259,9 +236,7 @@ func (g *Gateway) Chat(ctx context.Context, messages []kernel.Message, tools []k
 
 // ChatWithProvider 使用指定提供商发送聊天请求
 func (g *Gateway) ChatWithProvider(ctx context.Context, providerName string, messages []kernel.Message, tools []kernel.ToolDefinition, options map[string]interface{}) (*kernel.LLMResponse, error) {
-	g.mu.RLock()
-	provider, ok := g.providers[providerName]
-	g.mu.RUnlock()
+	provider, ok := g.providers.Load(providerName)
 
 	if !ok {
 		return nil, fmt.Errorf("provider not found: %s", providerName)
@@ -329,9 +304,7 @@ func (g *Gateway) ChatStream(ctx context.Context, messages []kernel.Message, too
 
 // ChatStreamWithProvider 使用指定提供商发送流式聊天请求
 func (g *Gateway) ChatStreamWithProvider(ctx context.Context, providerName string, messages []kernel.Message, tools []kernel.ToolDefinition, options map[string]interface{}) (<-chan kernel.StreamChunk, error) {
-	g.mu.RLock()
-	provider, ok := g.providers[providerName]
-	g.mu.RUnlock()
+	provider, ok := g.providers.Load(providerName)
 
 	if !ok {
 		return nil, fmt.Errorf("provider not found: %s", providerName)
@@ -364,23 +337,17 @@ func (g *Gateway) SetModelID(model string) {
 }
 
 func (g *Gateway) SetDefaultModel(model string) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	if provider, ok := g.providers[g.defaultProvider]; ok {
+	if provider, ok := g.providers.Load(g.defaultProvider); ok {
 		provider.SetModelID(model)
 	}
-	if config, ok := g.configs[g.defaultProvider]; ok {
+	if config, ok := g.configs.Load(g.defaultProvider); ok {
 		config.DefaultModel = model
 	}
 }
 
 // GetModelID 获取当前模型 ID
 func (g *Gateway) GetModelID() string {
-	g.mu.RLock()
-	provider, ok := g.providers[g.defaultProvider]
-	g.mu.RUnlock()
-
+	provider, ok := g.providers.Load(g.defaultProvider)
 	if !ok {
 		return ""
 	}
@@ -389,12 +356,11 @@ func (g *Gateway) GetModelID() string {
 
 // HealthCheck 健康检查所有提供商
 func (g *Gateway) HealthCheck(ctx context.Context) map[string]error {
-	g.mu.RLock()
-	providers := make(map[string]Provider, len(g.providers))
-	for name, p := range g.providers {
+	providers := make(map[string]Provider)
+	g.providers.Range(func(name string, p Provider) bool {
 		providers[name] = p
-	}
-	g.mu.RUnlock()
+		return true
+	})
 
 	results := make(map[string]error)
 	var wg sync.WaitGroup
@@ -443,9 +409,7 @@ func (g *Gateway) Embed(ctx context.Context, text string) ([]float32, error) {
 		return nil, fmt.Errorf("no provider configured for embedding")
 	}
 
-	g.mu.RLock()
-	provider, ok := g.providers[providerName]
-	g.mu.RUnlock()
+	provider, ok := g.providers.Load(providerName)
 
 	if !ok {
 		return nil, fmt.Errorf("provider not found: %s", providerName)
@@ -456,9 +420,7 @@ func (g *Gateway) Embed(ctx context.Context, text string) ([]float32, error) {
 
 // EmbedWithProvider 使用指定提供商进行文本向量化
 func (g *Gateway) EmbedWithProvider(ctx context.Context, providerName, text string) ([]float32, error) {
-	g.mu.RLock()
-	provider, ok := g.providers[providerName]
-	g.mu.RUnlock()
+	provider, ok := g.providers.Load(providerName)
 
 	if !ok {
 		return nil, fmt.Errorf("provider not found: %s", providerName)
@@ -474,9 +436,7 @@ func (g *Gateway) EmbedBatch(ctx context.Context, texts []string) ([][]float32, 
 		return nil, fmt.Errorf("no provider configured for embedding")
 	}
 
-	g.mu.RLock()
-	provider, ok := g.providers[providerName]
-	g.mu.RUnlock()
+	provider, ok := g.providers.Load(providerName)
 
 	if !ok {
 		return nil, fmt.Errorf("provider not found: %s", providerName)
