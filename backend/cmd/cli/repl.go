@@ -38,7 +38,6 @@ func runREPL(app *infra.Application, continueSess, autoYes bool) {
 		gitBranch = strings.TrimSpace(out)
 	}
 
-	fmt.Println()
 	fmt.Printf(`%s
    ██████╗ ██████╗ ███████╗███╗   ██╗ █████╗ ██╗██████╗ ███████╗
   ██╔═══██╗██╔══██╗██╔════╝████╗  ██║██╔══██╗██║██╔══██╗██╔════╝
@@ -47,9 +46,8 @@ func runREPL(app *infra.Application, continueSess, autoYes bool) {
   ╚██████╔╝██║     ███████╗██║ ╚████║██║  ██║██║██████╔╝███████╗
    ╚═════╝ ╚═╝     ╚══════╝╚═╝  ╚═══╝╚═╝  ╚═╝╚═╝╚═════╝ ╚══════╝
 %s`, cCyan, cReset)
-	fmt.Println()
 	if modelName != "" {
-		fmt.Printf("  %s%s%s", cGreen, modelName, cReset)
+		fmt.Printf("  %s%s%s\n", cGreen, modelName, cReset)
 	} else {
 		fmt.Printf("  %s⚠ No API key configured%s\n", pterm.Yellow(""), cReset)
 		fmt.Printf("  %s→ Edit ~/.openaide/config.yaml and add your API key%s\n", cInfo, cReset)
@@ -61,7 +59,7 @@ func runREPL(app *infra.Application, continueSess, autoYes bool) {
 	fmt.Println()
 	fmt.Println()
 	fmt.Printf("  v%s ", Version)
-	fmt.Printf("  %s/h%s help  %s|%s  %s/q%s quit  %s|%s  @file  Ctrl+C interrupt", cYellow, cReset, cInfo, cReset, cYellow, cReset, cInfo, cReset)
+	fmt.Printf("  %s/h%s help  %s|%s  %s/q%s quit  %s|%s  @file  Ctrl+C interrupt\n", cYellow, cReset, cInfo, cReset, cYellow, cReset, cInfo, cReset)
 	fmt.Println()
 	// Project context: OPENAIDE.md status
 	if _, err := os.Stat(filepath.Join(cwd, "OPENAIDE.md")); err == nil {
@@ -473,7 +471,7 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string,
 		// 用分隔线将回答与工具区隔开
 		fmt.Println()
 		fmt.Println(rendered)
-		fmt.Printf("\n%s──%s\n", cInfo, cReset)
+		fmt.Printf("%s──%s\n", cInfo, cReset)
 	}
 	PrintStatusBar(totalTokens, totalTools, elapsed, "deepseek-v4-pro", cacheHit, cacheMiss)
 	if qs := tools.GetPendingQuestions(); len(qs) > 0 {
