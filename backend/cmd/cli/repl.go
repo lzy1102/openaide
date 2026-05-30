@@ -630,20 +630,30 @@ func expandAtRefs(query string) string {
 
 	var files []string
 	for _, m := range matches {
-		path := m[1]
-		// Try relative and absolute paths
-		if _, err := os.ReadFile(path); err == nil {
-			files = append(files, path)
-			fmt.Printf("  %s@%s%s %s\n", cGreen, path, cReset, cDim+"(included)"+cReset)
+		pattern := m[1]
+		// Support glob: @*.go, @src/*.go
+		if strings.ContainsAny(pattern, "*?[]") {
+			globs, _ := filepath.Glob(pattern)
+			for _, p := range globs {
+				if data, err := os.ReadFile(p); err == nil {
+					files = append(files, p)
+					fmt.Printf("  %s@%s%s %s(%db)%s\n", cGreen, p, cReset, cDim, len(data), cReset)
+				}
+			}
+		} else if _, err := os.ReadFile(pattern); err == nil {
+			files = append(files, pattern)
+			fmt.Printf("  %s@%s%s %s\n", cGreen, pattern, cReset, cDim+"(included)"+cReset)
 		}
 	}
 	if len(files) == 0 { return query }
 
-	// Build prompt with file contents
 	var sb strings.Builder
-	for _, path := range files {
+	for i, path := range files {
+		if i >= 20 { sb.WriteString(fmt.Sprintf("... (%d more files)\n", len(files)-i)); break }
 		data, _ := os.ReadFile(path)
-		sb.WriteString(fmt.Sprintf("Content of %s:\n---\n%s\n---\n\n", path, string(data)))
+		c := string(data)
+		if len(c) > 5000 { c = c[:5000] + "\n... (truncated)" }
+		sb.WriteString(fmt.Sprintf("Content of %s:\n---\n%s\n---\n\n", path, c))
 	}
 	sb.WriteString("User prompt: " + query)
 	return sb.String()
