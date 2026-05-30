@@ -8,8 +8,9 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
+
+	"openaide/backend/internal/kernel"
 )
 
 // Claims JWT 声明
@@ -22,9 +23,8 @@ type Claims struct {
 
 // Service 认证服务
 type Service struct {
-	mu     sync.RWMutex
 	secret []byte
-	users  map[string]*User
+	users  *kernel.SafeMap[string, *User]
 }
 
 // User 用户
@@ -41,23 +41,20 @@ func NewService(secret string) *Service {
 	}
 	s := &Service{
 		secret: []byte(secret),
-		users:  make(map[string]*User),
+		users:  kernel.NewSafeMap[string, *User](8),
 	}
 	// 默认 admin 用户
-	s.users["admin"] = &User{
+	s.users.Store("admin", &User{
 		Username: "admin",
 		Password: hashPassword("admin123"),
 		Role:     "admin",
-	}
+	})
 	return s
 }
 
 // Register 注册用户
 func (s *Service) Register(username, password string) (*User, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if _, exists := s.users[username]; exists {
+	if _, exists := s.users.Load(username); exists {
 		return nil, fmt.Errorf("user already exists: %s", username)
 	}
 	if len(password) < 6 {
@@ -69,15 +66,13 @@ func (s *Service) Register(username, password string) (*User, error) {
 		Password: hashPassword(password),
 		Role:     "user",
 	}
-	s.users[username] = user
+	s.users.Store(username, user)
 	return user, nil
 }
 
 // Login 登录，返回 JWT token
 func (s *Service) Login(username, password string) (string, error) {
-	s.mu.RLock()
-	user, ok := s.users[username]
-	s.mu.RUnlock()
+	user, ok := s.users.Load(username)
 
 	if !ok || user.Password != hashPassword(password) {
 		return "", fmt.Errorf("invalid username or password")

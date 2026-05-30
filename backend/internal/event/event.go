@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"time"
 
 	"openaide/backend/internal/kernel"
@@ -19,16 +19,15 @@ type Bus struct {
 
 	persistEnabled bool
 	dataDir        string
-	events         atomic.Value // []kernel.Event
+	events         []kernel.Event
+	eventsMu       sync.Mutex // write-heavy, keep as mutex
 }
 
 // NewBus 创建事件总线
 func NewBus() *Bus {
-	b := &Bus{
+	return &Bus{
 		handlers: kernel.NewSafeMap[string, []kernel.EventHandler](8),
 	}
-	b.events.Store([]kernel.Event{})
-	return b
 }
 
 // EnablePersistence 启用持久化
@@ -45,30 +44,21 @@ const maxEvents = 10000
 
 // Publish 发布事件
 func (b *Bus) Publish(event kernel.Event) {
-	// 持久化 — lock-free ring buffer
 	if b.persistEnabled {
-		old := b.events.Load().([]kernel.Event)
-		newEvents := make([]kernel.Event, len(old)+1)
-		copy(newEvents, old)
-		newEvents[len(old)] = event
-		if len(newEvents) > maxEvents {
-			newEvents = newEvents[len(newEvents)-maxEvents:]
+		b.eventsMu.Lock()
+		b.events = append(b.events, event)
+		if len(b.events) > maxEvents {
+			b.events = b.events[len(b.events)-maxEvents:]
 		}
-		b.events.Store(newEvents)
+		b.eventsMu.Unlock()
 		go b.persistEvent(event)
 	}
-
-	// Exact match
+	// Dispatch
 	if handlers, ok := b.handlers.Load(event.Type); ok {
-		for _, h := range handlers {
-			go h.HandleEvent(event)
-		}
+		for _, h := range handlers { go h.HandleEvent(event) }
 	}
-	// Wildcard
 	if wildcard, ok := b.handlers.Load("*"); ok {
-		for _, h := range wildcard {
-			go h.HandleEvent(event)
-		}
+		for _, h := range wildcard { go h.HandleEvent(event) }
 	}
 }
 
@@ -95,11 +85,12 @@ func (b *Bus) Unsubscribe(eventType string, handler kernel.EventHandler) {
 
 // GetEvents 获取事件历史
 func (b *Bus) GetEvents(eventType string, limit int) []kernel.Event {
-	all := b.events.Load().([]kernel.Event)
+	b.eventsMu.Lock()
+	defer b.eventsMu.Unlock()
 	var result []kernel.Event
-	for i := len(all) - 1; i >= 0 && len(result) < limit; i-- {
-		if eventType == "" || all[i].Type == eventType {
-			result = append(result, all[i])
+	for i := len(b.events) - 1; i >= 0 && len(result) < limit; i-- {
+		if eventType == "" || b.events[i].Type == eventType {
+			result = append(result, b.events[i])
 		}
 	}
 	for i, j := 0, len(result)-1; i < j; i, j = i+1, j-1 {
@@ -110,14 +101,13 @@ func (b *Bus) GetEvents(eventType string, limit int) []kernel.Event {
 
 // Replay 回放事件
 func (b *Bus) Replay(ctx context.Context, from time.Time, to time.Time, handler kernel.EventHandler) error {
-	all := b.events.Load().([]kernel.Event)
-	for _, event := range all {
+	b.eventsMu.Lock()
+	defer b.eventsMu.Unlock()
+	for _, event := range b.events {
 		if event.Timestamp.After(from) && event.Timestamp.Before(to) {
 			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			default:
-				handler.HandleEvent(event)
+			case <-ctx.Done(): return ctx.Err()
+			default: handler.HandleEvent(event)
 			}
 		}
 	}
@@ -169,8 +159,7 @@ func (b *Bus) loadEvents() error {
 			continue
 		}
 
-		old := b.events.Load().([]kernel.Event)
-		b.events.Store(append(old, event))
+			b.events = append(b.events, event)
 	}
 
 	return nil
