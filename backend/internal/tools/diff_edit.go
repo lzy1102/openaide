@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	"openaide/backend/internal/kernel"
@@ -137,4 +138,90 @@ func truncStr(s string, n int) string {
 		return s
 	}
 	return s[:n] + "..."
+}
+
+// ── SEARCH/REPLACE Block Parser ─────────────────────────────
+// Auto-converts Aider-style SEARCH/REPLACE blocks into diff_edit calls.
+// This allows the LLM to use its most natural edit format.
+
+// searchReplaceBlock represents one SEARCH/REPLACE pair
+type searchReplaceBlock struct {
+	Search  string
+	Replace string
+}
+
+// parseSearchReplaceBlocks extracts SEARCH/REPLACE blocks from text
+func parseSearchReplaceBlocks(content string) []searchReplaceBlock {
+	var blocks []searchReplaceBlock
+	re := regexp.MustCompile(`<<<<<<< SEARCH\n([\s\S]*?)=======\n([\s\S]*?)>>>>>>> REPLACE`)
+	matches := re.FindAllStringSubmatch(content, -1)
+	for _, m := range matches {
+		if len(m) >= 3 {
+			blocks = append(blocks, searchReplaceBlock{
+				Search:  strings.TrimRight(m[1], "\n"),
+				Replace: strings.TrimRight(m[2], "\n"),
+			})
+		}
+	}
+	return blocks
+}
+
+// applySearchReplacePatch parses SEARCH/REPLACE blocks and applies them to target files.
+// Each block must include a file path marker or the path must be provided as context.
+func applySearchReplacePatch(absPath, content string) (string, error) {
+	blocks := parseSearchReplaceBlocks(content)
+	if len(blocks) == 0 {
+		return "", fmt.Errorf("no SEARCH/REPLACE blocks found in content")
+	}
+
+	data, err := os.ReadFile(absPath)
+	if err != nil {
+		return "", fmt.Errorf("read file: %w", err)
+	}
+	current := string(data)
+
+	applied := 0
+	for _, block := range blocks {
+		if !strings.Contains(current, block.Search) {
+			continue // skip non-matching blocks
+		}
+		// Only replace the first occurrence
+		current = strings.Replace(current, block.Search, block.Replace, 1)
+		applied++
+	}
+
+	if applied == 0 {
+		return "", fmt.Errorf("no SEARCH blocks matched in file: %s", absPath)
+	}
+
+	if err := os.WriteFile(absPath, []byte(current), 0644); err != nil {
+		return "", fmt.Errorf("write file: %w", err)
+	}
+
+	return fmt.Sprintf("✓ %s: %d SEARCH/REPLACE blocks applied", absPath, applied), nil
+}
+
+// handleApplyPatch parses SEARCH/REPLACE blocks and applies them to a file.
+// The LLM outputs SEARCH/REPLACE blocks in its response content;
+// this handler auto-detects them and applies them as edits.
+func handleApplyPatch(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
+	var args struct {
+		Path    string `json:"path"`
+		Content string `json:"content"`
+	}
+	json.Unmarshal([]byte(arguments), &args)
+	if args.Path == "" || args.Content == "" {
+		return &kernel.ToolResult{Error: "path and content are required"}, nil
+	}
+
+	absPath, err := safeAbsPath(args.Path)
+	if err != nil {
+		return &kernel.ToolResult{Error: err.Error()}, nil
+	}
+
+	result, err := applySearchReplacePatch(absPath, args.Content)
+	if err != nil {
+		return &kernel.ToolResult{Error: err.Error()}, nil
+	}
+	return &kernel.ToolResult{Content: result}, nil
 }
