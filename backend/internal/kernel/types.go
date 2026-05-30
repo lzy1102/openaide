@@ -156,7 +156,7 @@ type QueryOptions struct {
 	ResponseFormat *ResponseFormat `json:"response_format,omitempty"` // 结构化输出格式
 
 	// 交互回调（REPL 用 pterm 实现，内核 goroutine 中同步调用）
-	OnApproval        func(tool, path string) bool // 危险工具审批，返回 true 允许
+	OnApproval        func(tool, path, args string) bool // 危险工具审批，返回 true 允许
 	OnBudgetExhausted func(round, maxRounds int) bool // 预算用尽，返回 true 继续，false 合成
 	WorkingDir        string // 项目工作目录（Server 模式用，覆盖 CWD）
 }

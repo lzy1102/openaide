@@ -467,7 +467,7 @@ func (k *AgentKernel) executeTool(ctx context.Context, tc ToolCall, sessionID st
 			if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err == nil {
 				path = args.Path
 			}
-			if !k.queryOptions.OnApproval(tc.Function.Name, path) {
+			if !k.queryOptions.OnApproval(tc.Function.Name, path, tc.Function.Arguments) {
 				return &ToolResult{Error: "user denied"}
 			}
 		}

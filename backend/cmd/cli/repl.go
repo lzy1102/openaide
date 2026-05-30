@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -338,13 +339,28 @@ func execCmd(name string, args ...string) (string, error) {
 func executeStreamQuery(app *infra.Application, query string, sessionID *string, autoYes bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	opts := kernel.QueryOptions{
-		OnApproval: func(tool, path string) bool {
+		OnApproval: func(tool, path, args string) bool {
 			if autoYes { return true }
-			// Clear the thinking line and show a visible prompt
 			fmt.Print("\r\033[K")
 			slog.Warn("REPL waiting for tool approval", "tool", tool, "path", path)
+			icon := toolIcon(tool)
+			fmt.Println()
+			fmt.Printf("  %s┌─ ⚡ Permission Required ─────────────────────%s\n", cYellow, cReset)
+			fmt.Printf("  %s│%s  %s %s %s\n", cYellow, cReset, icon, cBold+tool+cReset, cDim+path+cReset)
+			if args != "" {
+				var prettyArgs map[string]interface{}
+				if json.Unmarshal([]byte(args), &prettyArgs) == nil {
+					for k, v := range prettyArgs {
+						if k != "path" {
+							fmt.Printf("  %s│%s    %s: %v\n", cYellow, cReset, cDim+k+cReset, v)
+						}
+					}
+				}
+			}
+			fmt.Printf("  %s└──────────────────────────────────────────%s\n", cYellow, cReset)
+			fmt.Println()
 			result, _ := pterm.DefaultInteractiveConfirm.
-				WithDefaultText(lang.T("repl.allow_tool", pterm.Yellow(tool), path)).
+				WithDefaultText(lang.T("repl.allow_tool")).
 				WithConfirmText("y").
 				WithRejectText("n").
 				Show()
