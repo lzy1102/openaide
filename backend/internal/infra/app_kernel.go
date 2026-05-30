@@ -2,6 +2,7 @@ package infra
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -18,7 +19,7 @@ import (
 	"openaide/backend/internal/plugin"
 )
 
-func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedder, toolRegistry kernel.ToolExecutor, memManager kernel.Memory, sessionStore kernel.SessionStore) (*kernel.AgentKernel, *knowledge.Base, *plugin.Manager) {
+func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedder, toolRegistry kernel.ToolExecutor, memManager kernel.Memory, sessionStore kernel.SessionStore) (*kernel.AgentKernel, *plugin.Manager, error) {
 	systemPrompt := cfg.Kernel.SystemPrompt
 	if systemPrompt == "" {
 		systemPrompt = kernel.LoadSystemPrompt(cfg.Storage.DataDir + "/prompts")
@@ -47,21 +48,14 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 	}
 	agentKernel.SetSkillActor(skillActor)
 
-	// Legacy skill manager for backward compat
-	sm := kernel.NewSkillManager(cfg.Storage.DataDir + "/skills")
-	sm.SetLLM(gateway)
-	agentKernel.SetSkillManager(sm)
 	if learner, err := kernel.NewSimpleLearner(cfg.Storage.DataDir + "/insights"); err == nil {
-		learner.SetLLM(gateway) // LLM 分类用户偏好
+		learner.SetLLM(gateway)
 		agentKernel.SetLearner(learner)
 		slog.Info("Learner enabled", "dir", cfg.Storage.DataDir+"/insights")
 	} else {
 		slog.Warn("Failed to create learner, learning disabled", "error", err)
 	}
 	agentKernel.SetPatternDetector(kernel.NewSimplePatternDetector())
-	se := kernel.NewSkillEvolution(sm, cfg.Storage.DataDir+"/skills")
-		se.SetLLM(gateway)
-		agentKernel.SetSkillEvolution(se)
 	approver := kernel.NewAutoApprover()
 	approver.SetLLM(gateway)
 	if cfg.Kernel.UnsafeMode != nil {
@@ -107,24 +101,14 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 		kernelConfig.SystemPrompt += "\n\n" + pluginPrompt
 	}
 
-	// 接入知识库（CSP actor，优先）+ 质量门控 + 语义搜索
-	var kb *knowledge.Base
+	// 接入知识库（CSP actor）+ 质量门控 + 语义搜索
 	kAct, kerr := knowledge.NewActor(cfg.Storage.DataDir + "/knowledge")
-	if kerr == nil {
-		kAct.SetEmbedder(embedder)
-		agentKernel.SetKnowledgeCollector(kAct)
-		gate := feedback.NewGate()
-		agentKernel.SetQualityGate(gate)
-	} else {
-		slog.Warn("Failed to create knowledge actor, falling back", "error", kerr)
-		kb, err := knowledge.NewBase(cfg.Storage.DataDir + "/knowledge")
-		if err == nil {
-			kb.SetEmbedder(embedder)
-			agentKernel.SetKnowledgeCollector(kb)
-			gate := feedback.NewGate()
-			agentKernel.SetQualityGate(gate)
-		}
+	if kerr != nil {
+		return nil, nil, fmt.Errorf("knowledge actor: %w", kerr)
 	}
+	kAct.SetEmbedder(embedder)
+	agentKernel.SetKnowledgeCollector(kAct)
+	agentKernel.SetQualityGate(feedback.NewGate())
 
 	// 接入身份检测 + 事件总线 + 高级压缩器
 	if projIdentity, err := identity.NewDetector().Detect(context.Background(), "."); err == nil && projIdentity != nil {
@@ -174,7 +158,7 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 		slog.Info("Claude hook registered", "event", hook.Event, "openaide_event", oevt)
 	}
 
-	return agentKernel, kb, pluginMgr
+	return agentKernel, pluginMgr, nil
 }
 
 func contains(slice []string, s string) bool {

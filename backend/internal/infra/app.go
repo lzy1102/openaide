@@ -176,47 +176,25 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 
 	app.MCPManager = mcpManager
 
-	// 4. 记忆管理器（CSP actor，零锁）
-	var memManager kernel.Memory
-	memActor, err := memory.NewMemoryActor(cfg.Storage.DataDir + "/memory")
+	// 4. 记忆管理器（CSP actor）
+	memManager, err := memory.NewMemoryActor(cfg.Storage.DataDir + "/memory")
 	if err != nil {
-		slog.Warn("Failed to create memory actor, using file memory", "error", err)
-		fm, ferr := memory.NewFileMemory(cfg.Memory.DataDir)
-		if ferr == nil {
-			fm.SetEmbedder(embedder)
-			memManager = fm
-		}
-	} else {
-		memActor.SetEmbedder(embedder)
-		memManager = memActor
+		return nil, fmt.Errorf("memory actor: %w", err)
 	}
+	memManager.SetEmbedder(embedder)
 
-	// 5. 会话存储（CSP actor，零锁）
-	var sessionStore kernel.SessionStore
-	switch cfg.Storage.SessionStore {
-	case "file":
-		fileStore, err := kernel.NewFileSessionStore(cfg.Storage.DataDir + "/sessions")
-		if err != nil {
-			slog.Warn("Failed to create file session store, using memory", "error", err)
-			sessionStore = kernel.NewSessionStoreAdapter()
-		} else {
-			sessionStore = fileStore
-		}
-	case "memory":
-		sessionStore = kernel.NewSessionStoreAdapter()
-	default: // "sqlite" or empty
-		actor, err := kernel.NewSessionActor(cfg.Storage.DataDir + "/sessions.db")
-		if err != nil {
-			slog.Warn("Failed to create session actor, falling back to memory", "error", err)
-			sessionStore = kernel.NewSessionStoreAdapter()
-		} else {
-			sessionStore = actor
-			app.sessionActor = actor
-		}
+	// 5. 会话存储（CSP actor）
+	sessionStore, err := kernel.NewSessionActor(cfg.Storage.DataDir + "/sessions.db")
+	if err != nil {
+		return nil, fmt.Errorf("session actor: %w", err)
 	}
+	app.sessionActor = sessionStore
 
 	// 6. 内核 + 所有增强能力
-	agentKernel, kb, pluginMgr := createKernel(cfg, gateway, embedder, toolRegistry, memManager, sessionStore)
+	agentKernel, pluginMgr, err := createKernel(cfg, gateway, embedder, toolRegistry, memManager, sessionStore)
+	if err != nil {
+		return nil, fmt.Errorf("create kernel: %w", err)
+	}
 	app.Kernel = agentKernel
 	app.PluginManager = pluginMgr
 
@@ -235,9 +213,6 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 	}
 	if cfg.Planning.DeepTimeout > 0 {
 		orch.DeepTimeout = time.Duration(cfg.Planning.DeepTimeout) * time.Second
-	}
-	if kb != nil {
-		orch.SetKnowledgeCollector(kb)
 	}
 	orch.SetTeam(orchestration.NewTeam(orch))
 	// 加载项目持久记忆

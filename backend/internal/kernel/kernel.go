@@ -31,9 +31,7 @@ type AgentKernel struct {
 	patternDetector  PatternDetector
 	knowledgeCollector KnowledgeCollector
 	qualityGate      QualityGate
-	skillManager     *SkillManager // legacy, replaced by skillActor
-	skillEvolution   *SkillEvolution
-	skillActor       *SkillActor // CSP actor, zero-lock
+	skillActor *SkillActor // CSP actor, zero-lock
 	approver         Approver
 	adaptiveRounds   *AdaptiveRounds
 	queryOptions     *QueryOptions // 当前查询的选项（含交互回调）
@@ -189,20 +187,8 @@ func (k *AgentKernel) ResumeSession(ctx context.Context, sessionID string) (mess
 	return cp.Messages, cp.Round, true, nil
 }
 
-func (k *AgentKernel) SetSkillManager(sm *SkillManager) {
-	k.skillManager = sm
-}
-
-func (k *AgentKernel) SetSkillActor(sa *SkillActor) {
-	k.skillActor = sa
-}
-
-func (k *AgentKernel) SetSkillEvolution(se *SkillEvolution) {
-	k.skillEvolution = se
-}
-
-func (k *AgentKernel) GetSkillManager() *SkillManager { return k.skillManager }
-func (k *AgentKernel) GetSkillActor() *SkillActor     { return k.skillActor }
+func (k *AgentKernel) SetSkillActor(sa *SkillActor) { k.skillActor = sa }
+func (k *AgentKernel) GetSkillActor() *SkillActor      { return k.skillActor }
 func (k *AgentKernel) SetQualityGate(gate QualityGate) {
 	k.qualityGate = gate
 }
@@ -328,8 +314,6 @@ func (k *AgentKernel) buildSystemLayer(query *Query) string {
 	// L5: Skill prompt injection (activated by keyword match on query)
 	if k.skillActor != nil {
 		sp = k.skillActor.InjectPrompt(query.Content, sp)
-	} else if k.skillManager != nil {
-		sp = k.skillManager.InjectPrompt(query.Content, sp)
 	}
 	if sp == "" { return "" }
 
@@ -529,10 +513,11 @@ func (k *AgentKernel) setState(state KernelState) {
 
 // GetSlashCommands 获取所有技能对应的斜杠命令
 func (k *AgentKernel) GetSlashCommands() map[string]string {
-	if k.skillManager == nil {
+	if k.skillActor == nil {
 		return nil
 	}
-	return k.skillManager.GetSlashCommands()
+	// Return empty — slash commands are managed by the REPL
+	return map[string]string{}
 }
 
 func (k *AgentKernel) publishEvent(event Event) {

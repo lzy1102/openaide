@@ -306,8 +306,6 @@ func (k *AgentKernel) doReflection(ctx context.Context, sessionID, query, respon
 	// Skill feedback: record quality for the activated skill
 	if k.skillActor != nil {
 		k.skillActor.RecordLastUsage(result.Quality)
-	} else if k.skillManager != nil {
-		k.skillManager.RecordLastSkillUsage(result.Quality)
 	}
 
 	// 存储反思结果到会话 + 知识使用反馈
@@ -354,15 +352,7 @@ func (k *AgentKernel) doReflection(ctx context.Context, sessionID, query, respon
 		slog.Warn("session update failed", "error", err)
 	}
 
-				// 技能自动进化：从检测到的模式中创建新技能
-				if k.skillEvolution != nil {
-					var insights []Insight
-					if l, ok := k.learner.(*SimpleLearner); ok {
-						insights = l.GetAllInsights()
-					}
-				go k.skillEvolution.Evolve(ctx, patterns, insights)
 				}
-			}
 		}
 	}
 

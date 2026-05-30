@@ -64,10 +64,6 @@ func (k *AgentKernel) getToolDefinitions(queryContent string, opts QueryOptions)
 		if skillTools := k.skillActor.GetTools(queryContent); len(skillTools) > 0 {
 			return k.toolExecutor.GetDefinitionsByNames(skillTools)
 		}
-	} else if k.skillManager != nil {
-		if skillTools := k.skillManager.GetTools(queryContent); len(skillTools) > 0 {
-			return k.toolExecutor.GetDefinitionsByNames(skillTools)
-		}
 	}
 	return tools
 }
@@ -88,7 +84,7 @@ func (k *AgentKernel) finalizeResponse(ctx context.Context, session *Session, qu
 	}
 	go k.compressMemory(ctx, session.ID)
 	// Periodically decay unused skills
-	if k.skillManager != nil { go k.skillManager.DecayUnusedSkills() }
+	if k.skillActor != nil { go k.skillActor.DecayUnused() }
 }
 
 // executeToolBatch runs a group of tool calls concurrently (all are parallel-safe).
