@@ -30,8 +30,9 @@ type AgentKernel struct {
 	patternDetector  PatternDetector
 	knowledgeCollector KnowledgeCollector
 	qualityGate      QualityGate
-	skillManager     *SkillManager
+	skillManager     *SkillManager // legacy, replaced by skillActor
 	skillEvolution   *SkillEvolution
+	skillActor       *SkillActor // CSP actor, zero-lock
 	approver         Approver
 	adaptiveRounds   *AdaptiveRounds
 	queryOptions     *QueryOptions // 当前查询的选项（含交互回调）
@@ -195,11 +196,16 @@ func (k *AgentKernel) SetSkillManager(sm *SkillManager) {
 	k.skillManager = sm
 }
 
+func (k *AgentKernel) SetSkillActor(sa *SkillActor) {
+	k.skillActor = sa
+}
+
 func (k *AgentKernel) SetSkillEvolution(se *SkillEvolution) {
 	k.skillEvolution = se
 }
 
 func (k *AgentKernel) GetSkillManager() *SkillManager { return k.skillManager }
+func (k *AgentKernel) GetSkillActor() *SkillActor     { return k.skillActor }
 func (k *AgentKernel) SetQualityGate(gate QualityGate) {
 	k.qualityGate = gate
 }
@@ -327,7 +333,9 @@ func (k *AgentKernel) buildSystemLayer(query *Query) string {
 	k.promptMu.RUnlock()
 
 	// L5: Skill prompt injection (activated by keyword match on query)
-	if k.skillManager != nil {
+	if k.skillActor != nil {
+		sp = k.skillActor.InjectPrompt(query.Content, sp)
+	} else if k.skillManager != nil {
 		sp = k.skillManager.InjectPrompt(query.Content, sp)
 	}
 	if sp == "" { return "" }

@@ -33,9 +33,9 @@ type Application struct {
 	ChannelRegistry    *channel.Registry
 	TaskQueue          *channel.TaskQueue
 	PluginManager      *plugin.Manager
-	MCPManager         *mcp.Manager
-	sqliteSessionStore *kernel.SQLiteSessionStore // for cleanup
-	pluginWatcher      *PluginWatcher             // hot-reload
+	MCPManager    *mcp.Manager
+	sessionActor  *kernel.SessionActor // CSP actor, owns all session state
+	pluginWatcher *PluginWatcher       // hot-reload
 }
 
 // NewApplication 创建应用容器
@@ -176,47 +176,42 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 
 	app.MCPManager = mcpManager
 
-	// 4. 记忆管理器
-	memManager, err := memory.NewFileMemory(cfg.Memory.DataDir)
+	// 4. 记忆管理器（CSP actor，零锁）
+	var memManager kernel.Memory
+	memActor, err := memory.NewMemoryActor(cfg.Storage.DataDir + "/memory")
 	if err != nil {
-		slog.Warn("Failed to create memory manager", "error", err)
-		memManager = nil
+		slog.Warn("Failed to create memory actor, using file memory", "error", err)
+		fm, ferr := memory.NewFileMemory(cfg.Memory.DataDir)
+		if ferr == nil {
+			fm.SetEmbedder(embedder)
+			memManager = fm
+		}
 	} else {
-		memManager.SetEmbedder(embedder)
+		memActor.SetEmbedder(embedder)
+		memManager = memActor
 	}
 
-	// 5. 会话存储
+	// 5. 会话存储（CSP actor，零锁）
 	var sessionStore kernel.SessionStore
 	switch cfg.Storage.SessionStore {
-	case "sqlite":
-		sqliteStore, err := kernel.NewSQLiteSessionStore(cfg.Storage.DataDir + "/sessions.db")
+	case "file":
+		fileStore, err := kernel.NewFileSessionStore(cfg.Storage.DataDir + "/sessions")
 		if err != nil {
-			slog.Warn("Failed to create SQLite session store, falling back to file", "error", err)
-			fileStore, ferr := kernel.NewFileSessionStore(cfg.Storage.DataDir + "/sessions")
-			if ferr != nil {
-				sessionStore = kernel.NewSessionStoreAdapter()
-			} else {
-				sessionStore = fileStore
-			}
+			slog.Warn("Failed to create file session store, using memory", "error", err)
+			sessionStore = kernel.NewSessionStoreAdapter()
 		} else {
-			sessionStore = sqliteStore
-			app.sqliteSessionStore = sqliteStore // for cleanup on Stop
+			sessionStore = fileStore
 		}
 	case "memory":
 		sessionStore = kernel.NewSessionStoreAdapter()
-	default: // "file" or empty — default to SQLite
-		sqliteStore, err := kernel.NewSQLiteSessionStore(cfg.Storage.DataDir + "/sessions.db")
+	default: // "sqlite" or empty
+		actor, err := kernel.NewSessionActor(cfg.Storage.DataDir + "/sessions.db")
 		if err != nil {
-			slog.Warn("Failed to create SQLite session store, falling back to file", "error", err)
-			fileStore, ferr := kernel.NewFileSessionStore(cfg.Storage.DataDir + "/sessions")
-			if ferr != nil {
-				sessionStore = kernel.NewSessionStoreAdapter()
-			} else {
-				sessionStore = fileStore
-			}
+			slog.Warn("Failed to create session actor, falling back to memory", "error", err)
+			sessionStore = kernel.NewSessionStoreAdapter()
 		} else {
-			sessionStore = sqliteStore
-			app.sqliteSessionStore = sqliteStore
+			sessionStore = actor
+			app.sessionActor = actor
 		}
 	}
 
@@ -334,9 +329,9 @@ func (app *Application) Stop(ctx context.Context) error {
 	if app.pluginWatcher != nil {
 		app.pluginWatcher.Stop()
 	}
-	if app.sqliteSessionStore != nil {
-		if err := app.sqliteSessionStore.Close(); err != nil {
-			slog.Error("Failed to close SQLite session store", "error", err)
+	if app.sessionActor != nil {
+		if err := app.sessionActor.Stop(); err != nil {
+			slog.Error("Failed to stop session actor", "error", err)
 		}
 	}
 	if app.MCPManager != nil {

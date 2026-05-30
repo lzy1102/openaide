@@ -304,7 +304,9 @@ func (k *AgentKernel) doReflection(ctx context.Context, sessionID, query, respon
 	}
 
 	// Skill feedback: record quality for the activated skill
-	if k.skillManager != nil {
+	if k.skillActor != nil {
+		k.skillActor.RecordLastUsage(result.Quality)
+	} else if k.skillManager != nil {
 		k.skillManager.RecordLastSkillUsage(result.Quality)
 	}
 

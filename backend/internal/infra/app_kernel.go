@@ -39,12 +39,17 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 
 	// 接入增强能力 — LLM Reflection（降级到 SimpleReflection）
 	agentKernel.SetReflection(kernel.NewLLMReflection(gateway, kernel.NewSimpleReflection()))
-	sm := kernel.NewSkillManager(cfg.Storage.DataDir + "/skills")
-	sm.SetLLM(gateway) // LLM 语义匹配技能
-	// 发现 Claude 格式插件中的 SKILL.md
+
+	// Skill actor (CSP, zero-lock)
+	skillActor := kernel.NewSkillActor(gateway)
 	for _, cs := range plugin.DiscoverClaudeSkills(cfg.Storage.DataDir + "/plugins") {
-		sm.AddClaudeSkill(cs.ID, cs.Name, cs.Description, cs.Prompt, cs.AllowedTools, cs.Keywords)
+		skillActor.AddClaudeSkill(cs.ID, cs.Name, cs.Description, cs.Prompt, cs.Keywords, cs.AllowedTools)
 	}
+	agentKernel.SetSkillActor(skillActor)
+
+	// Legacy skill manager for backward compat
+	sm := kernel.NewSkillManager(cfg.Storage.DataDir + "/skills")
+	sm.SetLLM(gateway)
 	agentKernel.SetSkillManager(sm)
 	if learner, err := kernel.NewSimpleLearner(cfg.Storage.DataDir + "/insights"); err == nil {
 		learner.SetLLM(gateway) // LLM 分类用户偏好
@@ -102,17 +107,23 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 		kernelConfig.SystemPrompt += "\n\n" + pluginPrompt
 	}
 
-	// 接入知识库 + 质量门控 + 语义搜索
+	// 接入知识库（CSP actor，优先）+ 质量门控 + 语义搜索
 	var kb *knowledge.Base
-	var err error
-	kb, err = knowledge.NewBase(cfg.Storage.DataDir + "/knowledge")
-	if err == nil {
-		kb.SetEmbedder(embedder)
-		agentKernel.SetKnowledgeCollector(kb)
+	kAct, kerr := knowledge.NewActor(cfg.Storage.DataDir + "/knowledge")
+	if kerr == nil {
+		kAct.SetEmbedder(embedder)
+		agentKernel.SetKnowledgeCollector(kAct)
 		gate := feedback.NewGate()
 		agentKernel.SetQualityGate(gate)
 	} else {
-		slog.Warn("Failed to create knowledge base", "error", err)
+		slog.Warn("Failed to create knowledge actor, falling back", "error", kerr)
+		kb, err := knowledge.NewBase(cfg.Storage.DataDir + "/knowledge")
+		if err == nil {
+			kb.SetEmbedder(embedder)
+			agentKernel.SetKnowledgeCollector(kb)
+			gate := feedback.NewGate()
+			agentKernel.SetQualityGate(gate)
+		}
 	}
 
 	// 接入身份检测 + 事件总线 + 高级压缩器

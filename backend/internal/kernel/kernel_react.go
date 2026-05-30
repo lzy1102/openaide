@@ -60,7 +60,11 @@ func (k *AgentKernel) getToolDefinitions(queryContent string, opts QueryOptions)
 	if len(opts.ToolFilter) > 0 {
 		return k.toolExecutor.GetDefinitionsByNames(opts.ToolFilter)
 	}
-	if k.skillManager != nil {
+	if k.skillActor != nil {
+		if skillTools := k.skillActor.GetTools(queryContent); len(skillTools) > 0 {
+			return k.toolExecutor.GetDefinitionsByNames(skillTools)
+		}
+	} else if k.skillManager != nil {
 		if skillTools := k.skillManager.GetTools(queryContent); len(skillTools) > 0 {
 			return k.toolExecutor.GetDefinitionsByNames(skillTools)
 		}
