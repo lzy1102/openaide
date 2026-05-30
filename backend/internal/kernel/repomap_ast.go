@@ -28,6 +28,7 @@ type astSymbol struct {
 type astRepoMap struct {
 	symbols   []astSymbol
 	files     map[string]string // file → content hash
+	root      string            // cached root path
 	updatedAt time.Time
 	mu        sync.RWMutex
 }
@@ -38,7 +39,7 @@ var globalASTRepoMap = &astRepoMap{files: make(map[string]string)}
 // and enhanced regex for other languages. Returns a markdown-formatted string.
 func GenerateASTRepoMap(root string) string {
 	globalASTRepoMap.mu.RLock()
-	if time.Since(globalASTRepoMap.updatedAt) < 5*time.Minute && len(globalASTRepoMap.symbols) > 0 {
+	if time.Since(globalASTRepoMap.updatedAt) < 5*time.Minute && len(globalASTRepoMap.symbols) > 0 && globalASTRepoMap.root == root {
 		globalASTRepoMap.mu.RUnlock()
 		return formatRepoMap(globalASTRepoMap.symbols)
 	}
@@ -48,7 +49,7 @@ func GenerateASTRepoMap(root string) string {
 	defer globalASTRepoMap.mu.Unlock()
 
 	// Re-check after acquiring write lock
-	if time.Since(globalASTRepoMap.updatedAt) < 5*time.Minute && len(globalASTRepoMap.symbols) > 0 {
+	if time.Since(globalASTRepoMap.updatedAt) < 5*time.Minute && len(globalASTRepoMap.symbols) > 0 && globalASTRepoMap.root == root {
 		return formatRepoMap(globalASTRepoMap.symbols)
 	}
 
@@ -83,6 +84,7 @@ func GenerateASTRepoMap(root string) string {
 	})
 
 	globalASTRepoMap.symbols = symbols
+	globalASTRepoMap.root = root
 	globalASTRepoMap.updatedAt = time.Now()
 	return formatRepoMap(symbols)
 }
