@@ -150,6 +150,12 @@ func (m *Manager) Get(ctx context.Context, itemID string) (*MemoryItem, error) {
 
 // Search 搜索记忆（语义 + TF-IDF + 文本三级搜索）
 func (m *Manager) Search(ctx context.Context, query string, level Level, limit int) ([]*MemoryItem, error) {
+	// Embed query outside lock — do NOT hold lock across LLM embedding call.
+	var queryVec []float32
+	if m.embedder != nil {
+		queryVec, _ = m.embedder.Embed(ctx, query)
+	}
+
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -157,33 +163,30 @@ func (m *Manager) Search(ctx context.Context, query string, level Level, limit i
 	seen := make(map[string]bool)
 
 	// 1. LLM 向量语义搜索（embedding 余弦相似度）
-	if m.embedder != nil {
-		queryVec, err := m.embedder.Embed(ctx, query)
-		if err == nil && len(queryVec) > 0 {
-			type scoredItem struct {
-				item  *MemoryItem
-				score float64
+	if len(queryVec) > 0 {
+		type scoredItem struct {
+			item  *MemoryItem
+			score float64
+		}
+		var scored []scoredItem
+		for _, item := range m.items {
+			if level >= 0 && item.Level != level {
+				continue
 			}
-			var scored []scoredItem
-			for _, item := range m.items {
-				if level >= 0 && item.Level != level {
-					continue
-				}
-				if len(item.Embedding) == 0 || len(item.Embedding) != len(queryVec) {
-					continue
-				}
-				sim := llm.CosineSimilarity(queryVec, item.Embedding)
-				if sim > 0.5 {
-					scored = append(scored, scoredItem{item, sim})
-				}
+			if len(item.Embedding) == 0 || len(item.Embedding) != len(queryVec) {
+				continue
 			}
-			sort.Slice(scored, func(i, j int) bool {
-				return scored[i].score > scored[j].score
-			})
-			for i := 0; i < len(scored) && (limit <= 0 || len(results) < limit); i++ {
-				results = append(results, scored[i].item)
-				seen[scored[i].item.ID] = true
+			sim := llm.CosineSimilarity(queryVec, item.Embedding)
+			if sim > 0.5 {
+				scored = append(scored, scoredItem{item, sim})
 			}
+		}
+		sort.Slice(scored, func(i, j int) bool {
+			return scored[i].score > scored[j].score
+		})
+		for i := 0; i < len(scored) && (limit <= 0 || len(results) < limit); i++ {
+			results = append(results, scored[i].item)
+			seen[scored[i].item.ID] = true
 		}
 	}
 

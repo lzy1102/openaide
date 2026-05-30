@@ -136,12 +136,16 @@ func (kb *Base) Get(ctx context.Context, docID string) (*Document, error) {
 // Search 搜索文档（语义 + 文本混合搜索）
 func (kb *Base) Search(ctx context.Context, query string, limit int) ([]*Document, error) {
 	slog.Debug("Knowledge search", "query", query[:min(50, len(query))], "limit", limit)
-	kb.mu.RLock()
-	defer kb.mu.RUnlock()
 
 	if limit <= 0 {
 		limit = 10
 	}
+
+	// Embed query outside lock — do NOT hold lock across LLM embedding call.
+	queryVec, hasQueryVec := kb.embedQuery(ctx, query)
+
+	kb.mu.RLock()
+	defer kb.mu.RUnlock()
 
 	// 1. 倒排索引快速定位候选文档
 	candidates := kb.searchByIndex(query)
@@ -153,8 +157,6 @@ func (kb *Base) Search(ctx context.Context, query string, limit int) ([]*Documen
 	}
 	var scored []scoredDoc
 	seen := make(map[string]bool)
-
-	queryVec, hasQueryVec := kb.embedQuery(ctx, query)
 
 	for _, id := range candidates {
 		doc := kb.docs[id]

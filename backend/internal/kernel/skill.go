@@ -300,21 +300,37 @@ func (sm *SkillManager) initSkillConfidence(id string) {
 }
 
 func (sm *SkillManager) DetectSkill(query string) *Skill {
-	sm.mu.RLock()
-	defer sm.mu.RUnlock()
 	slog.Info("Skill detect", "query", query[:min(80, len(query))])
+
+	// Copy skill list under read lock — do NOT hold lock across LLM call.
+	sm.mu.RLock()
 	if !sm.autoDetect {
+		sm.mu.RUnlock()
 		return nil
 	}
+	skillList := make([]skillEntry, 0, len(sm.skills))
+	for _, s := range sm.skills {
+		if s.Enabled {
+			skillList = append(skillList, skillEntry{s.ID, s.Description})
+		}
+	}
+	sm.mu.RUnlock()
 
-	// LLM 语义匹配
-	if sm.llm != nil {
-		if skill := sm.detectWithLLM(query); skill != nil {
-			return skill
+	// LLM semantic match (no lock held)
+	if sm.llm != nil && len(skillList) > 0 {
+		if skillID := sm.detectWithLLM(query, skillList); skillID != "" {
+			sm.mu.RLock()
+			s := sm.skills[skillID]
+			sm.mu.RUnlock()
+			if s != nil {
+				return s
+			}
 		}
 	}
 
-	// 关键词兜底
+	// Keyword fallback (fast, hold lock briefly)
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
 	lower := strings.ToLower(query)
 	var bestSkill *Skill
 	bestScore := 0
@@ -336,29 +352,31 @@ func (sm *SkillManager) DetectSkill(query string) *Skill {
 	return bestSkill
 }
 
-func (sm *SkillManager) detectWithLLM(query string) *Skill {
-	var skillList strings.Builder
-	for _, s := range sm.skills {
-		if s.Enabled {
-			skillList.WriteString(fmt.Sprintf("- %s: %s\n", s.ID, s.Description))
-		}
+type skillEntry struct {
+	ID, Description string
+}
+
+func (sm *SkillManager) detectWithLLM(query string, skillList []skillEntry) string {
+	var skillStr strings.Builder
+	for _, s := range skillList {
+		skillStr.WriteString(fmt.Sprintf("- %s: %s\n", s.ID, s.Description))
 	}
-	if skillList.Len() == 0 {
-		return nil
+	if skillStr.Len() == 0 {
+		return ""
 	}
 
 	resp, err := sm.llm.Chat(context.Background(), []Message{
-		{Role: "user", Content: fmt.Sprintf("Which skill best matches this query? Reply with the skill ID or 'none'.\n\nSkills:\n%s\nQuery: %s", skillList.String(), query)},
+		{Role: "user", Content: fmt.Sprintf("Which skill best matches this query? Reply with the skill ID or 'none'.\n\nSkills:\n%s\nQuery: %s", skillStr.String(), query)},
 	}, nil, map[string]interface{}{"max_tokens": 30, "temperature": 0, "route": "execution", "no_thinking": true})
 	if err != nil {
-		return nil
+		return ""
 	}
 
 	choice := strings.TrimSpace(resp.Content)
 	if choice == "" || choice == "none" {
-		return nil
+		return ""
 	}
-	return sm.skills[choice]
+	return choice
 }
 
 // InjectPrompt 将技能提示词注入系统消息
