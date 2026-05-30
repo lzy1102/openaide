@@ -313,6 +313,7 @@ func (k *AgentKernel) buildMessages(ctx context.Context, session *Session, query
 		}
 	}
 
+	slog.Debug("buildMessages complete", "msgs", len(messages))
 	return messages
 }
 
