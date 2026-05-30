@@ -206,7 +206,7 @@ git push origin v1.0.0
 - **ProjectMind 持续学习**: 跨会话积累项目知识，纠正/衰减/清零，越用越聪明
 
 ### 核心架构
-- **REPL 模式**: 逐行流式渲染 + @file 引用 + 模糊搜索选择器 + 多选勾选 + 会话标题 + Git 状态指示
+- **REPL 模式**: 逐行流式渲染 + @file/@*.go 引用 + 模糊搜索 + 多选勾选 + 会话标题 + Git 指示
 - **Web 前端**: 流式聊天 + 仪表盘 + 模型配置 + 设置管理 + 项目管理 + 多语言 + 暗色模式
 - **Computer Use**: 桌面截图+点击+键盘+拖拽 + 浏览器坐标操作（Linux/macOS/Windows）
 - **搜索**: DuckDuckGo + SearXNG（自部署，聚合多引擎，无 API Key）
