@@ -63,7 +63,7 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 	for round := 0; round < maxRounds; round++ {
 		// Prepare context: compress, snip old output, inject budget hints
 		messages = k.prepareReActRound(messages, round, maxRounds)
-		slog.Debug("ReAct round start", "round", round, "state", k.state, "msg_count", len(messages))
+		slog.Debug("ReAct round — about to call LLM", "round", round+1, "max", maxRounds, "msgs", len(messages))
 		// 调用 LLM（如果指定了模型，临时切换）
 		if query.Options.ModelID != "" {
 			k.llmProvider.SetModelID(query.Options.ModelID)

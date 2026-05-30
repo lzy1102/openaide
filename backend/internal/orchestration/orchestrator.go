@@ -141,7 +141,7 @@ func (o *Orchestrator) CleanupOldSessions(ctx context.Context) {
 // RunSubAgent 在隔离的临时会话中运行指定角色，只回传结果摘要
 // 主 Agent 上下文不会被子 Agent 的工具调用污染
 func (o *Orchestrator) RunSubAgent(ctx context.Context, userID, projectID, roleName, task string, previousResults []string) (string, error) {
-	slog.Debug("SubAgent start", "role", roleName, "task", task[:min(80, len(task))], "prev_results", len(previousResults))
+	slog.Info("SubAgent executing", "role", roleName, "task", task[:min(80, len(task))], "prev_results", len(previousResults))
 	if o.team == nil {
 		return "", fmt.Errorf("team not configured")
 	}
@@ -196,7 +196,7 @@ func (o *Orchestrator) RunSubAgent(ctx context.Context, userID, projectID, roleN
 	if o.workspace != nil {
 		o.workspace.Put(roleName+"_result", "result", resp.Content, roleName)
 	}
-	slog.Debug("SubAgent done", "role", roleName, "output_len", len(resp.Content), "tool_calls", resp.ToolCalls, "tokens", resp.TokensUsed)
+	slog.Info("SubAgent completed", "role", roleName, "output_len", len(resp.Content), "tool_calls", resp.ToolCalls, "tokens", resp.TokensUsed)
 	return resp.Content, nil
 }
 

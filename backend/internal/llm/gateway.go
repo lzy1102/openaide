@@ -282,7 +282,7 @@ func (g *Gateway) ChatWithProvider(ctx context.Context, providerName string, mes
 	}
 
 	start := time.Now()
-	slog.Debug("LLM chat start", "provider", providerName, "model", provider.GetModelID(), "msgs", len(messages), "tools", len(tools))
+	slog.Info("LLM call sent", "provider", providerName, "model", provider.GetModelID(), "msgs", len(messages), "tools", len(tools))
 
 	var resp *kernel.LLMResponse
 	var err error
@@ -307,7 +307,7 @@ func (g *Gateway) ChatWithProvider(ctx context.Context, providerName string, mes
 	if g.cache != nil {
 		g.cache.Set(messages, tools, g.GetDefaultProvider(), resp)
 	}
-	slog.Debug("LLM chat success", "provider", providerName, "model", resp.Model, "tokens", resp.Usage, "duration", time.Since(start))
+	slog.Info("LLM response received", "provider", providerName, "model", resp.Model, "tokens", resp.Usage, "duration", time.Since(start))
 	return resp, nil
 }
 
@@ -337,7 +337,7 @@ func (g *Gateway) ChatStreamWithProvider(ctx context.Context, providerName strin
 		return nil, fmt.Errorf("provider not found: %s", providerName)
 	}
 
-	slog.Debug("LLM chat stream start", "provider", providerName, "model", provider.GetModelID(), "msgs", len(messages), "tools", len(tools))
+	slog.Info("LLM stream started", "provider", providerName, "model", provider.GetModelID(), "msgs", len(messages), "tools", len(tools))
 
 	var ch <-chan kernel.StreamChunk
 	var err error
