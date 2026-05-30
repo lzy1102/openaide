@@ -54,6 +54,7 @@ func NewServer(orch *orchestration.Orchestrator, addr string, authSvc *auth.Serv
 	mux.HandleFunc("/api/v1/tools", s.handleTools)
 	mux.HandleFunc("/api/v1/stats", s.handleStats)
 	mux.HandleFunc("/api/v1/metrics", s.handleMetrics)
+	mux.HandleFunc("/metrics", s.handlePrometheus) // Prometheus standard endpoint
 	mux.HandleFunc("/api/v1/channels", s.handleChannels)
 	mux.HandleFunc("/api/v1/auth/", authSvc.AuthHandler)
 	mux.HandleFunc("/api/v1/config", s.handleConfig)
@@ -90,7 +91,7 @@ func (s *Server) SetFrontendHandler(h http.Handler) {
 	// We use a wrapper to let API routes take priority
 	s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// Let registered API routes handle these prefixes
-		if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/ws") || strings.HasPrefix(r.URL.Path, "/health") {
+		if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/ws") || strings.HasPrefix(r.URL.Path, "/health") || strings.HasPrefix(r.URL.Path, "/metrics") {
 			http.NotFound(w, r)
 			return
 		}
@@ -449,13 +450,51 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	// 收集运行时指标
+	// JSON format (legacy, for programmatic access)
 	stats := s.orchestrator.GetStats()
 	stats["requests_total"] = metricsRequests.Load()
 	stats["tokens_total"] = metricsTokens.Load()
 	stats["tool_calls_total"] = metricsToolCalls.Load()
 	stats["errors_total"] = metricsErrors.Load()
 	s.writeJSON(w, http.StatusOK, stats)
+}
+
+// handlePrometheus returns metrics in Prometheus text format.
+// Standard /metrics endpoint for Prometheus/Grafana scraping.
+func (s *Server) handlePrometheus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+	orchStats := s.orchestrator.GetStats()
+
+	fmt.Fprintf(w, "# HELP openaide_requests_total Total number of API requests.\n")
+	fmt.Fprintf(w, "# TYPE openaide_requests_total counter\n")
+	fmt.Fprintf(w, "openaide_requests_total %d\n", metricsRequests.Load())
+
+	fmt.Fprintf(w, "# HELP openaide_tokens_total Total tokens consumed (prompt + completion).\n")
+	fmt.Fprintf(w, "# TYPE openaide_tokens_total counter\n")
+	fmt.Fprintf(w, "openaide_tokens_total %d\n", metricsTokens.Load())
+
+	fmt.Fprintf(w, "# HELP openaide_tool_calls_total Total tool calls executed.\n")
+	fmt.Fprintf(w, "# TYPE openaide_tool_calls_total counter\n")
+	fmt.Fprintf(w, "openaide_tool_calls_total %d\n", metricsToolCalls.Load())
+
+	fmt.Fprintf(w, "# HELP openaide_errors_total Total request errors.\n")
+	fmt.Fprintf(w, "# TYPE openaide_errors_total counter\n")
+	fmt.Fprintf(w, "openaide_errors_total %d\n", metricsErrors.Load())
+
+	if v, ok := orchStats["sessions_total"]; ok {
+		fmt.Fprintf(w, "# HELP openaide_sessions_total Total number of sessions.\n")
+		fmt.Fprintf(w, "# TYPE openaide_sessions_total gauge\n")
+		fmt.Fprintf(w, "openaide_sessions_total %v\n", v)
+	}
+	if v, ok := orchStats["active_channels"]; ok {
+		fmt.Fprintf(w, "# HELP openaide_active_channels Number of active channel connections.\n")
+		fmt.Fprintf(w, "# TYPE openaide_active_channels gauge\n")
+		fmt.Fprintf(w, "openaide_active_channels %v\n", v)
+	}
 }
 
 // sanitizeParam 清理参数，防止路径遍历和注入
