@@ -121,7 +121,7 @@ func runREPL(app *infra.Application, continueSess, autoYes bool) {
 		fmt.Print("[?2004h")
 
 	commands := []string{"/help", "/clear", "/model", "/lang", "/log", "/sessions", "/session",
-		"/handoff", "/exit", "/quit", "/q", "/analyst", "/coder", "/reviewer", "/executor", "/team", "/tree", "/init"}
+		"/handoff", "/exit", "/quit", "/q", "/analyst", "/coder", "/reviewer", "/executor", "/team", "/tree", "/init", "/status", "/undo", "/auto"}
 	rl.TabCompleter = func(line []rune, pos int, _ readline.DelayedTabContext) *readline.TabCompleterReturnT {
 		prefix := string(line[:pos])
 		if strings.HasPrefix(prefix, "/") {
