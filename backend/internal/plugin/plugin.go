@@ -128,6 +128,39 @@ func (m *Manager) List() []*Plugin {
 	return result
 }
 
+// Reload rescans the plugins directory and picks up newly added plugins.
+// Existing plugins are not modified. Returns IDs of newly loaded plugins.
+func (m *Manager) Reload() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	prev := make(map[string]bool, len(m.plugins))
+	for id := range m.plugins {
+		prev[id] = true
+	}
+
+	m.loadFromDisk()
+	m.loadClaudeFromDisk()
+
+	var newIDs []string
+	for id, p := range m.plugins {
+		if !prev[id] {
+			newIDs = append(newIDs, id)
+			// Fire onLoad callback for new plugin
+			for _, fn := range m.onLoad {
+				fn(p)
+			}
+		}
+	}
+	if len(newIDs) > 0 {
+		var names []string
+		for _, id := range newIDs {
+			names = append(names, id)
+		}
+	}
+	return newIDs
+}
+
 // OnMessage 注册消息钩子
 func (m *Manager) OnMessage(hook MessageHook) {
 	m.mu.Lock()

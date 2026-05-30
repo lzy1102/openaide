@@ -35,6 +35,7 @@ type Application struct {
 	PluginManager      *plugin.Manager
 	MCPManager         *mcp.Manager
 	sqliteSessionStore *kernel.SQLiteSessionStore // for cleanup
+	pluginWatcher      *PluginWatcher             // hot-reload
 }
 
 // NewApplication 创建应用容器
@@ -224,6 +225,14 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 	app.Kernel = agentKernel
 	app.PluginManager = pluginMgr
 
+	// Plugin hot-reload (watch plugins dir for new plugins)
+	pluginWatcher := NewPluginWatcher(cfg.Storage.DataDir+"/plugins", pluginMgr.Reload)
+	if err := pluginWatcher.Start(); err != nil {
+		slog.Warn("Plugin hot-reload unavailable", "error", err)
+	} else {
+		app.pluginWatcher = pluginWatcher
+	}
+
 	// 7. 编排器
 	orch := orchestration.NewOrchestrator(agentKernel, gateway, toolRegistry, memManager, sessionStore)
 	if cfg.Planning.PreviewTimeout > 0 {
@@ -322,6 +331,9 @@ func (app *Application) Start() error {
 // Stop 停止应用（优雅关闭所有组件）
 func (app *Application) Stop(ctx context.Context) error {
 	app.Orchestrator.CleanupOldSessions(ctx)
+	if app.pluginWatcher != nil {
+		app.pluginWatcher.Stop()
+	}
 	if app.sqliteSessionStore != nil {
 		if err := app.sqliteSessionStore.Close(); err != nil {
 			slog.Error("Failed to close SQLite session store", "error", err)
