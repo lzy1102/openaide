@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"sync"
+	"sync/atomic"
 )
 
 type Lang string
@@ -330,35 +330,18 @@ var messages = map[Lang]map[string]string{
 	},
 }
 
-var (
-	current   Lang
-	currentMu sync.RWMutex
-)
+var current atomic.Value // Lang — lock-free, read-heavy
 
-func init() {
-	SetLang(Detect())
-}
+func init() { current.Store(EN); SetLang(Detect()) }
 
 func SetLang(l Lang) {
-	currentMu.Lock()
-	defer currentMu.Unlock()
-	if _, ok := messages[l]; !ok {
-		current = EN
-	} else {
-		current = l
-	}
+	if _, ok := messages[l]; ok { current.Store(l) } else { current.Store(EN) }
 }
 
-func GetLang() Lang {
-	currentMu.RLock()
-	defer currentMu.RUnlock()
-	return current
-}
+func GetLang() Lang { return current.Load().(Lang) }
 
 func T(key string, args ...any) string {
-	currentMu.RLock()
-	cur := current
-	currentMu.RUnlock()
+	cur := current.Load().(Lang)
 
 	msg, ok := messages[cur]
 	if !ok {

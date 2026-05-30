@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -41,24 +42,20 @@ type AgentKernel struct {
 	tracer  Tracer
 	traceMu sync.Mutex
 
-	promptMu sync.RWMutex // protects systemPrompt
-
 	// 检查点系统
 	checkpointer Checkpointer
 
 	// 事件系统
-	eventHandlers []EventHandler
-	eventMu       sync.RWMutex
+	eventHandlers atomic.Value // []EventHandler — lock-free reads
 	eventSem      chan struct{} // 限制并发 handler goroutine 数量
 
-	// 状态管理
-	state     KernelState
-	stateMu   sync.RWMutex
+	// 无锁状态（atomic.Value）
+	systemPrompt atomic.Value // string — read-heavy, written only on config change
+	state        atomic.Value // KernelState — write-once, read-often
 
 	// 配置
-	maxRounds     int
-	maxTokens     int
-	systemPrompt  string
+	maxRounds int
+	maxTokens int
 }
 
 // Config 内核配置
@@ -96,14 +93,14 @@ func NewAgentKernel(
 		sessionStore:  sessions,
 		maxRounds:     config.MaxRounds,
 		maxTokens:     config.MaxTokens,
-		systemPrompt:  config.SystemPrompt,
-		state:         StateIdle,
-		eventHandlers: make([]EventHandler, 0),
 			eventSem:      make(chan struct{}, 16),
 	}
 
 	// 默认使用简单压缩器
 	k.compressor = &SimpleCompressor{}
+	k.systemPrompt.Store(config.SystemPrompt)
+	k.state.Store(StateIdle)
+	k.eventHandlers.Store([]EventHandler{})
 
 	return k
 }
@@ -212,23 +209,21 @@ func (k *AgentKernel) SetQualityGate(gate QualityGate) {
 
 // SetSystemPrompt 热更新系统提示词（线程安全）
 func (k *AgentKernel) SetSystemPrompt(prompt string) {
-	k.promptMu.Lock()
-	k.systemPrompt = prompt
-	k.promptMu.Unlock()
+	k.systemPrompt.Store(prompt)
 }
 
 // GetState 获取当前状态
 func (k *AgentKernel) GetState() KernelState {
-	k.stateMu.RLock()
-	defer k.stateMu.RUnlock()
-	return k.state
+	return k.state.Load().(KernelState)
 }
 
 // Subscribe 订阅事件
 func (k *AgentKernel) Subscribe(handler EventHandler) {
-	k.eventMu.Lock()
-	defer k.eventMu.Unlock()
-	k.eventHandlers = append(k.eventHandlers, handler)
+	old := k.eventHandlers.Load().([]EventHandler)
+	newHandlers := make([]EventHandler, len(old)+1)
+	copy(newHandlers, old)
+	newHandlers[len(old)] = handler
+	k.eventHandlers.Store(newHandlers)
 }
 
 // Unsubscribe 取消订阅
@@ -328,9 +323,7 @@ func (k *AgentKernel) buildMessages(ctx context.Context, session *Session, query
 
 // buildSystemLayer (L0+L1+L2+L5): Identity + Rules + Project Context + Skill
 func (k *AgentKernel) buildSystemLayer(query *Query) string {
-	k.promptMu.RLock()
-	sp := k.systemPrompt
-	k.promptMu.RUnlock()
+	sp := k.systemPrompt.Load().(string)
 
 	// L5: Skill prompt injection (activated by keyword match on query)
 	if k.skillActor != nil {
@@ -531,9 +524,7 @@ func (k *AgentKernel) saveToMemory(ctx context.Context, sessionID string, messag
 }
 
 func (k *AgentKernel) setState(state KernelState) {
-	k.stateMu.Lock()
-	defer k.stateMu.Unlock()
-	k.state = state
+	k.state.Store(state)
 }
 
 // GetSlashCommands 获取所有技能对应的斜杠命令
@@ -545,10 +536,7 @@ func (k *AgentKernel) GetSlashCommands() map[string]string {
 }
 
 func (k *AgentKernel) publishEvent(event Event) {
-	k.eventMu.RLock()
-	handlers := make([]EventHandler, len(k.eventHandlers))
-	copy(handlers, k.eventHandlers)
-	k.eventMu.RUnlock()
+	handlers := k.eventHandlers.Load().([]EventHandler)
 
 	for _, h := range handlers {
 		h := h
