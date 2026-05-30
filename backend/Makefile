@@ -17,8 +17,11 @@ deps:
 # 编译（当前平台）
 build:
 	@echo "Building..."
+	@# Embed frontend into server binary (go:embed in cmd/server/frontend.go)
+	@rm -rf cmd/server/frontend 2>/dev/null; cp -r ../frontend cmd/server/frontend
 	CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide-server ./cmd/server
 	CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide ./cmd/cli
+	@rm -rf cmd/server/frontend
 
 # 安装到系统路径
 install: build
@@ -36,7 +39,10 @@ install: build
 	@echo "Run: export PATH=\$$HOME/.openaide/bin:\$$PATH"
 
 # 交叉编译全平台
-build-all: build-linux-amd64 build-linux-arm64 build-windows-amd64 build-darwin-amd64 build-darwin-arm64
+build-all:
+	@rm -rf cmd/server/frontend 2>/dev/null; cp -r ../frontend cmd/server/frontend
+	$(MAKE) build-linux-amd64 build-linux-arm64 build-windows-amd64 build-darwin-amd64 build-darwin-arm64
+	@rm -rf cmd/server/frontend
 
 build-linux-amd64:
 	@echo "Building Linux amd64..."

@@ -1,6 +1,7 @@
 package compress
 
 import (
+	"context"
 	"testing"
 
 	"openaide/backend/internal/kernel"
@@ -14,7 +15,7 @@ func TestNovelCompressor_Compress(t *testing.T) {
 		{Role: "assistant", Content: "Go is a programming language created by Google."},
 	}
 
-	compressed, saved, err := c.Compress(messages, 10) // very low maxTokens to force compression
+	compressed, saved, err := c.Compress(context.Background(), messages, 10) // very low maxTokens to force compression
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +42,7 @@ func TestNovelCompressor_EstimateTokens(t *testing.T) {
 
 func TestNovelCompressor_NoMessages(t *testing.T) {
 	c := NewNovelCompressor()
-	compressed, _, err := c.Compress([]kernel.Message{}, 100)
+	compressed, _, err := c.Compress(context.Background(), []kernel.Message{}, 100)
 	if err != nil {
 		t.Fatal(err)
 	}

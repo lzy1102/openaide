@@ -1,6 +1,7 @@
 package compress
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -20,7 +21,7 @@ func NewNovelCompressor() *NovelCompressor {
 }
 
 // Compress 压缩消息列表
-func (c *NovelCompressor) Compress(messages []kernel.Message, maxTokens int) ([]kernel.Message, int, error) {
+func (c *NovelCompressor) Compress(ctx context.Context, messages []kernel.Message, maxTokens int) ([]kernel.Message, int, error) {
 	if len(messages) <= 4 {
 		return messages, 0, nil
 	}

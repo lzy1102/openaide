@@ -1,6 +1,7 @@
 package kernel
 
 import (
+	"context"
 	"testing"
 )
 
@@ -89,7 +90,7 @@ func TestPrepareReActRound_CompressionNotTriggered(t *testing.T) {
 	msgs := []Message{
 		{Role: "user", Content: "short message"},
 	}
-	result := k.prepareReActRound(msgs, 0, 10)
+	result := k.prepareReActRound(context.Background(), msgs, 0, 10)
 	if len(result) != 1 {
 		t.Errorf("expected no change for short context, got %d msgs", len(result))
 	}
@@ -101,7 +102,7 @@ func TestPrepareReActRound_BudgetInjection(t *testing.T) {
 		{Role: "user", Content: "test"},
 	}
 	// Mid-point should inject budget hint
-	result := k.prepareReActRound(msgs, 5, 10)
+	result := k.prepareReActRound(context.Background(), msgs, 5, 10)
 	if len(result) != 2 {
 		t.Fatalf("expected budget injection, got %d msgs", len(result))
 	}
@@ -110,7 +111,7 @@ func TestPrepareReActRound_BudgetInjection(t *testing.T) {
 	}
 
 	// Final round should inject final warning
-	result2 := k.prepareReActRound(msgs, 9, 10)
+	result2 := k.prepareReActRound(context.Background(), msgs, 9, 10)
 	if len(result2) != 2 {
 		t.Fatalf("expected final round warning, got %d msgs", len(result2))
 	}

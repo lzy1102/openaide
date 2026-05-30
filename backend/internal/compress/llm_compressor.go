@@ -30,7 +30,7 @@ func NewLLMCompressor(llm kernel.LLMProvider, fallback kernel.ContextCompressor)
 // 2. 保留最近 keepCount 条非 system 消息
 // 3. 将较旧的消息交给 LLM 生成语义摘要
 // 4. 摘要作为 system 消息插入
-func (c *LLMCompressor) Compress(messages []kernel.Message, maxTokens int) ([]kernel.Message, int, error) {
+func (c *LLMCompressor) Compress(ctx context.Context, messages []kernel.Message, maxTokens int) ([]kernel.Message, int, error) {
 	if len(messages) <= 4 {
 		return messages, 0, nil
 	}
@@ -59,10 +59,10 @@ func (c *LLMCompressor) Compress(messages []kernel.Message, maxTokens int) ([]ke
 	recentMessages := history[len(history)-keepCount:]
 
 	// 用 LLM 生成摘要
-	summary, err := c.generateSummary(context.TODO(), oldMessages)
+	summary, err := c.generateSummary(ctx, oldMessages)
 	if err != nil {
 		// LLM 失败 → fallback
-		compressed, fbSaved, fbErr := c.fallback.Compress(messages, maxTokens)
+		compressed, fbSaved, fbErr := c.fallback.Compress(ctx, messages, maxTokens)
 		if fbErr != nil {
 			return messages, 0, fbErr
 		}

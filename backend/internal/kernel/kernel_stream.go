@@ -80,7 +80,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 			if k.compressor != nil {
 				tokenCount := k.compressor.EstimateTokens(messages)
 				if tokenCount > k.maxTokens*9/10 {
-					compressed, saved, err := k.compressor.Compress(messages, k.maxTokens)
+					compressed, saved, err := k.compressor.Compress(ctx, messages, k.maxTokens)
 					if err == nil {
 						messages = compressed
 						slog.Debug("Context compressed", "saved_tokens", saved)

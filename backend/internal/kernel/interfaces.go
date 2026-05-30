@@ -103,7 +103,7 @@ type SessionStore interface {
 // ContextCompressor 上下文压缩接口
 type ContextCompressor interface {
 	// Compress 压缩消息列表
-	Compress(messages []Message, maxTokens int) ([]Message, int, error)
+	Compress(ctx context.Context, messages []Message, maxTokens int) ([]Message, int, error)
 
 	// EstimateTokens 估算 Token 数
 	EstimateTokens(messages []Message) int

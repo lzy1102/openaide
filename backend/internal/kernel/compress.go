@@ -1,7 +1,8 @@
 package kernel
 
 import (
-		"strings"
+	"context"
+	"strings"
 )
 
 // SimpleCompressor 简单上下文压缩器
@@ -9,7 +10,7 @@ import (
 type SimpleCompressor struct{}
 
 // Compress 压缩消息列表
-func (c *SimpleCompressor) Compress(messages []Message, maxTokens int) ([]Message, int, error) {
+func (c *SimpleCompressor) Compress(ctx context.Context, messages []Message, maxTokens int) ([]Message, int, error) {
 	if len(messages) <= 2 {
 		return messages, 0, nil
 	}

@@ -16,12 +16,12 @@ import (
 // 1. Compress context if exceeds 90% of token budget
 // 2. Snips old tool outputs to avoid context bloat
 // 3. Injects budget reminder when approaching round limit
-func (k *AgentKernel) prepareReActRound(messages []Message, round, maxRounds int) []Message {
+func (k *AgentKernel) prepareReActRound(ctx context.Context, messages []Message, round, maxRounds int) []Message {
 	// Compression: 90% threshold (Claude Code uses 92%)
 	if k.compressor != nil {
 		tokenCount := k.compressor.EstimateTokens(messages)
 		if tokenCount > k.maxTokens*9/10 {
-			compressed, saved, err := k.compressor.Compress(messages, k.maxTokens)
+			compressed, saved, err := k.compressor.Compress(ctx, messages, k.maxTokens)
 			if err == nil {
 				messages = compressed
 				slog.Debug("Context compressed", "saved_tokens", saved)

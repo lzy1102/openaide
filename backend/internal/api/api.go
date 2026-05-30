@@ -30,6 +30,7 @@ type Server struct {
 	server          *http.Server
 	mux             *http.ServeMux
 	channelRegistry *channel.Registry
+	frontendHandler http.Handler // embedded frontend (optional)
 }
 
 // NewServer 创建 API 服务器
@@ -60,6 +61,7 @@ func NewServer(orch *orchestration.Orchestrator, addr string, authSvc *auth.Serv
 	mux.HandleFunc("/api/v1/projects/", s.handleProjectDetail)
 	mux.HandleFunc("/ws", s.handleWebSocket)
 	mux.HandleFunc("/health", s.handleHealth)
+	// Frontend catch-all (registered later via SetFrontendHandler)
 	s.mux = mux
 
 	// 应用中间件链: CORS → Auth
@@ -78,6 +80,22 @@ func NewServer(orch *orchestration.Orchestrator, addr string, authSvc *auth.Serv
 	}
 
 	return s
+}
+
+// SetFrontendHandler registers the embedded frontend as the catch-all handler.
+// All non-API routes serve the SPA (index.html, JS, CSS, assets).
+func (s *Server) SetFrontendHandler(h http.Handler) {
+	s.frontendHandler = h
+	// Register as catch-all — the default mux pattern "/" matches all unmatched paths
+	// We use a wrapper to let API routes take priority
+	s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// Let registered API routes handle these prefixes
+		if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/ws") || strings.HasPrefix(r.URL.Path, "/health") {
+			http.NotFound(w, r)
+			return
+		}
+		s.frontendHandler.ServeHTTP(w, r)
+	})
 }
 
 // Start 启动服务器

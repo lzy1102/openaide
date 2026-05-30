@@ -35,6 +35,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	// 嵌入前端 (go:embed frontend/*)
+	if h := FrontendHandler(); h != nil {
+		app.APIServer.SetFrontendHandler(h)
+		slog.Info("Frontend embedded in binary")
+	}
+
 	// 启动应用
 	// 配置文件热加载
 	reloader := infra.NewConfigReloader(configPath, app)

@@ -144,7 +144,7 @@ func TestSimpleCompressor(t *testing.T) {
 		{Role: "assistant", Content: "回答3"},
 	}
 
-	compressed, saved, err := compressor.Compress(messages, 100)
+	compressed, saved, err := compressor.Compress(context.Background(), messages, 100)
 	if err != nil {
 		t.Fatalf("Compress failed: %v", err)
 	}

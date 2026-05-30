@@ -442,7 +442,7 @@ func (o *Orchestrator) CompressSession(ctx context.Context, sessionID string) er
 		return err
 	}
 
-	compressed, saved, err := o.compressor.Compress(messages, 4000)
+	compressed, saved, err := o.compressor.Compress(ctx, messages, 4000)
 	if err != nil {
 		return err
 	}
