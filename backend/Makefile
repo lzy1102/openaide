@@ -25,9 +25,15 @@ install: build
 	@mkdir -p ~/.openaide/bin
 	@cp bin/openaide ~/.openaide/bin/openaide
 	@cp bin/openaide-server ~/.openaide/bin/openaide-server
+	@# Also copy to common PATH locations if they exist
+	@for d in ~/.local/bin /usr/local/bin; do \
+		if [ -d "$$d" ]; then \
+			cp bin/openaide "$$d/openaide" 2>/dev/null || true; \
+			echo "Also installed to $$d/openaide"; \
+		fi; \
+	done
 	@echo "Installed to ~/.openaide/bin/"
-	@echo "Make sure ~/.openaide/bin is in your PATH:"
-	@echo "  export PATH=\$$HOME/.openaide/bin:\$$PATH"
+	@echo "Run: export PATH=\$$HOME/.openaide/bin:\$$PATH"
 
 # 交叉编译全平台
 build-all: build-linux-amd64 build-linux-arm64 build-windows-amd64 build-darwin-amd64 build-darwin-arm64
