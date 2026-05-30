@@ -136,7 +136,8 @@ type PlanningConfig struct {
 
 // StorageConfig 存储配置
 type StorageConfig struct {
-	DataDir string `json:"data_dir" yaml:"data_dir"`
+	DataDir      string `json:"data_dir" yaml:"data_dir"`
+	SessionStore string `json:"session_store" yaml:"session_store"` // "file" (default), "sqlite", "memory"
 }
 
 // BrowserConfig 浏览器配置

@@ -25,15 +25,16 @@ import (
 
 // Application 应用容器
 type Application struct {
-	Config          *config.Config
-	Kernel          kernel.Kernel
-	Orchestrator    *orchestration.Orchestrator
-	APIServer       *api.Server
-	LLMGateway      *llm.Gateway
-	ChannelRegistry *channel.Registry
-	TaskQueue       *channel.TaskQueue
-	PluginManager   *plugin.Manager
-	MCPManager      *mcp.Manager
+	Config             *config.Config
+	Kernel             kernel.Kernel
+	Orchestrator       *orchestration.Orchestrator
+	APIServer          *api.Server
+	LLMGateway         *llm.Gateway
+	ChannelRegistry    *channel.Registry
+	TaskQueue          *channel.TaskQueue
+	PluginManager      *plugin.Manager
+	MCPManager         *mcp.Manager
+	sqliteSessionStore *kernel.SQLiteSessionStore // for cleanup
 }
 
 // NewApplication 创建应用容器
@@ -183,14 +184,33 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 		memManager.SetEmbedder(embedder)
 	}
 
-	// 5. 会话存储（文件持久化，死机可恢复）
+	// 5. 会话存储
 	var sessionStore kernel.SessionStore
-	fileStore, err := kernel.NewFileSessionStore(cfg.Storage.DataDir + "/sessions")
-	if err != nil {
-		slog.Warn("Failed to create file session store, using memory", "error", err)
+	switch cfg.Storage.SessionStore {
+	case "sqlite":
+		sqliteStore, err := kernel.NewSQLiteSessionStore(cfg.Storage.DataDir + "/sessions.db")
+		if err != nil {
+			slog.Warn("Failed to create SQLite session store, falling back to file", "error", err)
+			fileStore, ferr := kernel.NewFileSessionStore(cfg.Storage.DataDir + "/sessions")
+			if ferr != nil {
+				sessionStore = kernel.NewSessionStoreAdapter()
+			} else {
+				sessionStore = fileStore
+			}
+		} else {
+			sessionStore = sqliteStore
+			app.sqliteSessionStore = sqliteStore // for cleanup on Stop
+		}
+	case "memory":
 		sessionStore = kernel.NewSessionStoreAdapter()
-	} else {
-		sessionStore = fileStore
+	default: // "file" or empty
+		fileStore, err := kernel.NewFileSessionStore(cfg.Storage.DataDir + "/sessions")
+		if err != nil {
+			slog.Warn("Failed to create file session store, using memory", "error", err)
+			sessionStore = kernel.NewSessionStoreAdapter()
+		} else {
+			sessionStore = fileStore
+		}
 	}
 
 	// 6. 内核 + 所有增强能力
@@ -296,6 +316,11 @@ func (app *Application) Start() error {
 // Stop 停止应用（优雅关闭所有组件）
 func (app *Application) Stop(ctx context.Context) error {
 	app.Orchestrator.CleanupOldSessions(ctx)
+	if app.sqliteSessionStore != nil {
+		if err := app.sqliteSessionStore.Close(); err != nil {
+			slog.Error("Failed to close SQLite session store", "error", err)
+		}
+	}
 	if app.MCPManager != nil {
 		app.MCPManager.Shutdown()
 	}
