@@ -61,9 +61,9 @@ func handleDiffEdit(ctx context.Context, arguments string) (*kernel.ToolResult, 
 
 	switch {
 	case count == 0:
-		return &kernel.ToolResult{Error: fmt.Sprintf("search_text not found in %s", absPath)}, nil
+		return &kernel.ToolResult{Error: fmt.Sprintf("search_text not found in %s. Hint: read the file first to verify exact content/whitespace.", absPath)}, nil
 	case count > 1:
-		return &kernel.ToolResult{Error: fmt.Sprintf("search_text found %d times — must be unique. Use more context.", count)}, nil
+		return &kernel.ToolResult{Error: fmt.Sprintf("search_text found %d times in %s — include 2-3 lines of surrounding context for uniqueness.", count, absPath)}, nil
 	}
 
 	newContent := strings.Replace(content, args.SearchText, args.ReplaceText, 1)
@@ -171,7 +171,7 @@ func parseSearchReplaceBlocks(content string) []searchReplaceBlock {
 func applySearchReplacePatch(absPath, content string) (string, error) {
 	blocks := parseSearchReplaceBlocks(content)
 	if len(blocks) == 0 {
-		return "", fmt.Errorf("no SEARCH/REPLACE blocks found in content")
+		return "", fmt.Errorf("no SEARCH/REPLACE blocks found. Format must be:\n<<<<<<< SEARCH\nold code\n=======\nnew code\n>>>>>>> REPLACE")
 	}
 
 	data, err := os.ReadFile(absPath)
@@ -181,24 +181,33 @@ func applySearchReplacePatch(absPath, content string) (string, error) {
 	current := string(data)
 
 	applied := 0
-	for _, block := range blocks {
+	var failed []string
+	for i, block := range blocks {
 		if !strings.Contains(current, block.Search) {
-			continue // skip non-matching blocks
+			// Provide context to help LLM fix the mismatch
+			preview := block.Search
+			if len(preview) > 60 { preview = preview[:57] + "..." }
+			failed = append(failed, fmt.Sprintf("block %d: '%s' not found in file", i+1, preview))
+			continue
 		}
-		// Only replace the first occurrence
 		current = strings.Replace(current, block.Search, block.Replace, 1)
 		applied++
 	}
 
 	if applied == 0 {
-		return "", fmt.Errorf("no SEARCH blocks matched in file: %s", absPath)
+		return "", fmt.Errorf("SEARCH/REPLACE failed — %d blocks, none matched.\n%s\n\nHint: read the file first to ensure exact whitespace/indentation matches.",
+			len(blocks), strings.Join(failed, "\n"))
 	}
 
 	if err := os.WriteFile(absPath, []byte(current), 0644); err != nil {
 		return "", fmt.Errorf("write file: %w", err)
 	}
 
-	return fmt.Sprintf("✓ %s: %d SEARCH/REPLACE blocks applied", absPath, applied), nil
+	result := fmt.Sprintf("✓ %s: %d SEARCH/REPLACE blocks applied", absPath, applied)
+	if len(failed) > 0 {
+		result += fmt.Sprintf("\n⚠ %d blocks skipped (not found in file)", len(failed))
+	}
+	return result, nil
 }
 
 // handleApplyPatch parses SEARCH/REPLACE blocks and applies them to a file.
