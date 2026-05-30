@@ -18,8 +18,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sync"
 	"time"
+
+	"openaide/backend/internal/kernel"
 )
 
 // ChannelType 渠道类型
@@ -88,96 +89,83 @@ type Status struct {
 	Info    map[string]interface{} `json:"info,omitempty"`
 }
 
-// Registry 渠道注册表
+// Registry 渠道注册表 — lock-free via SafeMap
 type Registry struct {
-	mu       sync.RWMutex
-	channels map[string]Channel
+	channels *kernel.SafeMap[string, Channel]
 }
 
 // NewRegistry 创建渠道注册表
 func NewRegistry() *Registry {
 	return &Registry{
-		channels: make(map[string]Channel),
+		channels: kernel.NewSafeMap[string, Channel](8),
 	}
 }
 
 // Register 注册渠道
 func (r *Registry) Register(ch Channel) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if _, ok := r.channels[ch.ID()]; ok {
+	if _, ok := r.channels.Load(ch.ID()); ok {
 		return fmt.Errorf("channel %q already registered", ch.ID())
 	}
-	r.channels[ch.ID()] = ch
+	r.channels.Store(ch.ID(), ch)
 	return nil
 }
 
 // Unregister 注销渠道
 func (r *Registry) Unregister(id string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if ch, ok := r.channels[id]; ok {
+	if ch, ok := r.channels.Load(id); ok {
 		_ = ch.Stop(context.Background())
-		delete(r.channels, id)
+		r.channels.Delete(id)
 	}
 }
 
 // Get 获取渠道
 func (r *Registry) Get(id string) Channel {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	return r.channels[id]
+	ch, _ := r.channels.Load(id)
+	return ch
 }
 
 // List 列出所有注册的渠道
 func (r *Registry) List() []Channel {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	result := make([]Channel, 0, len(r.channels))
-	for _, ch := range r.channels {
+	result := make([]Channel, 0)
+	r.channels.Range(func(_ string, ch Channel) bool {
 		result = append(result, ch)
-	}
+		return true
+	})
 	return result
 }
 
 // StartAll 启动所有已注册渠道
 func (r *Registry) StartAll(ctx context.Context, handler MessageHandler) error {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	for id, ch := range r.channels {
+	var lastErr error
+	r.channels.Range(func(id string, ch Channel) bool {
 		if err := ch.Start(ctx, handler); err != nil {
-			return fmt.Errorf("start channel %q failed: %w", id, err)
+			lastErr = fmt.Errorf("start channel %q failed: %w", id, err)
+			return false
 		}
-	}
-	return nil
+		return true
+	})
+	return lastErr
 }
 
 // StopAll 停止所有已注册渠道
 func (r *Registry) StopAll(ctx context.Context) error {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	for id, ch := range r.channels {
-		if err := ch.Stop(ctx); err != nil {
-			return fmt.Errorf("stop channel %q failed: %w", id, err)
-		}
-	}
-	return nil
+	var lastErr error
+	r.channels.Range(func(id string, ch Channel) bool {
+		if err := ch.Stop(ctx); err != nil { lastErr = err }
+		return true
+	})
+	return lastErr
 }
 
 // StatusAll 获取所有渠道运行状态
 func (r *Registry) StatusAll(ctx context.Context) []Status {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	result := make([]Status, 0, len(r.channels))
-	for _, ch := range r.channels {
+	result := make([]Status, 0)
+	r.channels.Range(func(_ string, ch Channel) bool {
 		result = append(result, ch.Status(ctx))
-	}
+		return true
+	})
 	return result
 }
 
 // Len 返回已注册渠道数量
-func (r *Registry) Len() int {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	return len(r.channels)
-}
+func (r *Registry) Len() int { return r.channels.Len() }
