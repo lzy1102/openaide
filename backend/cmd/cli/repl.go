@@ -117,6 +117,9 @@ func runREPL(app *infra.Application, continueSess, autoYes bool) {
 	rl.SetPrompt(PromptStyle(sessionID, modelName, false, sessionTitle))
 	rl.HistoryAutoWrite = true
 
+		// Enable bracketed paste: pasted text stays as one input
+		fmt.Print("[?2004h")
+
 	commands := []string{"/help", "/clear", "/model", "/lang", "/log", "/sessions", "/session",
 		"/handoff", "/exit", "/quit", "/q", "/analyst", "/coder", "/reviewer", "/executor", "/team", "/tree", "/init"}
 	rl.TabCompleter = func(line []rune, pos int, _ readline.DelayedTabContext) *readline.TabCompleterReturnT {
