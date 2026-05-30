@@ -145,6 +145,7 @@ func BuiltinHandlers() map[string]kernel.ToolHandler {
 		"search_symbols":   handleSearchSymbols,
 		"read_image":       handleReadImage,
 		"diff_edit":        handleDiffEdit,
+		"apply_patch":      handleApplyPatch,
 		"git_diff":         handleGitDiff,
 		"git_log":          handleGitLog,
 		"git_blame":        handleGitBlame,

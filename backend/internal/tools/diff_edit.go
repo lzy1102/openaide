@@ -29,7 +29,21 @@ func fileEditToolDefs() []kernel.ToolDefinition {
 				},
 			},
 		},
-	}
+		{
+			Type: "function",
+			Function: kernel.FunctionDef{
+				Name: "apply_patch",
+				Description: "批量编辑文件（SEARCH/REPLACE块格式）。一次调用可做多处修改。\n格式: <<<<<<< SEARCH\n旧代码\n=======\n新代码\n>>>>>>> REPLACE",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"path": map[string]interface{}{"type": "string", "description": "文件路径"},
+						"content": map[string]interface{}{"type": "string", "description": "SEARCH/REPLACE块，多个块用空行分隔"},
+					},
+					"required": []string{"path", "content"},
+				},
+			},
+		},	}
 }
 
 // handleDiffEdit 精确搜索替换编辑 — 只修改匹配部分，保持其他内容不变
