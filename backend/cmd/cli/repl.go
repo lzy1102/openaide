@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	osexec "os/exec"
 	"path/filepath"
@@ -339,8 +340,11 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string,
 	opts := kernel.QueryOptions{
 		OnApproval: func(tool, path string) bool {
 			if autoYes { return true }
+			// Clear the thinking line and show a visible prompt
+			fmt.Print("\r\033[K")
+			slog.Warn("REPL waiting for tool approval", "tool", tool, "path", path)
 			result, _ := pterm.DefaultInteractiveConfirm.
-				WithDefaultText(fmt.Sprintf(lang.T("repl.allow_tool", tool, path), pterm.Yellow(tool), path)).
+				WithDefaultText(lang.T("repl.allow_tool", pterm.Yellow(tool), path)).
 				WithConfirmText("y").
 				WithRejectText("n").
 				Show()
@@ -348,8 +352,9 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string,
 		},
 		OnBudgetExhausted: func(round, maxRounds int) bool {
 			if autoYes { return true }
+			slog.Warn("REPL waiting for budget extension approval", "round", round, "max", maxRounds)
 			result, _ := pterm.DefaultInteractiveConfirm.
-				WithDefaultText(fmt.Sprintf(lang.T("repl.rounds_exhausted", round, maxRounds), round, maxRounds)).
+				WithDefaultText(lang.T("repl.rounds_exhausted", round, maxRounds)).
 				WithConfirmText("y").
 				WithRejectText("n").
 				Show()
