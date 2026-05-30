@@ -165,6 +165,15 @@ var messages = map[Lang]map[string]string{
 		"repl.lang_zh":      "中文",
 		"repl.risk_effort":  "  (风险:%s 工作量:%s)",
 
+		
+		"repl.select_subtasks": "选择子任务 (%d 个，空格切换，回车确认)",
+		"repl.select_action":  "操作: 切换到此会话 | 删除此会话 | 取消",
+		"repl.action_switch":  "切换到此会话",
+		"repl.action_delete":  "删除此会话",
+		"repl.action_cancel":  "取消",
+		"repl.export_saved":   "会话已导出: %s",
+		"repl.execute_progress": "执行中 [%d/%d]",
+
 		"prompt.file_content":    "内容来源 %s:\n---\n%s\n---",
 	},
 	EN: {
@@ -301,6 +310,15 @@ var messages = map[Lang]map[string]string{
 		"repl.mode_general_label": "general  assistant",
 		"repl.lang_zh":      "中文 (Chinese)",
 		"repl.risk_effort":  "  (risk:%s effort:%s)",
+
+		
+		"repl.select_subtasks": "Select subtasks (%d total, space=toggle, enter=confirm)",
+		"repl.select_action":  "Action: Switch to session | Delete session | Cancel",
+		"repl.action_switch":  "Switch to session",
+		"repl.action_delete":  "Delete session",
+		"repl.action_cancel":  "Cancel",
+		"repl.export_saved":   "Session exported: %s",
+		"repl.execute_progress": "Executing [%d/%d]",
 
 		"prompt.file_content":    "Content of %s:\n---\n%s\n---",
 	},

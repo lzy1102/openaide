@@ -302,7 +302,7 @@ var history []string // 会话内查询历史（Ctrl+R 搜索）
 			}
 			selected, _ := pterm.DefaultInteractiveMultiselect.
 				WithOptions(taskOpts).
-				WithDefaultText(fmt.Sprintf("Select subtasks (%d total, space=toggle, enter=confirm)", len(plan.Subtasks))).
+				WithDefaultText(fmt.Sprintf(lang.T("repl.select_subtasks", len(plan.Subtasks)))).
 				WithMaxHeight(12).
 				Show()
 			if len(selected) > 0 {
@@ -813,8 +813,8 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 			for i, opt := range options {
 				if opt == result {
 					action, _ := pterm.DefaultInteractiveSelect.
-						WithOptions([]string{"Switch to session", "Delete session", "Cancel"}).
-						WithDefaultText("Action:").
+						WithOptions([]string{lang.T("repl.action_switch"), lang.T("repl.action_delete"), lang.T("repl.action_cancel")}).
+						WithDefaultText(lang.T("repl.select_action")).
 						WithMaxHeight(5).
 						Show()
 					if strings.HasPrefix(action, "Switch") {
