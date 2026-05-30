@@ -203,13 +203,19 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 		}
 	case "memory":
 		sessionStore = kernel.NewSessionStoreAdapter()
-	default: // "file" or empty
-		fileStore, err := kernel.NewFileSessionStore(cfg.Storage.DataDir + "/sessions")
+	default: // "file" or empty — default to SQLite
+		sqliteStore, err := kernel.NewSQLiteSessionStore(cfg.Storage.DataDir + "/sessions.db")
 		if err != nil {
-			slog.Warn("Failed to create file session store, using memory", "error", err)
-			sessionStore = kernel.NewSessionStoreAdapter()
+			slog.Warn("Failed to create SQLite session store, falling back to file", "error", err)
+			fileStore, ferr := kernel.NewFileSessionStore(cfg.Storage.DataDir + "/sessions")
+			if ferr != nil {
+				sessionStore = kernel.NewSessionStoreAdapter()
+			} else {
+				sessionStore = fileStore
+			}
 		} else {
-			sessionStore = fileStore
+			sessionStore = sqliteStore
+			app.sqliteSessionStore = sqliteStore
 		}
 	}
 

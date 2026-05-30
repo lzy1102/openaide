@@ -244,7 +244,8 @@ func DefaultConfig() *Config {
 			PreviewTimeout: 30,
 		},
 		Storage: StorageConfig{
-			DataDir: home + "/.openaide/data",
+			DataDir:      home + "/.openaide/data",
+			SessionStore: "sqlite",
 		},
 		Browser: BrowserConfig{
 			Enabled: false,
