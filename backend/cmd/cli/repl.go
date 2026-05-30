@@ -58,6 +58,7 @@ func runREPL(app *infra.Application, continueSess, autoYes bool) {
 	fmt.Printf("  %s%s%s", cInfo, "  ◆  "+filepath.Base(cwd), cReset)
 	fmt.Println()
 	fmt.Println()
+	fmt.Printf("  v%s ", Version)
 	fmt.Printf("  %s/h%s help  %s|%s  %s/q%s quit  %s|%s  @file  Ctrl+C interrupt", cYellow, cReset, cInfo, cReset, cYellow, cReset, cInfo, cReset)
 	fmt.Println()
 	// Project context: OPENAIDE.md status
@@ -372,8 +373,16 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string,
 	var rendered int               // 已渲染位置
 	var toolNames []string
 	thinkShown := false
+	firstChunk := true
+
+	// 等待第一个chunk时显示思考中指示器
+	thinkingSpinner, _ := pterm.DefaultSpinner.WithShowTimer(false).WithText(pterm.Cyan("Thinking...")).Start()
 
 	for chunk := range stream {
+		if firstChunk {
+			thinkingSpinner.Stop()
+			firstChunk = false
+		}
 		if chunk.Error != nil { PrintError(chunk.Error.Error()); break }
 		if chunk.Content != "" {
 		fullResponse.WriteString(chunk.Content)

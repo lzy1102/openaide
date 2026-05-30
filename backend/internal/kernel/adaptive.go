@@ -44,7 +44,7 @@ func (a *AdaptiveRounds) estimateWithLLM(query string) int {
 	resp, err := a.llm.Chat(context.Background(), []Message{
 		{Role: "system", Content: "Estimate how many reasoning rounds an AI agent needs for this task. Consider complexity, number of steps, and ambiguity. Reply with only an integer between 1 and 30. Simple queries need 1-3, complex multi-step tasks need 8-15."},
 		{Role: "user", Content: query},
-	}, nil, map[string]interface{}{"max_tokens": 10, "temperature": 0, "route": "execution"})
+	}, nil, map[string]interface{}{"max_tokens": 10, "temperature": 0, "route": "execution", "no_thinking": true})
 	if err != nil {
 		return 0
 	}

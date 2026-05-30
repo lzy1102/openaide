@@ -87,7 +87,8 @@ Analyze the execution and provide structured feedback. Be specific and actionabl
 	}
 
 	resp, err := r.llm.Chat(ctx, messages, []ToolDefinition{reflectionTool}, map[string]interface{}{
-		"route": "execution",
+		"route":       "execution",
+		"no_thinking": true,
 		"temperature": 0.3,
 		"max_tokens":  1000,
 	})

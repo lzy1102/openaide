@@ -313,7 +313,7 @@ func (k *AgentKernel) buildMessages(ctx context.Context, session *Session, query
 		}
 	}
 
-	slog.Debug("buildMessages complete", "msgs", len(messages))
+	slog.Info("buildMessages complete", "msgs", len(messages))
 	return messages
 }
 
@@ -591,7 +591,7 @@ func ensureSessionTitle(session *Session) {
 func (k *AgentKernel) generateSessionTitle(session *Session, firstQuery string) {
 	resp, err := k.llmProvider.Chat(context.Background(), []Message{
 		{Role: "user", Content: fmt.Sprintf("Generate a SHORT session title (3-5 words) for this query. Reply with ONLY the title, no explanation.\nQuery: %s", firstQuery)},
-	}, nil, map[string]interface{}{"max_tokens": 30, "temperature": 0})
+	}, nil, map[string]interface{}{"max_tokens": 30, "temperature": 0, "route": "execution", "no_thinking": true})
 	if err != nil {
 		return
 	}

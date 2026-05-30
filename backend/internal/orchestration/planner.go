@@ -143,6 +143,8 @@ func (p *Planner) planWithFunctionCall(ctx context.Context, query string) (*Plan
 	resp, err := p.llm.Chat(ctx, messages, []kernel.ToolDefinition{planTool}, map[string]interface{}{
 		"temperature": 0.3,
 		"max_tokens":  500,
+		"route":       "execution",
+		"no_thinking": true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("function calling planning failed: %w", err)
@@ -166,6 +168,8 @@ func (p *Planner) planWithTextPrompt(ctx context.Context, query string) (*Plan, 
 	resp, err := p.llm.Chat(ctx, messages, nil, map[string]interface{}{
 		"temperature": 0.3,
 		"max_tokens":  1000,
+		"route":       "execution",
+		"no_thinking": true,
 	})
 	if err != nil {
 		return nil, err
@@ -437,6 +441,8 @@ func (p *Planner) PlanWithApproach(ctx context.Context, query string, research *
 	resp, err := p.llm.Chat(ctx, messages, nil, map[string]interface{}{
 		"temperature": 0.3,
 		"max_tokens":  1000,
+		"route":       "execution",
+		"no_thinking": true,
 	})
 	if err != nil {
 		return nil, err

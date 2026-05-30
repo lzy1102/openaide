@@ -202,7 +202,7 @@ func (o *Orchestrator) RunSubAgent(ctx context.Context, userID, projectID, roleN
 
 // PreviewPlan 仅规划不执行，返回拆分后的计划（用于交互式确认）
 func (o *Orchestrator) PreviewPlan(ctx context.Context, content string) (*Plan, error) {
-	slog.Debug("PreviewPlan start", "query", content)
+	slog.Info("PreviewPlan start", "query", content[:min(80, len(content))])
 	planner := NewPlanner(o.llmGateway)
 	planner.SetToolExecutor(o.toolExec)
 	return planner.Plan(ctx, content)
@@ -361,7 +361,7 @@ func (o *Orchestrator) processSingle(ctx context.Context, userID, projectID, con
 
 // ProcessQueryStream 流式处理用户查询
 func (o *Orchestrator) ProcessQueryStream(ctx context.Context, userID, projectID, content string, opts kernel.QueryOptions) (<-chan kernel.StreamChunk, error) {
-	slog.Debug("ProcessQueryStream start", "user", userID, "content_len", len(content))
+	slog.Info("ProcessQueryStream start", "user", userID, "content_len", len(content))
 	// 获取或创建会话
 	session, err := o.getOrCreateSession(ctx, projectID, userID)
 	if err != nil {
@@ -834,7 +834,7 @@ func (o *Orchestrator) routePipeline(ctx context.Context, plan *Plan) map[int]st
 		{Role: "system", Content: "你是任务路由器。为每个子任务选择最合适的角色。回复格式: ID=角色,用逗号分隔。"},
 		{Role: "user", Content: prompt},
 	}
-	resp, err := o.llmGateway.Chat(ctx, messages, nil, map[string]interface{}{"max_tokens": 100, "temperature": 0, "route": "execution"})
+	resp, err := o.llmGateway.Chat(ctx, messages, nil, map[string]interface{}{"max_tokens": 100, "temperature": 0, "route": "execution", "no_thinking": true})
 	if err != nil {
 		for i := range plan.Subtasks { result[i] = "coder" }
 		return result

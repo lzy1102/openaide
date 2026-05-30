@@ -302,7 +302,7 @@ func (sm *SkillManager) initSkillConfidence(id string) {
 func (sm *SkillManager) DetectSkill(query string) *Skill {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
-	slog.Debug("Skill detect", "query", query[:min(80, len(query))])
+	slog.Info("Skill detect", "query", query[:min(80, len(query))])
 	if !sm.autoDetect {
 		return nil
 	}
@@ -349,7 +349,7 @@ func (sm *SkillManager) detectWithLLM(query string) *Skill {
 
 	resp, err := sm.llm.Chat(context.Background(), []Message{
 		{Role: "user", Content: fmt.Sprintf("Which skill best matches this query? Reply with the skill ID or 'none'.\n\nSkills:\n%s\nQuery: %s", skillList.String(), query)},
-	}, nil, map[string]interface{}{"max_tokens": 30, "temperature": 0, "route": "execution"})
+	}, nil, map[string]interface{}{"max_tokens": 30, "temperature": 0, "route": "execution", "no_thinking": true})
 	if err != nil {
 		return nil
 	}

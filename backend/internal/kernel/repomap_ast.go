@@ -95,12 +95,11 @@ func parseGoAST(path string) []astSymbol {
 	if len(content) > 500*1024 { return nil } // skip files >500KB
 
 	hash := fmt.Sprintf("%x", sha256.Sum256(data))
-	globalASTRepoMap.mu.RLock()
+	// Check cache: skip if file unchanged since last parse.
+	// Called under GenerateASTRepoMap's write-lock; standalone callers (tests) are single-goroutine.
 	if h, ok := globalASTRepoMap.files[path]; ok && h == hash {
-		globalASTRepoMap.mu.RUnlock()
 		return nil // unchanged
 	}
-	globalASTRepoMap.mu.RUnlock()
 	globalASTRepoMap.files[path] = hash
 
 	fset := token.NewFileSet()

@@ -61,8 +61,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 		toolErrors := 0
 		startTime := time.Now()
 
-		slog.Debug("ReAct stream: entering loop")
-	slog.Debug("ReAct stream loop start", "query", query.Content[:min(80, len(query.Content))], "max_rounds", maxRounds, "tools", len(tools), "history_msgs", len(messages))
+		slog.Info("ReAct stream: entering loop", "query", query.Content[:min(80, len(query.Content))], "max_rounds", maxRounds, "tools", len(tools), "history_msgs", len(messages))
 		for round := 0; round < maxRounds; round++ {
 			slog.Debug("ReAct stream round", "round", round, "msg_count", len(messages))
 			snipOldToolOutputs(messages)
@@ -355,7 +354,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 			Role: "user",
 			Content: "Max rounds reached. Based on all findings above, provide a complete summary. Do NOT call tools — output your final answer directly.",
 		})
-		resp, err := k.llmProvider.Chat(ctx, messages, nil, map[string]interface{}{"temperature": 0.3, "max_tokens": 4000, "route": "execution"})
+		resp, err := k.llmProvider.Chat(ctx, messages, nil, map[string]interface{}{"temperature": 0.3, "max_tokens": 4000, "route": "execution", "no_thinking": true})
 		if err != nil {
 			slog.Warn("Stream final synthesis failed", "error", err)
 			lastMsg := messages[len(messages)-1]

@@ -139,7 +139,7 @@ func (se *SkillEvolution) generateSkillPrompt(category, desc string, keywords []
 		},
 	}
 	resp, err := se.llm.Chat(ctx, messages, nil, map[string]interface{}{
-		"max_tokens": 300, "temperature": 0.3, "route": "execution",
+		"max_tokens": 300, "temperature": 0.3, "route": "execution", "no_thinking": true,
 	})
 	if err != nil || resp.Content == "" {
 		return se.fallbackPrompt(category, desc)

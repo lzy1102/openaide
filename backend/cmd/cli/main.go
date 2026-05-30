@@ -16,6 +16,12 @@ import (
 	"openaide/backend/internal/lang"
 )
 
+// Build info — injected via ldflags at build time
+var (
+	Version   = "dev"
+	BuildTime = "unknown"
+)
+
 type cliFlags struct {
 	contextFiles []string
 	prompt       string
@@ -77,13 +83,13 @@ func parseFlags(args []string) cliFlags {
 			printHelp()
 			os.Exit(0)
 		case a == "-v" || a == "--version":
-			fmt.Println(lang.T("cli.version"))
+			fmt.Printf("OpenAIDE CLI %s (built %s)\n", Version, BuildTime)
 			os.Exit(0)
 		case a == "help":
 			cmdHelp()
 			os.Exit(0)
 		case a == "version":
-			fmt.Println(lang.T("cli.version"))
+			fmt.Printf("OpenAIDE CLI %s (built %s)\n", Version, BuildTime)
 			os.Exit(0)
 		case a == "update" || a == "upgrade":
 			cmdUpdate(args[i+1:])
