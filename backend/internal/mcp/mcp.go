@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"sync"
 	"time"
+
+	"openaide/backend/internal/kernel"
 )
 
 // MCP协议版本: 2024-11-05
@@ -226,38 +228,30 @@ func (c *Client) call(method string, params interface{}) (json.RawMessage, error
 
 // Manager MCP Server 管理器
 type Manager struct {
-	clients map[string]*Client
-	mu      sync.RWMutex
+	clients *kernel.SafeMap[string, *Client]
 }
 
 // NewManager 创建管理器
 func NewManager() *Manager {
-	return &Manager{clients: make(map[string]*Client)}
+	return &Manager{clients: kernel.NewSafeMap[string, *Client](8)}
 }
 
 // ConnectServer 连接MCP Server
 func (m *Manager) ConnectServer(id, command string, args ...string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if _, exists := m.clients[id]; exists {
+	if _, exists := m.clients.Load(id); exists {
 		return fmt.Errorf("server already connected: %s", id)
 	}
-
 	client, err := Connect(command, args...)
 	if err != nil {
 		return err
 	}
-
-	m.clients[id] = client
+	m.clients.Store(id, client)
 	return nil
 }
 
 // GetServerTools 获取指定MCP Server的工具列表
 func (m *Manager) GetServerTools(id string) []Tool {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	c, ok := m.clients[id]
+	c, ok := m.clients.Load(id)
 	if !ok {
 		return nil
 	}
@@ -266,35 +260,28 @@ func (m *Manager) GetServerTools(id string) []Tool {
 
 // GetAllTools 获取所有MCP Server的工具
 func (m *Manager) GetAllTools() []Tool {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
 	var tools []Tool
-	for _, c := range m.clients {
+	m.clients.Range(func(_ string, c *Client) bool {
 		tools = append(tools, c.ListTools()...)
-	}
+		return true
+	})
 	return tools
 }
 
 // CallTool 调用指定Server的工具
 func (m *Manager) CallTool(serverID, toolName string, args map[string]interface{}) (*CallResult, error) {
-	m.mu.RLock()
-	c, ok := m.clients[serverID]
-	m.mu.RUnlock()
-
+	c, ok := m.clients.Load(serverID)
 	if !ok {
 		return nil, fmt.Errorf("mcp server not found: %s", serverID)
 	}
-
 	return c.CallTool(toolName, args)
 }
 
 // Shutdown 关闭所有连接
 func (m *Manager) Shutdown() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for id, c := range m.clients {
+	m.clients.Range(func(id string, c *Client) bool {
 		c.Close()
-		delete(m.clients, id)
-	}
+		m.clients.Delete(id)
+		return true
+	})
 }
