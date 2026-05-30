@@ -234,9 +234,9 @@ var history []string // 会话内查询历史（Ctrl+R 搜索）
 		spinner.Stop()
 		fmt.Print("\r\033[K")
 
-		if planErr != nil || plan == nil || len(plan.Subtasks) <= 1 {
+		if planErr != nil || plan == nil || len(plan.Subtasks) <= 3 {
 			executeStreamQuery(app, query, &sessionID, autoYes)
-		} else if len(plan.Subtasks) >= 4 {
+		} else if len(plan.Subtasks) >= 6 {
 			// DeepPlan: 深度研究 + 方案对比
 			pterm.Info.Println(lang.T("repl.deep_analysis"))
 			deepCtx, deepCancel := context.WithTimeout(context.Background(), app.Orchestrator.DeepTimeout)
