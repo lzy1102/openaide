@@ -359,12 +359,24 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string,
 			}
 			fmt.Printf("  %s└──────────────────────────────────────────%s\n", cYellow, cReset)
 			fmt.Println()
-			result, _ := pterm.DefaultInteractiveConfirm.
+			options := []string{
+				"  " + lang.T("repl.approve_yes"),
+				"  " + lang.T("repl.approve_always"),
+				"  " + lang.T("repl.approve_no"),
+			}
+			choice, _ := pterm.DefaultInteractiveSelect.
+				WithOptions(options).
 				WithDefaultText(lang.T("repl.allow_tool")).
-				WithConfirmText("y").
-				WithRejectText("n").
+				WithMaxHeight(5).
 				Show()
-			return result
+			if choice == options[1] {
+				autoYes = true
+				return true
+			}
+			if choice == options[2] {
+				return false
+			}
+			return true
 		},
 		OnBudgetExhausted: func(round, maxRounds int) bool {
 			if autoYes { return true }
