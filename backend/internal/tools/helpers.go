@@ -47,6 +47,7 @@ func BuiltinTools() []kernel.ToolDefinition {
 	tools = append(tools, browserExtendedDefs()...)
 	tools = append(tools, desktopToolDefs()...)
 	tools = append(tools, multimodalToolDefs()...)
+	tools = append(tools, lspToolDefs()...)
 	return tools
 }
 
@@ -89,6 +90,10 @@ func BuiltinHandlers() map[string]kernel.ToolHandler {
 		"todo_write":         handleTodoWrite,
 		"todo_read":          handleTodoRead,
 		"ask_user":           handleAskUser,
+		"lsp_definition":     handleLSPDefinition,
+		"lsp_references":     handleLSPReferences,
+		"lsp_hover":          handleLSPHover,
+		"lsp_diagnostics":    handleLSPDiagnostics,
 	}
 }
 

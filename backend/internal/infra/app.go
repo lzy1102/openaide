@@ -15,6 +15,7 @@ import (
 	"openaide/backend/internal/config"
 	"openaide/backend/internal/kernel"
 	"openaide/backend/internal/llm"
+	"openaide/backend/internal/lsp"
 	"openaide/backend/internal/mcp"
 	"openaide/backend/internal/memory"
 	"openaide/backend/internal/orchestration"
@@ -198,13 +199,16 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 	app.Kernel = agentKernel
 	app.PluginManager = pluginMgr
 
-	// Plugin hot-reload (watch plugins dir for new plugins)
+	// Plugin hot-reload
 	pluginWatcher := NewPluginWatcher(cfg.Storage.DataDir+"/plugins", pluginMgr.Reload)
 	if err := pluginWatcher.Start(); err != nil {
 		slog.Warn("Plugin hot-reload unavailable", "error", err)
 	} else {
 		app.pluginWatcher = pluginWatcher
 	}
+
+	// LSP: auto-start language servers for the current project
+	startLSPServers()
 
 	// 7. 编排器
 	orch := orchestration.NewOrchestrator(agentKernel, gateway, toolRegistry, memManager, sessionStore)
@@ -332,6 +336,35 @@ func (app *Application) Stop(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// startLSPServers auto-starts language servers for the current project.
+func startLSPServers() {
+	cwd, _ := os.Getwd()
+
+	// Detect project language and start appropriate LSP
+	if entries, _ := os.ReadDir(cwd); entries != nil {
+		for _, e := range entries {
+			name := e.Name()
+			switch {
+			case name == "go.mod" && !e.IsDir():
+				if c, err := lsp.Start(cwd, "go"); err == nil {
+					tools.SetLSPClient("go", c)
+				}
+				return
+			case (name == "pyproject.toml" || name == "setup.py" || name == "requirements.txt") && !e.IsDir():
+				if c, err := lsp.Start(cwd, "python"); err == nil {
+					tools.SetLSPClient("python", c)
+				}
+				return
+			case name == "package.json" && !e.IsDir():
+				if c, err := lsp.Start(cwd, "typescript"); err == nil {
+					tools.SetLSPClient("typescript", c)
+				}
+				return
+			}
+		}
+	}
 }
 
 // TUILogWriter TUI 日志环缓冲（由 cmd/cli 设置）
