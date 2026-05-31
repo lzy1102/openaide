@@ -34,6 +34,11 @@ func NewAnthropicProvider(config *ProviderConfig) *AnthropicProvider {
 		config: config,
 		httpClient: &http.Client{
 			Timeout: time.Duration(timeout) * time.Second,
+			Transport: &http.Transport{
+				MaxIdleConns:    10,
+				IdleConnTimeout: 90 * time.Second,
+				MaxConnsPerHost: 6,
+			},
 		},
 		modelID: config.DefaultModel,
 	}

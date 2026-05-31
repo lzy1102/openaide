@@ -33,6 +33,12 @@ func NewOpenAIProvider(config *ProviderConfig) *OpenAIProvider {
 		config: config,
 		httpClient: &http.Client{
 			Timeout: time.Duration(timeout) * time.Second,
+			Transport: &http.Transport{
+				MaxIdleConns:        10,
+				IdleConnTimeout:     90 * time.Second,
+				MaxConnsPerHost:     6,
+				DisableCompression:  false,
+			},
 		},
 		modelID: config.DefaultModel,
 	}
