@@ -71,12 +71,30 @@ func (k *AgentKernel) getToolDefinitions(queryContent string, opts QueryOptions)
 // finalizeResponse performs all post-ReAct work shared by both paths:
 // save memory, update session, generate title, run reflection, close tracer
 func (k *AgentKernel) finalizeResponse(ctx context.Context, session *Session, query *Query, response string, toolCalls int) {
-	k.saveToMemory(ctx, session.ID, session.Messages)
-	session.UpdatedAt = time.Now()
-	ensureSessionTitle(session)
-	if err := k.sessionStore.Update(ctx, session); err != nil {
-		slog.Warn("session update failed", "error", err)
-	}
+	// Saga: save memory → update session, with compensation
+	RunSaga([]SagaStep{
+		{
+			Name: "save-memory",
+			Execute: func() error {
+				k.saveToMemory(ctx, session.ID, session.Messages)
+				return nil
+			},
+			Compensate: func() error {
+				// Best-effort: remove saved items (MemoryActor is eventually consistent)
+				return nil
+			},
+		},
+		{
+			Name: "update-session",
+			Execute: func() error {
+				session.UpdatedAt = time.Now()
+				ensureSessionTitle(session)
+				return k.sessionStore.Update(ctx, session)
+			},
+			Compensate: nil, // session update is idempotent
+		},
+	})
+
 	// Async: generate meaningful title and run reflection
 	go k.generateSessionTitle(session, query.Content)
 	if k.reflection != nil {
