@@ -1,7 +1,9 @@
 package kernel
 
 import (
+	"fmt"
 	"sync"
+	"time"
 )
 
 // Actor is a CSP-style autonomous goroutine that owns its data.
@@ -41,6 +43,26 @@ func (a *Actor) Send(fn func()) {
 	case a.commands <- actorCmd{fn: fn, reply: reply}:
 		<-reply
 	case <-a.stop:
+	}
+}
+
+// SendTimeout tries to send a command within the given timeout.
+// Returns ErrActorBusy if the channel is full and timeout expires.
+// Use for non-critical operations where blocking is unacceptable.
+func (a *Actor) SendTimeout(fn func(), timeout time.Duration) error {
+	reply := make(chan struct{}, 1)
+	select {
+	case a.commands <- actorCmd{fn: fn, reply: reply}:
+		select {
+		case <-reply:
+			return nil
+		case <-time.After(timeout):
+			return fmt.Errorf("actor timeout after %v", timeout)
+		}
+	case <-time.After(timeout):
+		return fmt.Errorf("actor busy after %v", timeout)
+	case <-a.stop:
+		return fmt.Errorf("actor stopped")
 	}
 }
 
