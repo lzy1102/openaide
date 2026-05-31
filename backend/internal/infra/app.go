@@ -361,6 +361,13 @@ func startLSPServers() {
 		"package.json":    "typescript",
 		".csproj":         "csharp",
 		"Package.swift":   "swift",
+
+		"mix.exs":         "elixir",
+		"rebar.config":    "erlang",
+		"stack.yaml":      "haskell",
+		"pubspec.yaml":    "dart",
+		".Rproj":          "r",
+		"Project.toml":    "julia",
 	}
 
 	for _, e := range entries {

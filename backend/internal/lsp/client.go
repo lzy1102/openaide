@@ -127,6 +127,23 @@ func serverCommand(language string) (*exec.Cmd, error) {
 	case "swift":
 		return exec.Command("sourcekit-lsp"), nil
 
+	// Functional / niche
+	case "elixir":
+		return exec.Command("elixir-ls"), nil
+	case "haskell":
+		return exec.Command("haskell-language-server-wrapper"), nil
+	case "erlang":
+		return exec.Command("erlang_ls"), nil
+	case "dart":
+		return exec.Command("dart", "language-server"), nil
+
+	// Data science
+	case "r":
+		return exec.Command("R", "--slave", "-e", "languageserver::run()"), nil
+	case "julia":
+		return exec.Command("julia", "--startup-file=no", "--history-file=no", "-e",
+			"using LanguageServer; runserver()"), nil
+
 	default:
 		return nil, fmt.Errorf("unsupported language: %s. Install the LSP server and add it here", language)
 	}
@@ -175,6 +192,19 @@ func DetectLanguage(path string) string {
 		return "csharp"
 	case ".swift":
 		return "swift"
+
+	case ".ex", ".exs":
+		return "elixir"
+	case ".erl", ".hrl":
+		return "erlang"
+	case ".hs", ".lhs":
+		return "haskell"
+	case ".dart":
+		return "dart"
+	case ".r", ".R":
+		return "r"
+	case ".jl":
+		return "julia"
 
 	default:
 		return ""
