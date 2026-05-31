@@ -61,28 +61,48 @@ func (a *MemoryActor) migrate() {
 	a.db.Exec(`CREATE INDEX IF NOT EXISTS idx_memory_session ON memory_items(session_id)`)
 }
 
-// Save stores messages. Implements kernel.Memory.
+// Save stores messages using batch embedding (one API call for all).
 func (a *MemoryActor) Save(ctx context.Context, sessionID string, messages []kernel.Message) error {
-	for _, msg := range messages {
-		item := &MemoryItem{
+	if len(messages) == 0 {
+		return nil
+	}
+
+	// Batch embed all messages in one API call
+	var embeddings [][]float32
+	if a.embedder != nil && a.embedder.Dimension() > 0 {
+		texts := make([]string, len(messages))
+		for i, msg := range messages {
+			texts[i] = msg.Content
+		}
+		embeddings, _ = a.embedder.EmbedBatch(ctx, texts)
+	}
+
+	// Build items
+	items := make([]*MemoryItem, len(messages))
+	for i, msg := range messages {
+		vec := []float32(nil)
+		if i < len(embeddings) {
+			vec = embeddings[i]
+		}
+		items[i] = &MemoryItem{
 			ID:        kernel.NewSessionID(),
 			SessionID: sessionID,
 			Content:   msg.Content,
 			Level:     LevelWorking,
+			Embedding: vec,
 		}
-		if a.embedder != nil && a.embedder.Dimension() > 0 {
-			if vec, err := a.embedder.Embed(ctx, msg.Content); err == nil && len(vec) > 0 {
-				item.Embedding = vec
-			}
-		}
-		a.super.Send(func() {
+	}
+
+	// Single actor dispatch for all inserts
+	a.super.Send(func() {
+		for _, item := range items {
 			embJSON, _ := json.Marshal(item.Embedding)
 			a.db.ExecContext(ctx,
 				`INSERT INTO memory_items (id, session_id, content, level, embedding, created_at) VALUES (?, ?, ?, ?, ?, datetime('now'))`,
 				item.ID, item.SessionID, item.Content, int(item.Level), string(embJSON))
 			a.cache = append(a.cache, memVec{id: item.ID, vec: item.Embedding})
-		})
-	}
+		}
+	})
 	return nil
 }
 

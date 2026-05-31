@@ -4,43 +4,47 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	"openaide/backend/internal/kernel"
 )
 
-// PromptCache 提示词缓存 — 减少重复token消耗
+const (
+	defaultMaxEntries = 500
+	defaultTTL        = 1 * time.Hour
+)
+
+// PromptCache is an in-memory LRU-like prompt cache.
+// No file I/O — pure memory. SafeMap for concurrent access.
 type PromptCache struct {
-	dataDir string
-	entries *kernel.SafeMap[string, *cacheEntry]
-	stopCh  chan struct{}
+	entries   *kernel.SafeMap[string, *cacheEntry]
+	maxSize   int
+	stopCh    chan struct{}
+	hits      atomic.Int64
+	misses    atomic.Int64
 }
 
 type cacheEntry struct {
 	Response  *kernel.LLMResponse `json:"response"`
 	CreatedAt time.Time           `json:"created_at"`
-	HitCount  int                 `json:"hit_count"`
 }
 
-// NewPromptCache 创建缓存
+// NewPromptCache creates an in-memory cache. dataDir is ignored (kept for API compat).
 func NewPromptCache(dataDir string) *PromptCache {
-	os.MkdirAll(dataDir, 0755)
 	c := &PromptCache{
-		dataDir: dataDir,
 		entries: kernel.NewSafeMap[string, *cacheEntry](64),
+		maxSize: defaultMaxEntries,
 		stopCh:  make(chan struct{}),
 	}
-	c.load()
 	go c.cleanupLoop()
 	return c
 }
 
-// Shutdown 停止后台清理 goroutine
+// Shutdown stops the cleanup goroutine.
 func (c *PromptCache) Shutdown() { close(c.stopCh) }
 
-// key 生成缓存键
+// key generates a cache key from messages + tools + model hash.
 func (c *PromptCache) key(messages []kernel.Message, tools []kernel.ToolDefinition, model string) string {
 	h := sha256.New()
 	data, _ := json.Marshal(messages)
@@ -51,42 +55,59 @@ func (c *PromptCache) key(messages []kernel.Message, tools []kernel.ToolDefiniti
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
-// Get 获取缓存
+// Get retrieves a cached response. Returns nil on miss or expiry.
 func (c *PromptCache) Get(messages []kernel.Message, tools []kernel.ToolDefinition, model string) *kernel.LLMResponse {
 	e, ok := c.entries.Load(c.key(messages, tools, model))
-	if !ok || time.Since(e.CreatedAt) > 1*time.Hour {
+	if !ok || time.Since(e.CreatedAt) > defaultTTL {
+		c.misses.Add(1)
 		return nil
 	}
-	e.HitCount++ // safe: only readers call Get, writers call Set
+	c.hits.Add(1)
 	return e.Response
 }
 
-// Set 存入缓存
+// Set stores a response in the cache. Evicts oldest entries if over limit.
 func (c *PromptCache) Set(messages []kernel.Message, tools []kernel.ToolDefinition, model string, resp *kernel.LLMResponse) {
 	k := c.key(messages, tools, model)
 	c.entries.Store(k, &cacheEntry{Response: resp, CreatedAt: time.Now()})
-	c.save(k)
+	// Evict if over limit — delete oldest 10%
+	if c.entries.Len() > c.maxSize {
+		toRemove := c.maxSize / 10
+		var oldest []string
+		cutoff := time.Now().Add(-defaultTTL)
+		c.entries.Range(func(key string, e *cacheEntry) bool {
+			if e.CreatedAt.Before(cutoff) {
+				oldest = append(oldest, key)
+			}
+			return true
+		})
+		for i, key := range oldest {
+			if i >= toRemove {
+				break
+			}
+			c.entries.Delete(key)
+		}
+	}
 }
 
-// Stats 缓存统计
+// Stats returns cache statistics.
 func (c *PromptCache) Stats() map[string]int {
-	hits := 0
-	c.entries.Range(func(_ string, e *cacheEntry) bool {
-		hits += e.HitCount
-		return true
-	})
-	return map[string]int{"entries": c.entries.Len(), "hits": hits}
+	return map[string]int{
+		"entries": c.entries.Len(),
+		"hits":    int(c.hits.Load()),
+		"misses":  int(c.misses.Load()),
+	}
 }
 
 func (c *PromptCache) cleanupLoop() {
-	ticker := time.NewTicker(1 * time.Hour)
+	ticker := time.NewTicker(30 * time.Minute)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-c.stopCh:
 			return
 		case <-ticker.C:
-			c.cleanup(24 * time.Hour)
+			c.cleanup(2 * time.Hour)
 		}
 	}
 }
@@ -96,40 +117,7 @@ func (c *PromptCache) cleanup(maxAge time.Duration) {
 	c.entries.Range(func(k string, e *cacheEntry) bool {
 		if e.CreatedAt.Before(cutoff) {
 			c.entries.Delete(k)
-			os.Remove(filepath.Join(c.dataDir, k+".json"))
 		}
 		return true
 	})
-}
-
-func (c *PromptCache) save(key string) {
-	e, ok := c.entries.Load(key)
-	if !ok {
-		return
-	}
-	data, err := json.Marshal(e)
-	if err != nil {
-		return
-	}
-	os.WriteFile(filepath.Join(c.dataDir, key+".json"), data, 0644)
-}
-
-func (c *PromptCache) load() {
-	entries, err := os.ReadDir(c.dataDir)
-	if err != nil {
-		return
-	}
-	for _, e := range entries {
-		if filepath.Ext(e.Name()) != ".json" {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(c.dataDir, e.Name()))
-		if err != nil {
-			continue
-		}
-		var entry cacheEntry
-		if json.Unmarshal(data, &entry) == nil {
-			c.entries.Store(e.Name()[:len(e.Name())-5], &entry)
-		}
-	}
 }
