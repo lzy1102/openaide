@@ -177,7 +177,7 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 	app.MCPManager = mcpManager
 
 	// 4. 记忆管理器（CSP actor）
-	memManager, err := memory.NewMemoryActor(cfg.Storage.DataDir + "/memory")
+	memManager, err := memory.NewMemoryActor(cfg.Storage.DataDir + "/memory.db")
 	if err != nil {
 		return nil, fmt.Errorf("memory actor: %w", err)
 	}

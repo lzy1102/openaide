@@ -2,33 +2,36 @@ package knowledge
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
-	"log/slog"
-	"os"
-	"path/filepath"
 	"sort"
 
 	"openaide/backend/internal/kernel"
+
+	_ "modernc.org/sqlite"
 )
 
-// Actor is a CSP-style knowledge base. All documents live in a single
-// goroutine — zero locks. Embedding calls run outside the actor.
+// Actor is a CSP-style knowledge base backed by SQLite.
+// All documents live in a single goroutine — zero locks.
+// Embedding calls run outside the actor.
 type Actor struct {
 	super    *kernel.Actor
 	embedder kernel.Embedder
-	dir      string
-	docs     map[string]*Document
+	db       *sql.DB
 }
 
 // NewActor creates and starts a knowledge actor.
-func NewActor(dir string) (*Actor, error) {
-	os.MkdirAll(dir, 0755)
+func NewActor(path string) (*Actor, error) {
+	db, err := sql.Open("sqlite", path+"?_journal_mode=WAL&_busy_timeout=5000")
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(1)
 	a := &Actor{
 		super: kernel.NewActor(64),
-		dir:   dir,
-		docs:  make(map[string]*Document),
+		db:    db,
 	}
-	a.loadFromDisk()
+	a.super.Send(func() { a.migrate() })
 	return a, nil
 }
 
@@ -46,7 +49,6 @@ func (a *Actor) Add(ctx context.Context, title, content, source string, tags []s
 		Tags:    tags,
 	}
 
-	// Embed outside actor
 	if a.embedder != nil && a.embedder.Dimension() > 0 {
 		embedText := title
 		if content != "" {
@@ -59,26 +61,46 @@ func (a *Actor) Add(ctx context.Context, title, content, source string, tags []s
 	}
 
 	a.super.Send(func() {
-		a.docs[doc.ID] = doc
-		a.saveOne(doc)
+		embJSON, _ := json.Marshal(doc.Embedding)
+		tagsJSON, _ := json.Marshal(tags)
+		a.db.ExecContext(ctx,
+			`INSERT OR REPLACE INTO documents (id, title, content, source, tags, embedding) VALUES (?, ?, ?, ?, ?, ?)`,
+			doc.ID, doc.Title, doc.Content, doc.Source, string(tagsJSON), string(embJSON))
 	})
 	return doc, nil
 }
 
 // Search finds matching documents. Embedding runs OUTSIDE the actor.
 func (a *Actor) Search(ctx context.Context, query string, limit int) ([]*Document, error) {
-	// Embed outside actor
 	queryVec, hasVec := a.embedQuery(ctx, query)
 
 	var results []*Document
 	a.super.Send(func() {
-		if limit <= 0 { limit = 10 }
+		if limit <= 0 {
+			limit = 10
+		}
+		rows, _ := a.db.QueryContext(ctx, `SELECT id, title, content, source, tags, embedding FROM documents ORDER BY rowid DESC LIMIT 200`)
+		if rows == nil {
+			return
+		}
+		defer rows.Close()
+
 		type scored struct {
 			doc   *Document
 			score float64
 		}
 		var candidates []scored
-		for _, doc := range a.docs {
+		for rows.Next() {
+			var id, title, content, source, tagsJSON, embJSON string
+			if err := rows.Scan(&id, &title, &content, &source, &tagsJSON, &embJSON); err != nil {
+				continue
+			}
+			var emb []float32
+			json.Unmarshal([]byte(embJSON), &emb)
+			var tags []string
+			json.Unmarshal([]byte(tagsJSON), &tags)
+			doc := &Document{ID: id, Title: title, Content: content, Source: source, Tags: tags, Embedding: emb}
+
 			score := float64(0)
 			if hasVec && len(doc.Embedding) == len(queryVec) {
 				score = kernel.CosineSimilarity(queryVec, doc.Embedding)
@@ -97,49 +119,64 @@ func (a *Actor) Search(ctx context.Context, query string, limit int) ([]*Documen
 
 func (a *Actor) Get(ctx context.Context, id string) *Document {
 	var doc *Document
-	a.super.Send(func() { doc = a.docs[id] })
+	a.super.Send(func() {
+		row := a.db.QueryRowContext(ctx, `SELECT id, title, content, source, tags, embedding FROM documents WHERE id=?`, id)
+		var id, title, content, source, tagsJSON, embJSON string
+		if err := row.Scan(&id, &title, &content, &source, &tagsJSON, &embJSON); err != nil {
+			return
+		}
+		var emb []float32
+		json.Unmarshal([]byte(embJSON), &emb)
+		var tags []string
+		json.Unmarshal([]byte(tagsJSON), &tags)
+		doc = &Document{ID: id, Title: title, Content: content, Source: source, Tags: tags, Embedding: emb}
+	})
 	return doc
 }
 
 func (a *Actor) Delete(ctx context.Context, id string) {
-	a.super.Send(func() {
-		delete(a.docs, id)
-		os.Remove(filepath.Join(a.dir, id+".json"))
-	})
+	a.super.Send(func() { a.db.ExecContext(ctx, `DELETE FROM documents WHERE id=?`, id) })
 }
 
 func (a *Actor) InjectContext(ctx context.Context, query string, maxTokens int) (string, []string, error) {
 	docs, err := a.Search(ctx, query, 3)
-	if err != nil { return "", nil, err }
+	if err != nil {
+		return "", nil, err
+	}
 	var ids []string
 	var texts []string
 	tokens := 0
 	for _, doc := range docs {
-		if tokens > maxTokens { break }
+		if tokens > maxTokens {
+			break
+		}
 		texts = append(texts, doc.Content)
 		ids = append(ids, doc.ID)
 		tokens += len([]rune(doc.Content)) / 2
 	}
-	// Join context texts up to token limit.
 	var sb string
 	for _, t := range texts {
-		if len([]rune(sb)) > maxTokens*2 { break }
+		if len([]rune(sb)) > maxTokens*2 {
+			break
+		}
 		sb += t + "\n"
 	}
 	return sb, ids, nil
 }
 
-// AddKnowledge adds a knowledge entry. Implements kernel.KnowledgeCollector.
 func (a *Actor) AddKnowledge(ctx context.Context, title, content, source string, tags []string) (string, error) {
 	doc, err := a.Add(ctx, title, content, source, tags)
-	if err != nil { return "", err }
+	if err != nil {
+		return "", err
+	}
 	return doc.ID, nil
 }
 
-// SearchKnowledge wraps Search for kernel.KnowledgeCollector compatibility.
 func (a *Actor) SearchKnowledge(ctx context.Context, query string, limit int) ([]kernel.KnowledgeItem, error) {
 	docs, err := a.Search(ctx, query, limit)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	items := make([]kernel.KnowledgeItem, len(docs))
 	for i, doc := range docs {
 		items[i] = kernel.KnowledgeItem{
@@ -149,11 +186,24 @@ func (a *Actor) SearchKnowledge(ctx context.Context, query string, limit int) ([
 	return items, nil
 }
 
-// RecordKnowledgeUsage records quality feedback. (no-op for actor)
 func (a *Actor) RecordKnowledgeUsage(ctx context.Context, docIDs []string, qualityScore float64) {}
 
-// Stop shuts down the actor.
-func (a *Actor) Stop() { a.super.Stop() }
+func (a *Actor) Stop() {
+	a.super.Stop()
+	a.db.Close()
+}
+
+func (a *Actor) migrate() {
+	a.db.Exec(`CREATE TABLE IF NOT EXISTS documents (
+		id TEXT PRIMARY KEY,
+		title TEXT NOT NULL DEFAULT '',
+		content TEXT NOT NULL DEFAULT '',
+		source TEXT DEFAULT '',
+		tags TEXT DEFAULT '[]',
+		embedding TEXT DEFAULT '[]'
+	)`)
+	a.db.Exec(`CREATE INDEX IF NOT EXISTS idx_knowledge_title ON documents(title)`)
+}
 
 func (a *Actor) embedQuery(ctx context.Context, query string) ([]float32, bool) {
 	if a.embedder == nil || a.embedder.Dimension() == 0 {
@@ -163,25 +213,4 @@ func (a *Actor) embedQuery(ctx context.Context, query string) ([]float32, bool) 
 	return vec, err == nil && len(vec) > 0
 }
 
-func (a *Actor) saveOne(doc *Document) {
-	data, _ := json.MarshalIndent(doc, "", "  ")
-	os.WriteFile(filepath.Join(a.dir, doc.ID+".json"), data, 0644)
-}
-
-func (a *Actor) loadFromDisk() {
-	entries, err := os.ReadDir(a.dir)
-	if err != nil { return }
-	for _, e := range entries {
-		if e.IsDir() || filepath.Ext(e.Name()) != ".json" { continue }
-		data, err := os.ReadFile(filepath.Join(a.dir, e.Name()))
-		if err != nil { continue }
-		var doc Document
-		if json.Unmarshal(data, &doc) == nil && doc.ID != "" {
-			a.docs[doc.ID] = &doc
-		}
-	}
-	slog.Info("Knowledge actor loaded", "count", len(a.docs), "dir", a.dir)
-}
-
-// Ensure interface compliance.
 var _ kernel.KnowledgeCollector = (*Actor)(nil)

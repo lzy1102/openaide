@@ -10,7 +10,7 @@ import (
 )
 
 func TestMemoryActor_SaveLoad(t *testing.T) {
-	a, _ := NewMemoryActor(t.TempDir())
+	a, _ := NewMemoryActor(t.TempDir() + "/memory.db")
 	defer a.Stop()
 	ctx := context.Background()
 
@@ -41,7 +41,7 @@ func TestMemoryActor_SaveLoad(t *testing.T) {
 }
 
 func TestMemoryActor_Search(t *testing.T) {
-	a, _ := NewMemoryActor(t.TempDir())
+	a, _ := NewMemoryActor(t.TempDir()+"/memory.db")
 	defer a.Stop()
 	ctx := context.Background()
 
@@ -60,7 +60,7 @@ func TestMemoryActor_Search(t *testing.T) {
 }
 
 func TestMemoryActor_Concurrent(t *testing.T) {
-	a, _ := NewMemoryActor(t.TempDir())
+	a, _ := NewMemoryActor(t.TempDir()+"/memory.db")
 	defer a.Stop()
 	ctx := context.Background()
 
@@ -86,7 +86,7 @@ func TestMemoryActor_Concurrent(t *testing.T) {
 }
 
 func TestMemoryActor_Compress(t *testing.T) {
-	a, _ := NewMemoryActor(t.TempDir())
+	a, _ := NewMemoryActor(t.TempDir()+"/memory.db")
 	defer a.Stop()
 	ctx := context.Background()
 
@@ -105,7 +105,7 @@ func TestMemoryActor_Compress(t *testing.T) {
 }
 
 func TestMemoryActor_LoadLimit(t *testing.T) {
-	a, _ := NewMemoryActor(t.TempDir())
+	a, _ := NewMemoryActor(t.TempDir()+"/memory.db")
 	defer a.Stop()
 	ctx := context.Background()
 

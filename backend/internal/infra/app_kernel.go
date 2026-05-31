@@ -102,7 +102,7 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 	}
 
 	// 接入知识库（CSP actor）+ 质量门控 + 语义搜索
-	kAct, kerr := knowledge.NewActor(cfg.Storage.DataDir + "/knowledge")
+	kAct, kerr := knowledge.NewActor(cfg.Storage.DataDir + "/knowledge.db")
 	if kerr != nil {
 		return nil, nil, fmt.Errorf("knowledge actor: %w", kerr)
 	}
