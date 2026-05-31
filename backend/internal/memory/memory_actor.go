@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 
 	"openaide/backend/internal/kernel"
 
@@ -20,11 +21,15 @@ type memVec struct {
 
 // MemoryActor is a CSP-style memory store backed by SQLite with
 // an in-memory vector cache. Search is pure in-memory.
+const maxMemVectors = 5000
+
 type MemoryActor struct {
 	super    *kernel.Actor
 	embedder kernel.Embedder
 	db       *sql.DB
 	cache    []memVec
+	embCache map[string][]float32
+	embKeys  []string
 }
 
 // NewMemoryActor creates and starts a memory actor.
@@ -35,8 +40,9 @@ func NewMemoryActor(path string) (*MemoryActor, error) {
 	}
 	db.SetMaxOpenConns(1)
 	a := &MemoryActor{
-		super: kernel.NewActor(64),
-		db:    db,
+		super:    kernel.NewActor(64),
+		db:       db,
+		embCache: make(map[string][]float32),
 	}
 	a.super.Send(func() {
 		a.migrate()
@@ -67,14 +73,48 @@ func (a *MemoryActor) Save(ctx context.Context, sessionID string, messages []ker
 		return nil
 	}
 
-	// Batch embed all messages in one API call
+	// Batch embed with cache
 	var embeddings [][]float32
 	if a.embedder != nil && a.embedder.Dimension() > 0 {
 		texts := make([]string, len(messages))
 		for i, msg := range messages {
 			texts[i] = msg.Content
 		}
-		embeddings, _ = a.embedder.EmbedBatch(ctx, texts)
+		// Check cache first, only embed uncached texts
+		var uncached []int
+		for i, t := range texts {
+			if v, ok := a.embCache[hashMemKey(t)]; ok {
+				if embeddings == nil {
+					embeddings = make([][]float32, len(messages))
+				}
+				embeddings[i] = v
+			} else {
+				uncached = append(uncached, i)
+			}
+		}
+		if len(uncached) > 0 {
+			uncachedTexts := make([]string, len(uncached))
+			for i, idx := range uncached {
+				uncachedTexts[i] = texts[idx]
+			}
+			newEmbs, _ := a.embedder.EmbedBatch(ctx, uncachedTexts)
+			if embeddings == nil {
+				embeddings = make([][]float32, len(messages))
+			}
+			for i, idx := range uncached {
+				if i < len(newEmbs) {
+					embeddings[idx] = newEmbs[i]
+					// Store in cache
+					a.embCache[hashMemKey(texts[idx])] = newEmbs[i]
+					a.embKeys = append(a.embKeys, hashMemKey(texts[idx]))
+				}
+			}
+		}
+		// LRU evict embeddings
+		for len(a.embKeys) > 200 {
+			delete(a.embCache, a.embKeys[0])
+			a.embKeys = a.embKeys[1:]
+		}
 	}
 
 	// Build items
@@ -101,6 +141,12 @@ func (a *MemoryActor) Save(ctx context.Context, sessionID string, messages []ker
 				`INSERT INTO memory_items (id, session_id, content, level, embedding, created_at) VALUES (?, ?, ?, ?, ?, datetime('now'))`,
 				item.ID, item.SessionID, item.Content, int(item.Level), string(embJSON))
 			a.cache = append(a.cache, memVec{id: item.ID, vec: item.Embedding})
+		}
+		// LRU evict
+		for len(a.cache) > maxMemVectors {
+			oldest := a.cache[0]
+			a.db.ExecContext(ctx, `DELETE FROM memory_items WHERE id=?`, oldest.id)
+			a.cache = a.cache[1:]
 		}
 	})
 	return nil
@@ -237,6 +283,14 @@ func (a *MemoryActor) loadCacheLocked() {
 			a.cache = append(a.cache, memVec{id: id, vec: emb})
 		}
 	}
+}
+
+func hashMemKey(s string) string {
+	h := 0
+	for _, r := range s {
+		h = h*31 + int(r)
+	}
+	return fmt.Sprintf("%x", h)
 }
 
 var _ kernel.Memory = (*MemoryActor)(nil)

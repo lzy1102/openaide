@@ -24,15 +24,20 @@ type docVector struct {
 
 // Actor is a CSP-style knowledge base with approximate nearest neighbor search.
 // Uses random projection bucketing: O(n/256) search instead of O(n).
+const maxCachedVectors = 5000
+const maxCachedEmbeddings = 200
+
 type Actor struct {
-	super    *kernel.Actor
-	embedder kernel.Embedder
-	llm      kernel.LLMProvider // optional: refines knowledge
-	db       *sql.DB
-	cache    []docVector
-	proj     [][]float32 // random projection vectors
-	buckets  [][]int     // bucketID → cache indices
-	dim      int
+	super      *kernel.Actor
+	embedder   kernel.Embedder
+	llm        kernel.LLMProvider // optional: refines knowledge
+	db         *sql.DB
+	cache      []docVector
+	embCache   map[string][]float32 // query hash → embedding, LRU
+	embKeys    []string              // LRU order for embCache
+	proj       [][]float32           // random projection vectors
+	buckets    [][]int               // bucketID → cache indices
+	dim        int
 }
 
 // SetLLM injects an LLM for knowledge refinement.
@@ -46,8 +51,9 @@ func NewActor(path string) (*Actor, error) {
 	}
 	db.SetMaxOpenConns(1)
 	a := &Actor{
-		super: kernel.NewActor(64),
-		db:    db,
+		super:    kernel.NewActor(64),
+		db:       db,
+		embCache: make(map[string][]float32),
 	}
 	a.super.Send(func() {
 		a.migrate()
@@ -198,6 +204,10 @@ func (a *Actor) indexOne(id string, vec []float32) {
 	}
 	// No embedding or dimension mismatch — add to cache without bucketing
 	a.cache = append(a.cache, docVector{id: id, vec: vec})
+	// LRU evict oldest
+	for len(a.cache) > maxCachedVectors {
+		a.removeFromCache(a.cache[0].id)
+	}
 }
 
 // bucketFor returns the bucket index for a vector.
@@ -469,8 +479,52 @@ func (a *Actor) embedQuery(ctx context.Context, query string) ([]float32, bool) 
 	if a.embedder == nil || a.embedder.Dimension() == 0 {
 		return nil, false
 	}
+	key := hashStr(query)
+	// Check cache
+	a.super.Send(func() {
+		if _, ok := a.embCache[key]; ok {
+			// Move to front (LRU)
+			for i, k := range a.embKeys {
+				if k == key {
+					a.embKeys = append(a.embKeys[:i], a.embKeys[i+1:]...)
+					break
+				}
+			}
+			a.embKeys = append(a.embKeys, key)
+		}
+	})
+	// Fast path: cached
+	if v, ok := a.embCache[key]; ok {
+		return v, true
+	}
+	// Slow path: API call
 	vec, err := a.embedder.Embed(ctx, query)
-	return vec, err == nil && len(vec) > 0
+	if err != nil || len(vec) == 0 {
+		return nil, false
+	}
+	// Store in cache
+	a.super.Send(func() {
+		if a.embCache == nil {
+			a.embCache = make(map[string][]float32)
+		}
+		a.embCache[key] = vec
+		a.embKeys = append(a.embKeys, key)
+		// LRU evict
+		for len(a.embKeys) > maxCachedEmbeddings {
+			delete(a.embCache, a.embKeys[0])
+			a.embKeys = a.embKeys[1:]
+		}
+	})
+	return vec, true
+}
+
+// hashStr returns a short hex hash for cache keys.
+func hashStr(s string) string {
+	h := 0
+	for _, r := range s {
+		h = h*31 + int(r)
+	}
+	return fmt.Sprintf("%x", h)
 }
 
 // dotProduct computes the dot product of two float32 vectors.
