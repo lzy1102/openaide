@@ -39,7 +39,7 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 	agentKernel := kernel.NewAgentKernel(gateway, toolRegistry, memManager, sessionStore, kernelConfig)
 
 	// 接入增强能力 — LLM Reflection（降级到 SimpleReflection）
-	agentKernel.SetReflection(kernel.NewLLMReflection(gateway, kernel.NewSimpleReflection()))
+	agentKernel.SetReflection(kernel.NewLLMReflection(gateway))
 
 	// Skill actor (CSP, zero-lock)
 	skillActor := kernel.NewSkillActor(gateway)

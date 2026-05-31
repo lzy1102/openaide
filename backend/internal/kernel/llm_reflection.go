@@ -7,18 +7,15 @@ import (
 	"log/slog"
 )
 
-// LLMReflection 基于 LLM 调用的反思实现
-// 将执行记录发给 LLM 做结构化分析，比 SimpleReflection 的规则评估更准确
+// LLMReflection 基于 LLM 调用的反思实现。
+// 无降级：如果 LLM 不可用，agent 本身已无法工作，不应假装能打分。
 type LLMReflection struct {
-	llm      LLMProvider
-	fallback *SimpleReflection // LLM 不可用时的降级
+	llm LLMProvider
 }
 
-// NewLLMReflection 创建基于 LLM 的反思器
-// llm: 用于分析的 LLM 提供商（通常是 Gateway，带故障转移）
-// fallback: LLM 调用失败时的规则评估兜底
-func NewLLMReflection(llm LLMProvider, fallback *SimpleReflection) *LLMReflection {
-	return &LLMReflection{llm: llm, fallback: fallback}
+// NewLLMReflection 创建基于 LLM 的反思器。
+func NewLLMReflection(llm LLMProvider) *LLMReflection {
+	return &LLMReflection{llm: llm}
 }
 
 // reflectionTool 定义用于获取结构化反思结果的 tool calling schema
@@ -92,19 +89,19 @@ Analyze the execution and provide structured feedback. Be specific and actionabl
 		"max_tokens":  1000,
 	})
 	if err != nil {
-		slog.Debug("LLM reflection failed, using fallback", "error", err)
-		return r.fallback.Reflect(ctx, sessionID, execution)
+		slog.Warn("LLM reflection failed, skipping", "error", err)
+		return nil, err
 	}
 
 	if len(resp.ToolCalls) == 0 {
-		slog.Debug("LLM reflection returned no tool calls, using fallback")
-		return r.fallback.Reflect(ctx, sessionID, execution)
+		slog.Warn("LLM reflection returned no tool calls")
+		return nil, fmt.Errorf("no tool calls in reflection response")
 	}
 
 	result, parseErr := parseReflectionResult(resp.ToolCalls[0].Function.Arguments)
 	if parseErr != nil {
-		slog.Debug("Failed to parse LLM reflection result, using fallback", "error", parseErr)
-		return r.fallback.Reflect(ctx, sessionID, execution)
+		slog.Warn("Failed to parse LLM reflection result", "error", parseErr)
+		return nil, parseErr
 	}
 
 	return result, nil
