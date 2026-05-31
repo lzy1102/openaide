@@ -1,34 +1,38 @@
-# OpenAIDE 项目构建脚本
+# OpenAIDE — root Makefile delegates to backend
+.PHONY: all build install run test clean fmt lint help
 
-.PHONY: all build clean help
-
-# 版本号
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "latest")
 
-# 默认目标
 all: build
 
-# 构建后端
 build:
-	@echo "Building OpenAIDE..."
-	cd backend && $(MAKE) build
+	@$(MAKE) -C backend build
 
-# 运行测试
+install:
+	@$(MAKE) -C backend install
+
+run:
+	@$(MAKE) -C backend run
+
 test:
-	@echo "Running tests..."
-	cd backend && $(MAKE) test
+	@$(MAKE) -C backend test
 
-# 清理
 clean:
-	@echo "Cleaning..."
-	cd backend && $(MAKE) clean
+	@$(MAKE) -C backend clean
 
-# 帮助
+fmt:
+	@$(MAKE) -C backend fmt
+
+lint:
+	@$(MAKE) -C backend lint
+
 help:
-	@echo "OpenAIDE - Build commands:"
+	@echo "OpenAIDE $(VERSION)"
 	@echo ""
-	@echo "  make build    - Build backend server and CLI"
-	@echo "  make test     - Run tests"
-	@echo "  make clean    - Clean build artifacts"
-	@echo ""
-	@echo "See backend/Makefile for more commands"
+	@echo "  make build    Build binaries"
+	@echo "  make install  Build + install to PATH"
+	@echo "  make run      Start API server"
+	@echo "  make test     Run all tests"
+	@echo "  make clean    Remove build artifacts"
+	@echo "  make fmt      Format code"
+	@echo "  make lint     Run linter"
