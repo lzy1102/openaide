@@ -12,10 +12,19 @@ import (
 
 // MemoryActor is a CSP-style memory store backed by SQLite.
 // All data lives in a single goroutine — zero locks.
+// memVec holds an in-memory embedding for fast search.
+type memVec struct {
+	id  string
+	vec []float32
+}
+
+// MemoryActor is a CSP-style memory store backed by SQLite with
+// an in-memory vector cache. Search is pure in-memory.
 type MemoryActor struct {
 	super    *kernel.Actor
 	embedder kernel.Embedder
 	db       *sql.DB
+	cache    []memVec
 }
 
 // NewMemoryActor creates and starts a memory actor.
@@ -29,7 +38,10 @@ func NewMemoryActor(path string) (*MemoryActor, error) {
 		super: kernel.NewActor(64),
 		db:    db,
 	}
-	a.super.Send(func() { a.migrate() })
+	a.super.Send(func() {
+		a.migrate()
+		a.loadCache()
+	})
 	return a, nil
 }
 
@@ -68,6 +80,7 @@ func (a *MemoryActor) Save(ctx context.Context, sessionID string, messages []ker
 			a.db.ExecContext(ctx,
 				`INSERT INTO memory_items (id, session_id, content, level, embedding, created_at) VALUES (?, ?, ?, ?, ?, datetime('now'))`,
 				item.ID, item.SessionID, item.Content, int(item.Level), string(embJSON))
+			a.cache = append(a.cache, memVec{id: item.ID, vec: item.Embedding})
 		})
 	}
 	return nil
@@ -104,39 +117,33 @@ func (a *MemoryActor) Load(ctx context.Context, sessionID string, limit int) ([]
 	return messages, nil
 }
 
-// Search finds matching memories. Implements kernel.Memory.
+// Search finds matching memories using in-memory vector cache.
 func (a *MemoryActor) Search(ctx context.Context, query string, limit int) ([]kernel.Message, float64, error) {
 	var queryVec []float32
 	if a.embedder != nil {
 		queryVec, _ = a.embedder.Embed(ctx, query)
 	}
+	if limit <= 0 {
+		limit = 10
+	}
 
 	var messages []kernel.Message
 	var bestScore float64
 	a.super.Send(func() {
-		rows, _ := a.db.QueryContext(ctx, `SELECT content, embedding FROM memory_items`)
-		if rows == nil {
-			return
-		}
-		defer rows.Close()
 		type entry struct {
-			msg   kernel.Message
+			id    string
 			score float64
 		}
 		var entries []entry
-		for rows.Next() {
-			var content, embJSON string
-			rows.Scan(&content, &embJSON)
-			var emb []float32
-			json.Unmarshal([]byte(embJSON), &emb)
+		for _, dv := range a.cache {
 			score := float64(0)
-			if len(queryVec) > 0 && len(emb) == len(queryVec) {
-				score = kernel.CosineSimilarity(queryVec, emb)
+			if len(queryVec) > 0 && len(dv.vec) == len(queryVec) {
+				score = kernel.CosineSimilarity(queryVec, dv.vec)
 				if score < 0.5 {
 					continue
 				}
 			}
-			entries = append(entries, entry{kernel.Message{Role: "assistant", Content: content}, score})
+			entries = append(entries, entry{id: dv.id, score: score})
 		}
 		for i := 0; i < len(entries); i++ {
 			for j := i + 1; j < len(entries); j++ {
@@ -145,11 +152,11 @@ func (a *MemoryActor) Search(ctx context.Context, query string, limit int) ([]ke
 				}
 			}
 		}
-		if limit <= 0 {
-			limit = 10
-		}
+		// Fetch content for top results
 		for i := 0; i < len(entries) && len(messages) < limit; i++ {
-			messages = append(messages, entries[i].msg)
+			var content string
+			a.db.QueryRowContext(ctx, `SELECT content FROM memory_items WHERE id=?`, entries[i].id).Scan(&content)
+			messages = append(messages, kernel.Message{Role: "assistant", Content: content})
 			if entries[i].score > bestScore {
 				bestScore = entries[i].score
 			}
@@ -164,14 +171,52 @@ func (a *MemoryActor) Compress(ctx context.Context, sessionID string) error {
 		a.db.ExecContext(ctx,
 			`DELETE FROM memory_items WHERE id IN (SELECT id FROM memory_items WHERE session_id=? ORDER BY created_at ASC LIMIT max(0, (SELECT COUNT(*)-20 FROM memory_items WHERE session_id=?)))`,
 			sessionID, sessionID)
+		// Rebuild cache
+		a.loadCacheLocked()
 	})
 	return nil
+}
+
+// Delete removes a memory item.
+func (a *MemoryActor) Delete(ctx context.Context, id string) {
+	a.super.Send(func() {
+		a.db.ExecContext(ctx, `DELETE FROM memory_items WHERE id=?`, id)
+		for i, dv := range a.cache {
+			if dv.id == id {
+				a.cache = append(a.cache[:i], a.cache[i+1:]...)
+				break
+			}
+		}
+	})
 }
 
 // Stop shuts down the actor.
 func (a *MemoryActor) Stop() {
 	a.super.Stop()
 	a.db.Close()
+}
+
+func (a *MemoryActor) loadCache() {
+	a.loadCacheLocked()
+}
+
+func (a *MemoryActor) loadCacheLocked() {
+	rows, err := a.db.Query(`SELECT id, embedding FROM memory_items`)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	a.cache = nil
+	for rows.Next() {
+		var id, embJSON string
+		if err := rows.Scan(&id, &embJSON); err != nil {
+			continue
+		}
+		var emb []float32
+		if json.Unmarshal([]byte(embJSON), &emb) == nil {
+			a.cache = append(a.cache, memVec{id: id, vec: emb})
+		}
+	}
 }
 
 var _ kernel.Memory = (*MemoryActor)(nil)

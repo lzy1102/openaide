@@ -11,13 +11,19 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// Actor is a CSP-style knowledge base backed by SQLite.
-// All documents live in a single goroutine — zero locks.
-// Embedding calls run outside the actor.
+// docVector holds an in-memory embedding for fast search.
+type docVector struct {
+	id  string
+	vec []float32
+}
+
+// Actor is a CSP-style knowledge base backed by SQLite with an
+// in-memory vector cache. Search is pure in-memory cosine similarity.
 type Actor struct {
 	super    *kernel.Actor
 	embedder kernel.Embedder
 	db       *sql.DB
+	cache    []docVector // in-memory vector index
 }
 
 // NewActor creates and starts a knowledge actor.
@@ -31,7 +37,10 @@ func NewActor(path string) (*Actor, error) {
 		super: kernel.NewActor(64),
 		db:    db,
 	}
-	a.super.Send(func() { a.migrate() })
+	a.super.Send(func() {
+		a.migrate()
+		a.loadCache()
+	})
 	return a, nil
 }
 
@@ -66,52 +75,52 @@ func (a *Actor) Add(ctx context.Context, title, content, source string, tags []s
 		a.db.ExecContext(ctx,
 			`INSERT OR REPLACE INTO documents (id, title, content, source, tags, embedding) VALUES (?, ?, ?, ?, ?, ?)`,
 			doc.ID, doc.Title, doc.Content, doc.Source, string(tagsJSON), string(embJSON))
+		// Update in-memory cache
+		a.cache = append(a.cache, docVector{id: doc.ID, vec: doc.Embedding})
 	})
 	return doc, nil
 }
 
-// Search finds matching documents. Embedding runs OUTSIDE the actor.
+// Search finds matching documents using in-memory vector cache.
+// Embedding runs OUTSIDE the actor.
 func (a *Actor) Search(ctx context.Context, query string, limit int) ([]*Document, error) {
 	queryVec, hasVec := a.embedQuery(ctx, query)
+	if limit <= 0 {
+		limit = 10
+	}
 
 	var results []*Document
 	a.super.Send(func() {
-		if limit <= 0 {
-			limit = 10
-		}
-		rows, _ := a.db.QueryContext(ctx, `SELECT id, title, content, source, tags, embedding FROM documents ORDER BY rowid DESC LIMIT 200`)
-		if rows == nil {
-			return
-		}
-		defer rows.Close()
-
 		type scored struct {
-			doc   *Document
+			id    string
 			score float64
 		}
 		var candidates []scored
-		for rows.Next() {
-			var id, title, content, source, tagsJSON, embJSON string
-			if err := rows.Scan(&id, &title, &content, &source, &tagsJSON, &embJSON); err != nil {
-				continue
+		for _, dv := range a.cache {
+			score := float64(0.5)
+			if hasVec && len(dv.vec) == len(queryVec) {
+				score = kernel.CosineSimilarity(queryVec, dv.vec)
 			}
-			var emb []float32
-			json.Unmarshal([]byte(embJSON), &emb)
-			var tags []string
-			json.Unmarshal([]byte(tagsJSON), &tags)
-			doc := &Document{ID: id, Title: title, Content: content, Source: source, Tags: tags, Embedding: emb}
-
-			score := float64(0)
-			if hasVec && len(doc.Embedding) == len(queryVec) {
-				score = kernel.CosineSimilarity(queryVec, doc.Embedding)
-			} else {
-				score = 0.5
-			}
-			candidates = append(candidates, scored{doc, score})
+			candidates = append(candidates, scored{id: dv.id, score: score})
 		}
 		sort.Slice(candidates, func(i, j int) bool { return candidates[i].score > candidates[j].score })
+
 		for i := 0; i < len(candidates) && len(results) < limit; i++ {
-			results = append(results, candidates[i].doc)
+			row := a.db.QueryRowContext(ctx,
+				`SELECT id, title, content, source, tags, embedding FROM documents WHERE id=?`,
+				candidates[i].id)
+			var id, title, content, source, tagsJSON, embJSON string
+			if err := row.Scan(&id, &title, &content, &source, &tagsJSON, &embJSON); err != nil {
+				continue
+			}
+			var tags []string
+			json.Unmarshal([]byte(tagsJSON), &tags)
+			var emb []float32
+			json.Unmarshal([]byte(embJSON), &emb)
+			results = append(results, &Document{
+				ID: id, Title: title, Content: content,
+				Source: source, Tags: tags, Embedding: emb,
+			})
 		}
 	})
 	return results, nil
@@ -135,7 +144,16 @@ func (a *Actor) Get(ctx context.Context, id string) *Document {
 }
 
 func (a *Actor) Delete(ctx context.Context, id string) {
-	a.super.Send(func() { a.db.ExecContext(ctx, `DELETE FROM documents WHERE id=?`, id) })
+	a.super.Send(func() {
+		a.db.ExecContext(ctx, `DELETE FROM documents WHERE id=?`, id)
+		// Remove from cache
+		for i, dv := range a.cache {
+			if dv.id == id {
+				a.cache = append(a.cache[:i], a.cache[i+1:]...)
+				break
+			}
+		}
+	})
 }
 
 func (a *Actor) InjectContext(ctx context.Context, query string, maxTokens int) (string, []string, error) {
@@ -203,6 +221,26 @@ func (a *Actor) migrate() {
 		embedding TEXT DEFAULT '[]'
 	)`)
 	a.db.Exec(`CREATE INDEX IF NOT EXISTS idx_knowledge_title ON documents(title)`)
+}
+
+// loadCache loads all embeddings from SQLite into memory for fast search.
+func (a *Actor) loadCache() {
+	rows, err := a.db.Query(`SELECT id, embedding FROM documents`)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	a.cache = nil
+	for rows.Next() {
+		var id, embJSON string
+		if err := rows.Scan(&id, &embJSON); err != nil {
+			continue
+		}
+		var emb []float32
+		if json.Unmarshal([]byte(embJSON), &emb) == nil {
+			a.cache = append(a.cache, docVector{id: id, vec: emb})
+		}
+	}
 }
 
 func (a *Actor) embedQuery(ctx context.Context, query string) ([]float32, bool) {
