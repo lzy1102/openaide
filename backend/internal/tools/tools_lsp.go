@@ -86,17 +86,11 @@ func lspToolDefs() []kernel.ToolDefinition {
 }
 
 func clientForFile(filePath string) *lsp.Client {
-	switch strings.ToLower(filepath.Ext(filePath)) {
-	case ".go":
-		return activeLSPClients["go"]
-	case ".py":
-		return activeLSPClients["python"]
-	case ".ts", ".tsx":
-		return activeLSPClients["typescript"]
-	case ".js", ".jsx":
-		return activeLSPClients["javascript"]
+	lang := lsp.DetectLanguage(filePath)
+	if lang == "" {
+		return nil
 	}
-	return nil
+	return activeLSPClients[lang]
 }
 
 func handleLSPDefinition(ctx context.Context, args string) (*kernel.ToolResult, error) {

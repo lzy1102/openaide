@@ -341,27 +341,38 @@ func (app *Application) Stop(ctx context.Context) error {
 // startLSPServers auto-starts language servers for the current project.
 func startLSPServers() {
 	cwd, _ := os.Getwd()
+	entries, _ := os.ReadDir(cwd)
 
-	// Detect project language and start appropriate LSP
-	if entries, _ := os.ReadDir(cwd); entries != nil {
-		for _, e := range entries {
-			name := e.Name()
-			switch {
-			case name == "go.mod" && !e.IsDir():
-				if c, err := lsp.Start(cwd, "go"); err == nil {
-					tools.SetLSPClient("go", c)
+	// Project type → language mapping. Only start one server per project.
+	detectors := map[string]string{
+		"go.mod":          "go",
+		"Cargo.toml":      "rust",
+		"CMakeLists.txt":  "cpp",
+		"build.zig":       "zig",
+		"pyproject.toml":  "python",
+		"setup.py":        "python",
+		"requirements.txt": "python",
+		"Gemfile":         "ruby",
+		"composer.json":   "php",
+		"pom.xml":         "java",
+		"build.gradle":    "java",
+		"build.gradle.kts": "kotlin",
+		"build.sbt":       "scala",
+		"package.json":    "typescript",
+		".csproj":         "csharp",
+		"Package.swift":   "swift",
+	}
+
+	for _, e := range entries {
+		name := e.Name()
+		for indicator, lang := range detectors {
+			if name == indicator && !e.IsDir() {
+				if c, err := lsp.Start(cwd, lang); err == nil {
+					tools.SetLSPClient(lang, c)
+				} else {
+					slog.Debug("LSP server not available", "lang", lang, "error", err)
 				}
-				return
-			case (name == "pyproject.toml" || name == "setup.py" || name == "requirements.txt") && !e.IsDir():
-				if c, err := lsp.Start(cwd, "python"); err == nil {
-					tools.SetLSPClient("python", c)
-				}
-				return
-			case name == "package.json" && !e.IsDir():
-				if c, err := lsp.Start(cwd, "typescript"); err == nil {
-					tools.SetLSPClient("typescript", c)
-				}
-				return
+				return // Only one LSP per project
 			}
 		}
 	}

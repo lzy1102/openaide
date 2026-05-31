@@ -85,14 +85,50 @@ func Start(rootPath, language string) (*Client, error) {
 
 func serverCommand(language string) (*exec.Cmd, error) {
 	switch language {
+	// Systems languages
 	case "go":
 		return exec.Command("gopls", "serve"), nil
+	case "rust":
+		return exec.Command("rust-analyzer"), nil
+	case "c", "cpp":
+		return exec.Command("clangd"), nil
+	case "zig":
+		return exec.Command("zls"), nil
+
+	// Scripting languages
 	case "python":
 		return exec.Command("pylsp"), nil
+	case "ruby":
+		return exec.Command("solargraph", "stdio"), nil
+	case "lua":
+		return exec.Command("lua-lsp"), nil
+	case "php":
+		return exec.Command("intelephense", "--stdio"), nil
+
+	// JVM languages
+	case "java":
+		return exec.Command("jdtls"), nil
+	case "kotlin":
+		return exec.Command("kotlin-language-server"), nil
+	case "scala":
+		return exec.Command("metals-v2", "--stdio"), nil
+
+	// Web languages
 	case "typescript", "javascript":
 		return exec.Command("typescript-language-server", "--stdio"), nil
+	case "html", "css":
+		return exec.Command("vscode-html-languageserver", "--stdio"), nil
+
+	// .NET
+	case "csharp":
+		return exec.Command("omnisharp", "-lsp"), nil
+
+	// Apple
+	case "swift":
+		return exec.Command("sourcekit-lsp"), nil
+
 	default:
-		return nil, fmt.Errorf("unsupported language: %s", language)
+		return nil, fmt.Errorf("unsupported language: %s. Install the LSP server and add it here", language)
 	}
 }
 
@@ -101,12 +137,45 @@ func DetectLanguage(path string) string {
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".go":
 		return "go"
-	case ".py":
+	case ".rs":
+		return "rust"
+	case ".c", ".h":
+		return "c"
+	case ".cpp", ".cc", ".cxx", ".hpp", ".hxx":
+		return "cpp"
+	case ".zig":
+		return "zig"
+
+	case ".py", ".pyw":
 		return "python"
+	case ".rb":
+		return "ruby"
+	case ".lua":
+		return "lua"
+	case ".php":
+		return "php"
+
+	case ".java":
+		return "java"
+	case ".kt", ".kts":
+		return "kotlin"
+	case ".scala":
+		return "scala"
+
 	case ".ts", ".tsx":
 		return "typescript"
-	case ".js", ".jsx":
+	case ".js", ".jsx", ".mjs":
 		return "javascript"
+	case ".html", ".htm":
+		return "html"
+	case ".css", ".scss", ".less":
+		return "css"
+
+	case ".cs":
+		return "csharp"
+	case ".swift":
+		return "swift"
+
 	default:
 		return ""
 	}
