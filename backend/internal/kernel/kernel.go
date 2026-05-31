@@ -5,9 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -271,24 +269,23 @@ func (k *AgentKernel) buildMessages(ctx context.Context, session *Session, query
 		}
 	}
 
-	// L4: Previous-round reflection
+	// L5: Previous-round reflection (dynamic tail)
 	if session.Metadata != nil {
 		if ref, ok := session.Metadata["reflection"]; ok {
 			if r, ok := ref.(*ReflectionResult); ok && r != nil {
-				hint := fmt.Sprintf("[Reflection] Quality:%d/10", r.Quality)
-				if len(r.Issues) > 0 { hint += fmt.Sprintf(" Issues:%s", strings.Join(r.Issues, ";")) }
-				if len(r.Suggestions) > 0 { hint += fmt.Sprintf(" Tips:%s", strings.Join(r.Suggestions, ";")) }
-				messages = append(messages, Message{Role: "system", Content: hint})
+				if l5 := promptL5(r); l5 != "" {
+					messages = append(messages, Message{Role: "system", Content: l5})
+				}
 			}
 			delete(session.Metadata, "reflection")
 		}
 	}
 
-	// L5b: Cross-session learner insights
+	// L4: Cross-session learner insights (dynamic tail)
 	if k.learner != nil {
 		insights, _ := k.learner.GetInsights(ctx, query.Content)
-		if len(insights) > 0 {
-			messages = append(messages, Message{Role: "system", Content: "[Learned] " + strings.Join(insights, " | ")})
+		if l4 := promptL4(insights); l4 != "" {
+			messages = append(messages, Message{Role: "system", Content: l4})
 		}
 	}
 
@@ -307,45 +304,27 @@ func (k *AgentKernel) buildMessages(ctx context.Context, session *Session, query
 // ── Layer Builders ──────────────────────────────────────────
 // Each layer has a clear activation condition and injection point.
 
-// buildSystemLayer (L0+L1+L2+L5): Identity + Rules + Project Context + Skill
+// buildSystemLayer assembles layered prompts L0+L1+L3 as stable prefix.
+// L2 (skill) is injected here. L4+L5 are dynamic tail in buildMessages.
 func (k *AgentKernel) buildSystemLayer(query *Query) string {
-	sp := k.systemPrompt.Load().(string)
-
-	// L5: Skill prompt injection (activated by keyword match on query)
-	if k.skillActor != nil {
-		sp = k.skillActor.InjectPrompt(query.Content, sp)
-	}
-	if sp == "" { return "" }
-
-	// L2: Project context (always injected, short)
-	cwd, _ := os.Getwd()
-	if k.queryOptions != nil && k.queryOptions.WorkingDir != "" {
-		cwd = k.queryOptions.WorkingDir
-	}
-	gitNote := ""
-	if out, err := runGitCmd("rev-parse", "--abbrev-ref", "HEAD"); err == nil && out != "" {
-		gitNote = fmt.Sprintf(" (branch: %s)", out)
-	}
-	sp += fmt.Sprintf("\n\n[WorkingDir] %s%s", cwd, gitNote)
-
-	// L2b: Project rules (OPENAIDE.md, CLAUDE.md, etc.)
-	ruleFiles := []string{"OPENAIDE.md", "CLAUDE.md", "CODEBUDDY.md", "CONVENTIONS.md", ".github/copilot-instructions.md"}
-	if entries, _ := os.ReadDir(filepath.Join(cwd, ".cursor/rules")); entries != nil {
-		for _, e := range entries {
-			if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
-				ruleFiles = append(ruleFiles, ".cursor/rules/"+e.Name())
+	// If user has a custom file-based system prompt, use it instead of layers
+	if sp := k.systemPrompt.Load().(string); sp != "" {
+		// Check if it's NOT one of our layered default prompts
+		if !containsAny(sp, "Coding Mode", "Review Mode", "Teaching Mode", "Research Mode",
+			"编码模式", "审查模式", "教学模式", "研究模式") {
+			if k.skillActor != nil {
+				sp = k.skillActor.InjectPrompt(query.Content, sp)
 			}
+			return sp
 		}
 	}
-	for _, name := range ruleFiles {
-		data, err := os.ReadFile(filepath.Join(cwd, name))
-		if err != nil || len(data) == 0 { continue }
-		sp += fmt.Sprintf("\n\n[Rules:%s]\n%s", name, string(data))
-	}
 
-	// L2c: RepoMap project symbol map (5-min TTL cache)
-	if repoMap := GenerateRepoMap(cwd); repoMap != "" {
-		sp += "\n\n" + repoMap
+	// Build layered stable prefix (L0+L1+L3)
+	sp := k.buildSystemPrompt(query)
+
+	// L2: Skill prompt injection
+	if k.skillActor != nil {
+		sp = k.skillActor.InjectPrompt(query.Content, sp)
 	}
 
 	return sp

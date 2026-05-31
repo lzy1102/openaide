@@ -6,173 +6,314 @@ import (
 	"strings"
 )
 
-func defaultSystemPromptEN() string {
-	return `You are OpenAIDE, an AI assistant.
+// ── Layered Prompt System ──────────────────────────────────
+// Layers are assembled dynamically based on task context.
+// Simple queries get L0+L1 (~300 tokens). Complex tasks get all layers.
+//
+//   L0: Identity + Safety       (always, ~200 tok)
+//   L1: Project Context         (OPENAIDE.md etc., ~100 tok)
+//   L2: Skill Prompt            (skill match, ~100-500 tok)
+//   L3: Task Adapter            (coding/research/review, ~200 tok)
+//   L4: Learned Experience      (learner insights, ~100 tok)
+//   L5: Reflection Improvement  (last reflection, ~100 tok)
 
-## Core Principles
-- Your role adapts to the task — programmer, writer, analyst, teacher… switch as needed
-- When uncertain about facts: look them up, don't guess
-- When beyond your capability: say "I'm not sure" and suggest alternatives
-- Complex tasks: plan first, then execute. Simple questions: answer directly
+// ── L0: Identity + Safety (always loaded) ─────────────────
 
-## Thinking Process
-1. Understand → 2. Choose perspective → 3. Gather info → 4. Plan → 5. Execute & Verify → 6. Deliver
+func promptL0_EN() string {
+	return `You are OpenAIDE, a versatile AI coding assistant.
 
-## Capabilities
-- Can: read files, write code, search web, query knowledge base, run commands, Git
-- Can: spawn sub-agent teams (/analyst /coder /reviewer /executor /team)
-- Can: deep-plan complex tasks (research→propose→plan→execute→verify)
-- Limit: no destructive commands, irreversible ops need confirmation
-- Limit: RepoMap is auto-injected — no need to explore directory structure
+## Core
+- Adapt to the task: programmer, reviewer, researcher, teacher.
+- If unsure: look it up. Don't guess.
+- If beyond capability: say so and suggest alternatives.
+- Complex tasks: plan first. Simple questions: answer directly.
 
-## Response Style
-1. Lead with the conclusion, support with bullet points
-2. Label code blocks with language, bold key info
-3. Never regurgitate raw tool output — extract and summarize
-4. Simple questions: 1-3 sentences. Complex: structured sections
-5. Match the user's language
-
-## When to Stop
-1. Enough info → answer immediately, stop searching
-2. 3-5 key files → deliver conclusion
-3. Same operation fails twice → explain why, suggest alternative
-4. After round 4 → prioritize output over more tools
-
-## Common Mistakes & Fixes
-
-1. Over-researching
-❌ Reading 8 files and still not delivering a conclusion
-✅ Read 3-5 key files, then summarize
-
-2. Regurgitating tool output
-❌ "File contents:\n[code block: 100 lines]\n"
-✅ "Key findings: 1) Entry at main.go:42 2) Config in config.yaml"
-
-3. Guessing without verification
-❌ "Based on experience, this error is because…" (didn't check!)
-✅ "Let me check." → Use tools to verify → Give evidence-based answer
-
-4. Ignoring stop conditions
-❌ Still reading files at round 6
-✅ Start delivering at round 4, even if imperfect`
+## Safety
+- Never execute destructive commands without explicit confirmation.
+- Never modify files outside the project directory.
+- File writes and command execution require approval.`
 }
 
-
-
-func defaultSystemPromptZH() string {
-	return `你是 OpenAIDE，一个 AI 智能助手。
+func promptL0_ZH() string {
+	return `你是 OpenAIDE，一个多功能的 AI 编程助手。
 
 ## 核心原则
-- 用户需求决定你的角色——程序员、作家、分析师、教师…任何身份按需切换
-- 遇到不确定的事实：用工具查，不要猜
-- 超出能力范围：诚实说"我不确定"，给出替代建议
-- 复杂任务先规划再执行，简单问题直接回答
+- 根据任务切换角色：程序员、审查者、研究者、教师
+- 不确定时查阅，不要猜测
+- 超出能力时承认并建议替代方案
+- 复杂任务先规划，简单问题直接回答
 
-## 思考方式
-1. 理解意图 → 2. 选择视角 → 3. 收集信息 → 4. 制定方案 → 5. 执行验证 → 6. 交付结果
-
-## 能力边界
-- 可以：读文件、写代码、搜索网页、查知识库、执行命令、Git 操作
-- 可以：调用子 Agent 团队协作（/analyst /coder /reviewer /executor /team）
-- 可以：深度规划复杂任务（研究→方案对比→计划→执行→验证）
-- 限制：不执行破坏性命令，不可逆操作需确认
-- 限制：项目文件地图（RepoMap）已自动注入，无需重复探索目录结构
-
-## 回复风格
-1. 结论先行，用要点展开
-2. 代码标注语言，关键信息粗体
-3. 禁止复述工具输出原文——提炼后用自己话总结
-4. 简单问题 1-3 句，复杂问题分段展开
-5. 中文环境用中文回复，代码/术语保留原文
-
-## 何时停止
-1. 信息足够 → 立即给答案，不再搜索
-2. 3-5 个关键文件后 → 给出结论
-3. 同一操作失败 2 次 → 说明原因，换方案
-4. 第 4 轮以后 → 优先输出结论
-
-## 常见错误与正确做法
-
-1. 过度研究
-❌ 读了 8 个文件还在继续读，不输出结论
-✅ 读 3-5 个关键文件后立即总结
-
-2. 复述工具输出
-❌ "文件内容如下：\n[代码块: 100行源码]\n"
-✅ "关键发现：1) 入口在 main.go:42 2) 配置在 config.yaml"
-
-3. 不确定时瞎编
-❌ "根据经验，这个错误是因为…"（没查！）
-✅ "让我查一下。" → 用工具验证 → 给出有依据的答案
-
-4. 忽略停止条件
-❌ 第 6 轮还在读文件
-✅ 第 4 轮开始给结论，哪怕不完美`
+## 安全
+- 执行破坏性命令前必须确认
+- 不要修改项目目录外的文件
+- 文件写入和命令执行需要审批`
 }
 
+// ── L1: Project Context ────────────────────────────────────
 
+func promptL1() string {
+	cwd, _ := os.Getwd()
+	var sb strings.Builder
+	sb.WriteString("\n[WorkingDir] ")
+	sb.WriteString(cwd)
 
-// defaultSystemPrompt returns the default prompt in the detected language.
-func defaultSystemPrompt() string {
-	if IsZhEnv() {
-		return defaultSystemPromptZH()
+	// Git branch
+	if out, err := runGitCmd("rev-parse", "--abbrev-ref", "HEAD"); err == nil && out != "" {
+		sb.WriteString("\n[Git] branch: ")
+		sb.WriteString(out)
 	}
-	return defaultSystemPromptEN()
+
+	// Project rules (OPENAIDE.md, CLAUDE.md, etc.)
+	ruleFiles := []string{"CLAUDE.md", "OPENAIDE.md", "CODEBUDDY.md", "CONVENTIONS.md"}
+	for _, f := range ruleFiles {
+		if data, err := os.ReadFile(filepath.Join(cwd, f)); err == nil && len(data) > 0 {
+			content := string(data)
+			if len(content) > 2000 {
+				content = content[:2000] + "..."
+			}
+			sb.WriteString("\n[Rules] ")
+			sb.WriteString(f)
+			sb.WriteString(":\n")
+			sb.WriteString(content)
+			break // Only load the first found rule file
+		}
+	}
+
+	// RepoMap symbol map
+	if rm := GenerateRepoMap(cwd); rm != "" {
+		sb.WriteString("\n[RepoMap]\n")
+		sb.WriteString(rm)
+	}
+	return sb.String()
 }
 
-// IsZhEnv reports whether the system locale is Chinese.
-func IsZhEnv() bool {
-	for _, env := range []string{"LANG", "LC_MESSAGES", "LC_ALL"} {
-		if strings.Contains(strings.ToLower(os.Getenv(env)), "zh") {
+// ── L2: Skill Prompt ───────────────────────────────────────
+
+// L2 is injected by SkillActor.InjectPrompt. Defined here for completeness.
+
+// ── L3: Task Adapter ────────────────────────────────────────
+
+func promptL3_EN(task string) string {
+	switch {
+	case containsAny(task, "code", "fix", "refactor", "implement", "write", "bug", "test",
+		"代码", "修复", "重构", "实现", "写", "测试", "改", "build", "add", "create", "function",
+		"api", "endpoint", "handler", "route", "component", "module", "class", "struct", "interface"):
+		return `
+## Coding Mode
+- Write clean, idiomatic code following existing project conventions.
+- Handle errors explicitly. Never swallow errors silently.
+- Add tests for new functionality when appropriate.
+- Use the project's existing patterns — don't introduce new styles.`
+
+	case containsAny(task, "review", "audit", "check", "security", "vulnerability",
+		"审查", "审计", "检查", "安全", "漏洞", "review", "pr", "diff"):
+		return `
+## Review Mode
+- Check for: correctness, security, performance, readability, edge cases.
+- Flag potential issues with concrete suggestions.
+- Look for: SQL injection, XSS, race conditions, nil pointers, resource leaks.
+- Verify error handling is complete and appropriate.`
+
+	case containsAny(task, "explain", "how", "what", "why", "document", "tutorial",
+		"解释", "怎么", "为什么", "文档", "教程", "介绍", "describe"):
+		return `
+## Teaching Mode
+- Lead with a clear, simple explanation.
+- Use examples and analogies where helpful.
+- Answer the "why" — not just the "how".
+- Structure: concept → example → deeper details (if needed).`
+
+	case containsAny(task, "research", "investigate", "analyze", "compare", "options",
+		"研究", "调查", "分析", "比较", "方案", "design", "architecture"):
+		return `
+## Research Mode
+- Gather information before forming conclusions.
+- Verify information from multiple sources when possible.
+- Present findings with clear pros/cons and your reasoning.
+- Cite specific files and code where relevant.`
+
+	default:
+		return ""
+	}
+}
+
+func promptL3_ZH(task string) string {
+	switch {
+	case containsAny(task, "code", "fix", "refactor", "implement", "write", "bug", "test",
+		"代码", "修复", "重构", "实现", "写", "测试", "改", "build", "add", "create"):
+		return `
+## 编码模式
+- 遵循项目已有的编码规范和模式。
+- 显式处理错误，永远不要静默吞掉异常。
+- 适当时为新功能添加测试。
+- 不引入与项目风格不一致的新写法。`
+
+	case containsAny(task, "review", "audit", "check", "security", "vulnerability",
+		"审查", "审计", "检查", "安全", "漏洞", "review", "pr", "diff"):
+		return `
+## 审查模式
+- 检查：正确性、安全性、性能、可读性、边界条件。
+- 发现潜在问题时给出具体改进建议。
+- 关注：SQL注入、XSS、竞态条件、空指针、资源泄漏。
+- 验证错误处理是否完整和恰当。`
+
+	case containsAny(task, "explain", "how", "what", "why", "document", "tutorial",
+		"解释", "怎么", "为什么", "文档", "教程", "介绍", "describe"):
+		return `
+## 教学模式
+- 先用清晰简洁的语言解释核心概念。
+- 使用示例和类比来帮助理解。
+- 解释"为什么"而不仅仅是"怎么做"。
+- 结构：概念 → 示例 → 深入细节（如需）。`
+
+	case containsAny(task, "research", "investigate", "analyze", "compare", "options",
+		"研究", "调查", "分析", "比较", "方案", "design", "architecture"):
+		return `
+## 研究模式
+- 先收集信息，再形成结论。
+- 尽可能从多个来源交叉验证。
+- 列出清晰的优劣分析和推理过程。
+- 引用具体的文件和代码行。`
+
+	default:
+		return ""
+	}
+}
+
+// ── L4: Learned Experience ─────────────────────────────────
+
+func promptL4(insights []string) string {
+	if len(insights) == 0 {
+		return ""
+	}
+	sb := new(strings.Builder)
+	sb.WriteString("\n## Project Knowledge\n")
+	for _, insight := range insights {
+		sb.WriteString("- ")
+		sb.WriteString(insight)
+		sb.WriteString("\n")
+	}
+	return sb.String()
+}
+
+// ── L5: Reflection Improvement ─────────────────────────────
+
+func promptL5(reflection *ReflectionResult) string {
+	if reflection == nil || reflection.Quality == 0 {
+		return ""
+	}
+	sb := new(strings.Builder)
+	sb.WriteString("\n## Lessons from Last Execution")
+	if len(reflection.Issues) > 0 {
+		sb.WriteString("\nIssues to avoid:")
+		for _, issue := range reflection.Issues {
+			sb.WriteString("\n- ")
+			sb.WriteString(issue)
+		}
+	}
+	if len(reflection.Suggestions) > 0 {
+		sb.WriteString("\nImprovements to apply:")
+		for _, s := range reflection.Suggestions {
+			sb.WriteString("\n- ")
+			sb.WriteString(s)
+		}
+	}
+	if reflection.Learned != "" {
+		sb.WriteString("\nKey lesson: ")
+		sb.WriteString(reflection.Learned)
+	}
+	return sb.String()
+}
+
+// ── Builders ────────────────────────────────────────────────
+
+// buildSystemPrompt assembles the stable prompt prefix (L0+L1+L3).
+// L0 and L1 are always present. L3 adapts to the task type.
+// L2 (skill), L4 (learner), L5 (reflection) are injected as dynamic tail
+// in buildMessages for prompt cache efficiency.
+func (k *AgentKernel) buildSystemPrompt(query *Query) string {
+	zh := isZhEnv()
+	var sb strings.Builder
+
+	// L0: Identity + Safety (always)
+	if zh {
+		sb.WriteString(promptL0_ZH())
+	} else {
+		sb.WriteString(promptL0_EN())
+	}
+
+	// L1: Project context
+	if l1 := promptL1(); l1 != "" {
+		sb.WriteString(l1)
+	}
+
+	// L3: Task adapter (based on query content)
+	if zh {
+		if l3 := promptL3_ZH(query.Content); l3 != "" {
+			sb.WriteString(l3)
+		}
+	} else {
+		if l3 := promptL3_EN(query.Content); l3 != "" {
+			sb.WriteString(l3)
+		}
+	}
+
+	return sb.String()
+}
+
+// ── Helpers ─────────────────────────────────────────────────
+
+func containsAny(s string, keywords ...string) bool {
+	lower := strings.ToLower(s)
+	for _, kw := range keywords {
+		if strings.Contains(lower, kw) {
 			return true
 		}
 	}
 	return false
 }
 
-// IsFirstRun 检查是否首次启动（system.md 和 system.{lang}.md 都不存在）
-func IsFirstRun(promptsDir string) bool {
-	if _, err := os.Stat(filepath.Join(promptsDir, fileName(""))); err == nil {
-		return false
+// defaultSystemPrompt returns the default system prompt based on locale.
+func defaultSystemPrompt() string {
+	if isZhEnv() {
+		return promptL0_ZH()
 	}
-	if _, err := os.Stat(filepath.Join(promptsDir, fileName(langSuffix()))); err != nil {
-		return true
-	}
-	return false
+	return promptL0_EN()
 }
 
-// WriteSystemPrompt 写入自定义系统提示词
-func WriteSystemPrompt(promptsDir string, content string) error {
-	os.MkdirAll(promptsDir, 0755)
-	return os.WriteFile(filepath.Join(promptsDir, fileName("")), []byte(content), 0644)
-}
-
-// LoadSystemPrompt 从文件加载系统提示词，文件不存在时写入默认值
-// 优先级：system.{lang}.md > system.md > 硬编码默认值
-func LoadSystemPrompt(promptsDir string) string {
-	// 1. 语言特定文件
-	path := filepath.Join(promptsDir, fileName(langSuffix()))
-	if data, err := os.ReadFile(path); err == nil && len(data) > 0 {
+// LoadSystemPrompt loads a custom system prompt from a directory.
+// Looks for system.{lang}.md first, then system.md, then falls back to default.
+func LoadSystemPrompt(dir string) string {
+	// Try language-specific file
+	suffix := "en"
+	if isZhEnv() {
+		suffix = "zh"
+	}
+	if data, err := os.ReadFile(filepath.Join(dir, "system."+suffix+".md")); err == nil && len(data) > 0 {
 		return string(data)
 	}
-	// 2. 通用文件（向后兼容）
-	genericPath := filepath.Join(promptsDir, fileName(""))
-	if data, err := os.ReadFile(genericPath); err == nil && len(data) > 0 {
+	// Try generic file
+	if data, err := os.ReadFile(filepath.Join(dir, "system.md")); err == nil && len(data) > 0 {
 		return string(data)
 	}
-	// 3. 写入默认文件
-	os.MkdirAll(promptsDir, 0755)
-	os.WriteFile(path, []byte(defaultSystemPrompt()), 0644)
-	return defaultSystemPrompt()
+	return ""
 }
 
-func langSuffix() string {
-	if IsZhEnv() {
-		return ".zh"
+// WriteSystemPrompt writes a custom system prompt to disk.
+func WriteSystemPrompt(dir, prompt string) error {
+	os.MkdirAll(dir, 0755)
+	suffix := "en"
+	if isZhEnv() {
+		suffix = "zh"
 	}
-	return ".en"
+	return os.WriteFile(filepath.Join(dir, "system."+suffix+".md"), []byte(prompt), 0644)
 }
 
-func fileName(suffix string) string {
-	return "system" + suffix + ".md"
+func isZhEnv() bool {
+	lang := os.Getenv("LANG")
+	if lang == "" {
+		lang = os.Getenv("LC_ALL")
+	}
+	return strings.HasPrefix(lang, "zh")
 }
+
