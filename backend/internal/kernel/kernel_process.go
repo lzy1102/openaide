@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 )
@@ -349,10 +350,14 @@ func (k *AgentKernel) doReflection(ctx context.Context, sessionID, query, respon
 				}
 				session.Metadata["patterns"] = patterns
 				if err := k.sessionStore.Update(ctx, session); err != nil {
-		slog.Warn("session update failed", "error", err)
-	}
-
+					slog.Warn("session update failed", "error", err)
 				}
+
+				// Auto-extract skills from recurring high-confidence patterns
+				if k.skillActor != nil {
+					go k.extractSkillsFromPatterns(context.Background(), patterns)
+				}
+			}
 		}
 	}
 
@@ -398,4 +403,36 @@ func (k *AgentKernel) autoSaveKnowledge(ctx context.Context, sessionID, query, r
 	} else if _, err := k.knowledgeCollector.AddKnowledge(ctx, query, response, "auto-extract", []string{"session:" + sessionID}); err != nil {
 		slog.Debug("Auto knowledge save failed", "error", err)
 	}
+}
+
+// extractSkillsFromPatterns analyzes detected patterns and auto-creates skills
+// for recurring successful patterns.
+func (k *AgentKernel) extractSkillsFromPatterns(ctx context.Context, patterns []Pattern) {
+	if k.skillActor == nil {
+		return
+	}
+	for _, p := range patterns {
+		// Only create skills for patterns with high confidence AND frequency >= 3
+		if p.Confidence < 0.7 || p.Frequency < 3 {
+			continue
+		}
+		skillID := "auto-" + strings.ToLower(strings.ReplaceAll(p.Type, " ", "-"))
+		skillName := capitalize(p.Type)
+		desc := p.Description
+		if len(desc) > 100 {
+			desc = desc[:100]
+		}
+		keywords := strings.Fields(strings.ToLower(p.Type))
+		k.skillActor.AddSkill(skillID, skillName, desc,
+			fmt.Sprintf("Auto-detected from %d successful executions. %s", p.Frequency, p.Description),
+			keywords)
+		slog.Info("Auto-extracted skill", "id", skillID, "name", skillName, "frequency", p.Frequency)
+	}
+}
+
+func capitalize(s string) string {
+	if s == "" { return s }
+	runes := []rune(s)
+	runes[0] = []rune(strings.ToUpper(string(runes[0])))[0]
+	return string(runes)
 }
