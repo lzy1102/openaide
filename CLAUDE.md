@@ -10,27 +10,22 @@ LLM 在处理任何请求前自动获得此文件内容，无需手动探索项�
 ## Common commands
 
 ```bash
-# Build both binaries (openaide-server, openaide)
+# Build both binaries → bin/openaide + bin/openaide-server
 make build
-# or from backend/
-cd backend && make build
 
 # Run all tests
 make test
 # or a single package
 cd backend && go test -v ./internal/kernel/...
 
-# Run tests with coverage
-cd backend && make test-coverage
-
 # Format and lint
-cd backend && make fmt
-cd backend && make lint
+make fmt
+make lint
 
-# Run the server locally
-cd backend && make run
+# Run the server
+make run
 
-# Run the CLI interactively
+# Run the CLI
 cd backend && go run ./cmd/cli
 ```
 
@@ -55,6 +50,7 @@ cmd/server (API server)          cmd/cli (interactive CLI)
 
 - **`backend/cmd/server/main.go`** — Production server. Loads config from `~/.openaide/config.yaml`, starts the HTTP API server.
 - **`backend/cmd/cli/main.go`** — Interactive CLI. **REPL mode** (rich terminal readline with markdown rendering, pterm styling). `-c` flag resumes last session. On first run, triggers interactive onboarding (`onboard.go`). One-shot mode: `openaide "fix this bug"`.
+- **`backend/cmd/cli/setup.go`** — `openaide setup` interactive configuration wizard. Step-by-step: language → provider → API key → model → SearXNG. Auto-generates valid `config.yaml` with dual-model setup and tests connection.
 - **`backend/cmd/cli/onboard.go`** — First-run onboarding. Template questions (role/style/language) → `NewApplication()` → LLM interview (2-round open-ended dialogue) → generates custom `system.md` → hot-reloads via `SetSystemPrompt()`.
 
 ### Layered design
@@ -77,6 +73,7 @@ cmd/server (API server)          cmd/cli (interactive CLI)
      - `skill_actor.go` — SkillActor (LLM detection outside actor)
      - `embedder.go` — Embedder interface + CosineSimilarity (canonical, avoids circular import)
      - `safemap.go` — SafeMap[K,V] generic concurrent map (replaces map+RWMutex)
+   - `saga.go` — RunSaga() for cross-actor transactional compensation
    - `interfaces.go` — All kernel-level interfaces
    - `types.go` — Shared types: `Message`, `ToolCall`, `Query`, `Response`, `StreamChunk`, `Event`, `Session`
    - Other files: `llm_reflection.go` (reasoning model), `learner.go`, `pattern.go`, `compress.go`, `checkpoint.go` (actor), `approval.go`, `adaptive.go`, `tracer.go` (actor)

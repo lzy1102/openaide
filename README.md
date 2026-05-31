@@ -12,7 +12,10 @@ Go 编写的 AI Agent 内核，提供 **REPL 命令行** + **Web 前端** + **HT
 # 一键安装
 curl -fsSL https://raw.githubusercontent.com/lzy1102/openaide/master/install.sh | bash
 
-# 编辑 API Key
+# 交互式配置（推荐）
+openaide setup
+
+# 或手动编辑 API Key
 vi ~/.openaide/config.yaml
 
 # 启动
@@ -43,6 +46,7 @@ make build
 
 ```bash
 openaide              # REPL 交互模式
+openaide setup        # 交互式配置向导（推荐首次使用）
 openaide -c           # 恢复上次会话
 openaide "问题"        # 一次性问答
 openaide --verbose    # 调试模式
