@@ -31,7 +31,7 @@ curl -o install.bat https://raw.githubusercontent.com/lzy1102/openaide/master/in
 install.bat
 ```
 
-详细说明见 [使用指南](docs/USAGE.md)。
+详细说明见 [使用指南](docs/USAGE.md)。远程访问见 [远程部署指南](docs/REMOTE_ACCESS.md)。
 
 ### 源码编译
 
