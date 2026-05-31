@@ -100,6 +100,9 @@ func parseFlags(args []string) cliFlags {
 		case a == "plugins":
 			cmdPlugins(args[i+1:])
 			os.Exit(0)
+		case a == "setup":
+			cmdSetup()
+			os.Exit(0)
 		case !strings.HasPrefix(a, "-"):
 			positional = append(positional, a)
 		}
@@ -246,6 +249,7 @@ func printHelp() {
 	fmt.Println(lang.T("cli.verbose"))
 	fmt.Println(lang.T("cli.sessions"))
 	fmt.Println(lang.T("cli.update"))
+	fmt.Println(lang.T("cli.setup"))
 	fmt.Println()
 	fmt.Println(lang.T("cli.examples"))
 	fmt.Println(lang.T("cli.ex_oneshot"))

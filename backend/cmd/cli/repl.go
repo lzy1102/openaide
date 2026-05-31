@@ -389,7 +389,17 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string,
 	}
 	stream, err := app.Orchestrator.ProcessQueryStream(ctx, "cli-user", "default", query, opts)
 	if err != nil {
-		PrintError(fmt.Sprintf("%v", err))
+		errMsg := err.Error()
+		switch {
+		case strings.Contains(errMsg, "no provider configured"):
+			PrintError("No LLM provider configured. Run 'openaide setup' or edit ~/.openaide/config.yaml")
+		case strings.Contains(errMsg, "401") || strings.Contains(errMsg, "unauthorized"):
+			PrintError("API key rejected. Check your API key in ~/.openaide/config.yaml")
+		case strings.Contains(errMsg, "timeout") || strings.Contains(errMsg, "deadline"):
+			PrintError("LLM request timed out. Check your network or try a different model.")
+		default:
+			PrintError(errMsg)
+		}
 		cancel()
 		return
 	}
@@ -774,10 +784,13 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 			info := app.LLMGateway.GetProviderInfos()
 			if len(info) == 0 { PrintInfo(lang.T("repl.no_models")); return }
 
+			fmt.Printf("  %sProviders:%s\n", cBold, cReset)
 			var options []string
 			for _, p := range info {
 				m := " "; if p.Default { m = "●" }
-				options = append(options, fmt.Sprintf("%s  %s  %s", m, p.Name, p.Model))
+				label := fmt.Sprintf("%s  %s  %s", m, p.Name, p.Model)
+				if p.Default { label += "  (default)" }
+				options = append(options, label)
 			}
 
 			result, _ := pterm.DefaultInteractiveSelect.
