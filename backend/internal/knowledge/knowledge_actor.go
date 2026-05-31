@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"math/rand"
 	"sort"
+	"strings"
 
 	"openaide/backend/internal/kernel"
 
@@ -25,12 +27,16 @@ type docVector struct {
 type Actor struct {
 	super    *kernel.Actor
 	embedder kernel.Embedder
+	llm      kernel.LLMProvider // optional: refines knowledge
 	db       *sql.DB
 	cache    []docVector
-	proj     [][]float32         // random projection vectors
-	buckets  [][]int             // bucketID → cache indices
+	proj     [][]float32 // random projection vectors
+	buckets  [][]int     // bucketID → cache indices
 	dim      int
 }
+
+// SetLLM injects an LLM for knowledge refinement.
+func (a *Actor) SetLLM(llm kernel.LLMProvider) { a.super.Send(func() { a.llm = llm }) }
 
 // NewActor creates and starts a knowledge actor.
 func NewActor(path string) (*Actor, error) {
@@ -228,6 +234,96 @@ func (a *Actor) initProjections() {
 	}
 }
 
+// Refine deduplicates, summarizes, and stores knowledge from an agent response.
+// Returns the stored document ID, or empty string if filtered out.
+func (a *Actor) Refine(ctx context.Context, query, response string, sessionID string) string {
+	// Step 1: check for near-duplicate
+	if a.embedder != nil && a.embedder.Dimension() > 0 {
+		vec, err := a.embedder.Embed(ctx, query)
+		if err == nil && len(vec) > 0 {
+			var bestID string
+			var bestScore float64
+			a.super.Send(func() {
+				for _, dv := range a.cache {
+					if len(dv.vec) == len(vec) {
+						s := kernel.CosineSimilarity(vec, dv.vec)
+						if s > bestScore {
+							bestScore = s
+							bestID = dv.id
+						}
+					}
+				}
+			})
+			if bestScore > 0.85 && bestID != "" {
+				// Merge: update existing entry with new response as additional content
+				a.super.Send(func() {
+					a.db.ExecContext(ctx, `UPDATE documents SET content = content || '\n\n---\n' || ? WHERE id = ?`, response, bestID)
+				})
+				return bestID
+			}
+		}
+	}
+
+	// Step 2: refine with LLM (if available)
+	title := query
+	content := response
+	shouldStore := true
+
+	if a.llm != nil {
+		var result struct {
+			Title       string   `json:"title"`
+			Facts       []string `json:"facts"`
+			Files       []string `json:"files"`
+			Errors      []string `json:"errors"`
+			Decisions   []string `json:"decisions"`
+			ShouldStore bool     `json:"should_store"`
+		}
+		prompt := fmt.Sprintf(`Extract key knowledge from this AI agent response. Keep only technically valuable information.
+
+Query: %s
+
+Response: %s
+
+Reply with JSON only:
+{"title": "5-10 word summary", "facts": ["key fact"], "files": ["file.go"], "errors": [], "decisions": [], "should_store": true}
+
+Set should_store=false if the response is just pleasantries or has no lasting value.`, truncateStr(query, 200), truncateStr(response, 2000))
+
+		resp, err := a.llm.Chat(ctx, []kernel.Message{
+			{Role: "user", Content: prompt},
+		}, nil, map[string]interface{}{"max_tokens": 500, "temperature": 0.2, "route": "execution", "no_thinking": true})
+		if err == nil && resp.Content != "" {
+			if json.Unmarshal([]byte(resp.Content), &result) == nil {
+				title = result.Title
+				if len(result.Facts) > 0 {
+					content = ""
+					for _, f := range result.Facts {
+						content += "• " + f + "\n"
+					}
+				}
+				if len(result.Files) > 0 {
+					content += "\nFiles: " + stringsJoin(result.Files, ", ")
+				}
+				shouldStore = result.ShouldStore
+			}
+		}
+	}
+
+	if !shouldStore {
+		return ""
+	}
+
+	// Step 3: store refined knowledge
+	if len(title) > 120 {
+		title = title[:120]
+	}
+	tags := []string{"refined", "session:" + sessionID}
+	if _, err := a.Add(ctx, title, content, "auto-refine", tags); err != nil {
+		return ""
+	}
+	return title
+}
+
 func (a *Actor) Get(ctx context.Context, id string) *Document {
 	var doc *Document
 	a.super.Send(func() {
@@ -385,5 +481,15 @@ func dotProduct(a, b []float32) float64 {
 	}
 	return sum
 }
+
+func truncateStr(s string, n int) string {
+	runes := []rune(s)
+	if len(runes) <= n {
+		return s
+	}
+	return string(runes[:n]) + "..."
+}
+
+func stringsJoin(ss []string, sep string) string { return strings.Join(ss, sep) }
 
 var _ kernel.KnowledgeCollector = (*Actor)(nil)

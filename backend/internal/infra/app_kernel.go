@@ -107,6 +107,7 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 		return nil, nil, fmt.Errorf("knowledge actor: %w", kerr)
 	}
 	kAct.SetEmbedder(embedder)
+	kAct.SetLLM(gateway)
 	agentKernel.SetKnowledgeCollector(kAct)
 	agentKernel.SetQualityGate(feedback.NewGate())
 

@@ -390,17 +390,12 @@ func (k *AgentKernel) autoSaveKnowledge(ctx context.Context, sessionID, query, r
 		}
 	}
 
-	// 存入知识库
-	title := query
-	if len(title) > 80 {
-		title = title[:80] + "..."
-	}
-	tags := []string{"auto", "session:" + sessionID}
-	if reflectResult != nil && reflectResult.Quality >= 7 {
-		tags = append(tags, "high-quality")
-	}
-
-	if _, err := k.knowledgeCollector.AddKnowledge(ctx, title, response, "auto-extract", tags); err != nil {
+	// 存入知识库 — 使用精炼管道（去重 + LLM 精炼 + 结构化存储）
+	if refiner, ok := k.knowledgeCollector.(interface {
+		Refine(ctx context.Context, query, response, sessionID string) string
+	}); ok {
+		refiner.Refine(ctx, query, response, sessionID)
+	} else if _, err := k.knowledgeCollector.AddKnowledge(ctx, query, response, "auto-extract", []string{"session:" + sessionID}); err != nil {
 		slog.Debug("Auto knowledge save failed", "error", err)
 	}
 }
