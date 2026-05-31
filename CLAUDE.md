@@ -65,14 +65,30 @@ cmd/server (API server)          cmd/cli (interactive CLI)
    - `app_kernel.go` — `createKernel()` — kernel + all enhancements. Claude skills injection (`DiscoverClaudeSkills()` → `AddClaudeSkill()`). Claude hooks wiring (`DiscoverClaudeHooks()` → `agentKernel.Subscribe()` with shell execution).
    - `app_channels.go` — `setupChannels()` — webhook/Feishu/Telegram, task queue
 
-2. **`backend/internal/kernel/`** (split from single monolithic file):
-   - `kernel.go` — `AgentKernel` struct, Config, constructor, all Set* methods, state management, event system, session/message/tool helpers. Includes `SetSystemPrompt()` for hot-reloading prompts at runtime.
-   - `kernel_process.go` — `Process()` sync path + `doReflection()` + `autoSaveKnowledge()`
-   - `kernel_stream.go` — `ProcessStream()` streaming path (now has skill manager tool filter parity with Process)
-   - `kernel_prompt.go` — `defaultSystemPrompt{EN,ZH}()` hardcoded defaults, `LoadSystemPrompt(dir)` file-based loading with language suffix (`system.zh.md`/`system.en.md`), `IsFirstRun()`, `WriteSystemPrompt()`, `IsZhEnv()`
+2. **`backend/internal/kernel/`** — Core agent kernel with CSP actor architecture:
+   - `kernel.go` — `AgentKernel` struct, Config, constructor, state management, event system. Lock-free via atomic.Value for prompt/state/events.
+   - `kernel_process.go` — `Process()` sync path + `doReflection()` + `autoSaveKnowledge()` + `extractSkillsFromPatterns()`
+   - `kernel_stream.go` — `ProcessStream()` streaming path. Tool partitioning with parallel-safe batching.
+   - `kernel_prompt.go` — `defaultSystemPrompt{EN,ZH}()` hardcoded defaults, file-based loading
+   - `kernel_react.go` — Shared ReAct helpers: prepareReActRound, partitionToolCalls, executeToolBatch
+   - **CSP Actors** (zero-lock, single-goroutine ownership):
+     - `actor.go` — Generic Actor + ActorStore[K,V] reusable pattern
+     - `session_actor.go` — SessionActor (SQLite-backed)
+     - `skill_actor.go` — SkillActor (LLM detection outside actor)
+     - `embedder.go` — Embedder interface + CosineSimilarity (canonical, avoids circular import)
+     - `safemap.go` — SafeMap[K,V] generic concurrent map (replaces map+RWMutex)
    - `interfaces.go` — All kernel-level interfaces
    - `types.go` — Shared types: `Message`, `ToolCall`, `Query`, `Response`, `StreamChunk`, `Event`, `Session`
-   - Other files: `reflection.go`, `llm_reflection.go`, `learner.go`, `pattern.go`, `compress.go`, `checkpoint.go`, `approval.go`, `adaptive.go`, `session_store.go`, `skill.go`, `skill_evolution.go`, `tracer.go`
+   - Other files: `llm_reflection.go` (reasoning model), `learner.go`, `pattern.go`, `compress.go`, `checkpoint.go` (actor), `approval.go`, `adaptive.go`, `tracer.go` (actor)
+   - Legacy (not default): `session_store.go`, `skill.go`, `skill_evolution.go`, `sqlite_store.go`, `reflection.go`
+
+3. **`backend/internal/knowledge/`** — Knowledge base:
+   - `knowledge_actor.go` — KnowledgeActor (SQLite + in-memory vector index + random projection bucketing)
+   - `knowledge.go` — Legacy file-based knowledge (not default)
+
+4. **`backend/internal/memory/`** — Memory store:
+   - `memory_actor.go` — MemoryActor (SQLite + in-memory vector cache, batch embedding)
+   - `memory.go` — Legacy file-based memory (not default)
 
 3. **`backend/internal/tools/`** (9 files) — Tool definitions and handlers split by domain:
    - `registry.go` — `Registry` framework, `BuiltinTools()` concatenates domain-specific defs, `BuiltinHandlers()`, `RegisterBuiltins()`, `safeAbsPath()`, `formatBytes()`
@@ -119,34 +135,15 @@ All judgment calls now delegated to LLM, with rule-based fallbacks:
 - **Planner**: removed "≤5 subtasks" limit; LLM decides appropriate count
 - **Compress**: replaced generic "error" substring with specific error markers
 
-### Concurrency safety (audited and fixed)
+### Concurrency architecture
 
-- **`session_store.go`** — `SessionStoreAdapter` has `sync.RWMutex` protecting all 5 map-access methods (was missing, would fatal-panic under concurrent access).
-- **`dag.go`** — `completed` map read moved inside `mu.Lock()` to prevent data race with concurrent writes.
-- **`event.go`** — `events` slice capped at 10,000 via FIFO eviction; handler goroutines bounded by semaphore (max 32 concurrent).
-- **`browser.go`** — `allocCancel` stored instead of discarded. `ShutdownBrowser()` added and called from `Application.Stop()` (was leaking Chrome processes).
-- **`mcp.go`** — `stdout.Scan()` wrapped in goroutine with 30s timeout + `Process.Kill()` on timeout (was holding mutex across blocking I/O, could deadlock).
-- **`kernel.go`** — `publishEvent()` handler goroutines have 5s timeout (was fire-and-forget, could accumulate).
-- **`anthropic_provider.go`** — Stream goroutine channel sends guarded by `select { case <-resultChan: case <-ctx.Done() }` (was missing, could block forever).
-- **`websocket.go`** — Heartbeat goroutine uses `done` channel for clean exit (was relying on write failure alone).
-- **`indexer.go`** — All `Lock/Unlock` pairs use `defer` (3 places were manual, could leak on panic).
-- **`cache.go`** — All `json.Marshal`/`os.WriteFile` errors now logged. `Shutdown()` stops cleanup goroutine. `Gateway.Shutdown()` wired to `Application.Stop()`.
-- **`ratelimit.go`** — `time.Tick` replaced with `time.NewTicker` + `Shutdown()` (was unleakable goroutine).
-- **`checkpoint.go`** — Max 5 checkpoints per session, auto-deletes old ones (was unbounded growth).
-- **`kernel_stream.go`** — Main stream goroutine has `defer recover()` with error relay to prevent silent crashes.
-- **`kernel_process.go`** — Synthesis calls use flash model (`route: "execution"`) to avoid DeepSeek thinking budget competition.
-- **`api.go`** — Session authorization: verify `user_id` before GET/DELETE. `sendSSE()` handles marshal errors. `sanitizeParam()` prevents path traversal. Duplicate `/api/v1/state` endpoint removed.
-- **`orchestration/orchestrator.go`** — `RunSubAgent` uses unique userID with nanosecond timestamp for true session isolation.
+**From locks to CSP**: Refactored from 50 shared-memory locks to 19. Core stateful modules use CSP actor pattern (single goroutine owns data, external access via channels). Read-heavy single values use atomic.Value. Write-once-read-many maps use SafeMap[K,V].
 
-- **`session_store.go`** — `SessionStoreAdapter` has `sync.RWMutex` protecting all 5 map-access methods (was missing, would fatal-panic under concurrent access).
-- **`dag.go`** — `completed` map read moved inside `mu.Lock()` to prevent data race with concurrent writes.
-- **`event.go`** — `events` slice capped at 10,000 via FIFO eviction (was unbounded, would memory-leak on long-running servers).
-- **`browser.go`** — `allocCancel` stored instead of discarded. `ShutdownBrowser()` added and called from `Application.Stop()` (was leaking Chrome processes).
-- **`mcp.go`** — `stdout.Scan()` wrapped in goroutine with 30s timeout + `Process.Kill()` on timeout (was holding mutex across blocking I/O, could deadlock).
-- **`kernel.go`** — `publishEvent()` handler goroutines have 5s timeout (was fire-and-forget, could accumulate).
-- **`anthropic_provider.go`** — Stream goroutine channel sends guarded by `select { case <-resultChan: case <-ctx.Done() }` (was missing, could block forever).
-- **`websocket.go`** — Heartbeat goroutine uses `done` channel for clean exit (was relying on write failure alone).
-- **`indexer.go`** — All `Lock/Unlock` pairs use `defer` (3 places were manual, could leak on panic).
+Key fixes from audit:
+- **Deadlock**: SkillManager RLock held during LLM call → fixed by moving LLM call outside actor
+- **Deadlock**: RepoMap Write Lock → RLock reentrancy on same mutex → fixed by removing inner lock
+- **Goroutine leaks**: browser Chrome processes, rate limiter ticker, prompt cache cleanup → all fixed
+- **Missing error handling**: Stream goroutine panic recovery, channel send ctx.Done() guards → all added
 
 ### LLM Context Compression
 
@@ -292,18 +289,17 @@ openaide --verbose 2>&1 | grep -i "claude\|plugin\|hook"
 
 ```
 ~/.openaide/config.yaml       ← global config (LLM providers, keys, server port)
-~/.openaide/data/              ← global data (cfg.Storage.DataDir, default "~/.openaide/data")
+~/.openaide/data/              ← global data (default ~/.openaide/data)
+├── sessions.db                ← SessionActor (SQLite, WAL mode)
+├── knowledge.db               ← KnowledgeActor (SQLite + vector index)
+├── memory.db                  ← MemoryActor (SQLite + vector cache)
 ├── prompts/
 │   ├── system.zh.md / system.en.md  ← system prompt (auto-generated, user-editable)
-├── sessions/                  ← file-persisted (crash-recoverable, last 50 msgs)
-├── memory/                    ← L1/L2/L3 JSON memory
-├── knowledge/                 ← knowledge base + embeddings
-├── skills/                    ← custom skills (JSON)
-├── plugins/                   ← plugin configs
-├── checkpoints/               ← session checkpoints (full history)
-├── traces.jsonl               ← execution traces
-├── events/                    ← persisted events
-└── cache/                     ← prompt cache
+├── plugins/                   ← Claude-format plugins
+├── checkpoints/               ← session checkpoints (JSON files)
+├── traces.jsonl               ← execution traces (append-only)
+├── events/                    ← persisted events (optional)
+└── cache/                     ← prompt cache (in-memory LRU, 500 entries)
 ```
 
 **Provider config**: Two providers recommended for Architect/Editor pattern:
@@ -316,8 +312,13 @@ providers:
     default_model: deepseek-v4-flash
     timeout: 120
 model_routing:
-  reasoning: deepseek-v4-pro   # analyst, reviewer
+  reasoning: deepseek-v4-pro   # analyst, reviewer, reflection
   execution: deepseek-v4-flash # coder, executor, synthesis, classification
+
+# Storage: default is SQLite
+storage:
+  data_dir: ~/.openaide/data
+  session_store: sqlite        # "sqlite" (default), "file", "memory"
 ```
 
 ### CLI (REPL)
@@ -327,13 +328,14 @@ model_routing:
   - Readline with history, tab completion, hints
   - Markdown rendering via glamour (headers, code blocks with Chroma, tables)
   - pterm: progress bars, spinners, colored messages
-  - Collapsible tool sections (read-only tools folded into one line)
+  - Claude-style approval: 3-option select (Allow/Allow All/Deny)
   - Smart routing: PreviewPlan → direct ReAct or team execution
   - Streaming display: tool summary line, answer rendered after completion
-  - Slash commands: `/analyst`, `/coder`, `/reviewer`, `/executor`, `/team`
+  - Slash commands: `/analyst`, `/coder`, `/reviewer`, `/executor`, `/team`, `/auto`
   - Session resume: `-c` flag loads last non-empty session
+  - Version display: `openaide --version` shows build info from ldflags
 - `cmd/cli/repl_output.go` — pterm/ANSI styling, glamour renderer, output helpers
-- `cmd/cli/utils.go` — logRing buffer, trunc helper
+- `cmd/cli/repl.go` — main REPL loop, session management, slash commands
 
 ### Budget injection (Claude Code style)
 
@@ -350,6 +352,57 @@ Instead of hard-capping ReAct rounds and forcing synthesis, the LLM sees remaini
 - Synthesis/summarization → flash
 - Skill detect, adaptive rounds estimation → flash (`route: "execution"`)
 - `pickModel()` in orchestrator; `findProviderForModel()` in gateway auto-matches provider
+
+### CSP Actor Architecture (Go-native concurrency)
+
+All stateful modules use Go's CSP model: each module owns its data in a single goroutine, and external access goes through channels. **Zero locks** for core data paths. Lock count reduced from 50→19.
+
+| Module | Actor | Backend | Notes |
+|--------|-------|---------|-------|
+| Sessions | `SessionActor` | SQLite (`sessions.db`) | WAL mode, search, pagination |
+| Skills | `SkillActor` | In-memory | LLM detection outside actor |
+| Memory | `MemoryActor` | SQLite (`memory.db`) | Batch embedding, vector cache |
+| Knowledge | `Actor` | SQLite (`knowledge.db`) | Vector index, bucketed ANN search |
+| Checkpoint | `FileCheckpointer` | File JSONL | Actor serializes file access |
+| Tracer | `FileTracer` | File JSONL | Actor serializes file access |
+| Rate Limit | `RateLimiter` | In-memory | Token bucket via channel |
+
+**Pattern**: `NewActor(bufSize)` → `Send(fn)` / `SendAsync(fn)` → `Stop()`. Each actor is a `for { select { case cmd := <-ch } }` loop.
+
+**SafeMap[K,V]**: Generic wrapper around `RWMutex + map[K]V`. Used for write-once-read-many maps (gateway providers, plugin registry, channel handlers, MCP clients, auth tokens).
+
+**atomic.Value**: Used for read-heavy single-value state (systemPrompt, kernel state, language, tool registry).
+
+### Knowledge Accumulation Pipeline
+
+After each ReAct loop:
+
+```
+Response → doReflection (reasoning model) → quality score 1-10
+  → score ≥ 6: autoSaveKnowledge
+    → KnowledgeActor.Refine()
+      → Dedup (cosine > 0.85 → merge)
+      → LLM refinement (extract title + facts + files + errors + decisions)
+      → Store in knowledge.db
+  → patterns detected: extractSkillsFromPatterns()
+    → confidence ≥ 0.7, frequency ≥ 3 → auto-create skill in SkillActor
+```
+
+### Storage Layout
+
+```
+~/.openaide/data/
+├── sessions.db        ← SessionActor (SQLite, default)
+├── knowledge.db       ← KnowledgeActor (SQLite)
+├── memory.db          ← MemoryActor (SQLite)
+├── prompts/           ← system.{lang}.md
+├── plugins/           ← Claude-format plugins
+├── skills/            ← custom skills
+├── traces.jsonl       ← execution traces
+├── checkpoints/       ← session checkpoints
+├── events/            ← persisted events (optional)
+└── cache/             ← prompt cache (in-memory LRU, 500 entries)
+```
 
 ### Tool concurrency safety
 
