@@ -15,12 +15,14 @@ deps:
 	go mod download
 
 # 编译（当前平台）
+# Always use -o to output to bin/ — never run bare 'go build' in cmd dirs.
+LDFLAGS = -s -w -X main.Version=$(VERSION) -X main.BuildTime=$(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 build:
 	@echo "Building..."
 	@# Embed frontend into server binary (go:embed in cmd/server/frontend.go)
 	@rm -rf cmd/server/frontend 2>/dev/null; cp -r ../frontend cmd/server/frontend
-	CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide-server ./cmd/server
-	CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide ./cmd/cli
+	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o bin/openaide-server ./cmd/server
+	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o bin/openaide ./cmd/cli
 	@rm -rf cmd/server/frontend
 
 # 安装到系统路径
@@ -46,28 +48,28 @@ build-all:
 
 build-linux-amd64:
 	@echo "Building Linux amd64..."
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide-linux-amd64 ./cmd/cli
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide-server-linux-amd64 ./cmd/server
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o bin/openaide-linux-amd64 ./cmd/cli
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o bin/openaide-server-linux-amd64 ./cmd/server
 
 build-linux-arm64:
 	@echo "Building Linux arm64..."
-	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide-linux-arm64 ./cmd/cli
-	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide-server-linux-arm64 ./cmd/server
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o bin/openaide-linux-arm64 ./cmd/cli
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o bin/openaide-server-linux-arm64 ./cmd/server
 
 build-windows-amd64:
 	@echo "Building Windows amd64..."
-	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide-windows-amd64.exe ./cmd/cli
-	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide-server-windows-amd64.exe ./cmd/server
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o bin/openaide-windows-amd64.exe ./cmd/cli
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o bin/openaide-server-windows-amd64.exe ./cmd/server
 
 build-darwin-amd64:
 	@echo "Building macOS amd64..."
-	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide-darwin-amd64 ./cmd/cli
-	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide-server-darwin-amd64 ./cmd/server
+	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o bin/openaide-darwin-amd64 ./cmd/cli
+	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o bin/openaide-server-darwin-amd64 ./cmd/server
 
 build-darwin-arm64:
 	@echo "Building macOS arm64 (Apple Silicon)..."
-	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide-darwin-arm64 ./cmd/cli
-	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/openaide-server-darwin-arm64 ./cmd/server
+	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o bin/openaide-darwin-arm64 ./cmd/cli
+	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o bin/openaide-server-darwin-arm64 ./cmd/server
 
 # 运行
 run:
@@ -91,6 +93,8 @@ clean:
 	@echo "Cleaning..."
 	rm -rf bin/
 	rm -f coverage.out coverage.html
+	# Remove any stray binaries accidentally compiled in source dirs
+	find cmd -type f -executable -delete 2>/dev/null || true
 	go clean
 
 # 代码格式化
