@@ -92,12 +92,6 @@ lint:
 	@which golangci-lint > /dev/null || go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 	golangci-lint run ./...
 
-# 代码检查
-lint:
-	@echo "Running linter..."
-	@which golangci-lint > /dev/null || go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-	golangci-lint run ./...
-
 # Docker 构建
 docker-build:
 	@echo "Building Docker image..."
