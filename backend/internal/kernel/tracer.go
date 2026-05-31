@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"sync"
 	"time"
 )
 
@@ -80,14 +79,14 @@ type spanInfo struct {
 	name      string
 }
 
-// FileTracer 基于 JSONL 文件的跟踪器
+// FileTracer 基于 JSONL 文件的跟踪器 — CSP actor
 type FileTracer struct {
-	mu       sync.Mutex
-	file     *os.File
-	encoder  *json.Encoder
-	buffer   []*TraceEvent
-	bufSize  int
-	nextID   int64
+	actor   *Actor
+	file    *os.File
+	encoder *json.Encoder
+	buffer  []*TraceEvent
+	bufSize int
+	nextID  int64
 }
 
 // FileTracerConfig 文件跟踪器配置
@@ -115,6 +114,7 @@ func NewFileTracer(cfg FileTracerConfig) (*FileTracer, error) {
 		bufSize = 10
 	}
 	return &FileTracer{
+		actor:   NewActor(8),
 		file:    f,
 		encoder: json.NewEncoder(f),
 		buffer:  make([]*TraceEvent, 0, bufSize),
@@ -123,22 +123,26 @@ func NewFileTracer(cfg FileTracerConfig) (*FileTracer, error) {
 }
 
 func (t *FileTracer) genID() string {
-	t.mu.Lock()
-	id := t.nextID
-	t.nextID++
-	t.mu.Unlock()
-	return fmt.Sprintf("trace_%d", id)
+	ch := make(chan string, 1)
+	t.actor.Send(func() {
+		id := t.nextID
+		t.nextID++
+		ch <- fmt.Sprintf("trace_%d", id)
+	})
+	return <-ch
 }
 
 func (t *FileTracer) Record(ctx context.Context, event *TraceEvent) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	t.buffer = append(t.buffer, event)
-	if len(t.buffer) >= t.bufSize {
-		return t.flushLocked()
-	}
-	return nil
+	ch := make(chan error, 1)
+	t.actor.Send(func() {
+		t.buffer = append(t.buffer, event)
+		if len(t.buffer) >= t.bufSize {
+			ch <- t.flushLocked()
+		} else {
+			ch <- nil
+		}
+	})
+	return <-ch
 }
 
 func (t *FileTracer) StartSpan(ctx context.Context, sessionID string, eventType TraceEventType, name string) context.Context {
@@ -189,9 +193,9 @@ func (t *FileTracer) EndSpan(ctx context.Context, output interface{}, err error)
 }
 
 func (t *FileTracer) Flush(ctx context.Context) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return t.flushLocked()
+	ch := make(chan error, 1)
+	t.actor.Send(func() { ch <- t.flushLocked() })
+	return <-ch
 }
 
 func (t *FileTracer) flushLocked() error {
@@ -208,12 +212,17 @@ func (t *FileTracer) flushLocked() error {
 }
 
 func (t *FileTracer) Close() error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if err := t.flushLocked(); err != nil {
-		return err
-	}
-	return t.file.Close()
+	ch := make(chan error, 1)
+	t.actor.Send(func() {
+		if err := t.flushLocked(); err != nil {
+			ch <- err
+			return
+		}
+		ch <- t.file.Close()
+	})
+	err := <-ch
+	t.actor.Stop()
+	return err
 }
 
 // NoopTracer 空操作跟踪器 - 不记录任何事件
