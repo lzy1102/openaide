@@ -1,3 +1,15 @@
+# Build output
+bin/
 
-cmd/server/frontend/
+# Compiled binaries (accidental 'go build' without -o in cmd dirs)
 cmd/cli/cli
+cmd/server/server
+cmd/*/data/
+
+# Frontend embed (copied by Makefile before build)
+cmd/server/frontend/
+
+# IDE
+.idea/
+.vscode/
+*.swp
