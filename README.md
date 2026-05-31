@@ -105,6 +105,8 @@ log:
 | `llm.providers` | 提供商列表 | `[]` |
 | `memory.data_dir` | 记忆数据目录 | `./data/memory` |
 | `kernel.max_rounds` | 最大 ReAct 轮数（安全上限，默认50） | `50` |
+| `storage.data_dir` | 数据目录 | `~/.openaide/data` |
+| `storage.session_store` | 会话存储：`sqlite`/`file`/`memory` | `sqlite` |
 | `log.level` | 日志级别：`debug`/`info`/`warn`/`error` | `info` |
 
 ### 支持的 LLM 提供商
@@ -156,20 +158,22 @@ openaide-server
 ~/.openaide/
 ├── bin/
 │   ├── openaide-server      # API 服务器
-│   └── openaide         # 命令行客户端
+│   └── openaide             # 命令行客户端
 ├── config.yaml              # 用户配置
-├── data/                    # 用户数据
-│   ├── memory/              # 记忆
-│   ├── sessions/            # 会话
-│   └── knowledge/           # 知识库
+├── data/                    # 用户数据 (SQLite)
+│   ├── sessions.db          # 会话 (SQLite, WAL)
+│   ├── knowledge.db         # 知识库 (SQLite + 向量索引)
+│   ├── memory.db            # 记忆 (SQLite + 批量嵌入)
+│   ├── plugins/             # Claude Code 格式插件
+│   ├── prompts/             # 系统提示词
+│   ├── traces.jsonl         # 执行追踪
+│   └── checkpoints/         # 会话检查点
 ├── logs/                    # 日志
 ├── backend/                 # 源代码 (如本地编译)
 │   ├── cmd/
 │   ├── internal/
 │   └── ...
 ├── docs/                    # 文档
-├── scripts/
-│   └── update.sh            # 更新脚本
 ├── install.sh               # Linux/macOS 安装脚本
 ├── install.bat              # Windows 批处理安装
 ├── install.ps1              # Windows PowerShell 安装
@@ -206,16 +210,19 @@ git push origin v1.0.0
 - **ProjectMind 持续学习**: 跨会话积累项目知识，纠正/衰减/清零，越用越聪明
 
 ### 核心架构
-- **REPL 模式**: 逐行流式渲染 + @file/@*.go 引用 + 模糊搜索 + 多选勾选 + 会话标题 + Git 指示
-- **Web 前端**: 流式聊天 + 仪表盘 + 模型配置 + 设置管理 + 项目管理 + 多语言 + 暗色模式
+- **CSP Actor 模型**: Session/Skill/Memory/Knowledge 全采用 Go 原生 CSP (channel 通信)，50→19 锁
+- **SQLite 存储**: 会话/知识/记忆统一存储在 `.db` 文件中（WAL 模式，并发安全）
+- **向量搜索**: 内存向量缓存 + 随机投影分桶 ANN（O(n/256) 近似检索）
+- **知识积累管线**: 反思打分 → 去重合并 → LLM 精炼 → 结构化存储 → 自动技能提取
+- **REPL 模式**: Claude 式审批（允许/全部允许/拒绝）、@file 引用、版本显示
+- **Web 前端**: 流式聊天 + 仪表盘 + 模型配置 + 设置管理 + 多语言 + 暗色模式
 - **Computer Use**: 桌面截图+点击+键盘+拖拽 + 浏览器坐标操作（Linux/macOS/Windows）
-- **搜索**: DuckDuckGo + SearXNG（自部署，聚合多引擎，无 API Key）
 - **34个内置工具**: 文件/Git/命令/搜索/知识库/浏览器/桌面控制/任务管理（跨平台）
 - **多 Agent Team**: /analyst /coder /reviewer /executor /team，独立会话+模型路由
 - **DeepPlan 深度规划**: 研究→方案对比→选择→计划→执行→自修正闭环
 - **LLM 全决策引擎**: 角色分配/风险评估/技能检测全部由 LLM 判断
-- **工具并发安全分区**: 只读工具并行，写工具串行
-- **会话检查点**: 文件 JSON，崩溃可恢复
+- **插件系统**: Claude Code 官方格式 (skills/MCP/hooks)，支持热加载
+- **MCP 协议**: JSON-RPC stdio，外部工具生态
 
 ### Web 前端
 - **4 个页面**: 对话、仪表盘、模型配置、设置管理

@@ -5,7 +5,8 @@
 ## 技术栈
 
 - **Go 1.25**, 纯标准库 `net/http` (非 Gin)
-- **文件 JSON 存储** (非 GORM/SQLite)
+- **SQLite 存储** (WAL 模式，modernc.org/sqlite 纯 Go，CGO_ENABLED=0)
+- **CSP Actor 模型**: 核心状态模块采用单 goroutine + channel 通信，50→19 锁
 - **REPL**: lmorg/readline v4 + glamour (Markdown) + pterm (富文本)
 - **LLM**: OpenAI 兼容协议 + Anthropic 原生 API
 - **WebSocket**: gorilla/websocket
@@ -51,18 +52,17 @@ cmd/server (API 服务器)       cmd/cli (交互式 REPL)
 
 | 特性 | 说明 |
 |------|------|
-| **REPL 模式** | lmorg/readline + 历史 + Tab 补全 + glamour Markdown 渲染 + pterm 样式 |
+| **CSP Actor 模型** | Session/Skill/Memory/Knowledge 采用 Go 原生 channel 通信，50→19 锁 |
+| **SQLite 存储** | 会话/知识/记忆统一 SQLite WAL，纯 Go 实现 |
+| **向量搜索** | 内存向量缓存 + 随机投影分桶 ANN |
+| **知识积累** | 反思→去重→LLM精炼→结构化存储→自动技能提取 |
+| **REPL 模式** | lmorg/readline + 历史 + Tab 补全 + Claude 式审批 + glamour |
 | **Architect/Editor 路由** | analyst/reviewer → reasoning (pro)，coder/executor → execution (flash) |
 | **DeepPlan 深度规划** | Research → Propose → Select → Plan → Execute → Review |
 | **Team 多 Agent** | /analyst /coder /reviewer /executor /team，独立会话 + 模型路由 |
 | **LLM 决策引擎** | 角色分配/风险评估/技能检测/复杂度估算全部由 LLM 判断 |
-| **22 个内置工具** | 文件读写/命令执行/Git 深度/知识库/符号索引/浏览器/多模态 |
-| **工具并发安全** | 只读工具并行，写工具串行 |
-| **预算注入** | LLM 感知剩余轮次，主动收敛 |
-| **RepoMap** | 项目符号地图自动注入 prompt |
-| **Lint/Repair 循环** | 代码修改后自动 lint → 错误反馈 LLM → 循环直到干净 |
-| **ProjectMind** | 跨会话积累项目知识 |
-| **插件系统** | Claude Code 官方格式兼容 (skills/MCP/hooks) |
+| **34 个内置工具** | 文件/Git/命令/搜索/知识库/浏览器/桌面/多模态 |
+| **插件系统** | Claude Code 官方格式兼容 (skills/MCP/hooks)，热加载 |
 | **MCP 协议** | JSON-RPC stdio，外部工具生态 |
 | **Web 前端** | 流式聊天 + 项目管理 + 配置编辑 + 多语言 + 暗色模式 |
-| **API Server** | REST + SSE + WebSocket，16 个端点 |
+| **API Server** | REST + SSE + WebSocket + Prometheus /metrics |
