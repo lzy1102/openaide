@@ -4,19 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sync"
 
 	"openaide/backend/internal/kernel"
 )
 
 // ── User Clarification Tool ─────────────────────────────────
-// Allows the agent to ask the user follow-up questions when
-// instructions are ambiguous or more information is needed.
+// Uses a buffered channel — CSP, zero locks.
 
-var (
-	pendingQuestions []string
-	questionMu       sync.Mutex
-)
+var pendingQuestions = make(chan string, 32)
 
 func askToolDefs() []kernel.ToolDefinition {
 	return []kernel.ToolDefinition{
@@ -52,9 +47,10 @@ func handleAskUser(ctx context.Context, arguments string) (*kernel.ToolResult, e
 	}
 	json.Unmarshal([]byte(arguments), &args)
 
-	questionMu.Lock()
-	pendingQuestions = append(pendingQuestions, args.Question)
-	questionMu.Unlock()
+	select {
+	case pendingQuestions <- args.Question:
+	default:
+	}
 
 	msg := fmt.Sprintf("// ❓ Question for user: %s\n", args.Question)
 	if len(args.Options) > 0 {
@@ -68,11 +64,15 @@ func handleAskUser(ctx context.Context, arguments string) (*kernel.ToolResult, e
 	return &kernel.ToolResult{Content: msg}, nil
 }
 
-// GetPendingQuestions returns any unanswered questions from the agent
+// GetPendingQuestions drains the channel and returns all pending questions.
 func GetPendingQuestions() []string {
-	questionMu.Lock()
-	defer questionMu.Unlock()
-	q := pendingQuestions
-	pendingQuestions = nil
-	return q
+	var questions []string
+	for {
+		select {
+		case q := <-pendingQuestions:
+			questions = append(questions, q)
+		default:
+			return questions
+		}
+	}
 }

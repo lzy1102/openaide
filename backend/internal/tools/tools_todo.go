@@ -5,25 +5,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"sync"
 
 	"openaide/backend/internal/kernel"
 )
 
 // ── Agent Todo Management (Claude Code style) ───────────────
-// Enables the agent to track progress during complex multi-step tasks.
-// The todo list is per-session, stored in memory (not persisted across restarts).
+// Uses a CSP ActorStore — zero locks.
 
 type todoItem struct {
-	ID       int    `json:"id"`
-	Content  string `json:"content"`
-	Status   string `json:"status"` // pending, in_progress, completed
+	ID      int    `json:"id"`
+	Content string `json:"content"`
+	Status  string `json:"status"` // pending, in_progress, completed
 }
 
-var (
-	todoStore = make(map[string][]todoItem) // sessionID → todos
-	todoMu    sync.RWMutex
-)
+var todoStore = kernel.NewActorStore[[]todoItem](8) // sessionID → todos
 
 func todoToolDefs() []kernel.ToolDefinition {
 	return []kernel.ToolDefinition{
@@ -53,7 +48,6 @@ func handleTodoWrite(ctx context.Context, arguments string) (*kernel.ToolResult,
 	}
 	json.Unmarshal([]byte(arguments), &args)
 
-	// Extract session ID from context (best effort)
 	sessionID := "default"
 	if v := ctx.Value("session_id"); v != nil {
 		if s, ok := v.(string); ok { sessionID = s }
@@ -79,16 +73,14 @@ func handleTodoWrite(ctx context.Context, arguments string) (*kernel.ToolResult,
 		items = append(items, todoItem{ID: i + 1, Content: line, Status: status})
 	}
 
-	todoMu.Lock()
-	todoStore[sessionID] = items
+	todoStore.Set(sessionID, items)
 	// Cleanup old entries (keep last 100 sessions)
-	if len(todoStore) > 100 {
-		for k := range todoStore {
-			if len(todoStore) <= 100 { break }
-			delete(todoStore, k)
+	if todoStore.Len() > 100 {
+		for _, k := range todoStore.Keys() {
+			if todoStore.Len() <= 100 { break }
+			todoStore.Delete(k)
 		}
 	}
-	todoMu.Unlock()
 
 	var out strings.Builder
 	out.WriteString("// Todo list:\n")
@@ -109,11 +101,8 @@ func handleTodoRead(ctx context.Context, arguments string) (*kernel.ToolResult, 
 		if s, ok := v.(string); ok { sessionID = s }
 	}
 
-	todoMu.RLock()
-	items := todoStore[sessionID]
-	todoMu.RUnlock()
-
-	if len(items) == 0 {
+	items, _ := todoStore.Get(sessionID)
+	if items == nil {
 		return &kernel.ToolResult{Content: "// Todo list is empty. Use todo_write to create tasks."}, nil
 	}
 

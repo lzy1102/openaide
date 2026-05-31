@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"sync"
 )
 
 // ApprovalRequest 审批请求
@@ -29,7 +28,6 @@ type Approver interface {
 
 // InteractiveApprover 交互式审批器 — 通过channel与CLI通信
 type InteractiveApprover struct {
-	mu       sync.Mutex
 	pending  chan *ApprovalRequest
 	response chan *ApprovalResult
 }

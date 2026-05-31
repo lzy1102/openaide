@@ -52,9 +52,7 @@ func TestHandleTodoRead(t *testing.T) {
 func TestHandleTodoRead_Empty(t *testing.T) {
 	ctx := context.Background()
 	// Clear todos for this session
-	todoMu.Lock()
-	delete(todoStore, "default")
-	todoMu.Unlock()
+	todoStore.Delete("default")
 
 	result, _ := handleTodoRead(ctx, "{}")
 	if !strings.Contains(result.Content.(string), "empty") {
