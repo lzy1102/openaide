@@ -5,8 +5,16 @@ import (
 	"math"
 )
 
-// Embedder is the text vectorization interface.
-// Defined here to avoid circular dependency between kernel and llm.
+// Embedder is the canonical text vectorization interface.
+//
+// Defined in kernel (not llm) to break circular import:
+//   - llm imports kernel (for Message, ToolDefinition, etc.)
+//   - memory + knowledge import kernel (for Actor)
+//   - If kernel imported llm → circular dependency
+//
+// llm.Embedder is a type alias for this interface (see llm/embedder.go).
+//
+// CosineSimilarity is also defined here for the same reason.
 type Embedder interface {
 	Embed(ctx context.Context, text string) ([]float32, error)
 	EmbedBatch(ctx context.Context, texts []string) ([][]float32, error)

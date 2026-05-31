@@ -28,7 +28,11 @@ type Checkpointer interface {
 	Delete(ctx context.Context, sessionID string, checkpointID string) error
 }
 
-// FileCheckpointer 文件检查点 — CSP actor
+// FileCheckpointer saves ReAct loop snapshots to disk for crash recovery.
+// Uses a CSP actor to serialize file I/O — no locks needed.
+//
+// Each session keeps at most 5 checkpoints; older ones are pruned on save.
+// Checkpoints are JSON files named {sessionID}_{checkpointID}.json.
 type FileCheckpointer struct {
 	actor *Actor
 	dir   string

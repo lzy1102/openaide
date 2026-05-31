@@ -3,8 +3,18 @@ package kernel
 import "sync"
 
 // SafeMap is a generic concurrent map with type-safe access.
-// Wraps sync.RWMutex + map[K]V for 99% of use cases where
-// Go's sync.Map is not a good fit (no generics, interface{} everywhere).
+//
+// Use when:
+//   - Multiple goroutines read and occasionally write a shared map
+//   - Type safety matters (unlike sync.Map which uses interface{})
+//   - You need Range/Keys/Values iteration (sync.Map's Range is slow)
+//
+// Don't use when:
+//   - Map is written once during init and only read after (use plain map)
+//   - Key space is disjoint across goroutines (use sync.Map)
+//   - You need lock-free reads under high write contention (use sync.Map)
+//
+// Wraps sync.RWMutex + map[K]V. Reads are concurrent, writes are exclusive.
 type SafeMap[K comparable, V any] struct {
 	mu sync.RWMutex
 	m  map[K]V
