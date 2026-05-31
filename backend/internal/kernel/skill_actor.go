@@ -8,6 +8,27 @@ import (
 	"time"
 )
 
+// Skill represents a registered skill/prompt template.
+type Skill struct {
+	ID           string   `json:"id"`
+	Name         string   `json:"name"`
+	Description  string   `json:"description"`
+	Prompt       string   `json:"prompt"`
+	Keywords     []string `json:"keywords"`
+	Tools        []string `json:"tools"`
+	AllowedTools []string `json:"allowed_tools"`
+	Enabled      bool     `json:"enabled"`
+
+	UsageCount   int       `json:"usage_count"`
+	SuccessCount int       `json:"success_count"`
+	Confidence   float64   `json:"confidence"`
+	LastUsed     time.Time `json:"last_used"`
+}
+
+type skillEntry struct {
+	ID, Description string
+}
+
 // SkillActor is a CSP-style skill manager. All skill state lives in a single
 // goroutine — zero locks. LLM calls for detection happen outside the actor
 // to prevent blocking all skill operations.

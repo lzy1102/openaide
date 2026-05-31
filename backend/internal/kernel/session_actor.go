@@ -252,4 +252,16 @@ func scanSessionRow(scanner interface {
 
 // ── Interface check ────────────────────────────────────────
 
+// NewSessionID generates a short hex session ID.
+func NewSessionID() string {
+	n := time.Now().UnixNano()
+	const hex = "0123456789abcdef"
+	var b [8]byte
+	for i := range b {
+		b[i] = hex[n&0xf]
+		n >>= 4
+	}
+	return string(b[:])
+}
+
 var _ SessionStore = (*SessionActor)(nil)

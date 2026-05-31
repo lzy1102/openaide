@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"openaide/backend/internal/kernel"
 
@@ -13,6 +14,25 @@ import (
 
 // MemoryActor is a CSP-style memory store backed by SQLite.
 // All data lives in a single goroutine — zero locks.
+// Level 记忆层级
+type Level int
+
+const (
+	LevelWorking  Level = 0
+	LevelShort    Level = 1
+	LevelLong     Level = 2
+)
+
+// MemoryItem 记忆条目
+type MemoryItem struct {
+	ID        string    `json:"id"`
+	SessionID string    `json:"session_id"`
+	Content   string    `json:"content"`
+	Level     Level     `json:"level"`
+	Embedding []float32 `json:"embedding,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 // memVec holds an in-memory embedding for fast search.
 type memVec struct {
 	id  string

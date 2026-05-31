@@ -16,6 +16,16 @@ import (
 
 const numProjections = 8 // 2^8 = 256 buckets
 
+// Document 知识文档
+type Document struct {
+	ID        string    `json:"id"`
+	Title     string    `json:"title"`
+	Content   string    `json:"content"`
+	Source    string    `json:"source"`
+	Tags      []string  `json:"tags"`
+	Embedding []float32 `json:"embedding,omitempty"`
+}
+
 // docVector holds an in-memory embedding for fast search.
 type docVector struct {
 	id  string
