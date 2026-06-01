@@ -33,14 +33,8 @@ install: build
 	@mkdir -p ~/.openaide/bin
 	@cp $(BIN_DIR)/openaide ~/.openaide/bin/openaide
 	@cp $(BIN_DIR)/openaide-server ~/.openaide/bin/openaide-server
-	@for d in ~/.local/bin /usr/local/bin; do \
-		if [ -d "$$d" ]; then \
-			cp $(BIN_DIR)/openaide "$$d/openaide" 2>/dev/null || true; \
-			echo "Also installed to $$d/openaide"; \
-		fi; \
-	done
 	@echo "Installed to ~/.openaide/bin/"
-	@echo "Run: export PATH=\$$HOME/.openaide/bin:\$$PATH"
+	@echo "Add to PATH: echo 'export PATH=\$$HOME/.openaide/bin:\$$PATH' >> ~/.bashrc"
 
 build-all:
 	@rm -rf cmd/server/frontend 2>/dev/null; cp -r ../frontend cmd/server/frontend
