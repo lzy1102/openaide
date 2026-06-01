@@ -771,14 +771,7 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 		Println()
 
 	case "/clear":
-		confirmed, _ := pterm.DefaultInteractiveConfirm.
-			WithDefaultText("Clear all messages?").
-			WithConfirmText("y").
-			WithRejectText("n").
-			Show()
-		if confirmed {
-			fmt.Print("\033[2J\033[H")
-		}
+		fmt.Print("\033[2J\033[H")
 
 	case "/model":
 		if len(parts) >= 2 {
