@@ -29,6 +29,7 @@ type cliFlags struct {
 	yes          bool
 	model        string
 	verbose      bool
+	logLevel     string
 	outputFormat string
 }
 
@@ -71,6 +72,9 @@ func parseFlags(args []string) cliFlags {
 			f.yes = true
 		case a == "--verbose":
 			f.verbose = true
+		case a == "--log-level" && i+1 < len(args):
+			i++
+			f.logLevel = args[i]
 		case a == "--model" && i+1 < len(args):
 			i++
 			f.model = args[i]
@@ -172,7 +176,9 @@ func main() {
 		cfg = config.DefaultConfig()
 	}
 	cfg.Server.Mode = "direct"
-	if flags.verbose {
+	if flags.logLevel != "" {
+		cfg.Log.Level = flags.logLevel
+	} else if flags.verbose {
 		cfg.Log.Level = "debug"
 	}
 	infra.TUILogWriter = tuiLogBuf
@@ -247,6 +253,7 @@ func printHelp() {
 	fmt.Println(lang.T("cli.model"))
 	fmt.Println(lang.T("cli.output"))
 	fmt.Println(lang.T("cli.verbose"))
+	fmt.Println(lang.T("cli.log_level"))
 	fmt.Println(lang.T("cli.sessions"))
 	fmt.Println(lang.T("cli.update"))
 	fmt.Println(lang.T("cli.setup"))

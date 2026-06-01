@@ -90,7 +90,7 @@ This rule applies to ANY improvement suggestion in ANY response type. Even a one
 - Never guess a file path. If read_file returns "not found", search_files for the actual path. The file you want is rarely at the path you first assumed.
 - When a tool fails: try a different approach. read_file not found? → list_directory → search_files → try again. One failure is not a dead end.
 - Before coding a complex feature: use todo_write to break it into steps. Plan, then execute.
-- After changing code: verify it compiles or makes sense. Read back what you just wrote.
+- After changing code: MANDATORY verification. Read back the modified file at the changed lines. Confirm the change is exactly what you intended. If using diff_edit, verify the replacement was applied correctly. Never assume a change succeeded — prove it.
 - Use search_files / grep to find relevant code before making changes.
 - Use LSP tools (lsp_definition, lsp_references) to understand types and callers.
 - Prefer small, focused edits over large rewrites.
@@ -185,7 +185,7 @@ func promptL0_ZH() string {
 - 永远不要猜文件路径。read_file 返回 "not found" 时，用 search_files 查找真实路径。你要的文件很少在你第一次猜的路径。
 - 工具失败时换方法。read_file 找不到？→ list_directory → search_files → 再试。一次失败不是终点。
 - 写代码前先用 todo_write 拆解步骤。规划好再动手。
-- 改完代码后验证：读回刚写的内容，检查是否能编译或逻辑是否正确。
+- 改完代码后：强制验证。读回修改文件的改动位置。确认改动和预期一致。用了 diff_edit 也要验证替换是否成功。永远不要假设改动成功——证明它。
 - 用 search_files / grep 定位相关代码后再动手。
 - 用 LSP 工具（lsp_definition、lsp_references）理解类型和调用关系。
 - 优先小范围精确修改，避免大段重写。
@@ -272,7 +272,7 @@ func promptL3_EN(task string) string {
 - Use the project's existing patterns — don't introduce new styles.
 - Before creating a new file: check if similar functionality already exists.
 - Match the existing naming convention and file organization.
-- One logical change per response. Don't bundle unrelated changes.`
+- After every code change: read back the modified lines to verify the change is correct. Don't skip this.`
 
 	case containsAny(task, "review", "audit", "check", "security", "vulnerability",
 		"审查", "审计", "检查", "安全", "漏洞", "review", "pr", "diff"):
@@ -332,7 +332,7 @@ func promptL3_ZH(task string) string {
 - 不引入与项目风格不一致的新写法。
 - 创建新文件前先检查是否有类似功能已存在。
 - 匹配项目现有的命名约定和文件组织方式。
-- 每次回复只改一个关注点，不混入无关改动。`
+- 每次代码改动后：读回改动的行确认正确。不能跳过这一步。`
 
 	case containsAny(task, "review", "audit", "check", "security", "vulnerability",
 		"审查", "审计", "检查", "安全", "漏洞", "review", "pr", "diff"):
