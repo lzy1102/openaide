@@ -160,6 +160,7 @@ type QueryOptions struct {
 	OnBudgetExhausted func(round, maxRounds int) bool // 预算用尽，返回 true 继续，false 合成
 	WorkingDir        string // 项目工作目录（Server 模式用，覆盖 CWD）
 	LastReflection    *ReflectionResult // L5: 上次反思结果，注入提示词
+	ProjectContext    string            // 项目知识（来自 ProjectMind，由编排器注入）
 }
 
 // Response 内核响应

@@ -279,6 +279,11 @@ func (o *Orchestrator) processSingle(ctx context.Context, userID, projectID, con
 		ctx = tools.WithKnowledge(ctx, o.knowledge)
 	}
 
+	// 注入 ProjectMind 项目知识
+	if o.mind != nil {
+		query.Options.ProjectContext = o.mind.FactsForPrompt() + "\n" + o.mind.GenerateLearnedRules()
+	}
+
 	// 4. 调用内核处理
 	resp, err := o.kernel.Process(ctx, query)
 	if err != nil {
@@ -315,6 +320,11 @@ func (o *Orchestrator) ProcessQueryStream(ctx context.Context, userID, projectID
 	// 注入知识库到 context
 	if o.knowledge != nil {
 		ctx = tools.WithKnowledge(ctx, o.knowledge)
+	}
+
+	// 注入 ProjectMind 项目知识
+	if o.mind != nil {
+		opts.ProjectContext = o.mind.FactsForPrompt() + "\n" + o.mind.GenerateLearnedRules()
 	}
 
 	return o.kernel.ProcessStream(ctx, query)

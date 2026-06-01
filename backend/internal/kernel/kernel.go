@@ -281,12 +281,15 @@ func (k *AgentKernel) buildMessages(ctx context.Context, session *Session, query
 		}
 	}
 
-	// L4: Cross-session learner insights (dynamic tail)
+	// L4: Cross-session learner insights + ProjectMind conventions (dynamic tail)
 	if k.learner != nil {
 		insights, _ := k.learner.GetInsights(ctx, query.Content)
 		if l4 := promptL4(insights); l4 != "" {
 			messages = append(messages, Message{Role: "system", Content: l4})
 		}
+	}
+	if query.Options.ProjectContext != "" {
+		messages = append(messages, Message{Role: "system", Content: "[ProjectKnowledge]\n" + query.Options.ProjectContext})
 	}
 
 	// L6: Knowledge base RAG
