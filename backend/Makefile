@@ -24,10 +24,9 @@ LDFLAGS = -s -w -X main.Version=$(VERSION) -X main.BuildTime=$(shell date -u +%Y
 
 build:
 	@echo "Building..."
-	@rm -rf cmd/server/frontend 2>/dev/null; cp -r ../frontend cmd/server/frontend
+	@cp -r ../frontend/* cmd/server/frontend/ 2>/dev/null || true
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/openaide-server ./cmd/server
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/openaide ./cmd/cli
-	@rm -rf cmd/server/frontend
 
 install: build
 	@mkdir -p ~/.openaide/bin
@@ -43,9 +42,8 @@ install: build
 	@echo "Installed to ~/.openaide/bin/ — restart your shell or run: source ~/.bashrc"
 
 build-all:
-	@rm -rf cmd/server/frontend 2>/dev/null; cp -r ../frontend cmd/server/frontend
+	@cp -r ../frontend/* cmd/server/frontend/ 2>/dev/null || true
 	$(MAKE) build-linux-amd64 build-linux-arm64 build-windows-amd64 build-darwin-amd64 build-darwin-arm64
-	@rm -rf cmd/server/frontend
 
 build-linux-amd64:
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/openaide-linux-amd64 ./cmd/cli

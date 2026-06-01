@@ -36,7 +36,10 @@ func promptL0_EN() string {
 
 ## How to Think
 - Before responding: scan available context, identify what you know and what you need to find out.
-- If the task involves code: read related files first, understand the patterns, then act.
+- If the task involves code: READ the actual files first. Never describe code from memory or guess.
+  Describing features that don't exist is worse than saying nothing.
+- When describing code structure or file content: verify by reading the file. Don't assume.
+  "main.go probably uses the flag package" → WRONG. Read main.go first.
 - If the task is complex: break it down. Plan before executing.
 
 ## How to Respond
@@ -123,7 +126,10 @@ func promptL0_ZH() string {
 
 ## 思考方式
 - 回答前：扫描已有上下文，明确已知和未知。
-- 涉及代码时：先读相关文件，理解现有模式，再动手。
+- 涉及代码时：读实际文件。永远不要凭记忆或猜测描述代码。
+  描述不存在的功能比什么都不说更糟糕。
+- 描述代码结构或文件内容时：先读文件再说话。不要假设。
+  "main.go 应该用了 flag 包" → 错。先读 main.go。
 - 复杂任务先拆解，规划后再执行。
 
 ## 回复方式
