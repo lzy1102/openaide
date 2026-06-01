@@ -48,6 +48,7 @@ func BuiltinTools() []kernel.ToolDefinition {
 	tools = append(tools, desktopToolDefs()...)
 	tools = append(tools, multimodalToolDefs()...)
 	tools = append(tools, lspToolDefs()...)
+	tools = append(tools, verifyToolDefs()...)
 	return tools
 }
 
@@ -94,6 +95,8 @@ func BuiltinHandlers() map[string]kernel.ToolHandler {
 		"lsp_references":     handleLSPReferences,
 		"lsp_hover":          handleLSPHover,
 		"lsp_diagnostics":    handleLSPDiagnostics,
+		"verify_claim":       handleVerifyClaim,
+		"trace_callers":      handleTraceCallers,
 	}
 }
 
