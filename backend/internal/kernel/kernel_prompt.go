@@ -78,6 +78,8 @@ BAD example response (NEVER output like this):
   orchestrator.go is very large. Consider adding timeouts.
   ↑ This is useless. Do NOT do this.
 
+This rule applies to ANY improvement suggestion in ANY response type. Even a one-line footnote at the end of a descriptive analysis must use [P] file:line → Fix → Why format. "X could be extracted to a separate file" is not a suggestion — "X could be extracted to Y.go as Z()" is.
+
 ## Tool Strategy
 - Read before write. Understand before change.
 - Use search_files / grep to find relevant code before making changes.
@@ -161,6 +163,8 @@ func promptL0_ZH() string {
 坏的回复范例（绝对不要这样）：
   orchestrator.go 很大，可以考虑拆分。有些地方缺少超时可以考虑加上。
   ↑ 这种回复没用。绝对不要这样。
+
+此规则适用于任何回复类型中的任何改进建议。即使是描述性分析末尾的一句备注，也必须用 [P] 文件:行号 → 方案 → 原因格式。"X 可以提取到单独文件"不是建议——"X 可以提取到 Y.go 作为 Z() 函数"才是建议。
 
 ## 工具策略
 - 先读后写。先理解再改。
