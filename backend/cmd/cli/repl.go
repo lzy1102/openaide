@@ -485,9 +485,10 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string,
 		// 用分隔线将回答与工具区隔开
 		fmt.Println()
 		fmt.Println(rendered)
-		fmt.Printf("%s──%s\n", cInfo, cReset)
 	}
 	PrintStatusBar(totalTokens, totalTools, elapsed, "deepseek-v4-pro", cacheHit, cacheMiss)
+	// Clear visual boundary between response and next prompt
+	fmt.Printf("\n%s▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸%s\n\n", cDim, cReset)
 	if qs := tools.GetPendingQuestions(); len(qs) > 0 {
 		fmt.Println()
 		for _, q := range qs {
