@@ -772,6 +772,9 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 
 	case "/clear":
 		fmt.Print("\033[2J\033[H")
+		app.Orchestrator.DeleteSession(context.Background(), *sessionID)
+		sess, _ := app.Orchestrator.CreateSession(context.Background(), "default", "cli-user")
+		*sessionID = sess.ID
 
 	case "/model":
 		if len(parts) >= 2 {
