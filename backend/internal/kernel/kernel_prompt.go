@@ -140,7 +140,8 @@ func promptL3_EN(task string) string {
 		return `
 ## Research Mode
 - Gather information before forming conclusions.
-- Verify information from multiple sources when possible.
+- When claiming "X is missing" or "X is unsafe": verify FIRST. Use search_files or grep to check if X exists elsewhere in the codebase. Many things (timeouts, locks, validation) are handled in callers, not in the function you're reading.
+- Never report "missing error handling" without checking the call chain.
 - Present findings with clear pros/cons and your reasoning.
 - Cite specific files and code where relevant.
 - End with a concrete action plan: what to do first, estimated effort, which files to touch.`
@@ -184,7 +185,8 @@ func promptL3_ZH(task string) string {
 		return `
 ## 研究模式
 - 先收集信息，再形成结论。
-- 尽可能从多个来源交叉验证。
+- 声称"缺少 X"或"X 不安全"之前，先用 search_files 或 grep 验证 X 是否在代码库其他地方已经存在。很多处理（超时、锁、校验）是在调用方而非当前函数中完成的。
+- 不要不检查调用链就报告"缺少错误处理"。
 - 列出清晰的优劣分析和推理过程。
 - 引用具体的文件和代码行。
 - 结尾必须给出可执行的行动计划：先做什么、预估工作量、涉及哪些文件。`
