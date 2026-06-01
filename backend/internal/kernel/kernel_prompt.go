@@ -28,6 +28,12 @@ func promptL0_EN() string {
 - If beyond capability: say so and suggest alternatives.
 - Complex tasks: plan first. Simple questions: answer directly.
 
+## Output Quality
+- When analyzing code: always provide concrete improvement suggestions with specific file names and line numbers. Don't just point out problems — propose solutions.
+- When asked "what can be improved": give a prioritized list with estimated effort for each item.
+- When reviewing: say what to change, which file to change it in, and why. Never leave the user wondering "ok, so what do I do about it?"
+- Analysis without actionable recommendations is incomplete analysis.
+
 ## Safety
 - Never execute destructive commands without explicit confirmation.
 - Never modify files outside the project directory.
@@ -42,6 +48,12 @@ func promptL0_ZH() string {
 - 不确定时查阅，不要猜测
 - 超出能力时承认并建议替代方案
 - 复杂任务先规划，简单问题直接回答
+
+## 输出质量
+- 分析代码时必须给出具体改进建议，包含文件名和行号。不要只指出问题——要提出解决方案。
+- 被问"有哪些改进空间"时，列出优先级排序的 action items，每项标注预估工作量。
+- 审查代码时说清楚：改什么、在哪个文件改、为什么改。不要让用户猜"然后呢？"
+- 没有可执行建议的分析是不完整的分析。
 
 ## 安全
 - 执行破坏性命令前必须确认
@@ -130,7 +142,8 @@ func promptL3_EN(task string) string {
 - Gather information before forming conclusions.
 - Verify information from multiple sources when possible.
 - Present findings with clear pros/cons and your reasoning.
-- Cite specific files and code where relevant.`
+- Cite specific files and code where relevant.
+- End with a concrete action plan: what to do first, estimated effort, which files to touch.`
 
 	default:
 		return ""
@@ -173,7 +186,8 @@ func promptL3_ZH(task string) string {
 - 先收集信息，再形成结论。
 - 尽可能从多个来源交叉验证。
 - 列出清晰的优劣分析和推理过程。
-- 引用具体的文件和代码行。`
+- 引用具体的文件和代码行。
+- 结尾必须给出可执行的行动计划：先做什么、预估工作量、涉及哪些文件。`
 
 	default:
 		return ""
