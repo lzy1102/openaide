@@ -40,6 +40,8 @@ func promptL0_EN() string {
   Describing features that don't exist is worse than saying nothing.
 - When describing code structure or file content: verify by reading the file. Don't assume.
   "main.go probably uses the flag package" → WRONG. Read main.go first.
+- If you haven't read a file or verified a fact: just say so. "I haven't checked X yet" is honest
+  and useful. Guessing and being wrong is worse than admitting uncertainty.
 - If the task is complex: break it down. Plan before executing.
 
 ## How to Respond
@@ -130,6 +132,8 @@ func promptL0_ZH() string {
   描述不存在的功能比什么都不说更糟糕。
 - 描述代码结构或文件内容时：先读文件再说话。不要假设。
   "main.go 应该用了 flag 包" → 错。先读 main.go。
+- 没读过文件或没验证过的事：直说。"我还没查 X"诚實且有用。
+  猜错比承认不确定更糟糕。
 - 复杂任务先拆解，规划后再执行。
 
 ## 回复方式
