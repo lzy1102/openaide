@@ -45,7 +45,21 @@ func promptL0_EN() string {
 - Use LSP tools (lsp_definition, lsp_references) to understand types and callers.
 - Prefer small, focused edits over large rewrites.
 
-## Safety
+## Anti-Patterns — Never Do This
+- Never guess file paths, function names, or API signatures. Verify with tools.
+- Never add features the user didn't ask for.
+- Never leave TODO or FIXME comments. Either do it or don't mention it.
+- Never create a file without checking if it already exists.
+- Never introduce new dependencies unless explicitly requested.
+- Never write comments that explain what code does — write self-documenting code.
+- Never remove or change existing behavior during a refactor. Preserve exact semantics.
+
+## Positive Patterns — Always Do This
+- When fixing a bug: write a failing test first, then fix. Root cause, not symptom.
+- When implementing a feature: follow the closest existing pattern in the codebase.
+- When refactoring: keep the diff minimal. One concern per change.
+- When a tool fails: try an alternative approach. Don't give up after one error.
+- When uncertain about structure: list_directory first, then read the relevant files.
 - Never execute destructive commands without explicit confirmation.
 - Never modify files outside the project directory.
 - File writes and command execution require approval.`
@@ -77,7 +91,21 @@ func promptL0_ZH() string {
 - 用 LSP 工具（lsp_definition、lsp_references）理解类型和调用关系。
 - 优先小范围精确修改，避免大段重写。
 
-## 安全
+## 反模式 — 绝对不要做
+- 不要猜测文件路径、函数名或 API 签名。用工具验证。
+- 不要添加用户没有要求的功能。
+- 不要留下 TODO 或 FIXME 注释。要么做，要么不提。
+- 不要不检查就创建文件，可能已存在。
+- 不要引入用户没要求的新依赖。
+- 不要写注释解释代码做什么——代码本身应该自解释。
+- 重构时不要改变已有行为。保持语义完全一致。
+
+## 正向模式 — 始终这样做
+- 修 bug：先写一个会失败的测试，再修。找根因而非症状。
+- 加功能：遵循代码库里最相似的已有模式。
+- 重构：保持 diff 最小。一次只改一个关注点。
+- 工具失败了：换个方法再试。一次错误不放弃。
+- 不确定结构时：先 list_directory，再读相关文件。
 - 执行破坏性命令前必须确认
 - 不要修改项目目录外的文件
 - 文件写入和命令执行需要审批`
@@ -140,7 +168,10 @@ func promptL3_EN(task string) string {
 - Write clean, idiomatic code following existing project conventions.
 - Handle errors explicitly. Never swallow errors silently.
 - Add tests for new functionality when appropriate.
-- Use the project's existing patterns — don't introduce new styles.`
+- Use the project's existing patterns — don't introduce new styles.
+- Before creating a new file: check if similar functionality already exists.
+- Match the existing naming convention (camelCase vs snake_case, file organization).
+- One logical change per commit/diff. Don't bundle unrelated changes.`
 
 	case containsAny(task, "review", "audit", "check", "security", "vulnerability",
 		"审查", "审计", "检查", "安全", "漏洞", "review", "pr", "diff"):
@@ -186,7 +217,10 @@ func promptL3_ZH(task string) string {
 - 遵循项目已有的编码规范和模式。
 - 显式处理错误，永远不要静默吞掉异常。
 - 适当时为新功能添加测试。
-- 不引入与项目风格不一致的新写法。`
+- 不引入与项目风格不一致的新写法。
+- 创建新文件前先检查是否有类似功能已存在。
+- 匹配项目现有的命名约定和文件组织方式。
+- 每次提交/修改只做一件事，不要把无关改动混在一起。`
 
 	case containsAny(task, "review", "audit", "check", "security", "vulnerability",
 		"审查", "审计", "检查", "安全", "漏洞", "review", "pr", "diff"):
