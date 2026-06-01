@@ -257,10 +257,9 @@ func (a *Actor) initProjections() {
 // Refine deduplicates, summarizes, and stores knowledge from an agent response.
 // Returns the stored document ID, or empty string if filtered out.
 func (a *Actor) Refine(ctx context.Context, query, response string, sessionID string) string {
-	// Step 1: check for near-duplicate
-	if a.embedder != nil && a.embedder.Dimension() > 0 {
-		vec, err := a.embedder.Embed(ctx, query)
-		if err == nil && len(vec) > 0 {
+	// Step 1: check for near-duplicate (use cached embedding)
+	vec, hasVec := a.embedQuery(ctx, query)
+	if hasVec && len(vec) > 0 {
 			var bestID string
 			var bestScore float64
 			a.super.Send(func() {
@@ -282,7 +281,6 @@ func (a *Actor) Refine(ctx context.Context, query, response string, sessionID st
 				return bestID
 			}
 		}
-	}
 
 	// Step 2: refine with LLM (if available)
 	title := query
