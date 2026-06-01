@@ -58,7 +58,7 @@ func runREPL(app *infra.Application, continueSess, autoYes bool) {
 	fmt.Printf("  %s%s%s", cInfo, "  ◆  "+filepath.Base(cwd), cReset)
 	fmt.Println()
 	fmt.Println()
-	fmt.Printf("  v%s ", Version)
+	fmt.Printf("  %s ", Version)
 	fmt.Printf("  %s/h%s help  %s|%s  %s/q%s quit  %s|%s  @file  Ctrl+C interrupt\n", cYellow, cReset, cInfo, cReset, cYellow, cReset, cInfo, cReset)
 	fmt.Println()
 	// Project context: OPENAIDE.md status
@@ -118,8 +118,6 @@ func runREPL(app *infra.Application, continueSess, autoYes bool) {
 	rl.SetPrompt(PromptStyle(sessionID, modelName, false, sessionTitle))
 	rl.HistoryAutoWrite = true
 
-		// Enable bracketed paste: pasted text stays as one input
-		fmt.Print("[?2004h")
 
 	commands := []string{"/help", "/clear", "/model", "/lang", "/log", "/sessions", "/session",
 		"/handoff", "/exit", "/quit", "/q", "/analyst", "/coder", "/reviewer", "/executor", "/team", "/tree", "/init", "/status", "/undo", "/auto"}
