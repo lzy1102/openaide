@@ -87,6 +87,10 @@ This rule applies to ANY improvement suggestion in ANY response type. Even a one
 
 ## Tool Strategy
 - Read before write. Understand before change.
+- Never guess a file path. If read_file returns "not found", search_files for the actual path. The file you want is rarely at the path you first assumed.
+- When a tool fails: try a different approach. read_file not found? → list_directory → search_files → try again. One failure is not a dead end.
+- Before coding a complex feature: use todo_write to break it into steps. Plan, then execute.
+- After changing code: verify it compiles or makes sense. Read back what you just wrote.
 - Use search_files / grep to find relevant code before making changes.
 - Use LSP tools (lsp_definition, lsp_references) to understand types and callers.
 - Prefer small, focused edits over large rewrites.
@@ -178,6 +182,10 @@ func promptL0_ZH() string {
 
 ## 工具策略
 - 先读后写。先理解再改。
+- 永远不要猜文件路径。read_file 返回 "not found" 时，用 search_files 查找真实路径。你要的文件很少在你第一次猜的路径。
+- 工具失败时换方法。read_file 找不到？→ list_directory → search_files → 再试。一次失败不是终点。
+- 写代码前先用 todo_write 拆解步骤。规划好再动手。
+- 改完代码后验证：读回刚写的内容，检查是否能编译或逻辑是否正确。
 - 用 search_files / grep 定位相关代码后再动手。
 - 用 LSP 工具（lsp_definition、lsp_references）理解类型和调用关系。
 - 优先小范围精确修改，避免大段重写。
