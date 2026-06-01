@@ -11,26 +11,31 @@ import (
 	"time"
 )
 
-// SimpleLearner 简单学习实现
+// SimpleLearner 简单学习实现，支持语义匹配
 type SimpleLearner struct {
 	dataDir  string
 	insights []Insight
 	mu       sync.RWMutex
 	llm      LLMProvider // 可选：LLM 语义分类
+	embedder Embedder    // 可选：语义匹配
 }
 
 // SetLLM 注入 LLM 用于智能偏好检测
 func (l *SimpleLearner) SetLLM(llm LLMProvider) { l.llm = llm }
 
+// SetEmbedder 注入向量化器用于语义匹配
+func (l *SimpleLearner) SetEmbedder(e Embedder) { l.embedder = e }
+
 // Insight 学习洞察
 type Insight struct {
-	ID        string    `json:"id"`
-	Type      string    `json:"type"`      // pattern, preference, correction, strategy
-	Content   string    `json:"content"`
-	Frequency int       `json:"frequency"`
-	Confidence float64  `json:"confidence"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID         string    `json:"id"`
+	Type       string    `json:"type"` // pattern, preference, correction, strategy
+	Content    string    `json:"content"`
+	Embedding  []float32 `json:"embedding,omitempty"`
+	Frequency  int       `json:"frequency"`
+	Confidence float64   `json:"confidence"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 // NewSimpleLearner 创建简单学习器
@@ -50,56 +55,55 @@ func NewSimpleLearner(dataDir string) (*SimpleLearner, error) {
 
 // Learn 从交互中学习
 func (l *SimpleLearner) Learn(ctx context.Context, record ExecutionRecord) error {
-	l.mu.Lock()
-	defer l.mu.Unlock()
+	var newInsights []Insight
 
-	// 提取模式
+	// Extract patterns outside lock (embedding may call LLM API)
 	if record.Success && len(record.ToolCalls) > 0 {
-		// 学习成功的工具使用模式
 		toolNames := make([]string, len(record.ToolCalls))
 		for i, tc := range record.ToolCalls {
 			toolNames[i] = tc.Function.Name
 		}
 		pattern := strings.Join(toolNames, " -> ")
-
-		l.addOrUpdateInsight(Insight{
-			Type:      "pattern",
-			Content:   fmt.Sprintf("成功模式: %s", pattern),
-			Frequency: 1,
-			Confidence: 0.7,
+		newInsights = append(newInsights, Insight{
+			Type: "pattern", Content: fmt.Sprintf("成功模式: %s", pattern),
+			Frequency: 1, Confidence: 0.7,
 		})
 	}
-
-	// 学习失败模式
 	if !record.Success {
-		l.addOrUpdateInsight(Insight{
-			Type:      "correction",
-			Content:   fmt.Sprintf("失败类型: %s", record.Error),
-			Frequency: 1,
-			Confidence: 0.5,
+		newInsights = append(newInsights, Insight{
+			Type: "correction", Content: fmt.Sprintf("失败类型: %s", record.Error),
+			Frequency: 1, Confidence: 0.5,
 		})
 	}
-
-	// 学习用户偏好（LLM 分类 > 关键词兜底）
 	if l.llm != nil {
 		if pref := l.detectPreferenceWithLLM(record.Query); pref != "" {
-			l.addOrUpdateInsight(Insight{
-				Type:       "preference",
-				Content:    pref,
-				Frequency:  1,
-				Confidence: 0.7,
+			newInsights = append(newInsights, Insight{
+				Type: "preference", Content: pref, Frequency: 1, Confidence: 0.7,
 			})
 		}
 	} else if strings.Contains(record.Query, "代码") || strings.Contains(record.Query, "code") {
-		l.addOrUpdateInsight(Insight{
-			Type:       "preference",
-			Content:    "用户偏好代码相关回答",
-			Frequency:  1,
-			Confidence: 0.6,
+		newInsights = append(newInsights, Insight{
+			Type: "preference", Content: "用户偏好代码相关回答", Frequency: 1, Confidence: 0.6,
 		})
 	}
 
-	return l.save()
+	// Embed outside lock
+	for i := range newInsights {
+		if l.embedder != nil && l.embedder.Dimension() > 0 {
+			if vec, err := l.embedder.Embed(context.Background(), newInsights[i].Content); err == nil && len(vec) > 0 {
+				newInsights[i].Embedding = vec
+			}
+		}
+	}
+
+	// Merge into store (lock only for map/slice update)
+	l.mu.Lock()
+	for _, insight := range newInsights {
+		l.addOrUpdateInsight(insight)
+	}
+	err := l.save()
+	l.mu.Unlock()
+	return err
 }
 
 func (l *SimpleLearner) detectPreferenceWithLLM(query string) string {
@@ -122,20 +126,62 @@ func (l *SimpleLearner) detectPreferenceWithLLM(query string) string {
 	return ""
 }
 
-// GetInsights 获取学习洞察
+// GetInsights finds the most relevant learned insights for a query.
+// Uses semantic matching if an embedder is configured, otherwise falls back to text.
 func (l *SimpleLearner) GetInsights(ctx context.Context, query string) ([]string, error) {
+	// Semantic match via embedding
+	if l.embedder != nil && l.embedder.Dimension() > 0 {
+		queryVec, err := l.embedder.Embed(ctx, query)
+		if err == nil && len(queryVec) > 0 {
+			type scored struct {
+				content string
+				score   float64
+			}
+			l.mu.RLock()
+			var candidates []scored
+			for _, insight := range l.insights {
+				if insight.Confidence < 0.5 || insight.Frequency < 2 {
+					continue // skip low-confidence, rarely-seen insights
+				}
+				if len(insight.Embedding) == len(queryVec) {
+					score := CosineSimilarity(queryVec, insight.Embedding)
+					if score > 0.5 {
+						candidates = append(candidates, scored{insight.Content, score})
+					}
+				}
+			}
+			l.mu.RUnlock()
+
+			// Sort by score descending
+			for i := 0; i < len(candidates); i++ {
+				for j := i + 1; j < len(candidates); j++ {
+					if candidates[j].score > candidates[i].score {
+						candidates[i], candidates[j] = candidates[j], candidates[i]
+					}
+				}
+			}
+			var results []string
+			for i := 0; i < len(candidates) && i < 5; i++ {
+				results = append(results, candidates[i].content)
+			}
+			return results, nil
+		}
+		// Embedding failed — fall through to text match
+	}
+
+	// Text fallback: substring match
 	l.mu.RLock()
 	defer l.mu.RUnlock()
-
 	var results []string
 	queryLower := strings.ToLower(query)
-
 	for _, insight := range l.insights {
+		if insight.Confidence < 0.4 {
+			continue
+		}
 		if strings.Contains(strings.ToLower(insight.Content), queryLower) {
 			results = append(results, insight.Content)
 		}
 	}
-
 	return results, nil
 }
 
@@ -154,17 +200,31 @@ func (l *SimpleLearner) addOrUpdateInsight(newInsight Insight) {
 	newInsight.CreatedAt = time.Now()
 	newInsight.UpdatedAt = time.Now()
 
+	// Generate embedding for semantic matching (async, best-effort)
+	if l.embedder != nil && l.embedder.Dimension() > 0 {
+		if vec, err := l.embedder.Embed(context.Background(), newInsight.Content); err == nil && len(vec) > 0 {
+			newInsight.Embedding = vec
+		}
+	}
+
 	// 查找相似洞察并合并
 	for i, existing := range l.insights {
 		if existing.Type == newInsight.Type && similarContent(existing.Content, newInsight.Content) {
 			l.insights[i].Frequency++
 			l.insights[i].Confidence = min(0.95, existing.Confidence+0.05)
 			l.insights[i].UpdatedAt = time.Now()
+			// Update embedding if new one has better embedding
+			if len(newInsight.Embedding) > 0 && len(l.insights[i].Embedding) == 0 {
+				l.insights[i].Embedding = newInsight.Embedding
+			}
 			return
 		}
 	}
 
 	l.insights = append(l.insights, newInsight)
+	if len(l.insights) > 200 {
+		l.insights = l.insights[len(l.insights)-200:] // keep last 200
+	}
 }
 
 func (l *SimpleLearner) save() error {
