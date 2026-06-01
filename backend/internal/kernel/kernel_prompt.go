@@ -178,10 +178,13 @@ func promptL3_EN(task string) string {
 		return `
 ## Review Mode
 - Check for: correctness, security, performance, readability, edge cases.
-- Before reporting "X is missing": search for X elsewhere in the codebase. Timeouts, locks, and validation are often in callers, not the current function.
+- CRITICAL: Every issue you flag MUST include a confidence level: [HIGH], [MEDIUM], or [LOW].
+  - [HIGH]: you've verified with tools, can show the exact code path.
+  - [MEDIUM]: pattern looks suspicious but needs more investigation.
+  - [LOW]: might be intentional — flag for human review only.
+- Before reporting "X is missing": grep for X first. Timeouts, locks, and validation are often in callers.
 - Flag potential issues with concrete suggestions (file name, line, what to change).
-- Look for: SQL injection, XSS, race conditions, nil pointers, resource leaks.
-- Verify error handling is complete and appropriate.`
+- Look for: SQL injection, XSS, race conditions, nil pointers, resource leaks.`
 
 	case containsAny(task, "explain", "how", "what", "why", "document", "tutorial",
 		"解释", "怎么", "为什么", "文档", "教程", "介绍", "describe"):
@@ -197,8 +200,12 @@ func promptL3_EN(task string) string {
 		return `
 ## Research Mode
 - Gather information before forming conclusions.
-- When claiming "X is missing" or "X is unsafe": verify FIRST. Use search_files or grep to check if X exists elsewhere in the codebase. Many things (timeouts, locks, validation) are handled in callers, not in the function you're reading.
-- Never report "missing error handling" without checking the call chain.
+- VERIFICATION REQUIREMENT: Before listing any finding as a problem, you MUST verify it.
+  1. If claiming "X is missing": grep for X first. It may be in a caller, a different file, or a different layer.
+  2. If claiming "X is unsafe": prove it. Show the specific code path that leads to the issue.
+  3. If unsure whether something is a bug: mark it as [NEEDS VERIFICATION] with your confidence level.
+  4. For every finding, answer: "Why might this be intentional?" before listing it as a problem.
+- Rate your confidence on each finding: HIGH/MEDIUM/LOW. Only HIGH-confidence items go in the priority list.
 - Present findings with clear pros/cons and your reasoning.
 - Cite specific files and code where relevant.
 - End with a concrete action plan: what to do first, estimated effort, which files to touch.`
@@ -227,9 +234,13 @@ func promptL3_ZH(task string) string {
 		return `
 ## 审查模式
 - 检查：正确性、安全性、性能、可读性、边界条件。
+- 关键：每个发现必须标注置信度：[高]、[中]、[低]。
+  - [高]：已用工具验证，能展示具体代码路径。
+  - [中]：模式可疑但需要更多调查。
+  - [低]：可能是有意为之——仅标记供人工审查。
+- 声称"缺少 X"之前：先 grep 搜索 X。超时、锁、校验通常在调用方。
 - 发现潜在问题时给出具体改进建议。
-- 关注：SQL注入、XSS、竞态条件、空指针、资源泄漏。
-- 验证错误处理是否完整和恰当。`
+- 关注：SQL注入、XSS、竞态条件、空指针、资源泄漏。`
 
 	case containsAny(task, "explain", "how", "what", "why", "document", "tutorial",
 		"解释", "怎么", "为什么", "文档", "教程", "介绍", "describe"):
@@ -245,8 +256,12 @@ func promptL3_ZH(task string) string {
 		return `
 ## 研究模式
 - 先收集信息，再形成结论。
-- 声称"缺少 X"或"X 不安全"之前，先用 search_files 或 grep 验证 X 是否在代码库其他地方已经存在。很多处理（超时、锁、校验）是在调用方而非当前函数中完成的。
-- 不要不检查调用链就报告"缺少错误处理"。
+- 验证要求：将任何发现列为问题之前，必须先验证。
+  1. 声称"缺少 X"：先用 grep 搜索 X。可能在其他调用方、其他文件、其他层中。
+  2. 声称"X 不安全"：证明它。展示导致问题的具体代码路径。
+  3. 不确定是否 bug：标记为 [待验证]，附带置信度。
+  4. 每个发现先问自己"这会不会是有意为之？"再列出来。
+- 每个发现标注置信度：高/中/低。只有高置信度的进优先级列表。
 - 列出清晰的优劣分析和推理过程。
 - 引用具体的文件和代码行。
 - 结尾必须给出可执行的行动计划：先做什么、预估工作量、涉及哪些文件。`
