@@ -26,46 +26,6 @@ type Approver interface {
 	RequestApproval(ctx context.Context, req *ApprovalRequest) *ApprovalResult
 }
 
-// InteractiveApprover 交互式审批器 — 通过channel与CLI通信
-type InteractiveApprover struct {
-	pending  chan *ApprovalRequest
-	response chan *ApprovalResult
-}
-
-// NewInteractiveApprover 创建交互式审批器
-func NewInteractiveApprover() *InteractiveApprover {
-	return &InteractiveApprover{
-		pending:  make(chan *ApprovalRequest, 10),
-		response: make(chan *ApprovalResult, 10),
-	}
-}
-
-func (a *InteractiveApprover) RequestApproval(ctx context.Context, req *ApprovalRequest) *ApprovalResult {
-	select {
-	case a.pending <- req:
-	case <-ctx.Done():
-		return &ApprovalResult{Approved: false, Reason: "timeout"}
-	}
-
-	select {
-	case result := <-a.response:
-		return result
-	case <-ctx.Done():
-		return &ApprovalResult{Approved: false, Reason: "timeout"}
-	}
-}
-
-// WaitForApproval 等待审批请求（CLI调用）
-func (a *InteractiveApprover) WaitForApproval() *ApprovalRequest {
-	return <-a.pending
-}
-
-// Respond 响应审批请求（CLI调用）
-func (a *InteractiveApprover) Respond(id string, approved bool, reason string) {
-	a.response <- &ApprovalResult{Approved: approved, Reason: reason}
-}
-
-// AutoApprover 自动审批器
 //   UnsafeMode=true:  放行所有工具
 //   UnsafeMode=false: LLM 评估风险 + 白名单快速通道
 type AutoApprover struct {
