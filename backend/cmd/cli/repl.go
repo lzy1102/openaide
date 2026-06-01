@@ -22,6 +22,41 @@ import (
 	"openaide/backend/internal/tools"
 )
 
+// ── File-backed History ───────────────────────────────────
+
+type fileHistory struct {
+	items []string
+	path  string
+}
+
+func newFileHistory(path string) *fileHistory {
+	h := &fileHistory{path: path}
+	data, _ := os.ReadFile(path)
+	if len(data) > 0 {
+		h.items = strings.Split(strings.TrimSpace(string(data)), "\n")
+	}
+	return h
+}
+
+func (h *fileHistory) Write(s string) (int, error) {
+	h.items = append(h.items, s)
+	if len(h.items) > 1000 {
+		h.items = h.items[len(h.items)-1000:]
+	}
+	os.WriteFile(h.path, []byte(strings.Join(h.items, "\n")), 0600)
+	return len(h.items), nil
+}
+
+func (h *fileHistory) GetLine(i int) (string, error) {
+	if i < 0 || i >= len(h.items) {
+		return "", fmt.Errorf("out of range")
+	}
+	return h.items[i], nil
+}
+
+func (h *fileHistory) Len() int     { return len(h.items) }
+func (h *fileHistory) Dump() interface{} { return h.items }
+
 // ── REPL ──────────────────────────────────────────────────
 
 func runREPL(app *infra.Application, continueSess, autoYes bool) {
@@ -117,6 +152,7 @@ func runREPL(app *infra.Application, continueSess, autoYes bool) {
 	rl := readline.NewInstance()
 	rl.SetPrompt(PromptStyle(sessionID, modelName, false, sessionTitle))
 	rl.HistoryAutoWrite = true
+	rl.History = newFileHistory(os.Getenv("HOME") + "/.openaide/history")
 
 
 	commands := []string{"/help", "/clear", "/model", "/lang", "/log", "/sessions", "/session",
