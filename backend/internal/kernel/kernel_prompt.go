@@ -244,37 +244,75 @@ func promptL5(reflection *ReflectionResult) string {
 // ── Builders ────────────────────────────────────────────────
 
 // buildSystemPrompt assembles the stable prompt prefix (L0+L1+L3).
-// L0 and L1 are always present. L3 adapts to the task type.
-// L2 (skill), L4 (learner), L5 (reflection) are injected as dynamic tail
-// in buildMessages for prompt cache efficiency.
+// Each layer can be overridden by a file in ~/.openaide/data/prompts/.
+// If the file exists, it's used; otherwise the hardcoded default is used.
 func (k *AgentKernel) buildSystemPrompt(query *Query) string {
 	zh := isZhEnv()
+	dir := os.Getenv("HOME") + "/.openaide/data/prompts"
 	var sb strings.Builder
 
-	// L0: Identity + Safety (always)
-	if zh {
-		sb.WriteString(promptL0_ZH())
-	} else {
-		sb.WriteString(promptL0_EN())
+	// L0: Identity + Safety (file-overridable)
+	l0 := loadPromptFile(dir, "l0.md")
+	if l0 == "" {
+		if zh {
+			l0 = promptL0_ZH()
+		} else {
+			l0 = promptL0_EN()
+		}
 	}
+	sb.WriteString(l0)
 
-	// L1: Project context
+	// L1: Project context (always auto-generated)
 	if l1 := promptL1(); l1 != "" {
 		sb.WriteString(l1)
 	}
 
-	// L3: Task adapter (based on query content)
-	if zh {
-		if l3 := promptL3_ZH(query.Content); l3 != "" {
-			sb.WriteString(l3)
-		}
+	// L3: Task adapter (file-overridable per task type)
+	task := detectTaskType(query.Content)
+	if l3 := loadPromptFile(dir, "l3_"+task+".md"); l3 != "" {
+		sb.WriteString(l3)
 	} else {
-		if l3 := promptL3_EN(query.Content); l3 != "" {
-			sb.WriteString(l3)
+		if zh {
+			if l := promptL3_ZH(query.Content); l != "" {
+				sb.WriteString(l)
+			}
+		} else {
+			if l := promptL3_EN(query.Content); l != "" {
+				sb.WriteString(l)
+			}
 		}
 	}
 
 	return sb.String()
+}
+
+// detectTaskType returns "coding", "review", "teaching", "research", or "general".
+func detectTaskType(query string) string {
+	switch {
+	case containsAny(query, "code", "fix", "refactor", "implement", "write", "bug", "test",
+		"代码", "修复", "重构", "实现", "写", "测试", "改", "build", "add", "create"):
+		return "coding"
+	case containsAny(query, "review", "audit", "check", "security", "vulnerability",
+		"审查", "审计", "检查", "安全", "漏洞", "review"):
+		return "review"
+	case containsAny(query, "explain", "how", "what", "why", "document", "tutorial",
+		"解释", "怎么", "为什么", "文档", "教程", "介绍"):
+		return "teaching"
+	case containsAny(query, "research", "investigate", "analyze", "compare", "options",
+		"研究", "调查", "分析", "比较", "方案", "design", "architecture"):
+		return "research"
+	default:
+		return "general"
+	}
+}
+
+// loadPromptFile reads a prompt file if it exists.
+func loadPromptFile(dir, name string) string {
+	data, err := os.ReadFile(filepath.Join(dir, name))
+	if err != nil || len(data) == 0 {
+		return ""
+	}
+	return string(data)
 }
 
 // ── Helpers ─────────────────────────────────────────────────

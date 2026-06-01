@@ -304,25 +304,21 @@ func (k *AgentKernel) buildMessages(ctx context.Context, session *Session, query
 // ── Layer Builders ──────────────────────────────────────────
 // Each layer has a clear activation condition and injection point.
 
-// buildSystemLayer assembles layered prompts L0+L1+L3 as stable prefix.
-// L2 (skill) is injected here. L4+L5 are dynamic tail in buildMessages.
+// buildSystemLayer assembles the prompt. Priority:
+// 1. Custom prompt from ~/.openaide/data/prompts/system.{lang}.md
+// 2. Layered prompts (L0+L1+L3) with file overrides per layer
 func (k *AgentKernel) buildSystemLayer(query *Query) string {
-	// If user has a custom file-based system prompt, use it instead of layers
+	// If user has a custom monolithic system prompt, use it
 	if sp := k.systemPrompt.Load().(string); sp != "" {
-		// Check if it's NOT one of our layered default prompts
-		if !containsAny(sp, "Coding Mode", "Review Mode", "Teaching Mode", "Research Mode",
-			"编码模式", "审查模式", "教学模式", "研究模式") {
-			if k.skillActor != nil {
-				sp = k.skillActor.InjectPrompt(query.Content, sp)
-			}
-			return sp
+		if k.skillActor != nil {
+			sp = k.skillActor.InjectPrompt(query.Content, sp)
 		}
+		return sp
 	}
 
-	// Build layered stable prefix (L0+L1+L3)
+	// Build layered prompt (L0+L1+L3) — each layer file-overridable
 	sp := k.buildSystemPrompt(query)
 
-	// L2: Skill prompt injection
 	if k.skillActor != nil {
 		sp = k.skillActor.InjectPrompt(query.Content, sp)
 	}
