@@ -411,7 +411,7 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string,
 	var streamBuffer strings.Builder // 未完成行缓冲
 	var rendered int               // 已渲染位置
 	var toolNames []string
-	thinkShown := false
+	thinkCount := 0
 	firstChunk := true
 
 	// 等待第一个chunk时显示思考中指示器
@@ -445,23 +445,29 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string,
 			if chunk.Usage != nil { totalTokens = chunk.Usage.TotalTokens; cacheHit = chunk.Usage.PromptCacheHitTokens; cacheMiss = chunk.Usage.PromptCacheMissTokens }
 			break
 		}
-		if chunk.ReasoningContent != "" && !thinkShown {
+		if chunk.ReasoningContent != "" && thinkCount < 2 {
 			// 只显示一行思考摘要，带工具上下文
 			firstLine := strings.SplitN(chunk.ReasoningContent, "\n", 2)[0]
 			if len(firstLine) > 100 { firstLine = firstLine[:97] + "..." }
 			fmt.Printf("\r\033[K  %s[think]%s %s%s%s\n", cThink, cReset, cDim, firstLine, cReset)
-			thinkShown = true
+			thinkCount++
 		}
 		if chunk.Type == kernel.ChunkTypeToolCall && chunk.ToolName != "" {
 			toolNames = append(toolNames, chunk.ToolName)
 			totalTools++
-			thinkShown = false
 			icon := toolIcon(chunk.ToolName)
 			fmt.Printf("\r\033[K  %s%s %s%s\n", cYellow, icon, chunk.ToolName, cReset)
 			// 实时更新工具状态行
 			display := toolNames
 			if len(display) > 4 { display = display[len(display)-4:] }
-			toolStr := strings.Join(display, ", ")
+			// Deduplicate consecutive identical tool names
+			var deduped []string
+			for _, t := range display {
+				if len(deduped) == 0 || deduped[len(deduped)-1] != t {
+					deduped = append(deduped, t)
+				}
+			}
+			toolStr := strings.Join(deduped, ", ")
 		if len(toolStr) > 80 { toolStr = toolStr[:77] + "..." }
 		fmt.Printf("\r\033[K  %s%s%s\n", pterm.Cyan("🔧"), cDim, toolStr)
 			fmt.Print("\033[1A") // cursor up to overwrite on next update
