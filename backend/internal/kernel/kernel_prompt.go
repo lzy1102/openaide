@@ -75,19 +75,22 @@ func promptL1() string {
 		sb.WriteString(out)
 	}
 
-	// Project rules (OPENAIDE.md, CLAUDE.md, etc.)
+	// Project rules — load all found rule files, merge into one context
 	ruleFiles := []string{"CLAUDE.md", "OPENAIDE.md", "CODEBUDDY.md", "CONVENTIONS.md"}
+	loaded := false
 	for _, f := range ruleFiles {
 		if data, err := os.ReadFile(filepath.Join(cwd, f)); err == nil && len(data) > 0 {
 			content := string(data)
 			if len(content) > 2000 {
 				content = content[:2000] + "..."
 			}
-			sb.WriteString("\n[Rules] ")
+			if !loaded {
+				sb.WriteString("\n[Rules] ")
+				loaded = true
+			}
 			sb.WriteString(f)
 			sb.WriteString(":\n")
 			sb.WriteString(content)
-			break // Only load the first found rule file
 		}
 	}
 
@@ -122,7 +125,8 @@ func promptL3_EN(task string) string {
 		return `
 ## Review Mode
 - Check for: correctness, security, performance, readability, edge cases.
-- Flag potential issues with concrete suggestions.
+- Before reporting "X is missing": search for X elsewhere in the codebase. Timeouts, locks, and validation are often in callers, not the current function.
+- Flag potential issues with concrete suggestions (file name, line, what to change).
 - Look for: SQL injection, XSS, race conditions, nil pointers, resource leaks.
 - Verify error handling is complete and appropriate.`
 
@@ -219,18 +223,18 @@ func promptL5(reflection *ReflectionResult) string {
 		return ""
 	}
 	sb := new(strings.Builder)
-	sb.WriteString("\n## Lessons from Last Execution")
+	sb.WriteString("\n## Lessons from Last Execution — Apply These")
 	if len(reflection.Issues) > 0 {
-		sb.WriteString("\nIssues to avoid:")
+		sb.WriteString("\nAvoid these mistakes from last time:")
 		for _, issue := range reflection.Issues {
-			sb.WriteString("\n- ")
+			sb.WriteString("\n- ❌ ")
 			sb.WriteString(issue)
 		}
 	}
 	if len(reflection.Suggestions) > 0 {
-		sb.WriteString("\nImprovements to apply:")
+		sb.WriteString("\nApply these improvements:")
 		for _, s := range reflection.Suggestions {
-			sb.WriteString("\n- ")
+			sb.WriteString("\n- ✅ ")
 			sb.WriteString(s)
 		}
 	}
