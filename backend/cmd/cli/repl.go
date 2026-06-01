@@ -457,20 +457,6 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string,
 			totalTools++
 			icon := toolIcon(chunk.ToolName)
 			fmt.Printf("\r\033[K  %s%s %s%s\n", cYellow, icon, chunk.ToolName, cReset)
-			// 实时更新工具状态行
-			display := toolNames
-			if len(display) > 4 { display = display[len(display)-4:] }
-			// Deduplicate consecutive identical tool names
-			var deduped []string
-			for _, t := range display {
-				if len(deduped) == 0 || deduped[len(deduped)-1] != t {
-					deduped = append(deduped, t)
-				}
-			}
-			toolStr := strings.Join(deduped, ", ")
-		if len(toolStr) > 80 { toolStr = toolStr[:77] + "..." }
-		fmt.Printf("\r\033[K  %s%s%s\n", pterm.Cyan("🔧"), cDim, toolStr)
-			fmt.Print("\033[1A") // cursor up to overwrite on next update
 		}
 	}
 	elapsed := time.Since(startTime)
@@ -482,12 +468,9 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string,
 	if fullResponse.Len() > 0 {
 		// 渲染最终回答
 		rendered := RenderMarkdown(fullResponse.String())
-		// 用分隔线将回答与工具区隔开
-		fmt.Println()
 		fmt.Println(rendered)
 	}
 	PrintStatusBar(totalTokens, totalTools, elapsed, "deepseek-v4-pro", cacheHit, cacheMiss)
-	// Clear visual boundary between response and next prompt
 	fmt.Printf("\n%s▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸%s\n\n", cDim, cReset)
 	if qs := tools.GetPendingQuestions(); len(qs) > 0 {
 		fmt.Println()
