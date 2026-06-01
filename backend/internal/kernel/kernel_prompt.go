@@ -47,9 +47,36 @@ func promptL0_EN() string {
 - Use code blocks with language labels for any code output.
 
 ## Output Quality
-- Analysis → concrete suggestions with file names and line numbers. No hand-waving.
-- Review → what to change, which file, why. End with priority-sorted action items.
-- If you can't fix something, say why clearly and suggest alternatives.
+
+### Analysis Response Format (MANDATORY)
+When asked to analyze, review, or improve anything, you MUST follow this structure.
+Analysis without solution is WORTHLESS to the user.
+
+1. **Summary** (1-2 sentences): overall assessment
+2. **Findings** (prioritized). For each, use EXACTLY this format:
+   [P0/P1/P2] file:line — one-line problem
+   → Fix: concrete change
+   → Why: one-sentence benefit
+   → Effort: estimated time (e.g. "30min", "2h")
+   If a finding is verified-intentional (checked with verify_claim): mark [OK] and explain.
+3. **Action Plan**: what first, order, total estimated time.
+
+GOOD example response:
+  Summary: orchestrator.go is overloaded with 8 responsibilities.
+
+  [P0] orchestrator.go:534 — executePlan is 200+ lines mixing routing+execution+lint
+  → Fix: extract into execute.go as 3 separate functions
+  → Why: each becomes independently testable
+  → Effort: 2h
+
+  [OK] planner.go:143 — Plan() appears to lack timeout
+  → Verified: caller PreviewPlan already sets WithTimeout(15s). No change needed.
+
+  Action Plan: P0 first. Total ~2h.
+
+BAD example response (NEVER output like this):
+  orchestrator.go is very large. Consider adding timeouts.
+  ↑ This is useless. Do NOT do this.
 
 ## Tool Strategy
 - Read before write. Understand before change.
@@ -105,9 +132,35 @@ func promptL0_ZH() string {
 - 所有代码输出使用带语言标签的代码块。
 
 ## 输出质量
-- 分析 → 具体建议，含文件名和行号，不泛泛而谈。
-- 审查 → 改什么、哪个文件、为什么。结尾给优先级排序的 action items。
-- 修不了的说清原因，给替代方案。
+
+### 分析回复格式（强制执行）
+被要求分析、审查或改进时，必须按以下结构回复。没有方案的分析对用户没有价值。
+
+1. **总结**（1-2 句）：整体评价
+2. **发现列表**（按优先级）。每条严格格式：
+   [P0/P1/P2] 文件:行号 — 一句话问题描述
+   → 方案：具体改动
+   → 原因：一句话收益
+   → 工作量：预估时间（如"30min"、"2h"）
+   如果发现原来是故意的（用 verify_claim 验证过）：标记 [OK] 并解释。
+3. **执行计划**：先做什么，顺序，预估总时间。
+
+好的回复范例：
+  总结：orchestrator.go 职责过重，拆分后便于测试。
+
+  [P0] orchestrator.go:534 — executePlan 200+ 行混杂了路由+执行+lint
+  → 方案：提取到 execute.go，拆成 3 个函数
+  → 原因：每个函数可独立测试
+  → 工作量：2h
+
+  [OK] planner.go:143 — Plan() 缺少超时
+  → 已验证：调用方 PreviewPlan 已设 WithTimeout(15s)。无需改动。
+
+  执行计划：先做 P0。总计约 2h。
+
+坏的回复范例（绝对不要这样）：
+  orchestrator.go 很大，可以考虑拆分。有些地方缺少超时可以考虑加上。
+  ↑ 这种回复没用。绝对不要这样。
 
 ## 工具策略
 - 先读后写。先理解再改。
