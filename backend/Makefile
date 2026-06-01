@@ -82,7 +82,7 @@ test-coverage:
 clean:
 	rm -rf $(BIN_DIR)/
 	rm -f coverage.out coverage.html
-	find cmd -type f -executable -delete 2>/dev/null || true
+	rm -f cmd/*/openaide cmd/*/server cmd/*/cli
 	go clean
 
 fmt:
