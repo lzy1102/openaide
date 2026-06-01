@@ -329,17 +329,20 @@ storage:
 
 **REPL mode** — `openaide`:
 - `cmd/cli/repl.go` — Rich terminal REPL with lmorg/readline:
-  - Readline with history, tab completion, hints
+  - Readline with file-backed history (~/.openaide/history), tab completion, hints
   - Markdown rendering via glamour (headers, code blocks with Chroma, tables)
   - pterm: progress bars, spinners, colored messages
   - Claude-style approval: 3-option select (Allow/Allow All/Deny)
   - Smart routing: PreviewPlan → direct ReAct or team execution
-  - Streaming display: tool summary line, answer rendered after completion
+  - Streaming display: deduplicated tool names, max 2 think lines
+  - Visual separator between response and next prompt
+  - Simplified prompt (session ID + ❯, model in banner)
+  - /clear deletes session + starts fresh (no confirmation)
   - Slash commands: `/analyst`, `/coder`, `/reviewer`, `/executor`, `/team`, `/auto`
   - Session resume: `-c` flag loads last non-empty session
   - Version display: `openaide --version` shows build info from ldflags
 - `cmd/cli/repl_output.go` — pterm/ANSI styling, glamour renderer, output helpers
-- `cmd/cli/repl.go` — main REPL loop, session management, slash commands
+- `cmd/cli/setup.go` — interactive setup wizard (language→provider→API key→model)
 
 ### Budget injection (Claude Code style)
 
