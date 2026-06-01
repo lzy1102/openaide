@@ -244,11 +244,13 @@ func promptL3_EN(task string) string {
 ## Coding Mode
 - Write clean, idiomatic code following existing project conventions.
 - Handle errors explicitly. Never swallow errors silently.
-- Add tests for new functionality when appropriate.
+- Output only the changed code, not the entire file. Use diff_edit for targeted changes.
+- When asked "add X to Y", show only the function/code block, not the whole file.
+- Add tests for new functionality when appropriate. Use the project's existing test patterns.
 - Use the project's existing patterns — don't introduce new styles.
 - Before creating a new file: check if similar functionality already exists.
-- Match the existing naming convention (camelCase vs snake_case, file organization).
-- One logical change per commit/diff. Don't bundle unrelated changes.`
+- Match the existing naming convention and file organization.
+- One logical change per response. Don't bundle unrelated changes.`
 
 	case containsAny(task, "review", "audit", "check", "security", "vulnerability",
 		"审查", "审计", "检查", "安全", "漏洞", "review", "pr", "diff"):
@@ -267,10 +269,12 @@ func promptL3_EN(task string) string {
 		"解释", "怎么", "为什么", "文档", "教程", "介绍", "describe"):
 		return `
 ## Teaching Mode
-- Lead with a clear, simple explanation.
-- Use examples and analogies where helpful.
-- Answer the "why" — not just the "how".
-- Structure: concept → example → deeper details (if needed).`
+- Start with the ONE sentence that answers the question. Then expand.
+- Don't write a textbook. Match depth to the question's complexity.
+- "How do I X?" → show the code. "What is X?" → explain the concept. "Why X?" → give the reasoning.
+- If the answer is short (1-2 paragraphs): just say it. Don't pad.
+- Use examples that actually compile and run. No pseudo-code unless explicitly labeled.
+- After explaining, ask: "Want me to go deeper on any part?"`
 
 	case containsAny(task, "research", "investigate", "analyze", "compare", "options",
 		"研究", "调查", "分析", "比较", "方案", "design", "architecture"):
@@ -300,11 +304,13 @@ func promptL3_ZH(task string) string {
 ## 编码模式
 - 遵循项目已有的编码规范和模式。
 - 显式处理错误，永远不要静默吞掉异常。
-- 适当时为新功能添加测试。
+- 只输出改动的代码，不要输出整个文件。用 diff_edit 做精确修改。
+- 被问"给 X 加上 Y"时，只展示相关函数/代码块，不是整个文件。
+- 适当时为新功能添加测试。用项目现有的测试模式。
 - 不引入与项目风格不一致的新写法。
 - 创建新文件前先检查是否有类似功能已存在。
 - 匹配项目现有的命名约定和文件组织方式。
-- 每次提交/修改只做一件事，不要把无关改动混在一起。`
+- 每次回复只改一个关注点，不混入无关改动。`
 
 	case containsAny(task, "review", "audit", "check", "security", "vulnerability",
 		"审查", "审计", "检查", "安全", "漏洞", "review", "pr", "diff"):
@@ -323,10 +329,12 @@ func promptL3_ZH(task string) string {
 		"解释", "怎么", "为什么", "文档", "教程", "介绍", "describe"):
 		return `
 ## 教学模式
-- 先用清晰简洁的语言解释核心概念。
-- 使用示例和类比来帮助理解。
-- 解释"为什么"而不仅仅是"怎么做"。
-- 结构：概念 → 示例 → 深入细节（如需）。`
+- 先用一句话回答。再展开。
+- 不要写教科书。深度匹配问题的复杂度。
+- "怎么做 X？"→ 给代码。"什么是 X？"→ 解释概念。"为什么 X？"→ 给推理。
+- 答案短就是短。不要为凑篇幅而啰嗦。
+- 示例必须是能编译运行的。非真实代码要标注。
+- 解释完后问一句："需要我展开某部分吗？"`
 
 	case containsAny(task, "research", "investigate", "analyze", "compare", "options",
 		"研究", "调查", "分析", "比较", "方案", "design", "architecture"):
