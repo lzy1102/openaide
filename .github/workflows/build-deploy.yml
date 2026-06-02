@@ -14,8 +14,8 @@ jobs:
         with:
           go-version: "1.26"
 
-      - name: Build
-        run: cd backend && mkdir -p cmd/server/frontend && touch cmd/server/frontend/.gitkeep && make build
+      - name: Build All Platforms
+        run: cd backend && mkdir -p cmd/server/frontend && touch cmd/server/frontend/.gitkeep && make build-all
 
       - name: Test
         run: cd backend && go test -short ./internal/...
