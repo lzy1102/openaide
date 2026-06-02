@@ -1,6 +1,8 @@
 # OpenAIDE | AI Agent 内核平台
 
-Go 编写的 AI Agent 内核，提供 **REPL 命令行** + **Web 前端** + **HTTP API Server**。
+Go 编写的 AI Agent 内核——**知识积累、自主进化、24 语言 LSP**。提供 REPL + Web + API Server。
+
+> Unlike other agents, OpenAIDE learns from every task. Reflection → Knowledge Refinement → Skill Extraction — it gets smarter with use.
 
 ---
 
@@ -212,6 +214,20 @@ git push origin v1.0.0
 - **Architect/Editor 模型路由**: analyst/reviewer→推理模型，coder/executor→执行模型
 - **预算注入**: LLM 感知剩余轮次，主动收敛而非突然截断
 - **ProjectMind 持续学习**: 跨会话积累项目知识，纠正/衰减/清零，越用越聪明
+
+### 对比其他 Agent
+
+| 能力 | Claude Code | Aider | Codex/Cursor | OpenAIDE |
+|------|-------------|-------|-------------|----------|
+| 知识积累学习 | ❌ | ❌ | ❌ | ✅ |
+| 技能自动提取 | ❌ | ❌ | ❌ | ✅ |
+| CSP Actor (零锁) | ❌ | ❌ | ❌ | ✅ |
+| 分层提示词 | ❌ | ❌ | ❌ | ✅ |
+| 向量 ANN 搜索 | ❌ | ❌ | ❌ | ✅ |
+| 24 语言 LSP | ✅ | ✅ | ✅ | ✅ |
+| 桌面控制 | ❌ | ❌ | ❌ | ✅ |
+| Web 前端 | ❌ | ❌ | ❌ | ✅ |
+| 移动端接入 | ❌ | ❌ | ❌ | ✅ |
 
 ### 核心架构
 - **CSP Actor 模型**: Session/Skill/Memory/Knowledge 全采用 Go 原生 CSP (channel 通信)，50→19 锁
