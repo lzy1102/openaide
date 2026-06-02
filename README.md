@@ -1,5 +1,9 @@
 # OpenAIDE — AI Agent Kernel
 
+[![Build](https://github.com/lzy1102/openaide/actions/workflows/build-deploy.yml/badge.svg)](https://github.com/lzy1102/openaide/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Go 1.26](https://img.shields.io/badge/Go-1.26-00ADD8.svg)](https://go.dev/)
+
 [English](#) | [中文](README.zh.md)
 
 **Go-based AI agent kernel that learns from every task.** 
