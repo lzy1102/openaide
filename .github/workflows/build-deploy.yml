@@ -15,7 +15,7 @@ jobs:
           go-version: "1.26"
 
       - name: Build
-        run: cd backend && make build
+        run: cd backend && mkdir -p cmd/server/frontend && touch cmd/server/frontend/.gitkeep && make build
 
       - name: Test
         run: cd backend && go test -short ./internal/...
