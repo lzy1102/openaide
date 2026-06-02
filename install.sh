@@ -14,7 +14,6 @@
 #      bash ~/.openaide/install.sh --local
 #
 #   4. 使用本地 tar.gz 包安装:
-#      bash install.sh --archive /path/to/openaide-linux-amd64.tar.gz
 #
 
 set -e
@@ -91,8 +90,8 @@ get_latest_version() {
 # 下载 Release
 download_release() {
     local ver="$1"
-    local download_url="https://github.com/$GITHUB_REPO/releases/download/$ver/openaide-linux-amd64.tar.gz"
-    local temp_file="/tmp/openaide-$ver.tar.gz"
+    local download_url="https://github.com/$GITHUB_REPO/releases/download/$ver/openaide-linux-amd64"
+    local temp_file="/tmp/openaide-$ver"
 
     log_info "下载 OpenAIDE $ver..."
     log_info "URL: $download_url"
@@ -132,14 +131,14 @@ install_from_archive() {
     tar -xzf "$archive" -C "$INSTALL_DIR" --overwrite
 
     # 确保可执行
-    chmod +x "$BIN_DIR"/openaide-server "$BIN_DIR"/openaide-cli 2>/dev/null || true
+    chmod +x "$BIN_DIR"/openaide-server "$BIN_DIR"/openaide 2>/dev/null || true
 
     # 创建快捷命令
-    ln -sf "$BIN_DIR/openaide-cli" "$BIN_DIR/openaide" 2>/dev/null || true
+    ln -sf "$BIN_DIR/openaide" "$BIN_DIR/openaide" 2>/dev/null || true
 
     # 创建系统级软链接 (需要 root)
     ln -sf "$BIN_DIR/openaide-server" /usr/local/bin/openaide-server 2>/dev/null || true
-    ln -sf "$BIN_DIR/openaide-cli" /usr/local/bin/openaide-cli 2>/dev/null || true
+    ln -sf "$BIN_DIR/openaide" /usr/local/bin/openaide 2>/dev/null || true
     ln -sf "$BIN_DIR/openaide" /usr/local/bin/openaide 2>/dev/null || true
 
     # 添加到 PATH
@@ -269,15 +268,15 @@ local_build() {
     CGO_ENABLED=0 go build -ldflags "-s -w" -o "$BIN_DIR/openaide-server" ./cmd/server
 
     log_info "编译 CLI..."
-    CGO_ENABLED=0 go build -ldflags "-s -w" -o "$BIN_DIR/openaide-cli" ./cmd/cli
+    CGO_ENABLED=0 go build -ldflags "-s -w" -o "$BIN_DIR/openaide" ./cmd/cli
 
     log_info "运行测试..."
     go test ./internal/... || log_warn "部分测试失败"
 
     # 创建快捷命令和软链接
-    ln -sf "$BIN_DIR/openaide-cli" "$BIN_DIR/openaide" 2>/dev/null || true
+    ln -sf "$BIN_DIR/openaide" "$BIN_DIR/openaide" 2>/dev/null || true
     ln -sf "$BIN_DIR/openaide-server" /usr/local/bin/openaide-server 2>/dev/null || true
-    ln -sf "$BIN_DIR/openaide-cli" /usr/local/bin/openaide-cli 2>/dev/null || true
+    ln -sf "$BIN_DIR/openaide" /usr/local/bin/openaide 2>/dev/null || true
     ln -sf "$BIN_DIR/openaide" /usr/local/bin/openaide 2>/dev/null || true
 
     # 添加到 PATH
@@ -354,7 +353,7 @@ show_status() {
     echo ""
     echo "安装目录: $INSTALL_DIR"
     echo "二进制:   $BIN_DIR/openaide-server"
-    echo "          $BIN_DIR/openaide-cli"
+    echo "          $BIN_DIR/openaide"
     echo "          $BIN_DIR/openaide (快捷命令)"
     echo "配置:     $CONFIG_FILE"
     echo "数据:     $DATA_DIR"
@@ -399,7 +398,6 @@ main() {
             --local|-l)
                 use_local=true
                 ;;
-            --archive|-a)
                 archive_path="$2"
                 shift
                 ;;
@@ -412,7 +410,6 @@ main() {
                 echo ""
                 echo "选项:"
                 echo "  --local, -l           本地编译安装 (代码需在 $INSTALL_DIR)"
-                echo "  --archive, -a <path>  从本地 tar.gz 包安装"
                 echo "  --version, -v         指定版本号 (默认: latest)"
                 echo "  --help, -h            显示帮助"
                 echo ""
@@ -424,7 +421,6 @@ main() {
                 echo "  $0                              # 从 GitHub Release 安装最新版"
                 echo "  VERSION=v1.0.0 $0               # 安装指定版本"
                 echo "  $0 --local                      # 本地编译安装"
-                echo "  $0 --archive ./openaide.tar.gz  # 从本地包安装"
                 exit 0
                 ;;
         esac
