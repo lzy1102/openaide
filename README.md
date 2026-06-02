@@ -1,10 +1,34 @@
-# OpenAIDE | AI Agent 内核平台
+# OpenAIDE | AI Agent Kernel
 
-Go 编写的 AI Agent 内核——**知识积累、自主进化、24 语言 LSP**。提供 REPL + Web + API Server。
+[English](#quick-start) | [中文](#快速开始)
 
-> Unlike other agents, OpenAIDE learns from every task. Reflection → Knowledge Refinement → Skill Extraction — it gets smarter with use.
+**Go-based AI Agent kernel — learns from every task, never makes the same mistake twice.**  
+CSP Actor architecture | 50→19 locks | SQLite vector search | 40 tools | 24-language LSP
+
+> Reflection → Knowledge Refinement → Skill Extraction. It gets smarter with use.
+
+**Go 实现的 AI Agent 内核——知识积累、自主进化、24 语言 LSP。**  
+CSP Actor 架构 | 50→19 锁 | SQLite 向量搜索 | 40 工具 | 24 语言 LSP
 
 ---
+
+## Quick Start
+
+### Linux / macOS
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/lzy1102/openaide/master/install.sh | bash
+openaide setup        # Interactive setup wizard
+openaide              # Start chatting
+```
+
+### Build from source
+
+```bash
+git clone https://github.com/lzy1102/openaide.git
+cd openaide && make install
+openaide setup
+```
 
 ## 快速开始
 
