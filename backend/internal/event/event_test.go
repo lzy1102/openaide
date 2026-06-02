@@ -70,8 +70,8 @@ func TestBus_GetEvents(t *testing.T) {
 
 func TestBus_MaxEvents(t *testing.T) {
 	bus := NewBus()
-	bus.EnablePersistence(t.TempDir())
-
+	// Don't enable persistence — the disk I/O from 10K goroutines races
+	// with temp dir cleanup and causes flaky failures.
 	for i := 0; i < 11000; i++ {
 		bus.Publish(kernel.Event{Type: "test", Source: "test"})
 	}

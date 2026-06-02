@@ -19,7 +19,7 @@ jobs:
         run: cd backend && mkdir -p cmd/server/frontend && touch cmd/server/frontend/.gitkeep && make build-all
 
       - name: Test
-        run: cd backend && go test -short -skip "TestBus_MaxEvents" ./internal/...
+        run: cd backend && go test -short ./internal/...
 
       - name: Release
         if: startsWith(github.ref, 'refs/tags/v')

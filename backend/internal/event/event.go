@@ -44,13 +44,16 @@ const maxEvents = 10000
 
 // Publish 发布事件
 func (b *Bus) Publish(event kernel.Event) {
+	// Always maintain ring buffer (for GetEvents/Replay)
+	b.eventsMu.Lock()
+	b.events = append(b.events, event)
+	if len(b.events) > maxEvents {
+		b.events = b.events[len(b.events)-maxEvents:]
+	}
+	b.eventsMu.Unlock()
+
+	// Optional disk persistence
 	if b.persistEnabled {
-		b.eventsMu.Lock()
-		b.events = append(b.events, event)
-		if len(b.events) > maxEvents {
-			b.events = b.events[len(b.events)-maxEvents:]
-		}
-		b.eventsMu.Unlock()
 		go b.persistEvent(event)
 	}
 	// Dispatch
