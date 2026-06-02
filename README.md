@@ -2,8 +2,8 @@
 
 [English](#) | [中文](README.zh.md)
 
-**Go-based AI agent kernel that learns from every task.**  
-CSP Actor · 50→19 locks · SQLite · Vector ANN · 40 tools · 24-language LSP
+**Go-based AI agent kernel that learns from every task.** 
+SQLite · Vector ANN · 40 tools · 24-language LSP
 
 > Reflection → Knowledge Refinement → Skill Extraction — gets smarter with every use.
 
@@ -44,7 +44,7 @@ install.bat
 |----------|-------------|-------|-------------|----------|
 | Knowledge Accumulation | ❌ | ❌ | ❌ | ✅ Reflection → Refine → Skill |
 | Self-learning Skills | ❌ | ❌ | ❌ | ✅ Auto-extract from patterns |
-| CSP Actor (zero-lock) | ❌ | ❌ | ❌ | ✅ 50→19 locks |
+| CSP Actor (zero-lock) | ❌ | ❌ | ❌ | ✅ |
 | Layered Prompts L0-L5 | ❌ | ❌ | ❌ | ✅ Task-adaptive |
 | Vector ANN Search | ❌ | ❌ | ❌ | ✅ Bucketed O(n/256) |
 | Desktop Control | ❌ | ❌ | ❌ | ✅ Cross-platform |
@@ -58,15 +58,15 @@ install.bat
 ## Architecture
 
 ```
-cmd/server (API)        cmd/cli (REPL)
-         \____________________/
-                  |
-        infra/Application        ← DI container
-       /    |    |      \
-   api/  orchestration/  channel/
-            |
-   kernel/AgentKernel           ← ReAct loop
-   /    |    |      \
+cmd/server (API)    cmd/cli (REPL)
+     \____________________/
+         |
+    infra/Application    ← DI container
+    /  |  |   \
+  api/ orchestration/ channel/
+      |
+  kernel/AgentKernel      ← ReAct loop
+  /  |  |   \
  llm/ tools/ memory/ knowledge/
 ```
 
@@ -117,27 +117,27 @@ cmd/server (API)        cmd/cli (REPL)
 
 ```yaml
 llm:
-  providers:
-    - name: deepseek
-      type: openai
-      base_url: https://api.deepseek.com/v1
-      api_key: sk-xxx
-      default_model: deepseek-v4-pro
-      timeout: 300
-    - name: deepseek-flash
-      type: openai
-      base_url: https://api.deepseek.com/v1
-      api_key: sk-xxx
-      default_model: deepseek-v4-flash
-      timeout: 120
-  model_routing:
-    reasoning: deepseek-v4-pro
-    execution: deepseek-v4-flash
+ providers:
+  - name: deepseek
+   type: openai
+   base_url: https://api.deepseek.com/v1
+   api_key: sk-xxx
+   default_model: deepseek-v4-pro
+   timeout: 300
+  - name: deepseek-flash
+   type: openai
+   base_url: https://api.deepseek.com/v1
+   api_key: sk-xxx
+   default_model: deepseek-v4-flash
+   timeout: 120
+ model_routing:
+  reasoning: deepseek-v4-pro
+  execution: deepseek-v4-flash
 
-lang: zh                                 # UI language: zh / en
+lang: zh                 # UI language: zh / en
 
 storage:
-  session_store: sqlite                  # sqlite / file / memory
+ session_store: sqlite         # sqlite / file / memory
 ```
 
 ---
@@ -145,16 +145,16 @@ storage:
 ## Commands
 
 ```bash
-openaide                    # Interactive REPL
-openaide "prompt"           # One-shot query
-openaide -c                 # Resume last session
-openaide -y                 # Auto-approve all tools
-openaide --model <name>      # Override model
-openaide --verbose           # Debug logging
-openaide setup              # Interactive setup wizard
-openaide sessions           # List sessions
-openaide plugins            # List plugins
-openaide update             # Self-update
+openaide          # Interactive REPL
+openaide "prompt"      # One-shot query
+openaide -c         # Resume last session
+openaide -y         # Auto-approve all tools
+openaide --model <name>   # Override model
+openaide --verbose      # Debug logging
+openaide setup       # Interactive setup wizard
+openaide sessions      # List sessions
+openaide plugins      # List plugins
+openaide update       # Self-update
 ```
 
 ---

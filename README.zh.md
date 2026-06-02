@@ -2,8 +2,8 @@
 
 [English](README.md) | [中文](#)
 
-**Go 实现的 AI Agent 内核——知识积累、自主进化、每次任务都在变聪明。**  
-CSP Actor · 50→19 锁 · SQLite · 向量 ANN · 40 工具 · 24 语言 LSP
+**Go 实现的 AI Agent 内核——知识积累、自主进化、每次任务都在变聪明。** 
+CSP Actor · SQLite · 向量 ANN · 40 工具 · 24 语言 LSP
 
 > 反思 → 知识精炼 → 技能提取 —— 越用越聪明。
 
@@ -37,7 +37,7 @@ openaide setup
 |------|-------------|-------|-------------|----------|
 | 知识积累学习 | ❌ | ❌ | ❌ | ✅ 反思→精炼→技能 |
 | 技能自动提取 | ❌ | ❌ | ❌ | ✅ 从模式自动创建 |
-| CSP Actor (零锁) | ❌ | ❌ | ❌ | ✅ 50→19 锁 |
+| CSP Actor (零锁) | ❌ | ❌ | ❌ | ✅ |
 | 分层提示词 L0-L5 | ❌ | ❌ | ❌ | ✅ 按任务适配 |
 | 向量 ANN 搜索 | ❌ | ❌ | ❌ | ✅ 分桶 O(n/256) |
 | 桌面控制 | ❌ | ❌ | ❌ | ✅ 跨平台 |
@@ -51,15 +51,15 @@ openaide setup
 ## 架构
 
 ```
-cmd/server (API)        cmd/cli (REPL)
-         \____________________/
-                  |
-        infra/Application         ← DI 容器
-       /    |    |      \
-   api/  orchestration/  channel/
-            |
-   kernel/AgentKernel             ← ReAct 循环
-   /    |    |      \
+cmd/server (API)    cmd/cli (REPL)
+     \____________________/
+         |
+    infra/Application     ← DI 容器
+    /  |  |   \
+  api/ orchestration/ channel/
+      |
+  kernel/AgentKernel       ← ReAct 循环
+  /  |  |   \
  llm/ tools/ memory/ knowledge/
 ```
 
@@ -110,14 +110,14 @@ cmd/server (API)        cmd/cli (REPL)
 
 ```yaml
 llm:
-  api_key: sk-xxx                       # 你的 API Key
-  model: deepseek-v4-pro                # gpt-4o / claude-sonnet-4-6
-  execution_model: deepseek-v4-flash    # 快速模型（可选）
+ api_key: sk-xxx            # 你的 API Key
+ model: deepseek-v4-pro        # gpt-4o / claude-sonnet-4-6
+ execution_model: deepseek-v4-flash  # 快速模型（可选）
 
-lang: zh                                # UI 语言：zh / en
+lang: zh                # UI 语言：zh / en
 
 storage:
-  session_store: sqlite                 # sqlite / file / memory
+ session_store: sqlite         # sqlite / file / memory
 ```
 
 ---
@@ -125,16 +125,16 @@ storage:
 ## 命令行
 
 ```bash
-openaide                    # 交互式 REPL
-openaide "问题"              # 一次性问答
-openaide -c                 # 恢复上次会话
-openaide -y                 # 自动审批所有工具
-openaide --model <名称>      # 覆盖模型
-openaide --verbose           # 调试日志
-openaide setup              # 交互式配置向导
-openaide sessions           # 列出会话
-openaide plugins            # 列出插件
-openaide update             # 更新
+openaide          # 交互式 REPL
+openaide "问题"       # 一次性问答
+openaide -c         # 恢复上次会话
+openaide -y         # 自动审批所有工具
+openaide --model <名称>   # 覆盖模型
+openaide --verbose      # 调试日志
+openaide setup       # 交互式配置向导
+openaide sessions      # 列出会话
+openaide plugins      # 列出插件
+openaide update       # 更新
 ```
 
 ---
