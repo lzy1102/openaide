@@ -485,9 +485,11 @@ func (k *AgentKernel) publishEvent(event Event) {
 				handler.HandleEvent(event)
 				done <- struct{}{}
 			}()
-			select {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				select {
 			case <-done:
-			case <-time.After(5 * time.Second):
+			case <-ctx.Done():
 				slog.Warn("Event handler timed out", "event", event.Type)
 			}
 		}(h)
