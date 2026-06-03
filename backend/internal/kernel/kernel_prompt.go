@@ -190,11 +190,9 @@ func promptL1() string {
 
 // ── L3: Task Adapter ────────────────────────────────────────
 
-func promptL3_EN(task string) string {
-	switch {
-	case containsAny(task, "code", "fix", "refactor", "implement", "write", "bug", "test",
-		"代码", "修复", "重构", "实现", "写", "测试", "改", "build", "add", "create", "function",
-		"api", "endpoint", "handler", "route", "component", "module", "class", "struct", "interface"):
+func promptL3_task_EN(task string) string {
+	switch task {
+	case "coding":
 		return `
 ## Coding Mode
 - Write clean, idiomatic code following existing project conventions.
@@ -207,8 +205,7 @@ func promptL3_EN(task string) string {
 - Match the existing naming convention and file organization.
 - After every code change: read back the modified lines to verify the change is correct. Don't skip this.`
 
-	case containsAny(task, "review", "audit", "check", "security", "vulnerability",
-		"审查", "审计", "检查", "安全", "漏洞", "review", "pr", "diff"):
+	case "review":
 		return `
 ## Review Mode
 - Check for: correctness, security, performance, readability, edge cases.
@@ -222,8 +219,7 @@ func promptL3_EN(task string) string {
 ### Output Format (MANDATORY)
 [P0/P1/P2] file:line — one-line problem → Fix → Why → Effort. If verified intentional: mark [OK]. End with Action Plan.`
 
-	case containsAny(task, "explain", "how", "what", "why", "document", "tutorial",
-		"解释", "怎么", "为什么", "文档", "教程", "介绍", "describe"):
+	case "teaching":
 		return `
 ## Teaching Mode
 - Start with the ONE sentence that answers the question. Then expand.
@@ -233,8 +229,7 @@ func promptL3_EN(task string) string {
 - Use examples that actually compile and run. No pseudo-code unless explicitly labeled.
 - After explaining, ask: "Want me to go deeper on any part?"`
 
-	case containsAny(task, "research", "investigate", "analyze", "compare", "options",
-		"研究", "调查", "分析", "比较", "方案", "design", "architecture"):
+	case "research":
 		return `
 ## Research Mode
 - Gather information before forming conclusions.
@@ -255,10 +250,9 @@ func promptL3_EN(task string) string {
 	}
 }
 
-func promptL3_ZH(task string) string {
-	switch {
-	case containsAny(task, "code", "fix", "refactor", "implement", "write", "bug", "test",
-		"代码", "修复", "重构", "实现", "写", "测试", "改", "build", "add", "create"):
+func promptL3_task_ZH(task string) string {
+	switch task {
+	case "coding":
 		return `
 ## 编码模式
 - 遵循项目已有的编码规范和模式。
@@ -271,8 +265,7 @@ func promptL3_ZH(task string) string {
 - 匹配项目现有的命名约定和文件组织方式。
 - 每次代码改动后：读回改动的行确认正确。不能跳过这一步。`
 
-	case containsAny(task, "review", "audit", "check", "security", "vulnerability",
-		"审查", "审计", "检查", "安全", "漏洞", "review", "pr", "diff"):
+	case "review":
 		return `
 ## 审查模式
 - 检查：正确性、安全性、性能、可读性、边界条件。
@@ -286,8 +279,7 @@ func promptL3_ZH(task string) string {
 ### 输出格式（强制执行）
 [P0/P1/P2] 文件:行号 — 问题 → 方案：具体改动 → 原因 → 工作量。验证为有意为之：标记 [OK]。结尾给出执行计划。`
 
-	case containsAny(task, "explain", "how", "what", "why", "document", "tutorial",
-		"解释", "怎么", "为什么", "文档", "教程", "介绍", "describe"):
+	case "teaching":
 		return `
 ## 教学模式
 - 先用一句话回答。再展开。
@@ -297,8 +289,7 @@ func promptL3_ZH(task string) string {
 - 示例必须是能编译运行的。非真实代码要标注。
 - 解释完后问一句："需要我展开某部分吗？"`
 
-	case containsAny(task, "research", "investigate", "analyze", "compare", "options",
-		"研究", "调查", "分析", "比较", "方案", "design", "architecture"):
+	case "research":
 		return `
 ## 研究模式
 - 先收集信息，再形成结论。
@@ -401,9 +392,9 @@ func promptL3(query string) string {
 		return l3
 	}
 	if isZhEnv() {
-		return promptL3_ZH(query)
+		return promptL3_task_ZH(detectTaskType(query))
 	}
-	return promptL3_EN(query)
+	return promptL3_task_EN(detectTaskType(query))
 }
 
 

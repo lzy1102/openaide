@@ -74,6 +74,17 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 	}
 	agentKernel.SetSkillActor(skillActor)
 
+	// Periodic plugin rescan — new plugins detected without restart
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			for _, cs := range plugin.DiscoverClaudeSkills(cfg.Storage.DataDir + "/plugins") {
+				skillActor.AddClaudeSkill(cs.ID, cs.Name, cs.Description, cs.Prompt, cs.Keywords, cs.AllowedTools)
+			}
+		}
+	}()
+
 	agentKernel.SetPatternDetector(kernel.NewSemanticPatternDetector(embedder, kernelConfig.PatternMinClusterSize, kernelConfig.PatternSimilarityThreshold))
 	approver := kernel.NewAutoApprover()
 	approver.SetLLM(gateway)
