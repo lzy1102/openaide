@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"time"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/internal/kernel/actor"
 )
 
 // RateLimiter implements the token bucket algorithm for per-IP rate limiting.
@@ -18,7 +18,7 @@ import (
 //
 // Typical config: rate=20, capacity=200 (200 burst, 20/sec sustained).
 type RateLimiter struct {
-	actor    *kernel.Actor
+	actor    *actor.Actor
 	buckets  map[string]*tokenBucket
 	rate     int // tokens per second
 	capacity int // max tokens per bucket
@@ -39,7 +39,7 @@ func NewRateLimiter(rate, capacity int) *RateLimiter {
 		capacity = 100
 	}
 	rl := &RateLimiter{
-		actor:    kernel.NewActor(64),
+		actor:    actor.NewActor(64),
 		buckets:  make(map[string]*tokenBucket),
 		rate:     rate,
 		capacity: capacity,

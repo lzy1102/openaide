@@ -1,8 +1,10 @@
-package kernel
+package trace
 
 import (
 	"context"
 	"testing"
+
+	"openaide/backend/internal/kernel"
 )
 
 func TestFileCheckpointer_SaveAndList(t *testing.T) {
@@ -13,7 +15,7 @@ func TestFileCheckpointer_SaveAndList(t *testing.T) {
 	defer fc.Stop()
 
 	ctx := context.Background()
-	cp := &Checkpoint{SessionID: "s1", Round: 1, Messages: []Message{{Role: "user", Content: "test"}}}
+	cp := &kernel.Checkpoint{SessionID: "s1", Round: 1, Messages: []kernel.Message{{Role: "user", Content: "test"}}}
 	if err := fc.Save(ctx, "s1", cp); err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +34,7 @@ func TestFileCheckpointer_SaveAndLoad(t *testing.T) {
 	defer fc.Stop()
 
 	ctx := context.Background()
-	cp := &Checkpoint{SessionID: "s2", Round: 0, Messages: []Message{{Role: "assistant", Content: "response"}}}
+	cp := &kernel.Checkpoint{SessionID: "s2", Round: 0, Messages: []kernel.Message{{Role: "assistant", Content: "response"}}}
 	fc.Save(ctx, "s2", cp)
 
 	loaded, err := fc.LoadLatest(ctx, "s2")
@@ -52,7 +54,7 @@ func TestFileCheckpointer_Delete(t *testing.T) {
 	defer fc.Stop()
 
 	ctx := context.Background()
-	cp := &Checkpoint{SessionID: "s3", Round: 1, Messages: []Message{}}
+	cp := &kernel.Checkpoint{SessionID: "s3", Round: 1, Messages: []kernel.Message{}}
 	fc.Save(ctx, "s3", cp)
 
 	list, _ := fc.List(ctx, "s3")

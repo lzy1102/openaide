@@ -26,7 +26,7 @@ func TestSkillActor_DetectLLM(t *testing.T) {
 	a := NewSkillActor(llm)
 	a.AddSkill("code-review", "Code Review", "Reviews code", "You are a code reviewer", []string{"review", "code"})
 
-	skill := a.DetectSkill("please review my changes")
+	skill := a.DetectSkill(context.Background(), "please review my changes")
 	if skill == nil {
 		t.Fatal("expected skill match from LLM")
 	}
@@ -40,7 +40,7 @@ func TestSkillActor_KeywordFallback(t *testing.T) {
 	a := NewSkillActor(nil)
 	a.AddSkill("deploy", "Deploy", "Deploy stuff", "deploy prompt", []string{"deploy", "ship"})
 
-	skill := a.DetectSkill("let's deploy to production")
+	skill := a.DetectSkill(context.Background(), "let's deploy to production")
 	if skill == nil {
 		t.Fatal("expected keyword match")
 	}
@@ -54,7 +54,7 @@ func TestSkillActor_InjectPrompt(t *testing.T) {
 	a := NewSkillActor(llm)
 	a.AddSkill("code-review", "Code Review", "Reviews code", "You are a code reviewer", nil)
 
-	result := a.InjectPrompt("review this", "base prompt")
+	result := a.InjectPrompt(context.Background(), "review this", "base prompt")
 	if result == "base prompt" {
 		t.Error("expected injected prompt")
 	}
@@ -66,7 +66,7 @@ func TestSkillActor_GetTools(t *testing.T) {
 	a.AddClaudeSkill("deploy", "Deploy", "Deploy stuff", "deploy prompt",
 		[]string{"deploy"}, []string{"execute_command", "read_file"})
 
-	tools := a.GetTools("deploy")
+	tools := a.GetTools(context.Background(), "deploy")
 	if len(tools) != 2 {
 		t.Errorf("expected 2 tools, got %d", len(tools))
 	}
@@ -103,10 +103,10 @@ func TestSkillActor_Concurrent(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_ = a.DetectSkill("alpha test")
+			_ = a.DetectSkill(context.Background(), "alpha test")
 			a.RecordUsage("a", 7)
-			_ = a.InjectPrompt("beta query", "base")
-			_ = a.GetTools("alpha query")
+			_ = a.InjectPrompt(context.Background(), "beta query", "base")
+			_ = a.GetTools(context.Background(), "alpha query")
 		}()
 	}
 	wg.Wait()
@@ -118,7 +118,7 @@ func TestSkillActor_AutoDetectOff(t *testing.T) {
 	a.AddSkill("test", "Test", "Testing", "p", []string{"test"})
 	a.SetAutoDetect(false)
 
-	skill := a.DetectSkill("test query")
+	skill := a.DetectSkill(context.Background(), "test query")
 	if skill != nil {
 		t.Error("expected nil when auto-detect is off")
 	}

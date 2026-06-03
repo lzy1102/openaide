@@ -206,9 +206,13 @@ var claudeToolMap = map[string]string{
 	"Glob":      "search_files",
 	"Grep":      "search_files",
 	"Bash":      "execute_command",
-	"WebSearch": "web_search",
-	"WebFetch":  "web_fetch",
-	"Task":      "execute_command",
+	"WebSearch":      "web_search",
+	"WebFetch":       "web_fetch",
+	"Task":           "execute_command",
+	"AskUserQuestion": "ask_user",
+	"List":           "list_directory",
+	"TodoWrite":      "todo_write",
+	"LSP":            "lsp_definition",
 }
 
 // generateKeywords 从 name 和 description 自动生成中英文关键词

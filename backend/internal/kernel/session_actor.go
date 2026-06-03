@@ -9,13 +9,15 @@ import (
 	"time"
 
 	_ "modernc.org/sqlite"
+
+	"openaide/backend/internal/kernel/actor"
 )
 
 // SessionActor is a CSP-style session store backed by SQLite.
 // All session data lives in a single goroutine — zero locks.
 // External callers communicate via channels through the Actor.
 type SessionActor struct {
-	super *Actor
+	super *actor.Actor
 	db    *sql.DB
 }
 
@@ -28,7 +30,7 @@ func NewSessionActor(path string) (*SessionActor, error) {
 	db.SetMaxOpenConns(1)
 
 	a := &SessionActor{
-		super: NewActor(256),
+		super: actor.NewActor(256),
 		db:    db,
 	}
 
@@ -45,6 +47,7 @@ func NewSessionActor(path string) (*SessionActor, error) {
 
 func (a *SessionActor) Create(ctx context.Context, projectID, userID string) (*Session, error) {
 	var session *Session
+	var createErr error
 	a.super.Send(func() {
 		session = &Session{
 			ID:        NewSessionID(),
@@ -55,17 +58,28 @@ func (a *SessionActor) Create(ctx context.Context, projectID, userID string) (*S
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
 		}
-		msgJSON, _ := json.Marshal(session.Messages)
-		metaJSON, _ := json.Marshal(session.Metadata)
-		_, err := a.db.ExecContext(ctx,
+		msgJSON, err := json.Marshal(session.Messages)
+		if err != nil {
+			createErr = fmt.Errorf("marshal messages: %w", err)
+			return
+		}
+		metaJSON, err := json.Marshal(session.Metadata)
+		if err != nil {
+			createErr = fmt.Errorf("marshal metadata: %w", err)
+			return
+		}
+		_, err = a.db.ExecContext(ctx,
 			`INSERT INTO sessions (id, project_id, user_id, title, messages_json, metadata_json, created_at, updated_at)
 			 VALUES (?, ?, ?, '', ?, ?, ?, ?)`,
 			session.ID, projectID, userID, string(msgJSON), string(metaJSON),
 			session.CreatedAt.Format(time.RFC3339), session.UpdatedAt.Format(time.RFC3339))
 		if err != nil {
-			slog.Warn("Session actor create failed", "error", err)
+			createErr = fmt.Errorf("session actor create: %w", err)
 		}
 	})
+	if createErr != nil {
+		return nil, createErr
+	}
 	return session, nil
 }
 
@@ -81,19 +95,31 @@ func (a *SessionActor) Get(ctx context.Context, sessionID string) (*Session, err
 }
 
 func (a *SessionActor) Update(ctx context.Context, session *Session) error {
+	var updateErr error
 	a.super.Send(func() {
 		session.UpdatedAt = time.Now()
-		msgJSON, _ := json.Marshal(session.Messages)
-		metaJSON, _ := json.Marshal(session.Metadata)
+		msgJSON, err := json.Marshal(session.Messages)
+		if err != nil {
+			updateErr = fmt.Errorf("marshal messages: %w", err)
+			return
+		}
+		metaJSON, err := json.Marshal(session.Metadata)
+		if err != nil {
+			updateErr = fmt.Errorf("marshal metadata: %w", err)
+			return
+		}
 		title := ""
 		if t, ok := session.Metadata["title"]; ok {
 			title, _ = t.(string)
 		}
-		a.db.ExecContext(ctx,
+		_, err = a.db.ExecContext(ctx,
 			`UPDATE sessions SET title=?, messages_json=?, metadata_json=?, updated_at=? WHERE id=?`,
 			title, string(msgJSON), string(metaJSON), session.UpdatedAt.Format(time.RFC3339), session.ID)
+		if err != nil {
+			updateErr = fmt.Errorf("session actor update: %w", err)
+		}
 	})
-	return nil
+	return updateErr
 }
 
 func (a *SessionActor) List(ctx context.Context, projectID, userID string, limit, offset int) ([]*Session, error) {

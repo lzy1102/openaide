@@ -51,40 +51,6 @@ func promptL0_EN() string {
 - NEVER add explanatory text when the user asked for code. Give them code.
 - Use code blocks with language labels for any code output.
 
-## Output Quality
-
-### Analysis Response Format (MANDATORY)
-When asked to analyze, review, or improve anything, you MUST follow this structure.
-Analysis without solution is WORTHLESS to the user.
-
-1. **Summary** (1-2 sentences): overall assessment
-2. **Findings** (prioritized). For each, use EXACTLY this format:
-   [P0/P1/P2] file:line — one-line problem
-   → Fix: concrete change
-   → Why: one-sentence benefit
-   → Effort: estimated time (e.g. "30min", "2h")
-   If a finding is verified-intentional (checked with verify_claim): mark [OK] and explain.
-3. **Action Plan**: what first, order, total estimated time.
-
-GOOD example response:
-  Summary: orchestrator.go is overloaded with 8 responsibilities.
-
-  [P0] orchestrator.go:534 — executePlan is 200+ lines mixing routing+execution+lint
-  → Fix: extract into execute.go as 3 separate functions
-  → Why: each becomes independently testable
-  → Effort: 2h
-
-  [OK] planner.go:143 — Plan() appears to lack timeout
-  → Verified: caller PreviewPlan already sets WithTimeout(15s). No change needed.
-
-  Action Plan: P0 first. Total ~2h.
-
-BAD example response (NEVER output like this):
-  orchestrator.go is very large. Consider adding timeouts.
-  ↑ This is useless. Do NOT do this.
-
-This rule applies to ANY improvement suggestion in ANY response type. Even a one-line footnote at the end of a descriptive analysis must use [P] file:line → Fix → Why format. "X could be extracted to a separate file" is not a suggestion — "X could be extracted to Y.go as Z()" is.
-
 ## Tool Strategy
 - Read before write. Understand before change.
 - Never guess a file path. If read_file returns "not found", search_files for the actual path. The file you want is rarely at the path you first assumed.
@@ -146,39 +112,6 @@ func promptL0_ZH() string {
 - 永远不要为之前的错误道歉——直接修好继续。
 - 用户要代码时只给代码，不加解释文字。
 - 所有代码输出使用带语言标签的代码块。
-
-## 输出质量
-
-### 分析回复格式（强制执行）
-被要求分析、审查或改进时，必须按以下结构回复。没有方案的分析对用户没有价值。
-
-1. **总结**（1-2 句）：整体评价
-2. **发现列表**（按优先级）。每条严格格式：
-   [P0/P1/P2] 文件:行号 — 一句话问题描述
-   → 方案：具体改动
-   → 原因：一句话收益
-   → 工作量：预估时间（如"30min"、"2h"）
-   如果发现原来是故意的（用 verify_claim 验证过）：标记 [OK] 并解释。
-3. **执行计划**：先做什么，顺序，预估总时间。
-
-好的回复范例：
-  总结：orchestrator.go 职责过重，拆分后便于测试。
-
-  [P0] orchestrator.go:534 — executePlan 200+ 行混杂了路由+执行+lint
-  → 方案：提取到 execute.go，拆成 3 个函数
-  → 原因：每个函数可独立测试
-  → 工作量：2h
-
-  [OK] planner.go:143 — Plan() 缺少超时
-  → 已验证：调用方 PreviewPlan 已设 WithTimeout(15s)。无需改动。
-
-  执行计划：先做 P0。总计约 2h。
-
-坏的回复范例（绝对不要这样）：
-  orchestrator.go 很大，可以考虑拆分。有些地方缺少超时可以考虑加上。
-  ↑ 这种回复没用。绝对不要这样。
-
-此规则适用于任何回复类型中的任何改进建议。即使是描述性分析末尾的一句备注，也必须用 [P] 文件:行号 → 方案 → 原因格式。"X 可以提取到单独文件"不是建议——"X 可以提取到 Y.go 作为 Z() 函数"才是建议。
 
 ## 工具策略
 - 先读后写。先理解再改。
@@ -285,7 +218,9 @@ func promptL3_EN(task string) string {
   - [LOW]: might be intentional — flag for human review only.
 - Before reporting "X is missing": grep for X first. Timeouts, locks, and validation are often in callers.
 - Flag potential issues with concrete suggestions (file name, line, what to change).
-- Look for: SQL injection, XSS, race conditions, nil pointers, resource leaks.`
+- Look for: SQL injection, XSS, race conditions, nil pointers, resource leaks.
+### Output Format (MANDATORY)
+[P0/P1/P2] file:line — one-line problem → Fix → Why → Effort. If verified intentional: mark [OK]. End with Action Plan.`
 
 	case containsAny(task, "explain", "how", "what", "why", "document", "tutorial",
 		"解释", "怎么", "为什么", "文档", "教程", "介绍", "describe"):
@@ -311,7 +246,9 @@ func promptL3_EN(task string) string {
 - Rate your confidence on each finding: HIGH/MEDIUM/LOW. Only HIGH-confidence items go in the priority list.
 - Present findings with clear pros/cons and your reasoning.
 - Cite specific files and code where relevant.
-- End with a concrete action plan: what to do first, estimated effort, which files to touch.`
+- End with a concrete action plan: what to do first, estimated effort, which files to touch.
+### Output Format (MANDATORY)
+[P0/P1/P2] file:line — finding → Fix → Why → Effort. If verified intentional: mark [OK]. End with Action Plan.`
 
 	default:
 		return ""
@@ -345,7 +282,9 @@ func promptL3_ZH(task string) string {
   - [低]：可能是有意为之——仅标记供人工审查。
 - 声称"缺少 X"之前：先 grep 搜索 X。超时、锁、校验通常在调用方。
 - 发现潜在问题时给出具体改进建议。
-- 关注：SQL注入、XSS、竞态条件、空指针、资源泄漏。`
+- 关注：SQL注入、XSS、竞态条件、空指针、资源泄漏。
+### 输出格式（强制执行）
+[P0/P1/P2] 文件:行号 — 问题 → 方案：具体改动 → 原因 → 工作量。验证为有意为之：标记 [OK]。结尾给出执行计划。`
 
 	case containsAny(task, "explain", "how", "what", "why", "document", "tutorial",
 		"解释", "怎么", "为什么", "文档", "教程", "介绍", "describe"):
@@ -371,7 +310,9 @@ func promptL3_ZH(task string) string {
 - 每个发现标注置信度：高/中/低。只有高置信度的进优先级列表。
 - 列出清晰的优劣分析和推理过程。
 - 引用具体的文件和代码行。
-- 结尾必须给出可执行的行动计划：先做什么、预估工作量、涉及哪些文件。`
+- 结尾必须给出可执行的行动计划：先做什么、预估工作量、涉及哪些文件。
+### 输出格式（强制执行）
+[P0/P1/P2] 文件:行号 — 发现 → 方案 → 原因 → 工作量。验证为有意为之：标记 [OK]。结尾给出执行计划。`
 
 	default:
 		return ""
@@ -449,43 +390,122 @@ func (k *AgentKernel) buildSystemPrompt(query *Query) string {
 		sb.WriteString(l1)
 	}
 
-	// L3: Task adapter (file-overridable per task type)
-	task := detectTaskType(query.Content)
+	return sb.String()
+}
+// promptL3 returns the task adapter for the current query.
+// Called per-query as dynamic tail — not cached in system prefix.
+func promptL3(query string) string {
+	dir := os.Getenv("HOME") + "/.openaide/data/prompts"
+	task := detectTaskType(query)
 	if l3 := loadPromptFile(dir, "l3_"+task+".md"); l3 != "" {
-		sb.WriteString(l3)
-	} else {
-		if zh {
-			if l := promptL3_ZH(query.Content); l != "" {
-				sb.WriteString(l)
-			}
-		} else {
-			if l := promptL3_EN(query.Content); l != "" {
-				sb.WriteString(l)
+		return l3
+	}
+	if isZhEnv() {
+		return promptL3_ZH(query)
+	}
+	return promptL3_EN(query)
+}
+
+
+// detectTaskType returns "coding", "review", "teaching", "research", or "general".
+// Uses keyword scoring: each matching keyword adds 1 point. Highest score wins.
+// On tie, the longest matching keyword's category wins (more specific intent).
+func detectTaskType(query string) string {
+	types := []struct {
+		name     string
+		keywords []string
+	}{
+		{"coding", []string{"code", "fix", "refactor", "implement", "write", "bug", "test",
+			"代码", "修复", "重构", "实现", "写", "测试", "改", "build", "add", "create",
+			"function", "api", "endpoint", "handler", "route", "component", "module", "class"}},
+		{"review", []string{"review", "audit", "check", "security", "vulnerability",
+			"审查", "审计", "检查", "安全", "漏洞"}},
+		{"teaching", []string{"explain", "how", "what", "why", "document", "tutorial",
+			"解释", "怎么", "为什么", "文档", "教程", "介绍", "describe"}},
+		{"research", []string{"research", "investigate", "analyze", "compare", "options",
+			"研究", "调查", "分析", "比较", "方案", "设计", "架构", "design", "architecture"}},
+	}
+
+	scores := make([]int, len(types))
+	type match struct{ cat int; word string }
+	var matches []match
+
+	for i, t := range types {
+		for _, kw := range t.keywords {
+			if containsWord(query, kw) {
+				scores[i]++
+				matches = append(matches, match{i, kw})
 			}
 		}
 	}
 
-	return sb.String()
-}
-
-// detectTaskType returns "coding", "review", "teaching", "research", or "general".
-func detectTaskType(query string) string {
-	switch {
-	case containsAny(query, "code", "fix", "refactor", "implement", "write", "bug", "test",
-		"代码", "修复", "重构", "实现", "写", "测试", "改", "build", "add", "create"):
-		return "coding"
-	case containsAny(query, "review", "audit", "check", "security", "vulnerability",
-		"审查", "审计", "检查", "安全", "漏洞", "review"):
-		return "review"
-	case containsAny(query, "explain", "how", "what", "why", "document", "tutorial",
-		"解释", "怎么", "为什么", "文档", "教程", "介绍"):
-		return "teaching"
-	case containsAny(query, "research", "investigate", "analyze", "compare", "options",
-		"研究", "调查", "分析", "比较", "方案", "design", "architecture"):
-		return "research"
-	default:
+	best, bestScore := -1, 0
+	for i, s := range scores {
+		if s > bestScore {
+			bestScore = s
+			best = i
+		}
+	}
+	if best < 0 {
 		return "general"
 	}
+
+	// Tie-break: longest matching keyword wins
+	tieCount := 0
+	for _, s := range scores {
+		if s == bestScore { tieCount++ }
+	}
+	if tieCount > 1 {
+		longest, longestCat := "", best
+		for _, m := range matches {
+			if scores[m.cat] > 0 && len(m.word) > len(longest) {
+				longest = m.word
+				longestCat = m.cat
+			}
+		}
+		return types[longestCat].name
+	}
+	return types[best].name
+}
+
+// containsWord checks if kw appears as a word or CJK substring.
+// ASCII keywords must match whole words (not substrings like "code" in "codebase").
+// CJK keywords use substring matching (each character is a natural word boundary).
+func containsWord(s, kw string) bool {
+	if len(kw) == 0 {
+		return false
+	}
+	if isCJK(kw) {
+		return strings.Contains(strings.ToLower(s), kw)
+	}
+	lower := strings.ToLower(s)
+	idx := 0
+	for {
+		i := strings.Index(lower[idx:], kw)
+		if i < 0 {
+			return false
+		}
+		pos := idx + i
+		prev := pos == 0 || !isLetter(rune(lower[pos-1]))
+		next := pos+len(kw) >= len(lower) || !isLetter(rune(lower[pos+len(kw)]))
+		if prev && next {
+			return true
+		}
+		idx = pos + 1
+	}
+}
+
+func isCJK(s string) bool {
+	for _, r := range s {
+		if r >= 0x4E00 && r <= 0x9FFF {
+			return true
+		}
+	}
+	return false
+}
+
+func isLetter(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
 }
 
 // loadPromptFile reads a prompt file if it exists.
@@ -500,9 +520,8 @@ func loadPromptFile(dir, name string) string {
 // ── Helpers ─────────────────────────────────────────────────
 
 func containsAny(s string, keywords ...string) bool {
-	lower := strings.ToLower(s)
 	for _, kw := range keywords {
-		if strings.Contains(lower, kw) {
+		if containsWord(s, kw) {
 			return true
 		}
 	}

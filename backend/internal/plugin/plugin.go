@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 
 	"openaide/backend/internal/kernel"
+	"openaide/backend/internal/kernel/actor"
 )
 
 // Plugin 可插拔扩展
@@ -34,7 +35,7 @@ type EventHook func(ctx context.Context, event kernel.Event)
 
 // Manager 插件管理器
 type Manager struct {
-	plugins      *kernel.SafeMap[string, *Plugin]
+	plugins      *actor.SafeMap[string, *Plugin]
 	dir          string
 	onLoad       atomic.Value // []func(*Plugin)
 	messageHooks atomic.Value // []MessageHook
@@ -46,7 +47,7 @@ func NewManager(dir string) *Manager {
 	os.MkdirAll(dir, 0755)
 	m := &Manager{
 		dir:     dir,
-		plugins: kernel.NewSafeMap[string, *Plugin](8),
+		plugins: actor.NewSafeMap[string, *Plugin](8),
 	}
 	m.onLoad.Store([]func(*Plugin){})
 	m.messageHooks.Store([]MessageHook{})

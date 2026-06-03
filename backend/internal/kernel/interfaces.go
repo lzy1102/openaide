@@ -2,6 +2,7 @@ package kernel
 
 import (
 	"context"
+	"time"
 )
 
 // Kernel 内核接口 - Agent 智能核心
@@ -47,8 +48,11 @@ type LLMProvider interface {
 
 	// GetModelID 获取当前模型 ID
 	GetModelID() string
+}
 
-	// SetModelID 运行时切换模型
+// ModelSwitcher is an optional interface for providers that support runtime model switching.
+// Use type assertion: if ms, ok := provider.(ModelSwitcher); ok { ms.SetModelID(m) }
+type ModelSwitcher interface {
 	SetModelID(model string)
 }
 
@@ -98,6 +102,9 @@ type SessionStore interface {
 
 	// Delete 删除会话
 	Delete(ctx context.Context, sessionID string) error
+
+	// CleanupOldSessions 删除超过 ttl 的过期会话，返回删除数量
+	CleanupOldSessions(ctx context.Context, ttl time.Duration) (int, error)
 }
 
 // ContextCompressor 上下文压缩接口
@@ -165,15 +172,6 @@ type ReflectionResult struct {
 	Issues     []string `json:"issues"`      // 发现的问题
 	Suggestions []string `json:"suggestions"` // 改进建议
 	Learned    string   `json:"learned"`     // 学到的经验
-}
-
-// Learner 学习接口（增强能力）
-type Learner interface {
-	// Learn 从交互中学习
-	Learn(ctx context.Context, record ExecutionRecord) error
-
-	// GetInsights 获取学习洞察
-	GetInsights(ctx context.Context, query string) ([]string, error)
 }
 
 // PatternDetector 模式检测接口（增强能力）

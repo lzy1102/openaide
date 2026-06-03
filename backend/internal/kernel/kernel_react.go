@@ -55,13 +55,13 @@ func (k *AgentKernel) prepareReActRound(ctx context.Context, messages []Message,
 
 // getToolDefinitions returns the tool set for this query,
 // optionally filtered by skill or explicit tool filter
-func (k *AgentKernel) getToolDefinitions(queryContent string, opts QueryOptions) []ToolDefinition {
+func (k *AgentKernel) getToolDefinitions(ctx context.Context, queryContent string, opts QueryOptions) []ToolDefinition {
 	tools := k.toolExecutor.GetDefinitions()
 	if len(opts.ToolFilter) > 0 {
 		return k.toolExecutor.GetDefinitionsByNames(opts.ToolFilter)
 	}
 	if k.skillActor != nil {
-		if skillTools := k.skillActor.GetTools(queryContent); len(skillTools) > 0 {
+		if skillTools := k.skillActor.GetTools(ctx, queryContent); len(skillTools) > 0 {
 			return k.toolExecutor.GetDefinitionsByNames(skillTools)
 		}
 	}
@@ -204,22 +204,20 @@ func (k *AgentKernel) injectMemoryContext(ctx context.Context, messages []Messag
 	}
 
 	// Cross-session learning
-	if k.learner != nil {
-		insights, err := k.learner.GetInsights(ctx, query.Content)
-		if err == nil && len(insights) > 0 {
-			messages = append(messages, Message{
-				Role: "system", Content: "[Learned insights] " + strings.Join(insights, " | "),
-			})
-		}
-	}
 
 	// Knowledge base context
 	if k.knowledgeCollector != nil {
-		kbCtx, _, err := k.knowledgeCollector.InjectContext(ctx, query.Content, 500)
+		kbCtx, docIDs, err := k.knowledgeCollector.InjectContext(ctx, query.Content, 500)
 		if err == nil && kbCtx != "" {
 			messages = append(messages, Message{
 				Role: "system", Content: "[Knowledge] " + kbCtx,
 			})
+			if len(docIDs) > 0 {
+				if session.Metadata == nil {
+					session.Metadata = make(map[string]interface{})
+				}
+				session.Metadata["knowledge_doc_ids"] = docIDs
+			}
 		}
 	}
 
@@ -227,9 +225,9 @@ func (k *AgentKernel) injectMemoryContext(ctx context.Context, messages []Messag
 }
 
 // determineMaxRounds calculates the ReAct loop limit (adaptive or config-based).
-func (k *AgentKernel) determineMaxRounds(queryContent string, historyLen int) int {
+func (k *AgentKernel) determineMaxRounds(ctx context.Context, queryContent string, historyLen int) int {
 	if k.adaptiveRounds != nil {
-		return k.adaptiveRounds.Calculate(queryContent, historyLen)
+		return k.adaptiveRounds.Calculate(ctx, queryContent, historyLen)
 	}
 	return k.maxRounds
 }
@@ -248,3 +246,4 @@ func (k *AgentKernel) compressMemory(ctx context.Context, sessionID string) {
 		}
 	}
 }
+

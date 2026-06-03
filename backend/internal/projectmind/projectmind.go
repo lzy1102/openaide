@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"log/slog"
 	"time"
 )
 
@@ -76,15 +75,21 @@ func Load(projectDir string) *ProjectMind {
 	return pm
 }
 
-// Save 持久化
+// Save 持久化（外部调用，会获取锁）
 func (pm *ProjectMind) Save() error {
-	slog.Debug("ProjectMind save", "path", pm.path)
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
+	return pm.saveLocked()
+}
+
+// saveLocked persists without acquiring the lock (caller holds pm.mu).
+func (pm *ProjectMind) saveLocked() error {
 	pm.UpdatedAt = time.Now()
 	os.MkdirAll(filepath.Dir(pm.path), 0755)
 	data, err := json.MarshalIndent(pm, "", "  ")
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	return os.WriteFile(pm.path, data, 0644)
 }
 
@@ -100,6 +105,7 @@ func (pm *ProjectMind) AddCodeFact(file, purpose string, exports []string, confi
 		Purpose: purpose, Exports: exports,
 		Confidence: confidence, LastSeen: time.Now(), Source: source,
 	}
+	pm.saveLocked()
 }
 
 // AddRisk 记录风险
@@ -107,6 +113,7 @@ func (pm *ProjectMind) AddRisk(file, risk, level string, fixed bool) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 	pm.RiskMap[file] = RiskEntry{Risk: risk, Level: level, Fixed: fixed, Found: time.Now()}
+	pm.saveLocked()
 }
 
 // AddLearning 添加学习经验

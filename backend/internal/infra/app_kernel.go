@@ -2,10 +2,13 @@ package infra
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"openaide/backend/internal/compress"
@@ -14,6 +17,7 @@ import (
 	"openaide/backend/internal/feedback"
 	"openaide/backend/internal/identity"
 	"openaide/backend/internal/kernel"
+	"openaide/backend/internal/kernel/trace"
 	"openaide/backend/internal/knowledge"
 	"openaide/backend/internal/llm"
 	"openaide/backend/internal/plugin"
@@ -46,17 +50,31 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 	for _, cs := range plugin.DiscoverClaudeSkills(cfg.Storage.DataDir + "/plugins") {
 		skillActor.AddClaudeSkill(cs.ID, cs.Name, cs.Description, cs.Prompt, cs.Keywords, cs.AllowedTools)
 	}
+	// Enable skill persistence — auto-extracted skills survive restarts
+	autoSkillPath := cfg.Storage.DataDir + "/skills/auto_skills.json"
+	skillActor.SetOnSave(func() {
+		os.MkdirAll(filepath.Dir(autoSkillPath), 0755)
+		data, err := json.MarshalIndent(skillActor.ExportSkills(), "", "  ")
+		if err != nil {
+			return
+		}
+		os.WriteFile(autoSkillPath, data, 0644)
+	})
+	// Load previously auto-extracted skills from disk
+	if data, err := os.ReadFile(autoSkillPath); err == nil {
+		var saved map[string]*kernel.Skill
+		if json.Unmarshal(data, &saved) == nil {
+			for _, s := range saved {
+				if s != nil && strings.HasPrefix(s.ID, "auto-") {
+					skillActor.AddSkill(s.ID, s.Name, s.Description, s.Prompt, s.Keywords)
+				}
+			}
+			slog.Info("Auto-skills loaded", "count", len(saved))
+		}
+	}
 	agentKernel.SetSkillActor(skillActor)
 
-	if learner, err := kernel.NewSimpleLearner(cfg.Storage.DataDir + "/insights"); err == nil {
-		learner.SetLLM(gateway)
-		learner.SetEmbedder(embedder)
-		agentKernel.SetLearner(learner)
-		slog.Info("Learner enabled", "dir", cfg.Storage.DataDir+"/insights")
-	} else {
-		slog.Warn("Failed to create learner, learning disabled", "error", err)
-	}
-	agentKernel.SetPatternDetector(kernel.NewSimplePatternDetector())
+	agentKernel.SetPatternDetector(kernel.NewSemanticPatternDetector(embedder, kernelConfig.PatternMinClusterSize, kernelConfig.PatternSimilarityThreshold))
 	approver := kernel.NewAutoApprover()
 	approver.SetLLM(gateway)
 	if cfg.Kernel.UnsafeMode != nil {
@@ -73,7 +91,7 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 	ar.SetLLM(gateway)
 	agentKernel.SetAdaptiveRounds(ar)
 
-	if cp, err := kernel.NewFileCheckpointer(kernel.FileCheckpointerConfig{
+	if cp, err := trace.NewFileCheckpointer(trace.FileCheckpointerConfig{
 		Dir: cfg.Storage.DataDir + "/checkpoints",
 	}); err == nil {
 		agentKernel.SetCheckpointer(cp)
@@ -83,7 +101,7 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 	}
 
 	if cfg.Log.PersistEnabled() {
-		if tracer, err := kernel.NewFileTracer(kernel.FileTracerConfig{
+		if tracer, err := trace.NewFileTracer(trace.FileTracerConfig{
 			FilePath: cfg.Storage.DataDir + "/traces.jsonl",
 		}); err == nil {
 			agentKernel.SetTracer(tracer)

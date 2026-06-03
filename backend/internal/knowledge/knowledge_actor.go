@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"openaide/backend/internal/kernel"
+	"openaide/backend/internal/kernel/actor"
 
 	_ "modernc.org/sqlite"
 )
@@ -38,7 +39,7 @@ const maxCachedVectors = 5000
 const maxCachedEmbeddings = 200
 
 type Actor struct {
-	super      *kernel.Actor
+	super      *actor.Actor
 	embedder   kernel.Embedder
 	llm        kernel.LLMProvider // optional: refines knowledge
 	db         *sql.DB
@@ -61,7 +62,7 @@ func NewActor(path string) (*Actor, error) {
 	}
 	db.SetMaxOpenConns(1)
 	a := &Actor{
-		super:    kernel.NewActor(64),
+		super:    actor.NewActor(64),
 		db:       db,
 		embCache: make(map[string][]float32),
 	}
@@ -437,7 +438,22 @@ func (a *Actor) SearchKnowledge(ctx context.Context, query string, limit int) ([
 	return items, nil
 }
 
-func (a *Actor) RecordKnowledgeUsage(ctx context.Context, docIDs []string, qualityScore float64) {}
+func (a *Actor) RecordKnowledgeUsage(ctx context.Context, docIDs []string, qualityScore float64) {
+	if len(docIDs) == 0 || (qualityScore >= 0.4 && qualityScore <= 0.6) {
+		return // neutral — no adjustment needed
+	}
+	delta := 0.1
+	if qualityScore < 0.4 {
+		delta = -0.1
+	}
+	a.super.Send(func() {
+		for _, id := range docIDs {
+			a.db.ExecContext(ctx,
+				`UPDATE documents SET weight = MAX(0.1, MIN(2.0, weight + ?)) WHERE id = ?`,
+				delta, id)
+		}
+	})
+}
 
 func (a *Actor) Stop() {
 	a.super.Stop()
@@ -451,9 +467,11 @@ func (a *Actor) migrate() {
 		content TEXT NOT NULL DEFAULT '',
 		source TEXT DEFAULT '',
 		tags TEXT DEFAULT '[]',
-		embedding TEXT DEFAULT '[]'
+		embedding TEXT DEFAULT '[]',
+		weight REAL NOT NULL DEFAULT 1.0
 	)`)
 	a.db.Exec(`CREATE INDEX IF NOT EXISTS idx_knowledge_title ON documents(title)`)
+	a.db.Exec(`ALTER TABLE documents ADD COLUMN weight REAL NOT NULL DEFAULT 1.0`)
 }
 
 func (a *Actor) loadCache() {

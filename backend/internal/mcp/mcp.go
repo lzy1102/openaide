@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/internal/kernel/actor"
 )
 
 // MCP协议版本: 2024-11-05
@@ -228,12 +228,12 @@ func (c *Client) call(method string, params interface{}) (json.RawMessage, error
 
 // Manager MCP Server 管理器
 type Manager struct {
-	clients *kernel.SafeMap[string, *Client]
+	clients *actor.SafeMap[string, *Client]
 }
 
 // NewManager 创建管理器
 func NewManager() *Manager {
-	return &Manager{clients: kernel.NewSafeMap[string, *Client](8)}
+	return &Manager{clients: actor.NewSafeMap[string, *Client](8)}
 }
 
 // ConnectServer 连接MCP Server

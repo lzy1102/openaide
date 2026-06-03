@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"os/exec"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -25,7 +24,6 @@ type AgentKernel struct {
 
 	// 增强能力（可选）
 	reflection       Reflection
-	learner          Learner
 	patternDetector  PatternDetector
 	knowledgeCollector KnowledgeCollector
 	qualityGate      QualityGate
@@ -36,14 +34,12 @@ type AgentKernel struct {
 
 	// 跟踪系统
 	tracer  Tracer
-	traceMu sync.Mutex
 
 	// 检查点系统
 	checkpointer Checkpointer
 
 	// 事件系统
 	eventHandlers atomic.Value // []EventHandler — lock-free reads
-	eventSem      chan struct{} // 限制并发 handler goroutine 数量
 
 	// 无锁状态（atomic.Value）
 	systemPrompt atomic.Value // string — read-heavy, written only on config change
@@ -59,14 +55,19 @@ type Config struct {
 	MaxRounds    int
 	MaxTokens    int
 	SystemPrompt string
+
+	PatternMinClusterSize      int     // queries to trigger distillation (default 8)
+	PatternSimilarityThreshold float64 // cosine threshold for clustering (default 0.80)
 }
 
 // DefaultConfig 默认配置
 func DefaultConfig() *Config {
 	return &Config{
-		MaxRounds: 10,
-		MaxTokens: 4000,
-		SystemPrompt: defaultSystemPrompt(),
+		MaxRounds:                  10,
+		MaxTokens:                  4000,
+		SystemPrompt:               defaultSystemPrompt(),
+		PatternMinClusterSize:      8,
+		PatternSimilarityThreshold: 0.80,
 	}
 }
 
@@ -89,7 +90,6 @@ func NewAgentKernel(
 		sessionStore:  sessions,
 		maxRounds:     config.MaxRounds,
 		maxTokens:     config.MaxTokens,
-			eventSem:      make(chan struct{}, 16),
 	}
 
 	// 默认使用简单压缩器
@@ -114,11 +114,6 @@ func (k *AgentKernel) SetContextCompressor(c ContextCompressor) {
 // SetReflection 设置反思能力
 func (k *AgentKernel) SetReflection(r Reflection) {
 	k.reflection = r
-}
-
-// SetLearner 设置学习能力
-func (k *AgentKernel) SetLearner(l Learner) {
-	k.learner = l
 }
 
 // SetPatternDetector 设置模式检测器
@@ -245,7 +240,7 @@ func (k *AgentKernel) getOrCreateSession(ctx context.Context, query *Query) (*Se
 
 func (k *AgentKernel) buildMessages(ctx context.Context, session *Session, query *Query) []Message {
 	// ── Stable Prefix: System Message (Layers 0-2,5; prompt cache friendly) ──
-	systemMsg := k.buildSystemLayer(query)
+	systemMsg := k.buildSystemLayer(ctx, query)
 	messages := make([]Message, 0)
 	if systemMsg != "" {
 		messages = append(messages, Message{Role: "system", Content: systemMsg})
@@ -262,12 +257,10 @@ func (k *AgentKernel) buildMessages(ctx context.Context, session *Session, query
 
 	// ── Dynamic Tail: Layers 3-6 (after user query, varies per query) ──
 
-	// L3: Strategy hints (complex tasks only)
-	if needsStrategyAdvice(query) {
-		if hint := k.buildStrategyLayer(query); hint != "" {
-			messages = append(messages, Message{Role: "system", Content: hint})
+		// L3: Task Adapter (coding/review/teaching/research) — per-query, not cached
+		if l3 := promptL3(query.Content); l3 != "" {
+			messages = append(messages, Message{Role: "system", Content: l3})
 		}
-	}
 
 	// L5: Previous-round reflection (dynamic tail)
 	if session.Metadata != nil {
@@ -282,21 +275,22 @@ func (k *AgentKernel) buildMessages(ctx context.Context, session *Session, query
 	}
 
 	// L4: Cross-session learner insights + ProjectMind conventions (dynamic tail)
-	if k.learner != nil {
-		insights, _ := k.learner.GetInsights(ctx, query.Content)
-		if l4 := promptL4(insights); l4 != "" {
-			messages = append(messages, Message{Role: "system", Content: l4})
-		}
-	}
 	if query.Options.ProjectContext != "" {
 		messages = append(messages, Message{Role: "system", Content: "[ProjectKnowledge]\n" + query.Options.ProjectContext})
 	}
 
 	// L6: Knowledge base RAG
 	if k.knowledgeCollector != nil {
-		kbCtx, _, _ := k.knowledgeCollector.InjectContext(ctx, query.Content, 500)
+		kbCtx, docIDs, _ := k.knowledgeCollector.InjectContext(ctx, query.Content, 500)
 		if kbCtx != "" {
 			messages = append(messages, Message{Role: "system", Content: "[Knowledge] " + kbCtx})
+			// Save doc IDs for quality feedback in doReflection
+			if len(docIDs) > 0 {
+				if session.Metadata == nil {
+					session.Metadata = make(map[string]interface{})
+				}
+				session.Metadata["knowledge_doc_ids"] = docIDs
+			}
 		}
 	}
 
@@ -310,11 +304,11 @@ func (k *AgentKernel) buildMessages(ctx context.Context, session *Session, query
 // buildSystemLayer assembles the prompt. Priority:
 // 1. Custom prompt from ~/.openaide/data/prompts/system.{lang}.md
 // 2. Layered prompts (L0+L1+L3) with file overrides per layer
-func (k *AgentKernel) buildSystemLayer(query *Query) string {
+func (k *AgentKernel) buildSystemLayer(ctx context.Context, query *Query) string {
 	// If user has a custom monolithic system prompt, use it
 	if sp := k.systemPrompt.Load().(string); sp != "" {
 		if k.skillActor != nil {
-			sp = k.skillActor.InjectPrompt(query.Content, sp)
+			sp = k.skillActor.InjectPrompt(ctx, query.Content, sp)
 		}
 		return sp
 	}
@@ -323,7 +317,7 @@ func (k *AgentKernel) buildSystemLayer(query *Query) string {
 	sp := k.buildSystemPrompt(query)
 
 	if k.skillActor != nil {
-		sp = k.skillActor.InjectPrompt(query.Content, sp)
+		sp = k.skillActor.InjectPrompt(ctx, query.Content, sp)
 	}
 
 	return sp
@@ -331,24 +325,6 @@ func (k *AgentKernel) buildSystemLayer(query *Query) string {
 
 // needsStrategyAdvice checks if the query warrants strategy injection (L3).
 // Activated by: long queries, build/implement/refactor keywords.
-func needsStrategyAdvice(query *Query) bool {
-	return len(query.Content) > 200 ||
-		strings.Contains(query.Content, "build") || strings.Contains(query.Content, "implement") ||
-		strings.Contains(query.Content, "refactor") || strings.Contains(query.Content, "design") ||
-		strings.Contains(query.Content, "构建") || strings.Contains(query.Content, "实现") ||
-		strings.Contains(query.Content, "重构") || strings.Contains(query.Content, "设计")
-}
-
-// buildStrategyLayer (L3): Experience-based strategy hints for complex tasks.
-// Activated only by needsStrategyAdvice. Injects learner insights.
-func (k *AgentKernel) buildStrategyLayer(query *Query) string {
-	if k.learner == nil { return "" }
-	insights, _ := k.learner.GetInsights(context.Background(), query.Content)
-	if len(insights) == 0 { return "" }
-	return "[Strategy] " + strings.Join(insights, "; ")
-}
-
-
 func runGitCmd(args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
 	cmd.Stderr = nil
@@ -503,9 +479,7 @@ func (k *AgentKernel) publishEvent(event Event) {
 
 	for _, h := range handlers {
 		h := h
-		k.eventSem <- struct{}{}
 		go func(handler EventHandler) {
-			defer func() { <-k.eventSem }()
 			done := make(chan struct{}, 1)
 			go func() {
 				handler.HandleEvent(event)
@@ -548,7 +522,9 @@ func ensureSessionTitle(session *Session) {
 
 // generateSessionTitle 用 LLM 生成有意义的会话标题（异步，不阻塞）
 func (k *AgentKernel) generateSessionTitle(session *Session, firstQuery string) {
-	resp, err := k.llmProvider.Chat(context.Background(), []Message{
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	resp, err := k.llmProvider.Chat(ctx, []Message{
 		{Role: "user", Content: fmt.Sprintf("Generate a SHORT session title (3-5 words) for this query. Reply with ONLY the title, no explanation.\nQuery: %s", firstQuery)},
 	}, nil, map[string]interface{}{"max_tokens": 30, "temperature": 0, "route": "execution", "no_thinking": true})
 	if err != nil {
@@ -557,6 +533,7 @@ func (k *AgentKernel) generateSessionTitle(session *Session, firstQuery string) 
 	title := strings.TrimSpace(resp.Content)
 	if title != "" && len([]rune(title)) <= 50 {
 		session.Metadata["title"] = title
-		k.sessionStore.Update(context.Background(), session)
+		k.sessionStore.Update(ctx, session)
 	}
 }
+

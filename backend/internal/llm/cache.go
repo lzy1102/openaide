@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"openaide/backend/internal/kernel"
+	"openaide/backend/internal/kernel/actor"
 )
 
 const (
@@ -18,7 +19,7 @@ const (
 // PromptCache is an in-memory LRU-like prompt cache.
 // No file I/O — pure memory. SafeMap for concurrent access.
 type PromptCache struct {
-	entries   *kernel.SafeMap[string, *cacheEntry]
+	entries   *actor.SafeMap[string, *cacheEntry]
 	maxSize   int
 	stopCh    chan struct{}
 	hits      atomic.Int64
@@ -33,7 +34,7 @@ type cacheEntry struct {
 // NewPromptCache creates an in-memory cache. dataDir is ignored (kept for API compat).
 func NewPromptCache(dataDir string) *PromptCache {
 	c := &PromptCache{
-		entries: kernel.NewSafeMap[string, *cacheEntry](64),
+		entries: actor.NewSafeMap[string, *cacheEntry](64),
 		maxSize: defaultMaxEntries,
 		stopCh:  make(chan struct{}),
 	}

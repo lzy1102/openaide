@@ -8,12 +8,13 @@ import (
 	"time"
 
 	"openaide/backend/internal/kernel"
+	"openaide/backend/internal/kernel/actor"
 )
 
 // Gateway LLM 网关 - 统一接入所有提供商
 type Gateway struct {
-	providers       *kernel.SafeMap[string, Provider]
-	configs         *kernel.SafeMap[string, *ProviderConfig]
+	providers       *actor.SafeMap[string, Provider]
+	configs         *actor.SafeMap[string, *ProviderConfig]
 	defaultProvider string
 	cache           *PromptCache
 	router          *Router
@@ -56,8 +57,8 @@ type ProviderConfig struct {
 // NewGateway 创建 LLM 网关
 func NewGateway() *Gateway {
 	return &Gateway{
-		providers: kernel.NewSafeMap[string, Provider](4),
-		configs:   kernel.NewSafeMap[string, *ProviderConfig](4),
+		providers: actor.NewSafeMap[string, Provider](4),
+		configs:   actor.NewSafeMap[string, *ProviderConfig](4),
 	}
 }
 

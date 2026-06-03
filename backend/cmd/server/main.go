@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"openaide/backend/internal/config"
 	"openaide/backend/internal/infra"
@@ -62,7 +63,9 @@ func main() {
 	<-sigChan
 
 	slog.Info("Shutting down...")
-	if err := app.Stop(context.Background()); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := app.Stop(ctx); err != nil {
 		slog.Error("Shutdown error", "error", err)
 	}
 

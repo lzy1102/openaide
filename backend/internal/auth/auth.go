@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/internal/kernel/actor"
 )
 
 // Claims JWT 声明
@@ -24,7 +24,7 @@ type Claims struct {
 // Service 认证服务
 type Service struct {
 	secret []byte
-	users  *kernel.SafeMap[string, *User]
+	users  *actor.SafeMap[string, *User]
 }
 
 // User 用户
@@ -41,7 +41,7 @@ func NewService(secret string) *Service {
 	}
 	s := &Service{
 		secret: []byte(secret),
-		users:  kernel.NewSafeMap[string, *User](8),
+		users:  actor.NewSafeMap[string, *User](8),
 	}
 	// 默认 admin 用户
 	s.users.Store("admin", &User{

@@ -11,11 +11,12 @@ import (
 	"time"
 
 	"openaide/backend/internal/kernel"
+	"openaide/backend/internal/kernel/actor"
 )
 
 // Bus 事件总线
 type Bus struct {
-	handlers *kernel.SafeMap[string, []kernel.EventHandler]
+	handlers *actor.SafeMap[string, []kernel.EventHandler]
 
 	persistEnabled bool
 	dataDir        string
@@ -26,7 +27,7 @@ type Bus struct {
 // NewBus 创建事件总线
 func NewBus() *Bus {
 	return &Bus{
-		handlers: kernel.NewSafeMap[string, []kernel.EventHandler](8),
+		handlers: actor.NewSafeMap[string, []kernel.EventHandler](8),
 	}
 }
 

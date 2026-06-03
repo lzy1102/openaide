@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"time"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/internal/kernel/actor"
 )
 
 // ChannelType 渠道类型
@@ -91,13 +91,13 @@ type Status struct {
 
 // Registry 渠道注册表 — lock-free via SafeMap
 type Registry struct {
-	channels *kernel.SafeMap[string, Channel]
+	channels *actor.SafeMap[string, Channel]
 }
 
 // NewRegistry 创建渠道注册表
 func NewRegistry() *Registry {
 	return &Registry{
-		channels: kernel.NewSafeMap[string, Channel](8),
+		channels: actor.NewSafeMap[string, Channel](8),
 	}
 }
 

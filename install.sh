@@ -87,23 +87,45 @@ get_latest_version() {
     fi
 }
 
+# 检测当前平台
+detect_platform() {
+    local os arch
+    case "$(uname -s)" in
+        Linux)  os="linux" ;;
+        Darwin) os="darwin" ;;
+        *_NT*)  os="windows" ;;  # MSYS2/Cygwin/MinGW
+        *)      os="linux" ;;    # fallback
+    esac
+    case "$(uname -m)" in
+        x86_64|amd64) arch="amd64" ;;
+        aarch64|arm64) arch="arm64" ;;
+        *)            arch="amd64" ;; # fallback
+    esac
+    echo "$os-$arch"
+}
+
 # 下载 Release
 download_release() {
     local ver="$1"
-    local download_url="https://github.com/$GITHUB_REPO/releases/download/$ver/openaide-linux-amd64"
+    local platform
+    platform=$(detect_platform)
+    local binary="openaide-$platform"
+    local download_url="https://github.com/$GITHUB_REPO/releases/download/$ver/$binary"
     local temp_file="/tmp/openaide-$ver"
 
-    log_info "下载 OpenAIDE $ver..."
+    log_info "下载 OpenAIDE $ver ($platform)..."
     log_info "URL: $download_url"
 
     if command -v curl &> /dev/null; then
         curl -fsSL --progress-bar -o "$temp_file" "$download_url" || {
-            log_error "下载失败，请检查版本号和网络"
+            log_error "下载失败 (平台: $platform, 版本: $ver)"
+            log_info "可用的编译平台: linux-amd64, linux-arm64, darwin-amd64, darwin-arm64, windows-amd64"
+            log_info "如平台不匹配，请使用 --local 从源码编译"
             exit 1
         }
     else
         wget --progress=bar:force -qO "$temp_file" "$download_url" || {
-            log_error "下载失败，请检查版本号和网络"
+            log_error "下载失败 (平台: $platform, 版本: $ver)"
             exit 1
         }
     fi
@@ -112,33 +134,35 @@ download_release() {
     echo "$temp_file"
 }
 
-# 从本地存档安装
-install_from_archive() {
-    local archive="$1"
+# 安装二进制文件（支持 tar.gz 归档和裸二进制）
+install_binary() {
+    local source="$1"
+    local is_archive="${2:-false}"
 
-    log_info "从本地包安装: $archive"
+    log_info "从本地包安装: $source"
 
-    if [ ! -f "$archive" ]; then
-        log_error "文件不存在: $archive"
+    if [ ! -f "$source" ]; then
+        log_error "文件不存在: $source"
         exit 1
     fi
 
     # 创建目录
     mkdir -p "$BIN_DIR" "$DATA_DIR" "$LOG_DIR"
 
-    # 解压
-    log_info "解压到 $INSTALL_DIR..."
-    tar -xzf "$archive" -C "$INSTALL_DIR" --overwrite
+    if [ "$is_archive" = "true" ]; then
+        log_info "解压到 $INSTALL_DIR..."
+        tar -xzf "$source" -C "$INSTALL_DIR" --overwrite
+    else
+        cp "$source" "$BIN_DIR/openaide"
+        chmod +x "$BIN_DIR/openaide"
+        log_info "安装 CLI: $BIN_DIR/openaide"
+    fi
 
     # 确保可执行
     chmod +x "$BIN_DIR"/openaide-server "$BIN_DIR"/openaide 2>/dev/null || true
 
-    # 创建快捷命令
-    ln -sf "$BIN_DIR/openaide" "$BIN_DIR/openaide" 2>/dev/null || true
-
     # 创建系统级软链接 (需要 root)
     ln -sf "$BIN_DIR/openaide-server" /usr/local/bin/openaide-server 2>/dev/null || true
-    ln -sf "$BIN_DIR/openaide" /usr/local/bin/openaide 2>/dev/null || true
     ln -sf "$BIN_DIR/openaide" /usr/local/bin/openaide 2>/dev/null || true
 
     # 添加到 PATH
@@ -154,7 +178,6 @@ install_from_archive() {
         log_ok "已添加 $BIN_DIR 到 PATH (请运行: source $shell_rc)"
     fi
 
-    # 立即生效
     export PATH="$BIN_DIR:$PATH"
 
     log_ok "安装完成"
@@ -180,7 +203,7 @@ install_from_release() {
     archive=$(download_release "$ver")
 
     # 安装
-    install_from_archive "$archive"
+    install_binary "$archive" "false"
 
     # 清理
     rm -f "$archive"
@@ -274,7 +297,6 @@ local_build() {
     go test ./internal/... || log_warn "部分测试失败"
 
     # 创建快捷命令和软链接
-    ln -sf "$BIN_DIR/openaide" "$BIN_DIR/openaide" 2>/dev/null || true
     ln -sf "$BIN_DIR/openaide-server" /usr/local/bin/openaide-server 2>/dev/null || true
     ln -sf "$BIN_DIR/openaide" /usr/local/bin/openaide 2>/dev/null || true
     ln -sf "$BIN_DIR/openaide" /usr/local/bin/openaide 2>/dev/null || true
@@ -398,6 +420,7 @@ main() {
             --local|-l)
                 use_local=true
                 ;;
+            --archive|-a)
                 archive_path="$2"
                 shift
                 ;;
@@ -431,7 +454,7 @@ main() {
 
     if [ -n "$archive_path" ]; then
         # 从本地存档安装
-        install_from_archive "$archive_path"
+        install_binary "$archive_path" "true"
     elif [ "$use_local" = true ]; then
         # 本地编译模式
         local_build

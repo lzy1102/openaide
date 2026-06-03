@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"openaide/backend/internal/kernel"
+	"openaide/backend/internal/kernel/actor"
 
 	_ "modernc.org/sqlite"
 )
@@ -44,7 +45,7 @@ type memVec struct {
 const maxMemVectors = 5000
 
 type MemoryActor struct {
-	super    *kernel.Actor
+	super    *actor.Actor
 	embedder kernel.Embedder
 	db       *sql.DB
 	cache    []memVec
@@ -60,7 +61,7 @@ func NewMemoryActor(path string) (*MemoryActor, error) {
 	}
 	db.SetMaxOpenConns(1)
 	a := &MemoryActor{
-		super:    kernel.NewActor(64),
+		super:    actor.NewActor(64),
 		db:       db,
 		embCache: make(map[string][]float32),
 	}

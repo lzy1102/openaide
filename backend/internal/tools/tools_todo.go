@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"openaide/backend/internal/kernel"
+	"openaide/backend/internal/kernel/actor"
 )
 
 // ── Agent Todo Management (Claude Code style) ───────────────
@@ -18,7 +19,7 @@ type todoItem struct {
 	Status  string `json:"status"` // pending, in_progress, completed
 }
 
-var todoStore = kernel.NewActorStore[[]todoItem](8) // sessionID → todos
+var todoStore = actor.NewActorStore[[]todoItem](8) // sessionID → todos
 
 func todoToolDefs() []kernel.ToolDefinition {
 	return []kernel.ToolDefinition{

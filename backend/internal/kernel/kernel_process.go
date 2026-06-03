@@ -48,7 +48,7 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 	// 3. 构建消息列表
 	messages := k.buildMessages(ctx, session, query)
 	// 4. Get tool definitions (skill-filtered if applicable)
-	tools := k.getToolDefinitions(query.Content, query.Options)
+	tools := k.getToolDefinitions(ctx, query.Content, query.Options)
 
 	// Store query options for callback access during ReAct loop
 	k.queryOptions = &query.Options
@@ -59,7 +59,7 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 	toolErrors := 0
 	totalTokens := 0
 
-	maxRounds := k.determineMaxRounds(query.Content, len(session.Messages))
+	maxRounds := k.determineMaxRounds(ctx, query.Content, len(session.Messages))
 	slog.Debug("ReAct loop start", "query", query.Content[:min(80, len(query.Content))], "max_rounds", maxRounds, "tools", len(tools), "history_msgs", len(messages))
 	for round := 0; round < maxRounds; round++ {
 		// Prepare context: compress, snip old output, inject budget hints
@@ -67,7 +67,7 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 		slog.Debug("ReAct round — about to call LLM", "round", round+1, "max", maxRounds, "msgs", len(messages))
 		// 调用 LLM（如果指定了模型，临时切换）
 		if query.Options.ModelID != "" {
-			k.llmProvider.SetModelID(query.Options.ModelID)
+			if ms, ok := k.llmProvider.(ModelSwitcher); ok { ms.SetModelID(query.Options.ModelID) }
 		}
 		var llmCtx context.Context
 		if k.tracer != nil {
@@ -120,7 +120,7 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 
 			// 触发反思（如果启用）
 			if k.reflection != nil {
-				go k.doReflection(ctx, session.ID, query.Content, llmResp.Content, totalToolCalls, toolErrors)
+				go k.doReflection(context.WithoutCancel(ctx), session.ID, query.Content, llmResp.Content, totalToolCalls, toolErrors)
 			}
 
 			k.setState(StateIdle)
@@ -333,11 +333,6 @@ func (k *AgentKernel) doReflection(ctx context.Context, sessionID, query, respon
 	}
 
 	// 持久化学习洞察
-	if k.learner != nil {
-		if err := k.learner.Learn(ctx, record); err != nil {
-			slog.Warn("Learner failed", "error", err)
-		}
-	}
 
 	// 检测对话模式
 	if k.patternDetector != nil && k.sessionStore != nil {
@@ -362,18 +357,17 @@ func (k *AgentKernel) doReflection(ctx context.Context, sessionID, query, respon
 	}
 
 	// 自动知识抽取：质量门控通过后存入知识库
-	k.autoSaveKnowledge(ctx, sessionID, query, response, toolCalls)
+	k.autoSaveKnowledge(ctx, sessionID, query, response, toolCalls, toolErrors)
 }
 
 // autoSaveKnowledge 自动知识抽取 — 质量门控通过后存入知识库
-func (k *AgentKernel) autoSaveKnowledge(ctx context.Context, sessionID, query, response string, toolCalls int) {
+func (k *AgentKernel) autoSaveKnowledge(ctx context.Context, sessionID, query, response string, toolCalls, toolErrors int) {
 	if k.knowledgeCollector == nil {
 		return
 	}
 
-	// 构建质量评估快照
-	toolSuccesses := toolCalls // 简化：有工具调用就计为成功尝试
-	toolFailures := 0
+	toolSuccesses := toolCalls - toolErrors
+	toolFailures := toolErrors
 
 	var reflectResult *ReflectionResult
 	if session, err := k.sessionStore.Get(ctx, sessionID); err == nil && session != nil {
@@ -411,22 +405,50 @@ func (k *AgentKernel) extractSkillsFromPatterns(ctx context.Context, patterns []
 	if k.skillActor == nil {
 		return
 	}
-	for _, p := range patterns {
-		// Only create skills for patterns with high confidence AND frequency >= 3
+	// Get cluster examples for distillation
+	var clusterExamples [][]clusterExample
+	if sd, ok := k.patternDetector.(*SemanticPatternDetector); ok {
+		clusterExamples = sd.GetDistillableExamples()
+	}
+
+	for i, p := range patterns {
 		if p.Confidence < 0.7 || p.Frequency < 3 {
 			continue
 		}
-		skillID := "auto-" + strings.ToLower(strings.ReplaceAll(p.Type, " ", "-"))
-		skillName := capitalize(p.Type)
-		desc := p.Description
-		if len(desc) > 100 {
-			desc = desc[:100]
-		}
-		keywords := strings.Fields(strings.ToLower(p.Type))
-		k.skillActor.AddSkill(skillID, skillName, desc,
-			fmt.Sprintf("Auto-detected from %d successful executions. %s", p.Frequency, p.Description),
-			keywords)
+
+		theme := strings.ToLower(strings.TrimSpace(p.Description))
+		skillID := "auto-" + strings.ReplaceAll(strings.ReplaceAll(theme, " ", "-"), ":", "")
+		if len(skillID) > 60 { skillID = skillID[:60] }
+		skillName := capitalize(strings.TrimSpace(p.Description))
+		if len(skillName) > 50 { skillName = skillName[:50] }
+
+		keywords := tokenize(theme)
+		if len(keywords) == 0 { keywords = strings.Fields(p.Type) }
+
+		// Create skill immediately with simple description (no delay)
+		simplePrompt := fmt.Sprintf("Auto-detected from %d executions sharing theme: %s", p.Frequency, p.Description)
+		k.skillActor.AddSkill(skillID, skillName, p.Description, simplePrompt, keywords)
 		slog.Info("Auto-extracted skill", "id", skillID, "name", skillName, "frequency", p.Frequency)
+
+		// Distillation runs async — updates skill prompt when ready
+		if p.Type == "distillable_cluster" && i < len(clusterExamples) && k.llmProvider != nil {
+			examples := clusterExamples[i]
+			skillID, skillName, desc, kw := skillID, skillName, p.Description, keywords
+			go func() {
+				distillCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+				defer cancel()
+				distilled := DistillCluster(distillCtx, k.llmProvider, examples)
+				if distilled != "" {
+					k.skillActor.AddSkill(skillID, skillName, desc, distilled, kw)
+					if k.knowledgeCollector != nil {
+						k.knowledgeCollector.AddKnowledge(distillCtx,
+							"pattern: "+skillName, distilled, "distillation",
+							append(kw, "auto-distilled", "pattern"))
+					}
+					slog.Info("Skill distilled", "id", skillID, "name", skillName)
+				}
+			}()
+		}
 	}
 }
 
@@ -436,3 +458,4 @@ func capitalize(s string) string {
 	runes[0] = []rune(strings.ToUpper(string(runes[0])))[0]
 	return string(runes)
 }
+

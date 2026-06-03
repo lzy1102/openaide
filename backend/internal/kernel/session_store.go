@@ -262,6 +262,20 @@ func (s *SessionStoreAdapter) Delete(ctx context.Context, sessionID string) erro
 	return nil
 }
 
+func (s *SessionStoreAdapter) CleanupOldSessions(ctx context.Context, ttl time.Duration) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cutoff := time.Now().Add(-ttl)
+	deleted := 0
+	for id, session := range s.sessions {
+		if session.UpdatedAt.Before(cutoff) {
+			delete(s.sessions, id)
+			deleted++
+		}
+	}
+	return deleted, nil
+}
+
 func (s *SessionStoreAdapter) List(ctx context.Context, projectID, userID string, limit, offset int) ([]*Session, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

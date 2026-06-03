@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"strings"
 	"time"
+
+	"openaide/backend/internal/kernel/actor"
 )
 
 // Skill represents a registered skill/prompt template.
@@ -33,7 +35,7 @@ type skillEntry struct {
 // goroutine — zero locks. LLM calls for detection happen outside the actor
 // to prevent blocking all skill operations.
 type SkillActor struct {
-	super      *Actor
+	super      *actor.Actor
 	llm        LLMProvider
 	skills     map[string]*Skill
 	autoDetect bool
@@ -44,7 +46,7 @@ type SkillActor struct {
 // NewSkillActor creates and starts a skill actor.
 func NewSkillActor(llm LLMProvider) *SkillActor {
 	a := &SkillActor{
-		super:      NewActor(64),
+		super:      actor.NewActor(64),
 		llm:        llm,
 		skills:     make(map[string]*Skill),
 		autoDetect: true,
@@ -96,7 +98,7 @@ func (a *SkillActor) SetAutoDetect(on bool) {
 
 // DetectSkill finds the best matching skill for a query.
 // The LLM call runs OUTSIDE the actor to avoid blocking.
-func (a *SkillActor) DetectSkill(query string) *Skill {
+func (a *SkillActor) DetectSkill(ctx context.Context, query string) *Skill {
 	slog.Info("Skill actor detect", "query", query[:min(80, len(query))])
 
 	// Step 1: prepare skill list inside actor
@@ -120,7 +122,7 @@ func (a *SkillActor) DetectSkill(query string) *Skill {
 	// Step 2: LLM call OUTSIDE the actor
 	var matchID string
 	if a.llm != nil && len(skillList) > 0 {
-		matchID = a.detectWithLLM(query, skillList)
+		matchID = a.detectWithLLM(ctx, query, skillList)
 	}
 
 	// Step 3: look up matched skill inside actor
@@ -155,16 +157,16 @@ func (a *SkillActor) DetectSkill(query string) *Skill {
 }
 
 // GetTools returns the allowed tools for a skill.
-func (a *SkillActor) GetTools(query string) []string {
-	skill := a.DetectSkill(query)
+func (a *SkillActor) GetTools(ctx context.Context, query string) []string {
+	skill := a.DetectSkill(ctx, query)
 	if skill == nil { return nil }
 	if len(skill.AllowedTools) > 0 { return skill.AllowedTools }
 	return skill.Tools
 }
 
 // InjectPrompt injects the skill prompt into the system prompt.
-func (a *SkillActor) InjectPrompt(query string, basePrompt string) string {
-	skill := a.DetectSkill(query)
+func (a *SkillActor) InjectPrompt(ctx context.Context, query string, basePrompt string) string {
+	skill := a.DetectSkill(ctx, query)
 	if skill == nil { return basePrompt }
 	return basePrompt + fmt.Sprintf("\n\n## Current Active Skill: %s\n%s", skill.Name, skill.Prompt)
 }
@@ -234,18 +236,32 @@ func (a *SkillActor) save() {
 	if a.onSave != nil { a.onSave() }
 }
 
+// SetOnSave sets the persistence callback.
+func (a *SkillActor) SetOnSave(fn func()) { a.onSave = fn }
+
+// ExportSkills returns all skills for persistence.
+func (a *SkillActor) ExportSkills() map[string]*Skill {
+	result := make(map[string]*Skill)
+	a.super.Send(func() {
+		for id, s := range a.skills {
+			result[id] = s
+		}
+	})
+	return result
+}
+
 // Stop shuts down the actor.
 func (a *SkillActor) Stop() { a.super.Stop() }
 
 // Actor returns the underlying actor for direct command dispatch.
-func (a *SkillActor) Actor() *Actor { return a.super }
+func (a *SkillActor) Actor() *actor.Actor { return a.super }
 
-func (a *SkillActor) detectWithLLM(query string, skillList []skillEntry) string {
+func (a *SkillActor) detectWithLLM(ctx context.Context, query string, skillList []skillEntry) string {
 	var b strings.Builder
 	for _, s := range skillList {
 		b.WriteString(fmt.Sprintf("- %s: %s\n", s.ID, s.Description))
 	}
-	resp, err := a.llm.Chat(context.Background(), []Message{
+	resp, err := a.llm.Chat(ctx, []Message{
 		{Role: "user", Content: fmt.Sprintf(
 			"Which skill matches? Reply with the skill ID or 'none'.\n\nSkills:\n%s\nQuery: %s",
 			b.String(), query)},
@@ -264,7 +280,7 @@ func (a *SkillActor) GetSkillManager() *SkillActor { return a }
 
 // Ensure interface compliance.
 var _ interface {
-	DetectSkill(string) *Skill
-	InjectPrompt(string, string) string
-	GetTools(string) []string
+	DetectSkill(context.Context, string) *Skill
+	InjectPrompt(context.Context, string, string) string
+	GetTools(context.Context, string) []string
 } = (*SkillActor)(nil)

@@ -123,21 +123,14 @@ func (o *Orchestrator) GetLLMProvider() kernel.LLMProvider {
 
 // CleanupOldSessions 清理过期会话（7天 TTL），防止子Agent会话堆积
 func (o *Orchestrator) CleanupOldSessions(ctx context.Context) {
-	switch store := o.sessions.(type) {
-	case *kernel.FileSessionStore:
-		deleted, err := store.CleanupOldSessions(ctx, 7*24*time.Hour)
-		if err != nil {
-			slog.Warn("Session cleanup failed", "error", err)
-		} else if deleted > 0 {
-			slog.Info("Cleaned up old sessions", "count", deleted)
-		}
-	case *kernel.SessionActor:
-		deleted, err := store.CleanupOldSessions(ctx, 7*24*time.Hour)
-		if err != nil {
-			slog.Warn("Session actor cleanup failed", "error", err)
-		} else if deleted > 0 {
-			slog.Info("Session actor cleaned up old sessions", "count", deleted)
-		}
+	if o.sessions == nil {
+		return
+	}
+	deleted, err := o.sessions.CleanupOldSessions(ctx, 7*24*time.Hour)
+	if err != nil {
+		slog.Warn("Session cleanup failed", "error", err)
+	} else if deleted > 0 {
+		slog.Info("Cleaned up old sessions", "count", deleted)
 	}
 }
 

@@ -29,7 +29,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 
 	messages := k.buildMessages(ctx, session, query)
 
-	tools := k.getToolDefinitions(query.Content, query.Options)
+	tools := k.getToolDefinitions(ctx, query.Content, query.Options)
 
 	resultChan := make(chan StreamChunk, 100)
 
@@ -54,7 +54,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 		k.queryOptions = &query.Options
 	maxRounds := k.maxRounds
 		if k.adaptiveRounds != nil {
-			maxRounds = k.adaptiveRounds.Calculate(query.Content, len(session.Messages))
+			maxRounds = k.adaptiveRounds.Calculate(ctx, query.Content, len(session.Messages))
 		}
 		totalTokens := 0
 		totalToolCalls := 0
@@ -96,7 +96,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 			}
 
 			if query.Options.ModelID != "" {
-				k.llmProvider.SetModelID(query.Options.ModelID)
+				if ms, ok := k.llmProvider.(ModelSwitcher); ok { ms.SetModelID(query.Options.ModelID) }
 			}
 			llmStream, err := k.llmProvider.ChatStream(ctx, messages, tools, k.buildOptions(query.Options))
 			if err != nil {
@@ -191,7 +191,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 	go k.generateSessionTitle(session, query.Content)
 
 				if k.reflection != nil {
-					go k.doReflection(ctx, session.ID, query.Content, fullContent.String(), totalToolCalls, toolErrors)
+					go k.doReflection(context.WithoutCancel(ctx), session.ID, query.Content, fullContent.String(), totalToolCalls, toolErrors)
 				}
 
 				slog.Debug("ReAct stream complete", "rounds", round+1, "tokens", totalTokens, "tools", totalToolCalls, "model", k.llmProvider.GetModelID(), "duration", time.Since(startTime))
@@ -381,7 +381,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 	}
 
 		if k.reflection != nil {
-			go k.doReflection(ctx, session.ID, query.Content, resp.Content, totalToolCalls, toolErrors)
+			go k.doReflection(context.WithoutCancel(ctx), session.ID, query.Content, resp.Content, totalToolCalls, toolErrors)
 		}
 
 		k.setState(StateIdle)

@@ -24,13 +24,13 @@ func NewAdaptiveRounds(min, max int) *AdaptiveRounds {
 func (a *AdaptiveRounds) SetLLM(llm LLMProvider) { a.llm = llm }
 
 // Calculate 返回轮次估计（快速规则兜底 + LLM 优先）
-func (a *AdaptiveRounds) Calculate(query string, historyLength int) int {
+func (a *AdaptiveRounds) Calculate(ctx context.Context, query string, historyLength int) int {
 	base := a.MinRounds
 	if historyLength > 10 { base += 3 }
 
 	// 尝试 LLM 估计
 	if a.llm != nil {
-		if estimate := a.estimateWithLLM(query); estimate > 0 {
+		if estimate := a.estimateWithLLM(ctx, query); estimate > 0 {
 			base = estimate
 		}
 	}
@@ -40,8 +40,8 @@ func (a *AdaptiveRounds) Calculate(query string, historyLength int) int {
 	return base
 }
 
-func (a *AdaptiveRounds) estimateWithLLM(query string) int {
-	resp, err := a.llm.Chat(context.Background(), []Message{
+func (a *AdaptiveRounds) estimateWithLLM(ctx context.Context, query string) int {
+	resp, err := a.llm.Chat(ctx, []Message{
 		{Role: "system", Content: "Estimate how many reasoning rounds an AI agent needs for this task. Consider complexity, number of steps, and ambiguity. Reply with only an integer between 1 and 30. Simple queries need 1-3, complex multi-step tasks need 8-15."},
 		{Role: "user", Content: query},
 	}, nil, map[string]interface{}{"max_tokens": 10, "temperature": 0, "route": "execution", "no_thinking": true})
