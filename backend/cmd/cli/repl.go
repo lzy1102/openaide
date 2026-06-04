@@ -508,6 +508,26 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string,
 	}
 	PrintStatusBar(totalTokens, totalTools, elapsed, "deepseek-v4-pro", cacheHit, cacheMiss)
 
+	// LLM-decided: if the model called request_feedback, ask the user
+	if tools.FeedbackRequested {
+		tools.FeedbackRequested = false
+		fmt.Printf("\n  %sWas this helpful?%s [%sy=good  n=bad  ↵=skip%s] ", cBold, cReset, cReset, cDim)
+		var feedback string
+		fmt.Scanf("%s", &feedback)
+		feedback = strings.TrimSpace(strings.ToLower(feedback))
+		if feedback == "y" || feedback == "yes" || feedback == "good" || feedback == "g" {
+			if ak, ok := app.Kernel.(*kernel.AgentKernel); ok {
+				ak.SetUserVerdict(context.Background(), *sessionID, "good")
+			}
+			fmt.Printf("\r\033[K  %s✓ Thanks — this helps me improve.%s\n", pterm.Green(""), cReset)
+		} else if feedback == "n" || feedback == "no" || feedback == "bad" || feedback == "b" {
+			if ak, ok := app.Kernel.(*kernel.AgentKernel); ok {
+				ak.SetUserVerdict(context.Background(), *sessionID, "bad")
+			}
+			fmt.Printf("\r\033[K  %s✗ Noted — I'll learn from this.%s\n", pterm.Yellow(""), cReset)
+		}
+	}
+
 	fmt.Printf("\n%s▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸%s\n\n", cDim, cReset)
 	if qs := tools.GetPendingQuestions(); len(qs) > 0 {
 		fmt.Println()
@@ -757,7 +777,6 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 	parts := strings.Fields(cmd)
 	switch parts[0] {
 	case "/exit", "/quit", "/q":
-		askSessionFeedback(app, *sessionID)
 		fmt.Println("  Goodbye.")
 		os.Exit(0)
 
@@ -793,7 +812,6 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 		Println()
 
 	case "/clear":
-		askSessionFeedback(app, *sessionID)
 		fmt.Print("\033[2J\033[H")
 		app.Orchestrator.DeleteSession(context.Background(), *sessionID)
 		sess, _ := app.Orchestrator.CreateSession(context.Background(), "default", "cli-user")
