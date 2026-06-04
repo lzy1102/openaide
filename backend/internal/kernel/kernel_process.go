@@ -305,6 +305,19 @@ func (k *AgentKernel) doReflection(ctx context.Context, sessionID, query, respon
 		return
 	}
 
+	// Infer user verdict from reflection — LLM analyzed the full conversation flow
+	if result.Learned != "" && k.sessionStore != nil {
+		verdict, cleanLearned := extractVerdictFromLearned(result.Learned)
+		if verdict != "" {
+			result.Learned = cleanLearned
+			if session, err := k.sessionStore.Get(ctx, sessionID); err == nil && session != nil {
+				if session.Metadata == nil { session.Metadata = make(map[string]interface{}) }
+				session.Metadata["user_verdict"] = verdict
+				k.sessionStore.Update(ctx, session)
+			}
+		}
+	}
+
 	// Skill feedback: record quality for the activated skill
 	if k.skillActor != nil {
 		k.skillActor.RecordLastUsage(result.Quality)
@@ -484,3 +497,14 @@ func capitalize(s string) string {
 	return string(runes)
 }
 
+
+// extractVerdictFromLearned parses the reflection's learned field for a verdict prefix.
+// LLM is instructed to prefix with [good], [bad], or [neutral].
+func extractVerdictFromLearned(learned string) (verdict string, clean string) {
+	for _, v := range []string{"[good]", "[bad]", "[neutral]"} {
+		if strings.HasPrefix(learned, v) {
+			return v[1 : len(v)-1], strings.TrimSpace(learned[len(v):])
+		}
+	}
+	return "", learned
+}

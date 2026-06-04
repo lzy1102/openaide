@@ -453,3 +453,24 @@ func TestUserVerdict_NilSession(t *testing.T) {
 	// Should not panic with nil session store
 	k.SetUserVerdict(context.Background(), "nonexistent", "good")
 }
+
+func TestExtractVerdictFromLearned(t *testing.T) {
+	tests := []struct {
+		input       string
+		wantVerdict string
+		wantClean   string
+	}{
+		{"[good] Fixed login bug by updating token validation", "good", "Fixed login bug by updating token validation"},
+		{"[bad] Still has issues with session timeout", "bad", "Still has issues with session timeout"},
+		{"[neutral] Task is ongoing", "neutral", "Task is ongoing"},
+		{"No verdict prefix here", "", "No verdict prefix here"},
+		{"[GOOD] wrong case", "", "[GOOD] wrong case"},
+	}
+	for _, tt := range tests {
+		gotV, gotC := extractVerdictFromLearned(tt.input)
+		if gotV != tt.wantVerdict || gotC != tt.wantClean {
+			t.Errorf("extractVerdictFromLearned(%q) = (%q, %q), want (%q, %q)",
+				tt.input, gotV, gotC, tt.wantVerdict, tt.wantClean)
+		}
+	}
+}

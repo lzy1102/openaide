@@ -96,7 +96,8 @@ func (r *LLMReflection) Reflect(ctx context.Context, sessionID string, execution
 2. Rate each step: was the tool choice correct? Was the right file read? Was the edit precise?
 3. Identify the BEST decision in this execution (what to reinforce)
 4. Identify the WEAKEST decision (what to fix next time)
-5. **Key Lesson for Next Time** — a 1-3 sentence directive. Be concrete: mention specific files, tools, and gotchas.`,
+5. **Key Lesson for Next Time** — a 1-3 sentence directive. Be concrete.
+6. **Infer user verdict from the conversation flow**: based on the FULL conversation, did the user seem satisfied? Look for: user moves to new topics (positive), user reports errors or asks for corrections (negative), user continues refining the same task (neutral). Output in 'learned' field as prefix: [good], [bad], or [neutral].`,
 		execution.Query, execution.Response, trace.String(),
 		execution.Success, execution.Error,
 		len(execution.ToolCalls), execution.Duration)
