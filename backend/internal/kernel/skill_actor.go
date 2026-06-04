@@ -139,21 +139,7 @@ func (a *SkillActor) DetectSkill(ctx context.Context, query string) *Skill {
 		}
 	}
 
-	// Step 4: keyword fallback inside actor
-	var fallback *Skill
-	a.super.Send(func() {
-		lower := strings.ToLower(query)
-		bestScore := 0
-		for _, s := range a.skills {
-			if !s.Enabled || len(s.Keywords) == 0 { continue }
-			score := 0
-			for _, kw := range s.Keywords {
-				if strings.Contains(lower, strings.ToLower(kw)) { score++ }
-			}
-			if score > bestScore { bestScore = score; fallback = s }
-		}
-	})
-	return fallback
+	return nil
 }
 
 // GetTools returns the allowed tools for a skill.

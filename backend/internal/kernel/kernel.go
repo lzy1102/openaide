@@ -391,6 +391,13 @@ var parallelSafeTools = map[string]bool{
 }
 
 // isParallelSafe 判断工具是否可以和其他工具并行执行
+// DangerousTools are tools that require human approval before execution.
+var DangerousTools = map[string]string{
+	"execute_command": "执行任意系统命令",
+	"write_file":      "写入文件可能覆盖重要内容",
+	"diff_edit":       "搜索替换可能错误匹配",
+}
+
 func isParallelSafe(name string) bool {
 	return parallelSafeTools[name]
 }

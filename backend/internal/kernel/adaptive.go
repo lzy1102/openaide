@@ -23,18 +23,9 @@ func NewAdaptiveRounds(min, max int) *AdaptiveRounds {
 // SetLLM 注入 LLM 提供商用于智能估计
 func (a *AdaptiveRounds) SetLLM(llm LLMProvider) { a.llm = llm }
 
-// Calculate 返回轮次估计（快速规则兜底 + LLM 优先）
+// Calculate returns the LLM's round estimate, clamped to [MinRounds, MaxRounds].
 func (a *AdaptiveRounds) Calculate(ctx context.Context, query string, historyLength int) int {
-	base := a.MinRounds
-	if historyLength > 10 { base += 3 }
-
-	// 尝试 LLM 估计
-	if a.llm != nil {
-		if estimate := a.estimateWithLLM(ctx, query); estimate > 0 {
-			base = estimate
-		}
-	}
-
+	base := a.estimateWithLLM(ctx, query)
 	if base < a.MinRounds { base = a.MinRounds }
 	if base > a.MaxRounds { base = a.MaxRounds }
 	return base
@@ -50,8 +41,5 @@ func (a *AdaptiveRounds) estimateWithLLM(ctx context.Context, query string) int 
 	}
 	var n int
 	fmt.Sscanf(strings.TrimSpace(resp.Content), "%d", &n)
-	if n < 1 || n > 30 {
-		return 0
-	}
 	return n
 }

@@ -5,52 +5,64 @@ import (
 	"testing"
 )
 
+type mockApprovalLLM struct{ risk string }
+
+func (m *mockApprovalLLM) Chat(ctx context.Context, msgs []Message, tools []ToolDefinition, opts map[string]interface{}) (*LLMResponse, error) {
+	return &LLMResponse{Content: m.risk}, nil
+}
+func (m *mockApprovalLLM) ChatStream(ctx context.Context, msgs []Message, tools []ToolDefinition, opts map[string]interface{}) (<-chan StreamChunk, error) {
+	return nil, nil
+}
+func (m *mockApprovalLLM) GetModelID() string { return "mock" }
+func (m *mockApprovalLLM) SetModelID(mdl string) {}
+
 func TestAutoApprover_LowRisk(t *testing.T) {
 	a := NewAutoApprover()
 	result := a.RequestApproval(context.Background(), &ApprovalRequest{
 		ID: "1", Tool: "read_file", Args: "{}", Reason: "read", Risk: "low",
 	})
 	if !result.Approved {
-		t.Error("low risk tools should auto-approve")
+		t.Error("read_file should auto-approve (whitelist)")
 	}
 }
 
-func TestAutoApprover_HighRisk(t *testing.T) {
+func TestAutoApprover_LLMSafe(t *testing.T) {
 	a := NewAutoApprover()
+	a.SetLLM(&mockApprovalLLM{risk: "safe"})
 	result := a.RequestApproval(context.Background(), &ApprovalRequest{
-		ID: "1", Tool: "execute_command", Args: `{"command":"rm -rf /"}`, Reason: "dangerous", Risk: "high",
+		ID: "1", Tool: "execute_command", Args: `{"command":"ls"}`, Reason: "list", Risk: "high",
+	})
+	if !result.Approved {
+		t.Error("LLM-assessed safe tools should auto-approve")
+	}
+}
+
+func TestAutoApprover_LLMDangerous(t *testing.T) {
+	a := NewAutoApprover()
+	a.SetLLM(&mockApprovalLLM{risk: "dangerous"})
+	result := a.RequestApproval(context.Background(), &ApprovalRequest{
+		ID: "1", Tool: "execute_command", Args: `{"command":"rm -rf /"}`, Reason: "destroy", Risk: "high",
 	})
 	if result.Approved {
-		t.Error("high risk tools should NOT auto-approve")
+		t.Error("LLM-assessed dangerous tools should NOT auto-approve")
 	}
 }
 
-func TestAutoApprover_WriteFile(t *testing.T) {
+func TestAutoApprover_UnsafeMode(t *testing.T) {
 	a := NewAutoApprover()
+	a.UnsafeMode = true
 	result := a.RequestApproval(context.Background(), &ApprovalRequest{
-		ID: "1", Tool: "write_file", Args: "{}", Reason: "write", Risk: "medium",
+		ID: "1", Tool: "execute_command", Args: `{"command":"rm -rf /"}`, Reason: "destroy", Risk: "high",
 	})
-	if result.Approved {
-		t.Error("write_file should NOT auto-approve")
-	}
-}
-
-func TestDangerousTools_List(t *testing.T) {
-	if _, ok := DangerousTools["execute_command"]; !ok {
-		t.Error("execute_command should be dangerous")
-	}
-	if _, ok := DangerousTools["write_file"]; !ok {
-		t.Error("write_file should be dangerous")
-	}
-	if _, ok := DangerousTools["read_file"]; ok {
-		t.Error("read_file should NOT be dangerous")
+	if !result.Approved {
+		t.Error("UnsafeMode should auto-approve everything")
 	}
 }
 
 func TestApprovalRequest(t *testing.T) {
 	req := &ApprovalRequest{
 		ID: "abc", Tool: "execute_command",
-		Args: `{"command":"ls"}`, Reason: "执行系统命令", Risk: "high",
+		Args: `{"command":"ls"}`, Reason: "execute", Risk: "high",
 	}
 	if req.ID != "abc" || req.Risk != "high" {
 		t.Error("request fields mismatch")

@@ -35,17 +35,15 @@ func TestSkillActor_DetectLLM(t *testing.T) {
 	}
 }
 
-func TestSkillActor_KeywordFallback(t *testing.T) {
-	// No LLM
+func TestSkillActor_NoLLM(t *testing.T) {
+	// Without LLM, skill detection returns nil — no fallback to keywords.
+	// The LLM is the brain. If it's unavailable, the agent is dead.
 	a := NewSkillActor(nil)
 	a.AddSkill("deploy", "Deploy", "Deploy stuff", "deploy prompt", []string{"deploy", "ship"})
 
 	skill := a.DetectSkill(context.Background(), "let's deploy to production")
-	if skill == nil {
-		t.Fatal("expected keyword match")
-	}
-	if skill.ID != "deploy" {
-		t.Errorf("expected 'deploy', got '%s'", skill.ID)
+	if skill != nil {
+		t.Error("without LLM, DetectSkill should return nil — no keyword fallback")
 	}
 }
 

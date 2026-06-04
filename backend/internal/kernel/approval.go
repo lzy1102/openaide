@@ -62,21 +62,13 @@ func (a *AutoApprover) RequestApproval(ctx context.Context, req *ApprovalRequest
 		return &ApprovalResult{Approved: true, Reason: "auto-approved (unsafe mode)"}
 	}
 
-	// 白名单快速通道
+	// Read-only tools always safe — no LLM call needed
 	if approved, ok := a.ApprovedTools[req.Tool]; ok && approved {
 		return &ApprovalResult{Approved: true, Reason: "auto-approved"}
 	}
 
-	// LLM 风险评估：根据具体参数判断风险
-	if a.llm != nil {
-		return a.assessWithLLM(ctx, req)
-	}
-
-	// 无 LLM 时的兜底：已知高危工具拒绝，其他需手动审批
-	if _, dangerous := DangerousTools[req.Tool]; dangerous {
-		return &ApprovalResult{Approved: false, Reason: fmt.Sprintf("高危工具 '%s': %s", req.Tool, DangerousTools[req.Tool])}
-	}
-	return &ApprovalResult{Approved: false, Reason: fmt.Sprintf("tool '%s' requires manual approval", req.Tool)}
+	// LLM assesses risk based on specific arguments
+	return a.assessWithLLM(ctx, req)
 }
 
 func (a *AutoApprover) assessWithLLM(ctx context.Context, req *ApprovalRequest) *ApprovalResult {
@@ -110,9 +102,3 @@ Reply with ONE word: safe, caution, or dangerous.`, req.Tool, req.Args)
 	}
 }
 
-// DangerousTools 高危工具列表（无 LLM 时的兜底）
-var DangerousTools = map[string]string{
-	"execute_command": "执行任意系统命令，可能造成不可逆损害",
-	"write_file":      "写入文件可能覆盖重要内容",
-	"diff_edit":       "搜索替换可能错误匹配",
-}
