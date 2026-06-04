@@ -48,6 +48,9 @@ install.bat
 |----------|-------------|-------|-------------|----------|
 | Knowledge Accumulation | ❌ | ❌ | ❌ | ✅ Reflect → Distill → Skill |
 | Self-learning Skills | ❌ | ❌ | ❌ | ✅ Semantic cluster + LLM distill |
+| Process Supervision | ❌ | ❌ | ❌ | ✅ Step-by-step evaluation |
+| Agent Memory Mgmt | ❌ | ❌ | ❌ | ✅ MemGPT archive/retrieve |
+| ACI (Agent Tool UX) | ❌ | ❌ | ❌ | ✅ Structured output + verify |
 | CSP Actor (zero-lock) | ❌ | ❌ | ❌ | ✅ |
 | Layered Prompts L0-L6 | ❌ | ❌ | ❌ | ✅ Task-adaptive |
 | Vector ANN Search | ❌ | ❌ | ❌ | ✅ Bucketed O(n/256) |
@@ -98,12 +101,16 @@ install.bat
 - **ReAct Loop**: Reason → Act → Observe → Repeat. Main agent with full layered prompts (L0-L6).
 - **DeepPlan Pipeline**: Research → Propose → Select → Plan → Execute → Verify
 - **Multi-Agent Team**: 4 roles (analyst/coder/reviewer/executor) with anti-prompt constraints, mini ReAct loops, role-filtered tools, isolated sessions. `/analyst` `/coder` `/reviewer` `/executor` `/team`
+- **MemGPT Memory**: Agent actively manages its own memory — archive, retrieve, store core facts
+- **Process Supervision**: Step-by-step execution evaluation, identifies best/worst decisions
+- **ACI Tools**: Agent-friendly tool output (before/after diffs, line numbers, verification)
 - **Architect/Editor Routing**: Reasoning model for analysis, execution model for coding
 - **Budget Injection**: LLM aware of remaining rounds, self-converges
 
 ### Knowledge System — Gets Smarter Every Task
-- **Reflection**: LLM quality scoring (1-10) + quality-gated auto-save
-- **Knowledge Refinement**: Dedup (cosine > 0.85) → LLM extract → structured SQLite store with weight feedback
+- **Process Supervision**: Per-step evaluation identifies which decisions were good/bad
+- **Reflection → Reflexion**: LLM generates "Key Lesson for Next Time" stored for future retrieval
+- **Knowledge Refinement**: Dedup (cosine > 0.85) → LLM extract → composite scored retrieval
 - **Skill Extraction**: Semantic embedding clustering → LLM knowledge distillation → auto-persist skills
 - **ProjectMind**: Cross-session CodeMap, RiskMap, Conventions, Strategy stats (auto-save)
 - **Layered Prompts**: L0 (identity) + L1 (project) + L2 (skill) + L3 (task adapter) + L5 (reflection) + L6 (RAG)

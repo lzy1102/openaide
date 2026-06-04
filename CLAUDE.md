@@ -116,15 +116,16 @@ OpenAIDE is an AI Agent kernel platform in Go. Strictly layered, CSP actor concu
    - `saga.go` — RunSaga() for cross-actor transactional compensation
    - `interfaces.go` — All kernel-level interfaces (LLMProvider, ModelSwitcher, SessionStore, etc.)
    - `types.go` — Shared types: `Message`, `ToolCall`, `Query`, `Response`, `StreamChunk`, `Event`, `Session`
-   - Other files: `llm_reflection.go`, `compress.go`, `checkpoint.go`, `approval.go`, `adaptive.go`, `tracer.go`
+   - `llm_reflection.go` — Process supervision: evaluates each ReAct step individually, identifies best/worst decisions
+   - Other files: `compress.go`, `checkpoint.go`, `approval.go`, `adaptive.go`, `tracer.go`
    - Legacy (not default): `session_store.go`
 
 3. **`backend/internal/knowledge/`** — Knowledge base:
    - `knowledge_actor.go` — KnowledgeActor (SQLite + in-memory vector index + random projection bucketing)
    - `knowledge.go` — Legacy file-based knowledge (not default)
 
-4. **`backend/internal/memory/`** — Memory store:
-   - `memory_actor.go` — MemoryActor (SQLite + in-memory vector cache, batch embedding)
+4. **`backend/internal/memory/`** — MemGPT-style memory store:
+   - `memory_actor.go` — MemoryActor (working memory + archival storage + core facts). Agent-driven memory management: archive conversations, retrieve from archive, store core facts that survive all sessions.
    - `memory.go` — Legacy file-based memory (not default)
 
 3. **`backend/internal/tools/`** (9 files) — Tool definitions and handlers split by domain:
@@ -132,7 +133,8 @@ OpenAIDE is an AI Agent kernel platform in Go. Strictly layered, CSP actor concu
    - `tools_filesystem.go` — read_file (with offset/limit), write_file, execute_command, list_directory, search_files
    - `tools_knowledge.go` — search_knowledge, add_knowledge, `KnowledgeAccessor` interface, `WithKnowledge()`
    - `tools_symbol.go` — search_symbols
-   - `diff_edit.go` — diff_edit, diff_edit_lines
+   - `diff_edit.go` — diff_edit (ACI-verified: before/after comparison + write verification), diff_edit_lines
+   - `tools_memory.go` — manage_memory (MemGPT: archive, retrieve, remember, recall actions)
    - `git_deep.go` — git_status, git_diff, git_log, git_blame
    - `web.go` — web_search, web_fetch, ai_search
    - `browser.go` — 5 browser tools + `ShutdownBrowser()` + `SetBrowserEnabled()`
@@ -258,6 +260,35 @@ compositeScore = cosine*0.5 + weight*0.3 + 0.2
 - **Recency** (20%): base score — all documents have recency floor; `weight` increases with positive feedback
 
 Documents with `weight > 1.0` (positively reinforced) rank higher than equally-relevant documents with `weight = 1.0`.
+
+### Process Supervision (Let's Verify Step by Step, 2023)
+
+After each ReAct loop, `doReflection` sends the FULL message history to LLMReflection for per-step evaluation:
+
+- **Step-by-step trace**: Each ReAct round (LLM thought → tool called → tool result) is included
+- **Per-step scoring**: Identifies BEST decision (what to reinforce) and WEAKEST decision (what to fix)
+- **Precision**: "Round 2's tool choice was suboptimal" vs old "7/10 overall"
+
+### Memory Management (MemGPT, 2023)
+
+Agent actively manages its own memory via the `manage_memory` tool:
+
+- **archive**: Store completed conversation summaries in archival storage with embeddings
+- **retrieve**: Search archived conversations by embedding similarity
+- **remember**: Persist important facts to core memory (survives all sessions)
+- **recall**: Retrieve core facts by importance and recency
+
+Budget injection now hints: "If you've completed subtasks, use manage_memory(action='archive')".
+
+### Agent-Computer Interface (SWE-Agent, 2024)
+
+All tools return structured, agent-friendly output:
+
+- **diff_edit**: Shows before/after comparison with line numbers + write verification
+- **write_file**: Line-numbered preview of written content + read-back verification
+- **read_file**: Already ACI-compatible — file path, line count, numbered lines
+- **search_files**: `file:line: matched_content` format with match count
+- **execute_command**: `[exit=N]` prefix with stdout/stderr separation
 
 ### Prompt system
 
