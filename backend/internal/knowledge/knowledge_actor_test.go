@@ -3,6 +3,7 @@ package knowledge
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 func TestActor_CreateAndStop(t *testing.T) {
@@ -95,5 +96,52 @@ func TestActor_IncrementalAdd(t *testing.T) {
 	results, _ := a.Search(ctx, "Content", 20)
 	if len(results) < 1 {
 		t.Error("expected results")
+	}
+}
+
+// ============ Composite scoring (Generative Agents 2023) ============
+
+func TestCompositeScore(t *testing.T) {
+	// High relevance, high importance → should score highest
+	d1 := scoredDoc{score: 0.95, weight: 2.0}
+	// High relevance, low importance
+	d2 := scoredDoc{score: 0.95, weight: 0.5}
+	// Low relevance, high importance
+	d3 := scoredDoc{score: 0.5, weight: 2.0}
+
+	s1 := d1.compositeScore()
+	s2 := d2.compositeScore()
+	s3 := d3.compositeScore()
+
+	if s1 <= s2 {
+		t.Errorf("high relevance+importance (%.3f) should beat high relevance only (%.3f)", s1, s2)
+	}
+	if s1 <= s3 {
+		t.Errorf("high relevance+importance (%.3f) should beat importance only (%.3f)", s1, s3)
+	}
+
+	t.Logf("d1(relevance=0.95, weight=2.0) = %.3f", s1)
+	t.Logf("d2(relevance=0.95, weight=0.5) = %.3f", s2)
+	t.Logf("d3(relevance=0.50, weight=2.0) = %.3f", s3)
+}
+
+func TestDocumentWeight(t *testing.T) {
+	a, err := NewActor(t.TempDir() + "/weight.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Stop()
+
+	ctx := context.Background()
+	doc, _ := a.Add(ctx, "test", "content goes here", "test", nil)
+
+	// Boost weight
+	a.RecordKnowledgeUsage(ctx, []string{doc.ID}, 0.8)
+	time.Sleep(10 * time.Millisecond) // wait for actor
+
+	// Search should still work with the weight column
+	results, _ := a.Search(ctx, "content", 5)
+	if len(results) == 0 {
+		t.Error("expected to find document after weight update")
 	}
 }
