@@ -109,7 +109,7 @@ install.bat
 
 ### Knowledge System — Gets Smarter Every Task
 - **Process Supervision**: Per-step evaluation identifies which decisions were good/bad
-- **Reflection → Reflexion**: LLM generates "Key Lesson for Next Time" stored for future retrieval
+- **Implicit Feedback**: LLM infers user satisfaction from conversation flow — no prompts needed
 - **Knowledge Refinement**: Dedup (cosine > 0.85) → LLM extract → composite scored retrieval
 - **Skill Extraction**: Semantic embedding clustering → LLM knowledge distillation → auto-persist skills
 - **ProjectMind**: Cross-session CodeMap, RiskMap, Conventions, Strategy stats (auto-save)

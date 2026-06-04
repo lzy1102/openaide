@@ -240,7 +240,7 @@ After each ReAct loop, the kernel's learning pipeline extracts reusable skills:
 1. **SemanticPatternDetector**: Clusters user queries by embedding similarity (cosine > 0.80). Stores query+response pairs in each cluster. Emits `distillable_cluster` pattern when cluster reaches `PatternMinClusterSize` (default 8).
 2. **DistillCluster (async)**: Sends cluster examples to LLM for knowledge distillation — extracts key files, common patterns, gotchas, and best practices. Runs in background goroutine (60s timeout). Updates skill prompt when ready.
 3. **Auto-persist**: Skills write to `~/.openaide/data/skills/auto_skills.json` on every mutation. Reloaded on restart. Distilled knowledge also stored in KnowledgeActor for RAG retrieval.
-4. **Knowledge feedback**: Injected RAG document IDs are saved to session metadata. After reflection, `RecordKnowledgeUsage` adjusts document weight (±0.1, range 0.1-2.0) based on quality score.
+4. **Implicit feedback**: No explicit prompts. LLMReflection infers user satisfaction from the full conversation flow — user moves to new topics (positive), reports errors (negative), or continues refining (neutral). Verdict stored as `[good]`/`[bad]`/`[neutral]` prefix in learned field. `RecordKnowledgeUsage` adjusts weights accordingly.
 5. **Toolformer-style strategy**: DistillCluster prompt asks for optimal tool sequence ("read X first, then search Y, then edit Z"). Successful tool patterns are reinforced through distillation.
 6. **Reflexion-style self-improvement**: LLMReflection generates "Key Lesson for Next Time" — a concrete self-instruction stored in KnowledgeActor for future RAG retrieval. When a similar query comes up, the lesson is injected.
 
