@@ -16,13 +16,13 @@ func feedbackToolDefs() []kernel.ToolDefinition {
 		Type: "function",
 		Function: kernel.FunctionDef{
 			Name:        "request_feedback",
-			Description: "Call this at the END of a response when you believe user feedback would be valuable for learning. Use when: the task was complex (multiple steps), you made code changes, you're uncertain about the result quality, or the user seemed particularly satisfied or dissatisfied. Do NOT call after simple queries, greetings, or pure information lookups.",
+			Description: "Call this ONLY at the END of your final response, AFTER you have verified your work (tests pass, code builds, files read back correctly). Use when: you completed a multi-step task with code changes AND verified the result. Do NOT call: during intermediate steps, before verification, after simple queries, greetings, or pure information lookups. The user needs to see your complete verified result before giving feedback.",
 			Parameters: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"reason": map[string]interface{}{
 						"type":        "string",
-						"description": "Brief reason why you're requesting feedback (e.g. 'multi-step bug fix', 'uncertain about approach', 'complex refactor')",
+						"description": "What was accomplished and verified before requesting feedback (e.g. 'fixed login bug, tests pass', 'refactored auth module, build succeeds')",
 					},
 				},
 				"required": []string{"reason"},
