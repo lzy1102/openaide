@@ -183,6 +183,7 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 		return nil, fmt.Errorf("memory actor: %w", err)
 	}
 	memManager.SetEmbedder(embedder)
+	tools.SetMemoryManager(memManager)
 
 	// 5. 会话存储（CSP actor）
 	sessionStore, err := kernel.NewSessionActor(cfg.Storage.DataDir + "/sessions.db")

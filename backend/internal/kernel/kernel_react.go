@@ -34,14 +34,13 @@ func (k *AgentKernel) prepareReActRound(ctx context.Context, messages []Message,
 
 	snipOldToolOutputs(messages)
 
-	// Budget injection: warn LLM about remaining rounds
+	// Budget injection with MemGPT-style memory management hint
 	if round >= maxRounds/2 && round < maxRounds-1 {
 		remaining := maxRounds - round
-		messages = append(messages, Message{
-			Role: "user", Content: fmt.Sprintf(
-				"[System] Used %d/%d rounds, %d remaining. Give your final answer now if you have enough information.",
-				round, maxRounds, remaining),
-		})
+		hint := fmt.Sprintf(
+			"[System] Used %d/%d rounds, %d remaining. If you have completed subtasks, use manage_memory(action='archive') to save key findings. Use manage_memory(action='retrieve') to recall past knowledge.",
+			round, maxRounds, remaining)
+		messages = append(messages, Message{Role: "user", Content: hint})
 	} else if round >= maxRounds-1 {
 		// Check if user wants to continue beyond budget
 	if k.queryOptions != nil && k.queryOptions.OnBudgetExhausted != nil {

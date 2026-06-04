@@ -49,6 +49,7 @@ func BuiltinTools() []kernel.ToolDefinition {
 	tools = append(tools, multimodalToolDefs()...)
 	tools = append(tools, lspToolDefs()...)
 	tools = append(tools, verifyToolDefs()...)
+tools = append(tools, memoryToolDefs()...)
 	return tools
 }
 
@@ -97,6 +98,7 @@ func BuiltinHandlers() map[string]kernel.ToolHandler {
 		"lsp_diagnostics":    handleLSPDiagnostics,
 		"verify_claim":       handleVerifyClaim,
 		"trace_callers":      handleTraceCallers,
+		"manage_memory": handleManageMemory,
 	}
 }
 
