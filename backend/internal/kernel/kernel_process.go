@@ -350,7 +350,7 @@ func (k *AgentKernel) doReflection(ctx context.Context, sessionID, query, respon
 
 				// Auto-extract skills from recurring high-confidence patterns
 				if k.skillActor != nil {
-					go k.extractSkillsFromPatterns(context.Background(), patterns)
+					go k.extractSkillsFromPatterns(context.WithoutCancel(ctx), patterns)
 				}
 			}
 		}

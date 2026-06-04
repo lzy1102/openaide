@@ -109,9 +109,9 @@ func (q *TaskQueue) Enqueue(task *Task) error {
 }
 
 // Start 启动工作池
-func (q *TaskQueue) Start(ctx context.Context, handler TaskHandler) {
+func (q *TaskQueue) Start(ctx context.Context, handler TaskHandler) error {
 	if handler == nil {
-		panic("task queue handler must not be nil")
+		return fmt.Errorf("task queue handler must not be nil")
 	}
 	q.handler = handler
 
@@ -124,6 +124,7 @@ func (q *TaskQueue) Start(ctx context.Context, handler TaskHandler) {
 		"workers", q.workerCount,
 		"queue_size", q.queueSize,
 	)
+	return nil
 }
 
 // Stop 停止工作池（等待所有运行中任务完成）

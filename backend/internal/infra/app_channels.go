@@ -115,7 +115,7 @@ func setupChannels(app *Application, cfg *config.Config, orch *orchestration.Orc
 	}
 
 	// 启动任务队列工作池
-	taskQueue.Start(context.Background(), func(ctx context.Context, task *channel.Task) *channel.TaskResult {
+	_ = taskQueue.Start(context.Background(), func(ctx context.Context, task *channel.Task) *channel.TaskResult {
 		resp, err := orch.ProcessQuery(ctx, task.UserID, task.ChannelID, task.Content, kernel.QueryOptions{})
 		if err != nil {
 			result := &channel.TaskResult{TaskID: task.ID, Error: err.Error(), Completed: false}

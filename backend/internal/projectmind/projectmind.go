@@ -566,7 +566,7 @@ func (pm *ProjectMind) RecentFailures() string {
 }
 
 // SyncToKnowledgeBase 将 ProjectMind 事实同步到知识库，使语义搜索可用
-func (pm *ProjectMind) SyncToKnowledgeBase(kb KnowledgeBaseWriter) {
+func (pm *ProjectMind) SyncToKnowledgeBase(ctx context.Context, kb KnowledgeBaseWriter) {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 
@@ -577,7 +577,7 @@ func (pm *ProjectMind) SyncToKnowledgeBase(kb KnowledgeBaseWriter) {
 		if len(entry.Exports) > 0 {
 			content += fmt.Sprintf("\n导出: %s", strings.Join(entry.Exports, ", "))
 		}
-		kb.AddKnowledge(context.Background(), "pm-"+file, content, "projectmind", []string{"projectmind", "code-map"})
+		kb.AddKnowledge(ctx, "pm-"+file, content, "projectmind", []string{"projectmind", "code-map"})
 	}
 
 	// 风险 → 短文档
@@ -585,13 +585,13 @@ func (pm *ProjectMind) SyncToKnowledgeBase(kb KnowledgeBaseWriter) {
 		status := "未修复"
 		if r.Fixed { status = "已修复" }
 		content := fmt.Sprintf("文件: %s\n风险: %s\n等级: %s\n状态: %s", file, r.Risk, r.Level, status)
-		kb.AddKnowledge(context.Background(), "pm-risk-"+file, content, "projectmind", []string{"projectmind", "risk"})
+		kb.AddKnowledge(ctx, "pm-risk-"+file, content, "projectmind", []string{"projectmind", "risk"})
 	}
 
 	// 约定 → 短文档
 	for _, c := range pm.Conventions {
 		if c.Confidence < 0.6 { continue }
-		kb.AddKnowledge(context.Background(), "pm-conv-"+c.Rule[:min(20, len(c.Rule))],
+		kb.AddKnowledge(ctx, "pm-conv-"+c.Rule[:min(20, len(c.Rule))],
 			fmt.Sprintf("项目约定: %s\n来源: %s\n置信度: %.0f%%", c.Rule, c.Source, c.Confidence*100),
 			"projectmind", []string{"projectmind", "convention"})
 	}

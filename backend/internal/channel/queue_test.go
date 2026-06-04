@@ -20,7 +20,7 @@ func TestTaskQueue_EnqueueDequeue(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	q.Start(ctx, func(ctx context.Context, t *Task) *TaskResult {
+	_ = q.Start(ctx, func(ctx context.Context, t *Task) *TaskResult {
 		mu.Lock()
 		received = t
 		mu.Unlock()
@@ -53,7 +53,7 @@ func TestTaskQueue_StartStop(t *testing.T) {
 	q := NewTaskQueue(QueueConfig{WorkerCount: 2, QueueSize: 10})
 	ctx := context.Background()
 
-	q.Start(ctx, func(ctx context.Context, t *Task) *TaskResult { return &TaskResult{Completed: true} })
+	_ = q.Start(ctx, func(ctx context.Context, t *Task) *TaskResult { return &TaskResult{Completed: true} })
 	time.Sleep(10 * time.Millisecond)
 
 	if err := q.Stop(ctx); err != nil {
@@ -64,7 +64,7 @@ func TestTaskQueue_StartStop(t *testing.T) {
 func TestTaskQueue_StoppedEnqueue(t *testing.T) {
 	q := NewTaskQueue(QueueConfig{WorkerCount: 1, QueueSize: 10})
 	ctx, cancel := context.WithCancel(context.Background())
-	q.Start(ctx, func(ctx context.Context, t *Task) *TaskResult { return &TaskResult{Completed: true} })
+	_ = q.Start(ctx, func(ctx context.Context, t *Task) *TaskResult { return &TaskResult{Completed: true} })
 	q.Stop(ctx)
 	cancel()
 	if err := q.Enqueue(&Task{Content: "after stop"}); err == nil {
