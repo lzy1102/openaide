@@ -239,14 +239,31 @@ After each ReAct loop, the kernel's learning pipeline extracts reusable skills:
 2. **DistillCluster (async)**: Sends cluster examples to LLM for knowledge distillation — extracts key files, common patterns, gotchas, and best practices. Runs in background goroutine (60s timeout). Updates skill prompt when ready.
 3. **Auto-persist**: Skills write to `~/.openaide/data/skills/auto_skills.json` on every mutation. Reloaded on restart. Distilled knowledge also stored in KnowledgeActor for RAG retrieval.
 4. **Knowledge feedback**: Injected RAG document IDs are saved to session metadata. After reflection, `RecordKnowledgeUsage` adjusts document weight (±0.1, range 0.1-2.0) based on quality score.
+5. **Toolformer-style strategy**: DistillCluster prompt asks for optimal tool sequence ("read X first, then search Y, then edit Z"). Successful tool patterns are reinforced through distillation.
+6. **Reflexion-style self-improvement**: LLMReflection generates "Key Lesson for Next Time" — a concrete self-instruction stored in KnowledgeActor for future RAG retrieval. When a similar query comes up, the lesson is injected.
 
 Legacy `SimpleLearner` (rule-based pattern counting) and `SimplePatternDetector` have been replaced by this unified pipeline.
+
+### Knowledge Retrieval (Generative Agents-inspired)
+
+Knowledge base retrieval uses composite scoring inspired by the Generative Agents (2023) paper:
+
+```
+compositeScore = cosine*0.5 + weight*0.3 + 0.2
+                 ↑ relevance   ↑ importance   ↑ recency
+```
+
+- **Relevance** (50%): embedding cosine similarity
+- **Importance** (30%): document weight adjusted by `RecordKnowledgeUsage` feedback
+- **Recency** (20%): base score — all documents have recency floor; `weight` increases with positive feedback
+
+Documents with `weight > 1.0` (positively reinforced) rank higher than equally-relevant documents with `weight = 1.0`.
 
 ### Prompt system
 
 - **Layered architecture**: Stable prefix (L0 Identity + L1 Project + L2 Skill) cached in system message. Dynamic tail (L3 Task Adapter + L5 Reflection + L6 Knowledge RAG) appended per-query.
-- **L0**: Identity + Safety rules, tool strategy, anti-patterns (~400 tokens).
-- **L1**: Project context — working directory, git branch, CLAUDE.md / OPENAIDE.md loading, RepoMap.
+- **L0**: Identity + Safety rules, tool strategy (incl. parallel tool guidance), anti-patterns (~400 tokens).
+- **L1**: Project context — working directory, git branch, CLAUDE.md / OPENAIDE.md loading, RepoMap. Auto-detects project language (go/node/python/rust) and injects language-specific conventions.
 - **L3**: Task adapter injected per-query (dynamic tail). Maps task type (coding/review/teaching/research) to mode-specific instructions. Analysis output format ([P0/P1/P2] file:line → Fix → Why → Effort) only in review/research modes — not wasted on coding queries.
 - **Keyword scoring**: `detectTaskType()` uses scoring system with word-boundary matching for English (prevents "code" matching "codebase") and CJK substring matching. Tie-break by longest keyword. Single source of truth — L3 adapters accept task type string directly.
 - **File overrides**: Each layer overridable via `~/.openaide/data/prompts/l{0,1,3}_{task}.md`.
