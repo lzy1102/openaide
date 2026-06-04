@@ -375,6 +375,7 @@ func (k *AgentKernel) autoSaveKnowledge(ctx context.Context, sessionID, query, r
 	toolFailures := toolErrors
 
 	var reflectResult *ReflectionResult
+	var userVerdict string // "good", "bad", or empty
 	if session, err := k.sessionStore.Get(ctx, sessionID); err == nil && session != nil {
 		if ref, ok := session.Metadata["reflection"]; ok {
 			if r, ok := ref.(*ReflectionResult); ok {
@@ -382,6 +383,25 @@ func (k *AgentKernel) autoSaveKnowledge(ctx context.Context, sessionID, query, r
 				if r.Quality < 5 {
 					toolFailures = 1 // 低质量标记
 					toolSuccesses = 0
+				}
+			}
+		}
+		// User feedback — the only ground truth signal
+		if v, ok := session.Metadata["user_verdict"].(string); ok {
+			userVerdict = v
+		}
+	}
+
+	// Apply user verdict directly to knowledge weights
+	if userVerdict != "" && k.knowledgeCollector != nil && reflectResult != nil {
+		if session, err := k.sessionStore.Get(ctx, sessionID); err == nil && session != nil {
+			if docIDsRaw, ok := session.Metadata["knowledge_doc_ids"]; ok {
+				if docIDs, ok := docIDsRaw.([]string); ok && len(docIDs) > 0 {
+					if userVerdict == "good" {
+						k.knowledgeCollector.RecordKnowledgeUsage(ctx, docIDs, 0.9) // boost
+					} else if userVerdict == "bad" {
+						k.knowledgeCollector.RecordKnowledgeUsage(ctx, docIDs, 0.2) // decay
+					}
 				}
 			}
 		}

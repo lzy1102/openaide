@@ -181,6 +181,29 @@ func (k *AgentKernel) ResumeSession(ctx context.Context, sessionID string) (mess
 }
 
 func (k *AgentKernel) SetSkillActor(sa *SkillActor) { k.skillActor = sa }
+
+// SetUserVerdict stores user feedback for the current session.
+// Verdict should be "good", "bad", or "" (clear).
+// This is the only ground truth signal in the learning pipeline.
+func (k *AgentKernel) SetUserVerdict(ctx context.Context, sessionID, verdict string) {
+	if k.sessionStore == nil {
+		return
+	}
+	session, err := k.sessionStore.Get(ctx, sessionID)
+	if err != nil || session == nil {
+		return
+	}
+	if session.Metadata == nil {
+		session.Metadata = make(map[string]interface{})
+	}
+	if verdict == "" {
+		delete(session.Metadata, "user_verdict")
+	} else {
+		session.Metadata["user_verdict"] = verdict
+	}
+	k.sessionStore.Update(ctx, session)
+	slog.Info("User verdict recorded", "session", sessionID[:min(8, len(sessionID))], "verdict", verdict)
+}
 func (k *AgentKernel) GetSkillActor() *SkillActor      { return k.skillActor }
 func (k *AgentKernel) SetQualityGate(gate QualityGate) {
 	k.qualityGate = gate

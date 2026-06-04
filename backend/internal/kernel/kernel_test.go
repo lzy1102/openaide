@@ -418,3 +418,38 @@ type testError struct {
 }
 
 func (e *testError) Error() string { return e.msg }
+
+func TestUserVerdict_SetAndGet(t *testing.T) {
+	store := NewSessionStoreAdapter()
+	ctx := context.Background()
+	session, _ := store.Create(ctx, "proj1", "user1")
+
+	k := NewAgentKernel(&MockLLMProvider{}, &MockToolExecutor{}, &MockMemory{}, store, DefaultConfig())
+
+	// Set good verdict
+	k.SetUserVerdict(ctx, session.ID, "good")
+	s, _ := store.Get(ctx, session.ID)
+	if v, ok := s.Metadata["user_verdict"].(string); !ok || v != "good" {
+		t.Errorf("expected 'good', got %v", s.Metadata["user_verdict"])
+	}
+
+	// Change to bad
+	k.SetUserVerdict(ctx, session.ID, "bad")
+	s, _ = store.Get(ctx, session.ID)
+	if v, _ := s.Metadata["user_verdict"].(string); v != "bad" {
+		t.Errorf("expected 'bad', got %v", s.Metadata["user_verdict"])
+	}
+
+	// Clear verdict
+	k.SetUserVerdict(ctx, session.ID, "")
+	s, _ = store.Get(ctx, session.ID)
+	if _, ok := s.Metadata["user_verdict"]; ok {
+		t.Error("verdict should be deleted when empty")
+	}
+}
+
+func TestUserVerdict_NilSession(t *testing.T) {
+	k := NewAgentKernel(&MockLLMProvider{}, &MockToolExecutor{}, &MockMemory{}, nil, DefaultConfig())
+	// Should not panic with nil session store
+	k.SetUserVerdict(context.Background(), "nonexistent", "good")
+}
