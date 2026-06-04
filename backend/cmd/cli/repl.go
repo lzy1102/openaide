@@ -508,21 +508,24 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string,
 	}
 	PrintStatusBar(totalTokens, totalTools, elapsed, "deepseek-v4-pro", cacheHit, cacheMiss)
 
-	// User feedback — the only ground truth signal
-	fmt.Printf("\n  %s[%s y=good  n=bad  ↵=skip %s]%s ", cDim, cReset, cDim, cReset)
-	var feedback string
-	fmt.Scanf("%s", &feedback)
-	feedback = strings.TrimSpace(strings.ToLower(feedback))
-	if feedback == "y" || feedback == "yes" || feedback == "good" || feedback == "g" {
-		if ak, ok := app.Kernel.(*kernel.AgentKernel); ok {
-			ak.SetUserVerdict(context.Background(), *sessionID, "good")
+	// Smart feedback: only ask after significant interactions
+	// Criteria: 3+ tool calls OR 5+ seconds elapsed
+	if totalTools >= 3 || elapsed > 5*time.Second {
+		fmt.Printf("\n  %s[%s y=good  n=bad  ↵=skip %s]%s ", cDim, cReset, cDim, cReset)
+		var feedback string
+		fmt.Scanf("%s", &feedback)
+		feedback = strings.TrimSpace(strings.ToLower(feedback))
+		if feedback == "y" || feedback == "yes" || feedback == "good" || feedback == "g" {
+			if ak, ok := app.Kernel.(*kernel.AgentKernel); ok {
+				ak.SetUserVerdict(context.Background(), *sessionID, "good")
+			}
+			fmt.Printf("\r\033[K  %s✓ Thanks!%s\n", pterm.Green(""), cReset)
+		} else if feedback == "n" || feedback == "no" || feedback == "bad" || feedback == "b" {
+			if ak, ok := app.Kernel.(*kernel.AgentKernel); ok {
+				ak.SetUserVerdict(context.Background(), *sessionID, "bad")
+			}
+			fmt.Printf("\r\033[K  %s✗ Got it.%s\n", pterm.Yellow(""), cReset)
 		}
-		fmt.Printf("\r\033[K  %s✓ Thanks for your feedback!%s\n", pterm.Green(""), cReset)
-	} else if feedback == "n" || feedback == "no" || feedback == "bad" || feedback == "b" {
-		if ak, ok := app.Kernel.(*kernel.AgentKernel); ok {
-			ak.SetUserVerdict(context.Background(), *sessionID, "bad")
-		}
-		fmt.Printf("\r\033[K  %s✗ Got it — I'll learn from this.%s\n", pterm.Yellow(""), cReset)
 	}
 
 	fmt.Printf("\n%s▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸%s\n\n", cDim, cReset)
