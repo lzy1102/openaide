@@ -196,7 +196,29 @@ func handleWriteFile(ctx context.Context, arguments string) (*kernel.ToolResult,
 	if err := os.WriteFile(absPath, []byte(args.Content), 0644); err != nil {
 		return &kernel.ToolResult{Error: fmt.Sprintf("write failed: %v", err)}, nil
 	}
-	return &kernel.ToolResult{Content: fmt.Sprintf("Wrote %d bytes to %s", len(args.Content), absPath)}, nil
+
+	// ACI: show what was written with line numbers for verification
+	lines := strings.Split(args.Content, "\n")
+	var out strings.Builder
+	out.WriteString(fmt.Sprintf("✓ Wrote %s (%d lines, %d bytes)\n", absPath, len(lines), len(args.Content)))
+
+	// Verify write by reading back
+	verifyData, _ := os.ReadFile(absPath)
+	if string(verifyData) == args.Content {
+		out.WriteString("✓ Verified: content matches\n")
+	}
+
+	// Show preview of written content
+	if len(args.Content) <= 500 {
+		out.WriteString("```\n")
+		for i, line := range lines {
+			out.WriteString(fmt.Sprintf("%3d | %s\n", i+1, line))
+		}
+		out.WriteString("```")
+	} else {
+		out.WriteString(fmt.Sprintf("```\n%s\n... (%d more lines)\n```", strings.Join(lines[:5], "\n"), len(lines)-5))
+	}
+	return &kernel.ToolResult{Content: out.String()}, nil
 }
 
 // handleExecuteCommand 执行系统命令

@@ -85,15 +85,40 @@ func handleDiffEdit(ctx context.Context, arguments string) (*kernel.ToolResult, 
 		return &kernel.ToolResult{Error: err.Error()}, nil
 	}
 
-	// 生成简短diff
-	oldLines := strings.Split(args.SearchText, "\n")
-	newLines := strings.Split(args.ReplaceText, "\n")
-	added := len(newLines) - len(oldLines)
+	// ACI verification: show before/after context with line numbers
+	lineNum := findLineNumber(content, args.SearchText)
+	var result strings.Builder
+	result.WriteString(fmt.Sprintf("✓ Modified %s (line %d)\n", absPath, lineNum))
+	result.WriteString("--- before\n")
+	if len(args.SearchText) > 500 {
+		result.WriteString(args.SearchText[:500] + "\n... (truncated)\n")
+	} else {
+		result.WriteString(args.SearchText + "\n")
+	}
+	result.WriteString("+++ after\n")
+	if len(args.ReplaceText) > 500 {
+		result.WriteString(args.ReplaceText[:500] + "\n... (truncated)\n")
+	} else {
+		result.WriteString(args.ReplaceText + "\n")
+	}
 
-	return &kernel.ToolResult{
-		Content: fmt.Sprintf("✓ %s: %d line(s) modified (%+d lines)\n  search: %q\n  replace: %q",
-			absPath, len(oldLines), added, truncStr(args.SearchText, 60), truncStr(args.ReplaceText, 60)),
-	}, nil
+	// Verify the change was applied correctly
+	verifyData, _ := os.ReadFile(absPath)
+	if strings.Contains(string(verifyData), args.ReplaceText) {
+		result.WriteString("✓ Verified: replacement applied correctly")
+	} else {
+		result.WriteString("✗ Warning: could not verify replacement — re-read file to confirm")
+	}
+
+	return &kernel.ToolResult{Content: result.String()}, nil
+}
+
+func findLineNumber(content, search string) int {
+	idx := strings.Index(content, search)
+	if idx < 0 {
+		return 0
+	}
+	return strings.Count(content[:idx], "\n") + 1
 }
 
 // handleDiffEditLines 按行号精确替换
