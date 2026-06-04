@@ -278,6 +278,14 @@ func (k *AgentKernel) buildMessages(ctx context.Context, session *Session, query
 	// User query
 	messages = append(messages, Message{Role: "user", Content: query.Content})
 
+	// Implicit feedback: infer previous task success from the user's next move.
+	// If user starts a new topic → previous task was good.
+	// If user reports errors → previous task was bad.
+	// This is the only ground truth signal — no explicit prompts needed.
+	if len(session.Messages) >= 3 {
+		k.inferVerdictFromContext(ctx, session, query)
+	}
+
 	// ── Dynamic Tail: Layers 3-6 (after user query, varies per query) ──
 
 		// L3: Task Adapter (coding/review/teaching/research) — per-query, not cached
@@ -578,4 +586,77 @@ func (k *AgentKernel) loadSessionMessages(ctx context.Context, sessionID string)
 	msgs := session.Messages
 	if len(msgs) > 30 { msgs = msgs[len(msgs)-30:] }
 	return msgs
+}
+
+// inferVerdictFromContext detects implicit user feedback from the conversation flow.
+// No explicit prompts — just observes whether the user moved on (positive) or
+// reported issues (negative) after the previous task.
+func (k *AgentKernel) inferVerdictFromContext(ctx context.Context, session *Session, query *Query) {
+	// Find the last assistant response
+	var lastAssistant string
+	for i := len(session.Messages) - 1; i >= 0; i-- {
+		if session.Messages[i].Role == "assistant" && session.Messages[i].Content != "" {
+			lastAssistant = session.Messages[i].Content
+			break
+		}
+	}
+	if lastAssistant == "" {
+		return
+	}
+
+	lower := strings.ToLower(query.Content)
+
+	// Negative signals: user reports errors or corrections about the previous task
+	negativeSignals := []string{
+		"不对", "错了", "报错", "error", "failed", "不行", "有问题",
+		"还是", "没解决", "没效果", "不工作", "doesn't work", "still",
+		"fix this", "还是报错", "继续修", "没改对",
+	}
+	for _, s := range negativeSignals {
+		if strings.Contains(lower, s) {
+			if session.Metadata == nil { session.Metadata = make(map[string]interface{}) }
+			session.Metadata["user_verdict"] = "bad"
+			slog.Debug("Implicit feedback: negative", "session", session.ID[:8], "signal", s)
+			return
+		}
+	}
+
+	// Positive signals: user moves on to a different topic
+	// Compare first 5 words of current and previous query for topic shift
+	curWords := firstWords(query.Content, 5)
+	// Find last user query before this one
+	var lastQuery string
+	for i := len(session.Messages) - 2; i >= 0; i-- {
+		if session.Messages[i].Role == "user" {
+			lastQuery = session.Messages[i].Content
+			break
+		}
+	}
+	if lastQuery == "" {
+		return
+	}
+	lastWords := firstWords(lastQuery, 5)
+
+	// Topic shift: less than 30% word overlap → user moved on → positive
+	overlap := wordOverlap(curWords, lastWords)
+	if overlap < 0.3 && len(lastAssistant) > 100 {
+		if session.Metadata == nil { session.Metadata = make(map[string]interface{}) }
+		session.Metadata["user_verdict"] = "good"
+		slog.Debug("Implicit feedback: positive", "session", session.ID[:8], "overlap", fmt.Sprintf("%.2f", overlap))
+	}
+}
+
+func firstWords(s string, n int) []string {
+	words := strings.Fields(strings.ToLower(s))
+	if len(words) > n { words = words[:n] }
+	return words
+}
+
+func wordOverlap(a, b []string) float64 {
+	if len(a) == 0 || len(b) == 0 { return 0 }
+	set := make(map[string]bool)
+	for _, w := range a { set[w] = true }
+	common := 0
+	for _, w := range b { if set[w] { common++ } }
+	return float64(common) / float64(len(a))
 }
