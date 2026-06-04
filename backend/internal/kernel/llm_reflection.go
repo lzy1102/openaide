@@ -11,12 +11,26 @@ import (
 // LLMReflection 基于 LLM 调用的反思实现。
 // 无降级：如果 LLM 不可用，agent 本身已无法工作，不应假装能打分。
 type LLMReflection struct {
-	llm LLMProvider
+	llm      LLMProvider
+	criteria map[string]string // per-task-type evaluation criteria (Self-Rewarding 2024)
 }
 
 // NewLLMReflection 创建基于 LLM 的反思器。
 func NewLLMReflection(llm LLMProvider) *LLMReflection {
-	return &LLMReflection{llm: llm}
+	return &LLMReflection{
+		llm:      llm,
+		criteria: make(map[string]string),
+	}
+}
+
+// SetCriteria sets evaluation criteria for a task type.
+func (r *LLMReflection) SetCriteria(taskType, criteria string) {
+	r.criteria[taskType] = criteria
+}
+
+// GetCriteria returns evaluation criteria for a task type.
+func (r *LLMReflection) GetCriteria(taskType string) string {
+	return r.criteria[taskType]
 }
 
 // reflectionTool 定义用于获取结构化反思结果的 tool calling schema
@@ -90,17 +104,19 @@ func (r *LLMReflection) Reflect(ctx context.Context, sessionID string, execution
 - Error: %s
 - Tool Calls: %d
 - Duration: %dms
-
+%s
 ## Your Task
-1. Rate overall quality (1-10)
+1. Rate overall quality (1-10) using the criteria above if provided
 2. Rate each step: was the tool choice correct? Was the right file read? Was the edit precise?
 3. Identify the BEST decision in this execution (what to reinforce)
 4. Identify the WEAKEST decision (what to fix next time)
 5. **Key Lesson for Next Time** — a 1-3 sentence directive. Be concrete.
-6. **Infer user verdict from the conversation flow**: based on the FULL conversation, did the user seem satisfied? Look for: user moves to new topics (positive), user reports errors or asks for corrections (negative), user continues refining the same task (neutral). Output in 'learned' field as prefix: [good], [bad], or [neutral].`,
+6. **Infer user verdict from the conversation flow**: based on the FULL conversation, did the user seem satisfied? Look for: user moves to new topics (positive), user reports errors or asks for corrections (negative), user continues refining the same task (neutral). Output in 'learned' field as prefix: [good], [bad], or [neutral].
+7. **Update evaluation criteria**: in the 'suggestions' field, if you found a better way to evaluate this type of task, suggest updated criteria starting with "CRITERIA:". Example: "CRITERIA: For code review tasks, check: (1) was every issue verified with grep/tools, (2) were confidence levels provided, (3) was the action plan concrete".`,
 		execution.Query, execution.Response, trace.String(),
 		execution.Success, execution.Error,
-		len(execution.ToolCalls), execution.Duration)
+		len(execution.ToolCalls), execution.Duration,
+		r.criteriaForExecution(&execution))
 
 
 	messages := []Message{
@@ -166,4 +182,22 @@ func parseReflectionResult(jsonStr string) (*ReflectionResult, error) {
 		Suggestions: result.Suggestions,
 		Learned:     result.Learned,
 	}, nil
+}
+
+func (r *LLMReflection) criteriaForExecution(exec *ExecutionRecord) string {
+	taskType := detectTaskType(exec.Query)
+	if criteria, ok := r.criteria[taskType]; ok {
+		return fmt.Sprintf("## Evaluation Criteria for %s tasks\n%s\n", taskType, criteria)
+	}
+	return ""
+}
+
+// UpdateCriteriaFromReflection extracts updated criteria from reflection suggestions.
+func (r *LLMReflection) UpdateCriteriaFromReflection(exec *ExecutionRecord, suggestions []string) {
+	taskType := detectTaskType(exec.Query)
+	for _, s := range suggestions {
+		if strings.HasPrefix(s, "CRITERIA:") {
+			r.criteria[taskType] = strings.TrimSpace(s[9:])
+		}
+	}
 }

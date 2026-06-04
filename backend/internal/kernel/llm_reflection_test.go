@@ -95,3 +95,34 @@ func TestLLMReflection_NoMessages(t *testing.T) {
 		t.Errorf("expected quality 5, got %d", result.Quality)
 	}
 }
+
+func TestSelfRewarding_Criteria(t *testing.T) {
+	r := NewLLMReflection(nil)
+	if r.criteria == nil {
+		t.Fatal("criteria map should be initialized")
+	}
+
+	// Set criteria
+	r.SetCriteria("coding", "Check: correct tool sequence, minimal edits, verification after change")
+	if got := r.GetCriteria("coding"); got == "" {
+		t.Error("should retrieve coding criteria")
+	}
+
+	// Update from reflection suggestions
+	exec := &ExecutionRecord{Query: "fix the login bug"}
+	r.UpdateCriteriaFromReflection(exec, []string{
+		"CRITERIA: For coding tasks, check: (1) file read before edit, (2) diff_edit precision, (3) test pass verification",
+		"regular suggestion without prefix",
+	})
+	updated := r.GetCriteria("coding")
+	if !stringsContains(updated, "diff_edit precision") {
+		t.Errorf("criteria should be updated from CRITERIA: prefix, got: %s", updated)
+	}
+}
+
+func stringsContains(s, sub string) bool {
+	for i := 0; i <= len(s)-len(sub); i++ {
+		if s[i:i+len(sub)] == sub { return true }
+	}
+	return false
+}
