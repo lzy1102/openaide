@@ -158,12 +158,13 @@ type Reflection interface {
 
 // ExecutionRecord 执行记录
 type ExecutionRecord struct {
-	Query      string    `json:"query"`
-	Response   string    `json:"response"`
+	Query      string     `json:"query"`
+	Response   string     `json:"response"`
 	ToolCalls  []ToolCall `json:"tool_calls"`
-	Success    bool      `json:"success"`
-	Error      string    `json:"error,omitempty"`
-	Duration   int64     `json:"duration"`
+	Success    bool       `json:"success"`
+	Error      string     `json:"error,omitempty"`
+	Duration   int64      `json:"duration"`
+	Messages   []Message  `json:"messages,omitempty"` // full ReAct history for process supervision
 }
 
 // ReflectionResult 反思结果

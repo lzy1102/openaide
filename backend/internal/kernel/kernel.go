@@ -546,3 +546,13 @@ func (k *AgentKernel) generateSessionTitle(session *Session, firstQuery string) 
 	}
 }
 
+
+// loadSessionMessages loads recent session messages for process supervision.
+func (k *AgentKernel) loadSessionMessages(ctx context.Context, sessionID string) []Message {
+	if k.sessionStore == nil { return nil }
+	session, err := k.sessionStore.Get(ctx, sessionID)
+	if err != nil || session == nil || len(session.Messages) == 0 { return nil }
+	msgs := session.Messages
+	if len(msgs) > 30 { msgs = msgs[len(msgs)-30:] }
+	return msgs
+}

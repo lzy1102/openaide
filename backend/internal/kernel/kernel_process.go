@@ -296,6 +296,7 @@ func (k *AgentKernel) doReflection(ctx context.Context, sessionID, query, respon
 		Response:  response,
 		Success:   toolErrors == 0,
 		ToolCalls: make([]ToolCall, 0),
+		Messages:  k.loadSessionMessages(ctx, sessionID),
 	}
 
 	result, err := k.reflection.Reflect(ctx, sessionID, record)

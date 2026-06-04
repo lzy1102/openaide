@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 )
 
 // LLMReflection 基于 LLM 调用的反思实现。
@@ -54,28 +55,57 @@ var reflectionTool = ToolDefinition{
 // Reflect 对执行过程进行 LLM 驱动的反思
 // 先尝试 LLM 分析（结构化输出），失败则回退到规则评估
 func (r *LLMReflection) Reflect(ctx context.Context, sessionID string, execution ExecutionRecord) (*ReflectionResult, error) {
-	prompt := fmt.Sprintf(`Evaluate this AI assistant's execution and generate a SELF-IMPROVEMENT LESSON. Include a "Key Lesson for Next Time" that tells your future self how to handle similar queries better.
+	// Build step-by-step execution trace for process supervision
+	var trace strings.Builder
+	if len(execution.Messages) > 0 {
+		trace.WriteString("## Step-by-Step Execution Trace\n\n")
+		round := 0
+		for i, msg := range execution.Messages {
+			switch msg.Role {
+			case "assistant":
+				round++
+				trace.WriteString(fmt.Sprintf("### Round %d — LLM Thought\n%s\n", round, truncStr(msg.Content, 200)))
+				if len(msg.ToolCalls) > 0 {
+					for _, tc := range msg.ToolCalls {
+						trace.WriteString(fmt.Sprintf("  → Called: %s\n", tc.Function.Name))
+					}
+				}
+			case "tool":
+				trace.WriteString(fmt.Sprintf("  ← Result (%d): %s\n", i, truncStr(msg.Content, 150)))
+			}
+		}
+		trace.WriteString("\n")
+	}
+
+	prompt := fmt.Sprintf(`Evaluate this AI assistant's execution STEP BY STEP. For each step, identify what went well and what could be improved.
 
 ## Query
 %s
 
-## Response
+## Final Response
 %s
-
-## Execution Details
+%s
+## Execution Summary
 - Success: %v
 - Error: %s
 - Tool Calls: %d
 - Duration: %dms
 
-4. **Most important: "Key Lesson for Next Time" — a 1-3 sentence directive. Be concrete: mention specific files, tools, and gotchas. Example: "When fixing login issues, always check middleware/token.go first — token validation happens there, not in the handler."`,
-		execution.Query, execution.Response, execution.Success, execution.Error,
+## Your Task
+1. Rate overall quality (1-10)
+2. Rate each step: was the tool choice correct? Was the right file read? Was the edit precise?
+3. Identify the BEST decision in this execution (what to reinforce)
+4. Identify the WEAKEST decision (what to fix next time)
+5. **Key Lesson for Next Time** — a 1-3 sentence directive. Be concrete: mention specific files, tools, and gotchas.`,
+		execution.Query, execution.Response, trace.String(),
+		execution.Success, execution.Error,
 		len(execution.ToolCalls), execution.Duration)
+
 
 	messages := []Message{
 		{
 			Role:    "system",
-			Content: "You are a self-improving AI agent. Generate concise, actionable lessons for your future self.",
+			Content: "You are a process supervisor evaluating an AI agent's step-by-step execution. Identify specific steps that were strong or weak, not just overall quality.",
 		},
 		{
 			Role:    "user",
