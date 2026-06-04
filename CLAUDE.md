@@ -69,22 +69,25 @@ cmd/server (API server)          cmd/cli (interactive CLI)
    - `app_channels.go` — `setupChannels()` — webhook/Feishu/Telegram, task queue
 
 2. **`backend/internal/kernel/`** — Core agent kernel with CSP actor architecture:
-   - `kernel.go` — `AgentKernel` struct, Config, constructor, state management, event system. Lock-free via atomic.Value for prompt/state/events.
+   - `kernel.go` — `AgentKernel` struct, Config, constructor, state management, event system.
    - `kernel_process.go` — `Process()` sync path + `doReflection()` + `autoSaveKnowledge()` + `extractSkillsFromPatterns()`
    - `kernel_stream.go` — `ProcessStream()` streaming path. Tool partitioning with parallel-safe batching.
-   - `kernel_prompt.go` — `defaultSystemPrompt{EN,ZH}()` hardcoded defaults, file-based loading
+   - `kernel_prompt.go` — Layered prompt system (L0-L5), keyword scoring, file overrides, L3 dynamic tail.
    - `kernel_react.go` — Shared ReAct helpers: prepareReActRound, partitionToolCalls, executeToolBatch
+   - `semantic_pattern.go` — SemanticPatternDetector (embedding clustering) + DistillCluster (LLM knowledge extraction)
+   - **Sub-packages:**
+     - `kernel/actor/` — Generic Actor, ActorStore[K,V], SafeMap[K,V] (zero kernel deps, used by 12+ packages)
+     - `kernel/trace/` — FileTracer (JSONL buffered), FileCheckpointer (disk crash recovery)
+     - `kernel/graph/` — DAG engine with topological sort (Kahn's algorithm)
    - **CSP Actors** (zero-lock, single-goroutine ownership):
-     - `actor.go` — Generic Actor + ActorStore[K,V] reusable pattern
-     - `session_actor.go` — SessionActor (SQLite-backed)
-     - `skill_actor.go` — SkillActor (LLM detection outside actor)
+     - `session_actor.go` — SessionActor (SQLite-backed, WAL mode)
+     - `skill_actor.go` — SkillActor (LLM detection outside actor, auto-persist)
      - `embedder.go` — Embedder interface + CosineSimilarity (canonical, avoids circular import)
-     - `safemap.go` — SafeMap[K,V] generic concurrent map (replaces map+RWMutex)
    - `saga.go` — RunSaga() for cross-actor transactional compensation
-   - `interfaces.go` — All kernel-level interfaces
+   - `interfaces.go` — All kernel-level interfaces (LLMProvider, ModelSwitcher, SessionStore, etc.)
    - `types.go` — Shared types: `Message`, `ToolCall`, `Query`, `Response`, `StreamChunk`, `Event`, `Session`
-   - Other files: `llm_reflection.go` (reasoning model), `learner.go`, `pattern.go`, `compress.go`, `checkpoint.go` (actor), `approval.go`, `adaptive.go`, `tracer.go` (actor)
-   - Legacy (not default): `session_store.go`, `skill.go`, `skill_evolution.go`, `sqlite_store.go`, `reflection.go`
+   - Other files: `llm_reflection.go`, `compress.go`, `checkpoint.go`, `approval.go`, `adaptive.go`, `tracer.go`
+   - Legacy (not default): `session_store.go`
 
 3. **`backend/internal/knowledge/`** — Knowledge base:
    - `knowledge_actor.go` — KnowledgeActor (SQLite + in-memory vector index + random projection bucketing)
@@ -141,13 +144,16 @@ All judgment calls now delegated to LLM, with rule-based fallbacks:
 
 ### Concurrency architecture
 
-**From locks to CSP**: Refactored from 50 shared-memory locks to 19. Core stateful modules use CSP actor pattern (single goroutine owns data, external access via channels). Read-heavy single values use atomic.Value. Write-once-read-many maps use SafeMap[K,V].
+**CSP Actor pattern** (zero-lock, single-goroutine ownership): Stateful modules own their data in a single goroutine — external access via channels. Generic Actor + ActorStore[K,V] + SafeMap[K,V] live in `kernel/actor/` (used by 12+ packages). Lock count: 50→19.
+
+**Goroutine philosophy**: Go's goroutines are extremely cheap (~2KB stack). No artificial concurrency limits (semaphores removed from event dispatch). Event handlers get direct goroutine dispatch with context.WithTimeout for safety.
 
 Key fixes from audit:
 - **Deadlock**: SkillManager RLock held during LLM call → fixed by moving LLM call outside actor
 - **Deadlock**: RepoMap Write Lock → RLock reentrancy on same mutex → fixed by removing inner lock
 - **Goroutine leaks**: browser Chrome processes, rate limiter ticker, prompt cache cleanup → all fixed
-- **Missing error handling**: Stream goroutine panic recovery, channel send ctx.Done() guards → all added
+- **Event dispatch**: time.After timer leak → context.WithTimeout for automatic cleanup
+- **Dead code removed**: traceMu (unused sync.Mutex), eventSem (unnecessary channel semaphore)
 
 ### LLM Context Compression
 
@@ -194,15 +200,28 @@ OpenAIDE accumulates project knowledge across sessions via `internal/projectmind
 - **KnowledgeBase sync**: `SyncToKnowledgeBase()` converts structured facts to searchable KB documents (tagged `projectmind`) — unified RAG injection via `buildMessages`.
 - **Model routing**: `llm.model_routing.reasoning` / `execution` in config.yaml. Analyst/reviewer → reasoning model (pro, deep thinking). Coder/executor/classifier → execution model (flash, fast). Synthesis and small classification calls also use execution model for cost efficiency.
 
+### Skill extraction & distillation (gets smarter every task)
+
+After each ReAct loop, the kernel's learning pipeline extracts reusable skills:
+
+1. **SemanticPatternDetector**: Clusters user queries by embedding similarity (cosine > 0.80). Stores query+response pairs in each cluster. Emits `distillable_cluster` pattern when cluster reaches `PatternMinClusterSize` (default 8).
+2. **DistillCluster (async)**: Sends cluster examples to LLM for knowledge distillation — extracts key files, common patterns, gotchas, and best practices. Runs in background goroutine (60s timeout). Updates skill prompt when ready.
+3. **Auto-persist**: Skills write to `~/.openaide/data/skills/auto_skills.json` on every mutation. Reloaded on restart. Distilled knowledge also stored in KnowledgeActor for RAG retrieval.
+4. **Knowledge feedback**: Injected RAG document IDs are saved to session metadata. After reflection, `RecordKnowledgeUsage` adjusts document weight (±0.1, range 0.1-2.0) based on quality score.
+
+Legacy `SimpleLearner` (rule-based pattern counting) and `SimplePatternDetector` have been replaced by this unified pipeline.
+
 ### Prompt system
 
+- **Layered architecture**: Stable prefix (L0 Identity + L1 Project + L2 Skill) cached in system message. Dynamic tail (L3 Task Adapter + L5 Reflection + L6 Knowledge RAG) appended per-query.
+- **L0**: Identity + Safety rules, tool strategy, anti-patterns (~400 tokens).
+- **L1**: Project context — working directory, git branch, CLAUDE.md / OPENAIDE.md loading, RepoMap.
+- **L3**: Task adapter injected per-query (dynamic tail). Maps task type (coding/review/teaching/research) to mode-specific instructions. Analysis output format ([P0/P1/P2] file:line → Fix → Why → Effort) only in review/research modes — not wasted on coding queries.
+- **Keyword scoring**: `detectTaskType()` uses scoring system with word-boundary matching for English (prevents "code" matching "codebase") and CJK substring matching. Tie-break by longest keyword. Single source of truth — L3 adapters accept task type string directly.
+- **File overrides**: Each layer overridable via `~/.openaide/data/prompts/l{0,1,3}_{task}.md`.
 - **Default prompt**: Bilingual (Chinese/English), auto-detected from `LANG` env var.
-- **File-based loading**: `LoadSystemPrompt(dir)` → `system.{lang}.md` > `system.md` > hardcoded default.
-- **First-run onboarding**: Template questions → kernel start → LLM-powered 2-round interview → profile generation → `system.md` written → `SetSystemPrompt()` hot-reload.
 - **Runtime hot-reload**: `AgentKernel.SetSystemPrompt()` allows prompt changes without kernel restart.
-- **Config override**: `kernel.system_prompt` in `config.yaml` has highest priority.
-- **Plugin prompts**: Injected into system prompt at startup via `pluginMgr.GetPrompt()`.
-- **Skill prompts**: Injected per-query when keywords match, via `skillManager.InjectPrompt()`.
+- **Skill prompts**: Injected per-query when keywords match, via `skillActor.InjectPrompt()`.
 
 ### Plugin system (Claude Code compatible)
 
@@ -282,6 +301,7 @@ openaide --verbose 2>&1 | grep -i "claude\|plugin\|hook"
     ├── .claude-plugin/
     │   └── plugin.json              ← Required: {name, version, description}
     ├── skills/
+├── project_mind.json          ← cross-session facts (CodeMap, RiskMap, Conventions)
     │   └── review/
     │       └── SKILL.md             ← YAML frontmatter + Markdown body
     ├── .mcp.json                    ← Optional: MCP server config
@@ -299,7 +319,10 @@ openaide --verbose 2>&1 | grep -i "claude\|plugin\|hook"
 ├── memory.db                  ← MemoryActor (SQLite + vector cache)
 ├── prompts/
 │   ├── system.zh.md / system.en.md  ← system prompt (auto-generated, user-editable)
-├── plugins/                   ← Claude-format plugins
+├── plugins/                   ← Claude-format plugins (hot-reload every 5min)
+├── skills/
+├── project_mind.json          ← cross-session facts (CodeMap, RiskMap, Conventions)
+│   └── auto_skills.json       ← auto-extracted + distilled skills
 ├── checkpoints/               ← session checkpoints (JSON files)
 ├── traces.jsonl               ← execution traces (append-only)
 ├── events/                    ← persisted events (optional)
@@ -382,17 +405,22 @@ All stateful modules use Go's CSP model: each module owns its data in a single g
 
 ### Knowledge Accumulation Pipeline
 
-After each ReAct loop:
+After each ReAct loop (async, via `context.WithoutCancel`):
 
 ```
-Response → doReflection (reasoning model) → quality score 1-10
-  → score ≥ 6: autoSaveKnowledge
-    → KnowledgeActor.Refine()
-      → Dedup (cosine > 0.85 → merge)
-      → LLM refinement (extract title + facts + files + errors + decisions)
-      → Store in knowledge.db
-  → patterns detected: extractSkillsFromPatterns()
-    → confidence ≥ 0.7, frequency ≥ 3 → auto-create skill in SkillActor
+Response → doReflection (LLMReflection) → quality score 1-10
+  │
+  ├─→ autoSaveKnowledge (QualityGate: 40% tool + 30% reflect + 30% user)
+  │     → KnowledgeActor.Refine()
+  │       → Dedup (cosine > 0.85 → merge)
+  │       → LLM extract (title + facts + files + errors + decisions)
+  │       → Store in knowledge.db (with weight, adjusted by RecordKnowledgeUsage)
+  │
+  └─→ SemanticPatternDetector → embedding clustering (cosine > 0.80)
+        → cluster ≥ 8 → extractSkillFromPatterns()
+          → async DistillCluster (LLM knowledge extraction)
+          → SkillActor (auto-persist to auto_skills.json)
+          → KnowledgeActor (RAG-searchable)
 ```
 
 ### Storage Layout
@@ -403,8 +431,12 @@ Response → doReflection (reasoning model) → quality score 1-10
 ├── knowledge.db       ← KnowledgeActor (SQLite)
 ├── memory.db          ← MemoryActor (SQLite)
 ├── prompts/           ← system.{lang}.md
-├── plugins/           ← Claude-format plugins
+├── plugins/           ← Claude-format plugins (hot-reload every 5min)
+├── skills/
+├── project_mind.json          ← cross-session facts (CodeMap, RiskMap, Conventions)
+│   └── auto_skills.json       ← auto-extracted + distilled skills
 ├── skills/            ← custom skills
+├── project_mind.json          ← cross-session facts (CodeMap, RiskMap, Conventions)
 ├── traces.jsonl       ← execution traces
 ├── checkpoints/       ← session checkpoints
 ├── events/            ← persisted events (optional)
