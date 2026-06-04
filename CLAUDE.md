@@ -269,6 +269,23 @@ After each ReAct loop, `doReflection` sends the FULL message history to LLMRefle
 - **Per-step scoring**: Identifies BEST decision (what to reinforce) and WEAKEST decision (what to fix)
 - **Precision**: "Round 2's tool choice was suboptimal" vs old "7/10 overall"
 
+### Tree of Thoughts (2023)
+
+`ExploreAlternatives` forks multiple solution approaches at decision points:
+
+- **Branch**: 2-4 parallel sub-agent explorations, each guided by a different approach prompt
+- **Evaluate**: LLM compares branch findings and selects the best approach
+- **Learn**: Failed branches recorded in ProjectMind for future strategy effectiveness tracking
+- Called from DeepPlan when Proposals phase generates alternative approaches
+
+### Self-Rewarding (2024)
+
+LLMReflection learns per-task-type evaluation criteria:
+
+- **Criteria per task type**: coding, review, teaching, research each have their own evaluation standards
+- **Self-improvement**: After each reflection, LLM can update criteria via `CRITERIA:` prefix in suggestions
+- **Adaptive scoring**: Later reflections use previously learned criteria, making evaluations more precise over time
+
 ### Memory Management (MemGPT, 2023)
 
 Agent actively manages its own memory via the `manage_memory` tool:

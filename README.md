@@ -49,6 +49,8 @@ install.bat
 | Knowledge Accumulation | ❌ | ❌ | ❌ | ✅ Reflect → Distill → Skill |
 | Self-learning Skills | ❌ | ❌ | ❌ | ✅ Semantic cluster + LLM distill |
 | Process Supervision | ❌ | ❌ | ❌ | ✅ Step-by-step evaluation |
+| Tree of Thoughts | ❌ | ❌ | ❌ | ✅ Multi-path explore+select |
+| Self-Rewarding | ❌ | ❌ | ❌ | ✅ Adaptive eval criteria |
 | Agent Memory Mgmt | ❌ | ❌ | ❌ | ✅ MemGPT archive/retrieve |
 | ACI (Agent Tool UX) | ❌ | ❌ | ❌ | ✅ Structured output + verify |
 | CSP Actor (zero-lock) | ❌ | ❌ | ❌ | ✅ |
@@ -102,6 +104,8 @@ install.bat
 - **DeepPlan Pipeline**: Research → Propose → Select → Plan → Execute → Verify
 - **Multi-Agent Team**: 4 roles (analyst/coder/reviewer/executor) with anti-prompt constraints, mini ReAct loops, role-filtered tools, isolated sessions. `/analyst` `/coder` `/reviewer` `/executor` `/team`
 - **MemGPT Memory**: Agent actively manages its own memory — archive, retrieve, store core facts
+- **Tree of Thoughts**: Multi-path exploration at decision points, LLM selects best approach
+- **Self-Rewarding**: Per-task-type evaluation criteria that improve with experience
 - **Process Supervision**: Step-by-step execution evaluation, identifies best/worst decisions
 - **ACI Tools**: Agent-friendly tool output (before/after diffs, line numbers, verification)
 - **Architect/Editor Routing**: Reasoning model for analysis, execution model for coding
