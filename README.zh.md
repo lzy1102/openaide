@@ -35,10 +35,10 @@ openaide setup
 
 | 能力 | Claude Code | Aider | Cursor/Codex | OpenAIDE |
 |------|-------------|-------|-------------|----------|
-| 知识积累学习 | ❌ | ❌ | ❌ | ✅ 反思→精炼→技能 |
-| 技能自动提取 | ❌ | ❌ | ❌ | ✅ 从模式自动创建 |
+| 知识积累学习 | ❌ | ❌ | ❌ | ✅ 反思→蒸馏→技能 |
+| 技能自动提取 | ❌ | ❌ | ❌ | ✅ 语义聚类+LLM蒸馏 |
 | CSP Actor (零锁) | ❌ | ❌ | ❌ | ✅ |
-| 分层提示词 L0-L5 | ❌ | ❌ | ❌ | ✅ 按任务适配 |
+| 分层提示词 L0-L6 | ❌ | ❌ | ❌ | ✅ 按任务适配 |
 | 向量 ANN 搜索 | ❌ | ❌ | ❌ | ✅ 分桶 O(n/256) |
 | 桌面控制 | ❌ | ❌ | ❌ | ✅ 跨平台 |
 | Web 前端 | ❌ | ❌ | ❌ | ✅ |
@@ -77,9 +77,9 @@ cmd/server (API)    cmd/cli (REPL)
 ## 核心能力
 
 ### Agent 能力
-- **ReAct 循环**: 推理 → 行动 → 观察 → 重复
+- **ReAct 循环**: 推理 → 行动 → 观察 → 重复。主 Agent 带完整分层提示词 (L0-L6)
 - **DeepPlan 深度规划**: 研究 → 提案 → 选择 → 计划 → 执行 → 验证
-- **多 Agent Team**: /analyst /coder /reviewer /executor /team
+- **多 Agent Team**: 4 个角色 (analyst/coder/reviewer/executor)，含反提示词约束、Mini ReAct 循环、角色限定的工具集、隔离会话。`/analyst` `/coder` `/reviewer` `/executor` `/team`
 - **Architect/Editor 模型路由**: 推理模型做分析，执行模型写代码
 - **预算注入**: LLM 感知剩余轮次，主动收敛
 

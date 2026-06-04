@@ -46,10 +46,10 @@ install.bat
 
 | Feature | Claude Code | Aider | Cursor/Codex | OpenAIDE |
 |----------|-------------|-------|-------------|----------|
-| Knowledge Accumulation | ❌ | ❌ | ❌ | ✅ Reflection → Refine → Skill |
-| Self-learning Skills | ❌ | ❌ | ❌ | ✅ Auto-extract from patterns |
+| Knowledge Accumulation | ❌ | ❌ | ❌ | ✅ Reflect → Distill → Skill |
+| Self-learning Skills | ❌ | ❌ | ❌ | ✅ Semantic cluster + LLM distill |
 | CSP Actor (zero-lock) | ❌ | ❌ | ❌ | ✅ |
-| Layered Prompts L0-L5 | ❌ | ❌ | ❌ | ✅ Task-adaptive |
+| Layered Prompts L0-L6 | ❌ | ❌ | ❌ | ✅ Task-adaptive |
 | Vector ANN Search | ❌ | ❌ | ❌ | ✅ Bucketed O(n/256) |
 | Desktop Control | ❌ | ❌ | ❌ | ✅ Cross-platform |
 | Web Frontend | ❌ | ❌ | ❌ | ✅ | 
@@ -95,9 +95,9 @@ install.bat
 ## Features
 
 ### Agent Capabilities
-- **ReAct Loop**: Reason → Act → Observe → Repeat
+- **ReAct Loop**: Reason → Act → Observe → Repeat. Main agent with full layered prompts (L0-L6).
 - **DeepPlan Pipeline**: Research → Propose → Select → Plan → Execute → Verify
-- **Multi-Agent Team**: /analyst /coder /reviewer /executor /team
+- **Multi-Agent Team**: 4 roles (analyst/coder/reviewer/executor) with anti-prompt constraints, mini ReAct loops, role-filtered tools, isolated sessions. `/analyst` `/coder` `/reviewer` `/executor` `/team`
 - **Architect/Editor Routing**: Reasoning model for analysis, execution model for coding
 - **Budget Injection**: LLM aware of remaining rounds, self-converges
 

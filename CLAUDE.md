@@ -152,10 +152,11 @@ OpenAIDE is an AI Agent kernel platform in Go. Strictly layered, CSP actor concu
 
 7. **`backend/internal/api/`** — HTTP REST API + WebSocket. Routes: `POST /api/v1/chat`, `POST /api/v1/chat/stream` (SSE), `GET /api/v1/sessions`, etc. WebSocket heartbeat uses `done` channel for clean shutdown.
 
-8. **`backend/internal/orchestration/`** (3 files) — Full task lifecycle management:
-   - `orchestrator.go` — `ProcessQuery` → LLM planning → DeepPlan pipeline. `executePlan` with **self-correcting loop**: test→review→analyst(root cause)→coder(fix)→retry (until pass or BLOCKED). **Branch-converge model**: sub-agent signals `[DISCOVERY:]` → branch(analyze+fix) → converge back to main line → update remaining steps. `ExecuteWithPlan` accepts pre-made plans. `CleanupOldSessions` for sub-agent session GC.
-   - `planner.go` — `Planner`: Research (multi-round hypothesis→verify→report, read-only tools), Propose (2-3 alternatives with reasoning/pros/cons/risk/effort), PlanWithApproach (detailed plan from chosen approach). `PreviewPlan` combines complexity classification + task splitting in single LLM call.
-   - `team.go` — 4 bilingual roles (analyst/coder/reviewer/executor). `RunSubAgent`: fresh session + role-specific tools + model routing (reasoning vs execution). `routePipeline`: single LLM call assigns all subtask roles at once. Slash commands: `/analyst`, `/coder`, `/reviewer`, `/executor`, `/team`.
+8. **`backend/internal/orchestration/`** (3 files + subagent.go) — Full task lifecycle management:
+   - `orchestrator.go` — `ProcessQuery` → LLM planning → DeepPlan pipeline. `executePlan` with **self-correcting loop**: test→review→analyst(root cause)→coder(fix)→retry (until pass or BLOCKED). **Branch-converge model**: sub-agent signals `[DISCOVERY:]` → branch(analyze+fix) → converge back to main line → update remaining steps. `CleanupOldSessions` for sub-agent session GC.
+   - `planner.go` — `Planner`: Research (multi-round hypothesis→verify→report, read-only tools), Propose (2-3 alternatives with reasoning/pros/cons/risk/effort), PlanWithApproach (detailed plan from chosen approach).
+   - `team.go` — 4 roles with detailed anti-prompt constraints (analyst/coder/reviewer/executor). Each role has "How to work" + "What NOT to do" sections. `routePipeline`: LLM assigns all subtask roles at once. Slash commands: `/analyst`, `/coder`, `/reviewer`, `/executor`, `/team`.
+   - `subagent.go` — `RunSubAgent`: isolated session + mini ReAct loop (10 rounds) + role-filtered tools + budget injection + core rules injection + model routing (reasoning vs execution). Sub-agents can actually read, write, and execute — not just return text.
 
 ### LLM-driven decision making (replacing hardcoded rules)
 
