@@ -508,34 +508,6 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string,
 	}
 	PrintStatusBar(totalTokens, totalTools, elapsed, "deepseek-v4-pro", cacheHit, cacheMiss)
 
-	// Feedback: only after the agent actually modified files.
-	// Reading files and answering questions doesn't need a verdict.
-	// But when code was changed, that's the strongest signal for learning.
-	modifiedFiles := false
-	for _, name := range toolNames {
-		if name == "write_file" || name == "diff_edit" {
-			modifiedFiles = true
-			break
-		}
-	}
-	if modifiedFiles {
-		fmt.Printf("\n  %s[%s y=good  n=bad  ↵=skip %s]%s ", cDim, cReset, cDim, cReset)
-		var feedback string
-		fmt.Scanf("%s", &feedback)
-		feedback = strings.TrimSpace(strings.ToLower(feedback))
-		if feedback == "y" || feedback == "yes" || feedback == "good" || feedback == "g" {
-			if ak, ok := app.Kernel.(*kernel.AgentKernel); ok {
-				ak.SetUserVerdict(context.Background(), *sessionID, "good")
-			}
-			fmt.Printf("\r\033[K  %s✓ Thanks!%s\n", pterm.Green(""), cReset)
-		} else if feedback == "n" || feedback == "no" || feedback == "bad" || feedback == "b" {
-			if ak, ok := app.Kernel.(*kernel.AgentKernel); ok {
-				ak.SetUserVerdict(context.Background(), *sessionID, "bad")
-			}
-			fmt.Printf("\r\033[K  %s✗ Got it.%s\n", pterm.Yellow(""), cReset)
-		}
-	}
-
 	fmt.Printf("\n%s▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸%s\n\n", cDim, cReset)
 	if qs := tools.GetPendingQuestions(); len(qs) > 0 {
 		fmt.Println()
@@ -785,6 +757,7 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 	parts := strings.Fields(cmd)
 	switch parts[0] {
 	case "/exit", "/quit", "/q":
+		askSessionFeedback(app, *sessionID)
 		fmt.Println("  Goodbye.")
 		os.Exit(0)
 
@@ -820,6 +793,7 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 		Println()
 
 	case "/clear":
+		askSessionFeedback(app, *sessionID)
 		fmt.Print("\033[2J\033[H")
 		app.Orchestrator.DeleteSession(context.Background(), *sessionID)
 		sess, _ := app.Orchestrator.CreateSession(context.Background(), "default", "cli-user")
@@ -991,5 +965,31 @@ case "/analyst", "/coder", "/reviewer", "/executor":
 
 	default:
 		PrintWarning("Unknown: " + parts[0])
+	}
+}
+
+func askSessionFeedback(app *infra.Application, sessionID string) {
+	// Phase-based feedback: ask once at session boundaries (/clear, /exit).
+	// Only prompt if the session actually involved meaningful work.
+	session, err := app.Orchestrator.GetSession(context.Background(), sessionID)
+	if err != nil || session == nil || len(session.Messages) < 4 {
+		return // too short to be meaningful
+	}
+
+	fmt.Printf("\n  %sHow was this session?%s [%sy=good  n=bad  ↵=skip%s] ", cBold, cReset, cReset, cDim)
+	var feedback string
+	fmt.Scanf("%s", &feedback)
+	feedback = strings.TrimSpace(strings.ToLower(feedback))
+
+	if feedback == "y" || feedback == "yes" || feedback == "good" || feedback == "g" {
+		if ak, ok := app.Kernel.(*kernel.AgentKernel); ok {
+			ak.SetUserVerdict(context.Background(), sessionID, "good")
+		}
+		fmt.Printf("\r\033[K  %s✓ Thanks — this helps me improve.%s\n\n", pterm.Green(""), cReset)
+	} else if feedback == "n" || feedback == "no" || feedback == "bad" || feedback == "b" {
+		if ak, ok := app.Kernel.(*kernel.AgentKernel); ok {
+			ak.SetUserVerdict(context.Background(), sessionID, "bad")
+		}
+		fmt.Printf("\r\033[K  %s✗ Noted — I'll learn from this.%s\n\n", pterm.Yellow(""), cReset)
 	}
 }
