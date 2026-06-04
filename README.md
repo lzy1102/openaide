@@ -62,24 +62,31 @@ install.bat
 ## Architecture
 
 ```
-cmd/server (API)    cmd/cli (REPL)
-     \____________________/
-         |
-    infra/Application    ← DI container
-    /  |  |   \
-  api/ orchestration/ channel/
-      |
-  kernel/AgentKernel      ← ReAct loop
-  /  |  |   \
- llm/ tools/ memory/ knowledge/
+┌──────────────────────────────────────────────┐
+│  cmd/server (REST+SSE)  cmd/cli (REPL)       │
+├──────────────────────────────────────────────┤
+│  infra/Application — DI container            │
+├──────────────────────────────────────────────┤
+│  orchestration/    api/       channel/       │
+│  Plan→Execute      REST API   Feishu/Telegram│
+├──────────────────────────────────────────────┤
+│  kernel/AgentKernel — ReAct loop             │
+│  ├─ kernel/actor/  (CSP Actor, SafeMap)      │
+│  ├─ kernel/trace/  (Tracer, Checkpointer)    │
+│  └─ kernel/graph/  (DAG topo sort)           │
+├──────────────────────────────────────────────┤
+│  llm/      tools/     memory/   knowledge/   │
+│  Gateway   40+ tools  SQLite    Vector ANN   │
+└──────────────────────────────────────────────┘
 ```
 
 ### Core Stack
 
-- **Language**: Go 1.25+ (pure Go, CGO_ENABLED=0)
-- **Storage**: SQLite (WAL mode) — sessions, knowledge, memory
-- **Concurrency**: CSP Actors + SafeMap + atomic.Value
-- **LLM**: OpenAI-compatible + Anthropic native APIs
+- **Language**: Go 1.26+ (pure Go, CGO_ENABLED=0)
+- **Storage**: SQLite (WAL mode) — sessions, knowledge, memory, skills
+- **Concurrency**: CSP Actors + SafeMap[K,V] + atomic.Value. Zero-lock core.
+- **LLM**: OpenAI-compatible + Anthropic native APIs. LLM-native decisions (no rule fallback).
+- **Learning**: Semantic embedding clustering + LLM knowledge distillation
 - **LSP**: 24 languages via stdio JSON-RPC
 - **REPL**: lmorg/readline + glamour (Markdown) + pterm
 
@@ -94,11 +101,12 @@ cmd/server (API)    cmd/cli (REPL)
 - **Architect/Editor Routing**: Reasoning model for analysis, execution model for coding
 - **Budget Injection**: LLM aware of remaining rounds, self-converges
 
-### Knowledge System
-- **Reflection**: Reasoning-model quality scoring (1-10)
-- **Knowledge Refinement**: Dedup → LLM summary → structured storage
-- **Skill Extraction**: Recurring success patterns → auto-created skills
-- **ProjectMind**: Cross-session project knowledge accumulation
+### Knowledge System — Gets Smarter Every Task
+- **Reflection**: LLM quality scoring (1-10) + quality-gated auto-save
+- **Knowledge Refinement**: Dedup (cosine > 0.85) → LLM extract → structured SQLite store with weight feedback
+- **Skill Extraction**: Semantic embedding clustering → LLM knowledge distillation → auto-persist skills
+- **ProjectMind**: Cross-session CodeMap, RiskMap, Conventions, Strategy stats (auto-save)
+- **Layered Prompts**: L0 (identity) + L1 (project) + L2 (skill) + L3 (task adapter) + L5 (reflection) + L6 (RAG)
 
 ### Developer Tools
 - **40 Built-in Tools**: Filesystem, Git, Web, Knowledge, Browser, Desktop, LSP

@@ -38,20 +38,50 @@ cd backend && go run ./cmd/cli
 
 ## Architecture
 
-OpenAIDE is an AI Agent kernel platform in Go. The architecture is strictly layered:
+OpenAIDE is an AI Agent kernel platform in Go. Strictly layered, CSP actor concurrency, LLM-native decisions.
 
 ```
-cmd/server (API server)          cmd/cli (interactive CLI)
-         \_________________________/
-                     |
-              infra/Application    ← DI container, wires everything
-              /    |    |     \
-         api/  orchestration/  channel/   (HTTP, SSE, WebSocket, webhook/Feishu/Telegram)
-                     |
-              kernel/AgentKernel   ← ReAct loop, the core of the agent
-              /    |    |     \
-        llm/   tools/ memory/  kernel/types
+┌──────────────────────────────────────────────────────────┐
+│                    Entry Points                          │
+│  cmd/server (REST + SSE + WebSocket)                     │
+│  cmd/cli   (REPL: readline + glamour + pterm)            │
+├──────────────────────────────────────────────────────────┤
+│                 infra/Application                        │
+│  DI container — wires kernel, tools, plugins, channels   │
+├──────────────────────────────────────────────────────────┤
+│  orchestration/          api/            channel/        │
+│  Research→Propose→Plan   HTTP handlers   Feishu/Telegram │
+│  Multi-Agent Team        CORS/middleware Webhook/TaskQ   │
+├──────────────────────────────────────────────────────────┤
+│               kernel/AgentKernel                         │
+│  ┌─ ReAct Loop (Process / ProcessStream)              ─┐ │
+│  │                                                    │ │
+│  │  Think → Act → Observe → Repeat                    │ │
+│  │    │       │        │                               │ │
+│  │    LLM   Tools   Reflection                        │ │
+│  │                                                    │ │
+│  │  After each loop:                                  │ │
+│  │    doReflection → QualityGate → autoSaveKnowledge  │ │
+│  │    SemanticPatternDetector → DistillCluster        │ │
+│  └────────────────────────────────────────────────────┘ │
+│                                                          │
+│  Sub-packages:                                           │
+│    kernel/actor/  — Actor, ActorStore, SafeMap          │
+│    kernel/trace/  — FileTracer, FileCheckpointer         │
+│    kernel/graph/  — DAG topological sort                 │
+├──────────────────────────────────────────────────────────┤
+│  llm/          tools/         memory/      knowledge/    │
+│  Multi-provider 40+ tools    Session mem  Vector ANN     │
+│  Gateway+Rtr   Filesystem     Embed cache   RAG + Refine │
+└──────────────────────────────────────────────────────────┘
 ```
+
+### Design Principles
+
+- **LLM is the brain.** No rule-based fallbacks. Skill matching, risk assessment, round estimation, reflection, distillation — all LLM-native. LLM unavailable = agent dead. No degradation.
+- **CSP Actors.** Stateful modules own their data in one goroutine. External access via channels. Zero locks for core data paths.
+- **Goroutines are cheap.** No artificial semaphores. Direct goroutine dispatch for event handlers. `context.WithoutCancel` for async tasks.
+- **Prompt is layered.** Stable prefix (L0+L1+L2) cached. Dynamic tail (L3+L5+L6) per-query. Analysis format only in review/research modes.
 
 ### Entry points
 
