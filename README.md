@@ -197,6 +197,14 @@ openaide update       # Self-update
 
 ---
 
+## Documentation
+
+- **[Installation Guide](docs/INSTALL.md)** — detailed install instructions
+- **[Configuration Guide](docs/CONFIG.md)** — full config reference
+- **[Usage Guide](docs/USAGE.md)** — daily usage, commands, API, FAQ
+
+---
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Quick areas to contribute:
