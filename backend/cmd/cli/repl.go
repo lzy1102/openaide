@@ -508,9 +508,17 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string,
 	}
 	PrintStatusBar(totalTokens, totalTools, elapsed, "deepseek-v4-pro", cacheHit, cacheMiss)
 
-	// Smart feedback: only ask after significant interactions
-	// Criteria: 3+ tool calls OR 5+ seconds elapsed
-	if totalTools >= 3 || elapsed > 5*time.Second {
+	// Feedback: only after the agent actually modified files.
+	// Reading files and answering questions doesn't need a verdict.
+	// But when code was changed, that's the strongest signal for learning.
+	modifiedFiles := false
+	for _, name := range toolNames {
+		if name == "write_file" || name == "diff_edit" {
+			modifiedFiles = true
+			break
+		}
+	}
+	if modifiedFiles {
 		fmt.Printf("\n  %s[%s y=good  n=bad  ↵=skip %s]%s ", cDim, cReset, cDim, cReset)
 		var feedback string
 		fmt.Scanf("%s", &feedback)
