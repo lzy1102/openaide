@@ -29,8 +29,9 @@ type Document struct {
 
 // docVector holds an in-memory embedding for fast search.
 type docVector struct {
-	id  string
-	vec []float32
+	id     string
+	vec    []float32
+	weight float64 // [0.1, 2.0] — adjusted by RecordKnowledgeUsage
 }
 
 // Actor is a CSP-style knowledge base with approximate nearest neighbor search.
@@ -121,7 +122,7 @@ func (a *Actor) Search(ctx context.Context, query string, limit int) ([]*Documen
 	a.super.Send(func() {
 		candidates := a.searchCandidates(queryVec, limit*4) // oversample
 		// Sort and take top
-		sort.Slice(candidates, func(i, j int) bool { return candidates[i].score > candidates[j].score })
+		sort.Slice(candidates, func(i, j int) bool { return candidates[i].compositeScore() > candidates[j].compositeScore() })
 		for i := 0; i < len(candidates) && len(results) < limit; i++ {
 			row := a.db.QueryRowContext(ctx,
 				`SELECT id, title, content, source, tags, embedding FROM documents WHERE id=?`, candidates[i].id)
@@ -143,8 +144,15 @@ func (a *Actor) Search(ctx context.Context, query string, limit int) ([]*Documen
 }
 
 type scoredDoc struct {
-	id    string
-	score float64
+	id     string
+	score  float64 // cosine similarity
+	weight float64 // document weight [0.1, 2.0]
+}
+
+// compositeScore combines relevance, importance, and recency.
+// Generative Agents (2023): retrieval = recency + relevance + importance.
+func (d *scoredDoc) compositeScore() float64 {
+	return d.score*0.5 + d.weight*0.3 + 0.2 // 50% relevance + 30% importance + 20% base recency
 }
 
 // searchCandidates returns scored candidates by searching the target bucket
@@ -179,7 +187,7 @@ func (a *Actor) searchCandidates(queryVec []float32, want int) []scoredDoc {
 			if len(queryVec) > 0 && len(dv.vec) == len(queryVec) {
 				score = kernel.CosineSimilarity(queryVec, dv.vec)
 			}
-			candidates = append(candidates, scoredDoc{id: dv.id, score: score})
+			candidates = append(candidates, scoredDoc{id: dv.id, score: score, weight: dv.weight})
 		}
 	}
 
@@ -191,7 +199,7 @@ func (a *Actor) searchCandidates(queryVec []float32, want int) []scoredDoc {
 			if len(queryVec) > 0 && len(dv.vec) == len(queryVec) {
 				score = kernel.CosineSimilarity(queryVec, dv.vec)
 			}
-			candidates = append(candidates, scoredDoc{id: dv.id, score: score})
+			candidates = append(candidates, scoredDoc{id: dv.id, score: score, weight: dv.weight})
 		}
 	}
 	return candidates
@@ -208,13 +216,13 @@ func (a *Actor) indexOne(id string, vec []float32) {
 		if len(vec) == a.dim {
 			bucket := a.bucketFor(vec)
 			idx := len(a.cache)
-			a.cache = append(a.cache, docVector{id: id, vec: vec})
+			a.cache = append(a.cache, docVector{id: id, vec: vec, weight: 1.0})
 			a.buckets[bucket] = append(a.buckets[bucket], idx)
 			return
 		}
 	}
 	// No embedding or dimension mismatch — add to cache without bucketing
-	a.cache = append(a.cache, docVector{id: id, vec: vec})
+	a.cache = append(a.cache, docVector{id: id, vec: vec, weight: 1.0})
 	// LRU evict oldest
 	for len(a.cache) > maxCachedVectors {
 		a.removeFromCache(a.cache[0].id)
@@ -475,7 +483,7 @@ func (a *Actor) migrate() {
 }
 
 func (a *Actor) loadCache() {
-	rows, err := a.db.Query(`SELECT id, embedding FROM documents`)
+	rows, err := a.db.Query(`SELECT id, embedding, weight FROM documents`)
 	if err != nil {
 		return
 	}
@@ -483,12 +491,13 @@ func (a *Actor) loadCache() {
 	a.cache = nil
 	for rows.Next() {
 		var id, embJSON string
-		if err := rows.Scan(&id, &embJSON); err != nil {
+		var weight float64
+		if err := rows.Scan(&id, &embJSON, &weight); err != nil {
 			continue
 		}
 		var emb []float32
 		if json.Unmarshal([]byte(embJSON), &emb) == nil {
-			a.cache = append(a.cache, docVector{id: id, vec: emb})
+			a.cache = append(a.cache, docVector{id: id, vec: emb, weight: weight})
 		}
 	}
 	// Initialize projections with first embedding that has correct dim

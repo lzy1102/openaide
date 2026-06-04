@@ -325,6 +325,10 @@ func (k *AgentKernel) doReflection(ctx context.Context, sessionID, query, respon
 			if k.knowledgeCollector != nil {
 				if docIDsRaw, ok := session.Metadata["knowledge_doc_ids"]; ok {
 					if docIDs, ok := docIDsRaw.([]string); ok && len(docIDs) > 0 {
+				// Store "Key Lesson" in knowledge base for future retrieval (Reflexion pattern)
+				if result.Learned != "" {
+					k.knowledgeCollector.AddKnowledge(ctx, "lesson: "+query[:min(80, len(query))], result.Learned, "reflection", []string{"lesson", "reflection", "self-improvement"})
+				}
 						k.knowledgeCollector.RecordKnowledgeUsage(ctx, docIDs, float64(result.Quality)/10.0)
 					}
 				}

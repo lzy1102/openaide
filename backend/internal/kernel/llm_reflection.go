@@ -54,7 +54,7 @@ var reflectionTool = ToolDefinition{
 // Reflect 对执行过程进行 LLM 驱动的反思
 // 先尝试 LLM 分析（结构化输出），失败则回退到规则评估
 func (r *LLMReflection) Reflect(ctx context.Context, sessionID string, execution ExecutionRecord) (*ReflectionResult, error) {
-	prompt := fmt.Sprintf(`Evaluate this AI assistant's execution quality.
+	prompt := fmt.Sprintf(`Evaluate this AI assistant's execution and generate a SELF-IMPROVEMENT LESSON. Include a "Key Lesson for Next Time" that tells your future self how to handle similar queries better.
 
 ## Query
 %s
@@ -68,14 +68,14 @@ func (r *LLMReflection) Reflect(ctx context.Context, sessionID string, execution
 - Tool Calls: %d
 - Duration: %dms
 
-Analyze the execution and provide structured feedback. Be specific and actionable.`,
+4. **Most important: "Key Lesson for Next Time" — a 1-3 sentence directive. Be concrete: mention specific files, tools, and gotchas. Example: "When fixing login issues, always check middleware/token.go first — token validation happens there, not in the handler."`,
 		execution.Query, execution.Response, execution.Success, execution.Error,
 		len(execution.ToolCalls), execution.Duration)
 
 	messages := []Message{
 		{
 			Role:    "system",
-			Content: "You are an AI execution quality analyst. Evaluate the assistant's performance and provide structured feedback.",
+			Content: "You are a self-improving AI agent. Generate concise, actionable lessons for your future self.",
 		},
 		{
 			Role:    "user",

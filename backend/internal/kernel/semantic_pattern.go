@@ -135,15 +135,15 @@ func DistillCluster(ctx context.Context, llm LLMProvider, examples []clusterExam
 	if llm == nil || len(examples) < 2 { return "" }
 
 	var sb strings.Builder
-	sb.WriteString("You are a knowledge distillation expert. Given similar tasks and their solutions, extract reusable patterns.\n\n")
+	sb.WriteString("You are a knowledge distillation expert. Given similar tasks and their solutions, extract reusable patterns including tool-use strategies.\n\n")
 	sb.WriteString("## Similar Tasks\n\n")
 	for i, ex := range examples {
 		if i >= 8 { break }
 		sb.WriteString(fmt.Sprintf("### Task %d\n**Query:** %s\n**Solution:** %s\n\n",
 			i+1, truncStr(ex.query, 300), truncStr(ex.response, 800)))
 	}
-	sb.WriteString("## Your Task\nDistill these into a concise skill card (under 300 words):\n")
-	sb.WriteString("1. **Key files/modules** involved\n2. **Common patterns** used\n3. **Gotchas** to avoid\n4. **Best approach** for similar future tasks")
+	sb.WriteString("## Your Task\nDistill these into a concise skill card (under 400 words):\n")
+	sb.WriteString("1. **Key files** — which files are always involved\n2. **Tool strategy** — optimal tool sequence\n3. **Gotchas** — specific mistakes to avoid\n4. **Best approach** — step-by-step directive")
 
 	resp, err := llm.Chat(ctx, []Message{{Role: "user", Content: sb.String()}}, nil,
 		map[string]interface{}{"max_tokens": 600, "temperature": 0.3, "route": "execution", "no_thinking": true})
