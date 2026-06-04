@@ -60,6 +60,8 @@ func promptL0_EN() string {
 - Use search_files / grep to find relevant code before making changes.
 - Use LSP tools (lsp_definition, lsp_references) to understand types and callers.
 - Prefer small, focused edits over large rewrites.
+- When you need to read multiple files: do it in parallel. Don't read one, think, then read another — batch your reads.
+- When you know you'll need several tools: call them together. Independent operations should run concurrently.
 
 ## Anti-Patterns — Never Do This
 - Never guess file paths, function names, or API signatures. Verify with tools.
@@ -122,6 +124,8 @@ func promptL0_ZH() string {
 - 用 search_files / grep 定位相关代码后再动手。
 - 用 LSP 工具（lsp_definition、lsp_references）理解类型和调用关系。
 - 优先小范围精确修改，避免大段重写。
+- 需要读多个文件时：并行读取。不要读完一个想一下再读下一个——批量发送读取请求。
+- 确定需要多个工具时：一起调用。互不依赖的操作应该并发执行。
 
 ## 反模式 — 绝对不要做
 - 不要猜测文件路径、函数名或 API 签名。用工具验证。
@@ -181,7 +185,46 @@ func promptL1() string {
 		sb.WriteString("\n[RepoMap]\n")
 		sb.WriteString(rm)
 	}
+
+	// Language-specific conventions
+	if lang := detectProjectLang(cwd); lang != "" {
+		sb.WriteString("\n[Language] ")
+		sb.WriteString(lang)
+		sb.WriteString("\n")
+		sb.WriteString(langConventions(lang))
+	}
+
 	return sb.String()
+}
+
+func detectProjectLang(dir string) string {
+	if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+		return "go"
+	}
+	if _, err := os.Stat(filepath.Join(dir, "package.json")); err == nil {
+		return "node"
+	}
+	if _, err := os.Stat(filepath.Join(dir, "pyproject.toml")); err == nil {
+		return "python"
+	}
+	if _, err := os.Stat(filepath.Join(dir, "Cargo.toml")); err == nil {
+		return "rust"
+	}
+	return ""
+}
+
+func langConventions(lang string) string {
+	switch lang {
+	case "go":
+		return "- Follow Go conventions: explicit error handling (never ignore errors), short variable names, use defer for cleanup.\n- Tests: table-driven tests with testing.T, test files alongside source (*_test.go).\n- Use gofmt/goimports formatting. Group imports: stdlib, third-party, internal.\n- Prefer composition over inheritance. Keep interfaces small (1-3 methods).\n- Use context.Context for cancellation and deadlines across all I/O operations.\n- Never use panic for control flow. Return errors."
+	case "node":
+		return "- Follow the project's existing patterns (ESLint/Prettier config).\n- Use async/await, not raw promises. Handle promise rejections.\n- Tests: use the framework configured in the project (Jest/Mocha/Vitest).\n- Keep components small and focused. One component per file."
+	case "python":
+		return "- Follow PEP 8. Use type hints for function signatures.\n- Tests: use pytest or the framework configured in pyproject.toml.\n- Use virtual environments. Don't install packages globally.\n- Prefer explicit over implicit. Handle exceptions specifically."
+	case "rust":
+		return "- Follow Rust idioms: use Result/Option, match exhaustively, derive common traits.\n- Use cargo fmt and cargo clippy. Heed clippy warnings.\n- Tests: #[cfg(test)] modules with #[test] attributes.\n- Own your data: prefer owned types over references in structs."
+	}
+	return ""
 }
 
 // ── L2: Skill Prompt ───────────────────────────────────────

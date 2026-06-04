@@ -24,6 +24,9 @@ func (k *AgentKernel) prepareReActRound(ctx context.Context, messages []Message,
 			compressed, saved, err := k.compressor.Compress(ctx, messages, k.maxTokens)
 			if err == nil {
 				messages = compressed
+					messages = append(messages, Message{
+						Role: "system", Content: "[System] Context was compressed to stay within token budget. Earlier details have been summarized. Focus on the current task and most recent messages.",
+					})
 				slog.Debug("Context compressed", "saved_tokens", saved)
 			}
 		}
