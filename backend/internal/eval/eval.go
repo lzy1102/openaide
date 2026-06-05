@@ -202,19 +202,20 @@ func (r *Runner) runOne(ctx context.Context, task Task) Result {
 	})
 	duration := time.Since(start)
 
-	result := Result{
-		Task:     task,
-		Response: resp.Content,
-		Duration: duration,
-	}
-	if resp != nil {
-		result.ToolCalls = resp.ToolCalls
-		result.TokensUsed = resp.TokensUsed
+	if err != nil {
+		return Result{
+			Task:       task,
+			Duration:   duration,
+			FailReason: fmt.Sprintf("kernel error: %v", err),
+		}
 	}
 
-	if err != nil {
-		result.FailReason = fmt.Sprintf("kernel error: %v", err)
-		return result
+	result := Result{
+		Task:       task,
+		Response:   resp.Content,
+		Duration:   duration,
+		ToolCalls:  resp.ToolCalls,
+		TokensUsed: resp.TokensUsed,
 	}
 
 	// Quick pre-checks (run before judge, can short-circuit)
