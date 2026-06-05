@@ -286,15 +286,22 @@ func promptL3_task_EN(task string) string {
 3. For every finding, ask: "Would I bet my salary on this being a real bug?"
 
 ### Bug vs. Opinion — label each finding
-- [BUG]: provable — null dereference, data race, wrong logic, leak. Show the exact trigger path.
+- [BUG]: provable NOW — null dereference, data race, wrong logic, leak. The trigger exists in current code, not in a hypothetical future change.
 - [DESIGN]: debatable — coupling, naming, abstraction. Propose a specific alternative.
 - [STYLE]: preference — consistent with project conventions? If yes, don't flag.
+- [RISK]: "if someone later changes X, this could break" — the code is correct today but fragile. Limit to 1-2 per review.
+
+### Anti-False-Positive Rules (MANDATORY — re-check before reporting)
+1. After listing each [BUG]: re-read the surrounding 20 lines. Is the trigger actually reachable?
+2. Concurrency claims: show BOTH goroutines accessing the SAME variable. Then verify NO synchronization primitive (WaitGroup, mutex, channel) stands between them. A goroutine writing before wg.Wait() and the main thread reading after wg.Wait() is NOT a data race.
+3. "This could be a problem if..." → that's [RISK], not [BUG]. Don't label it [BUG].
+4. If you can't write a 3-line test that triggers the bug: it's probably not a bug.
 
 ### Hard Rules
 - 'X is missing' → grep for X first. 90% of the time it's in the caller.
 - 'X is insecure' → show the exploitable code path. No theoretical threats.
 - If you cannot verify: mark [NEEDS VERIFICATION], explain why you suspect it.
-- Every [BUG] must include: trigger condition, observed behavior, expected behavior.
+- Every [BUG] must include: trigger condition (reachable NOW), observed behavior, expected behavior.
 
 ### Output (MANDATORY)
 [P0/P1/P2] [BUG|DESIGN|STYLE] file:line — problem → Fix → Why → Effort(min)
@@ -364,15 +371,22 @@ func promptL3_task_ZH(task string) string {
 3. 每个发现问自己："这个 bug 我敢打赌是真的吗？"
 
 ### 分类标签 — 每个发现必须标注
-- [BUG]：可证明 — 空指针、数据竞态、逻辑错误、泄漏。展示具体的触发路径。
+- [BUG]：现在可证明 — 空指针、数据竞态、逻辑错误、泄漏。触发条件存在于当前代码，不是假设的未来改动。
 - [DESIGN]：可讨论 — 耦合、命名、抽象层次。提出具体的替代方案。
 - [STYLE]：风格偏好 — 如果与项目已有规范一致，不要标。
+- [RISK]："如果将来有人改 X 这里会出问题"——代码今天正确但脆弱。每次审查最多 1-2 个。
+
+### 防误报规则（强制执行 — 报告前重新检查）
+1. 列出每个 [BUG] 后：重读周围 20 行代码。触发条件真的可达吗？
+2. 并发声明：展示两个 goroutine 访问同一个变量。然后验证它们之间没有同步原语（WaitGroup、mutex、channel）。goroutine 在 wg.Wait() 前写入、主线程在 wg.Wait() 后读取 —— 这不是数据竞态。
+3. "如果有人改 X 这里可能出问题" → 这是 [RISK]，不是 [BUG]。不要标成 [BUG]。
+4. 如果你写不出 3 行能触发这个 bug 的测试：可能不是 bug。
 
 ### 硬性规则
 - "缺少 X" → 先用 grep 搜 X。90% 的情况在调用方。
 - "X 不安全" → 展示可被利用的代码路径。不说理论威胁。
 - 无法验证的发现：标记 [待验证]，解释为什么怀疑。
-- [BUG] 必须包含：触发条件、实际行为、预期行为。
+- [BUG] 必须包含：触发条件（当前可达）、实际行为、预期行为。
 
 ### 输出（强制执行）
 [P0/P1/P2] [BUG|DESIGN|STYLE] 文件:行号 — 问题 → 方案 → 原因 → 工作量(分钟)
