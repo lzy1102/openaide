@@ -60,14 +60,12 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 	totalTokens := 0
 
 	maxRounds := k.determineMaxRounds(ctx, query.Content, len(session.Messages))
-	if k.reActMode == "continuous" {
-		if maxRounds < 50 {
-			maxRounds = 50 // floor for continuous mode
-		}
-		slog.Debug("ReAct continuous mode", "max_rounds", maxRounds)
+	continuous := k.reActMode == "continuous"
+	if continuous {
+		slog.Debug("ReAct continuous mode — no round limit, LLM decides when to stop")
 	}
 	slog.Debug("ReAct loop start", "query", query.Content[:min(80, len(query.Content))], "max_rounds", maxRounds, "tools", len(tools), "history_msgs", len(messages))
-	for round := 0; round < maxRounds; round++ {
+	for round := 0; continuous || round < maxRounds; round++ {
 		// Prepare context: compress, snip old output, inject budget hints
 		messages = k.prepareReActRound(ctx, messages, round, maxRounds)
 		slog.Debug("ReAct round — about to call LLM", "round", round+1, "max", maxRounds, "msgs", len(messages))
@@ -264,8 +262,26 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 			}
 		}
 	}
+	// Max rounds exceeded
+	if continuous {
+		// Continuous: return last assistant response. LLM should have stopped on its own.
+		var lastContent string
+		for i := len(messages) - 1; i >= 0; i-- {
+			if messages[i].Role == "assistant" && messages[i].Content != "" {
+				lastContent = messages[i].Content
+				break
+			}
+		}
+		return &Response{
+			Content:    lastContent,
+			ToolCalls:  totalToolCalls,
+			TokensUsed: totalTokens,
+			Duration:   time.Since(start),
+			Model:      k.llmProvider.GetModelID(),
+		}, nil
+	}
 
-	// 超出最大轮次 → 深度综合（Smolagents + reasoning model）
+	// Auto mode: forced synthesis
 	k.setState(StateIdle)
 	slog.Debug("ReAct max rounds reached, synthesizing final answer", "rounds", maxRounds, "msgs", len(messages))
 	messages = append(messages, Message{
@@ -290,6 +306,7 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 		Duration:   time.Since(start),
 		Model:      resp.Model,
 	}, nil
+
 }
 
 func (k *AgentKernel) doReflection(ctx context.Context, sessionID, query, response string, toolCalls, toolErrors int) {
