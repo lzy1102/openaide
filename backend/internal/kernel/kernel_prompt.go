@@ -246,8 +246,8 @@ func promptL3_task_EN(task string) string {
 3. If fixing a bug: reproduce it first. Show the error or failing test, then the fix.
 
 ### While Writing
-- Handle every error. No '_' for errors unless you can justify why it's safe.
-- For new functions: add a test in the matching '_test.go' file. Follow the project's test patterns.
+- Handle errors following the project language's conventions (see language-specific rules above).
+- For new functions: add a test following the project's test file pattern and framework.
 - Consider edge cases: empty input, nil, zero values, very large input, concurrent access.
 - Performance: if there's a known better algorithm, use it. Mention the complexity in a comment.
 - Use 'diff_edit' for targeted changes — never rewrite the whole file for a 3-line fix.
@@ -344,8 +344,8 @@ func promptL3_task_ZH(task string) string {
 3. 如果修 bug：先复现。展示错误或失败的测试，再给出修复。
 
 ### 写的时候
-- 处理每个 error。不要用 '_' 吞错误，除非你能解释为什么安全。
-- 新函数：在对应的 '_test.go' 里加测试。沿用项目已有的测试模式。
+- 按项目所用语言的约定处理错误（参见上方语言相关规则）。
+- 新函数：按项目已有的测试文件模式和测试框架加测试。
 - 考虑边界：空输入、nil、零值、超大数据、并发访问。
 - 性能：如果有已知的更优算法，用更好的。注释里提一下复杂度。
 - 用 'diff_edit' 做精确修改——不要为了改 3 行重写整个文件。
