@@ -325,14 +325,26 @@ End with Action Plan: what to fix first, what's safe to defer, estimated total e
 		return `
 ## Research Mode — Deep Analysis
 
-### Process (DO THIS, IN ORDER)
+### First: Detect the Sub-Mode
+This query is either ANALYSIS (examining existing code) or EXPLORATION (designing, brainstorming, "what if", "how should we").
+
+**If ANALYSIS** (code exists, user wants understanding):
+Follow the full structured process below. Read files first, form conclusions second.
+
+**If EXPLORATION** (new feature, new design, "which approach?", greenfield):
+- Skip mandatory file-reading. Read only what scopes the discussion (e.g. existing interfaces).
+- Drop the 5-section format. Engage conversationally: ask clarifying questions, propose 2-3 alternatives, weigh trade-offs (pros/cons/risk/effort).
+- Mark speculative ideas as [speculative]. Mark analysis-backed claims as [analysis].
+- End with: a recommendation, open questions to resolve, and next concrete step.
+
+### Process — for ANALYSIS mode (DO THIS, IN ORDER)
 1. Read at least 3 key files before forming ANY conclusion. Do not analyze from memory.
 2. Map the structure: packages, interfaces, data flow — then identify boundaries and seams.
 3. Find design tensions: where do two goals conflict? (e.g. flexibility vs simplicity, speed vs safety)
 4. Compare against one real-world alternative: how does a similar project solve this differently?
 5. Identify what is MISSING — what would the next developer expect to find but won't?
 
-### Required Sections (MANDATORY)
+### Sections — for ANALYSIS mode
 #### 1. Architecture (what is it, how does it fit together)
 - Not a file listing. Show the actual dependency graph and call flows.
 - Point out the non-obvious: indirect dependencies, implicit contracts, hidden coupling.
@@ -430,14 +442,26 @@ func promptL3_task_ZH(task string) string {
 		return `
 ## 研究模式 — 深度分析
 
-### 流程（按顺序执行）
+### 首先：判断子模式
+这个查询要么是 ANALYSIS（分析已有代码），要么是 EXPLORATION（设计、头脑风暴、"如果"、"该怎么"）。
+
+**如果是 ANALYSIS**（代码存在，用户想理解）：
+走下面完整的结构化流程。先读文件，后形成结论。
+
+**如果是 EXPLORATION**（新功能、新设计、"哪种方案好？"、绿地项目）：
+- 跳过强制性文件阅读。只读与讨论范围相关的（如已有接口）。
+- 放弃 5 章节格式。对话式交流：问清需求、提出 2-3 个备选方案、权衡利弊（优势/劣势/风险/工作量）。
+- 推测性想法标记 [speculative]。基于分析的主张标记 [analysis]。
+- 结尾给出：推荐方案、待解决的开放问题、下一步具体行动。
+
+### 流程 — ANALYSIS 模式（按顺序执行）
 1. 形成任何结论之前，至少读取 3 个关键文件。不要凭记忆分析。
 2. 画出结构：包 → 接口 → 数据流 → 找出边界和缝隙。
 3. 找到设计张力：哪两个目标冲突？（如灵活 vs 简洁、速度 vs 安全）
 4. 对比一个真实世界的替代方案：类似项目怎么解决同样的问题？
 5. 找出缺失的东西：下一个接手的人期望找到但没有的。
 
-### 必备章节（强制执行）
+### 章节 — ANALYSIS 模式
 #### 1. 架构（是什么、怎么拼起来的）
 - 不是文件清单。展示实际的依赖图和调用流。
 - 指出不明显的：间接依赖、隐式契约、隐藏的耦合。
