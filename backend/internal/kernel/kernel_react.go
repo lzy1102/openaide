@@ -16,7 +16,7 @@ import (
 // 1. Compress context if exceeds 90% of token budget
 // 2. Snips old tool outputs to avoid context bloat
 // 3. Injects budget reminder when approaching round limit
-func (k *AgentKernel) prepareReActRound(ctx context.Context, messages []Message, round, maxRounds int) []Message {
+func (k *AgentKernel) prepareReActRound(ctx context.Context, messages []Message, round int) []Message {
 	// Compression: 90% threshold (Claude Code uses 92%)
 	if k.compressor != nil {
 		tokenCount := k.compressor.EstimateTokens(messages)
@@ -34,26 +34,24 @@ func (k *AgentKernel) prepareReActRound(ctx context.Context, messages []Message,
 
 	snipOldToolOutputs(messages)
 
-	// Multi-stage budget injection — progressively stronger signals
-	if round >= maxRounds-1 {
+	// Budget injection at fixed round thresholds (no hard limit)
+	if round >= 50 {
 		if k.queryOptions != nil && k.queryOptions.OnBudgetExhausted != nil {
-			if k.queryOptions.OnBudgetExhausted(round, maxRounds) {
+			if k.queryOptions.OnBudgetExhausted(round, 50) {
 				return messages
 			}
 		}
 		messages = append(messages, Message{
-			Role: "user", Content: "[System] Final round — must give final answer. Do NOT call any tools.",
+			Role: "user", Content: "[System] Round 50+. You should have enough information. Give your final answer. Only call tools if absolutely essential.",
 		})
-	} else if round >= maxRounds*8/10 {
-		remaining := maxRounds - round
+	} else if round >= 20 {
 		messages = append(messages, Message{Role: "user", Content: fmt.Sprintf(
-			"[System] Used %d/%d rounds, %d remaining. Stop exploring. Start synthesizing your final answer. Only call tools if absolutely necessary.",
-			round, maxRounds, remaining)})
-	} else if round >= maxRounds*6/10 {
-		remaining := maxRounds - round
+			"[System] Round %d. Stop exploring. Start synthesizing your final answer. Only call tools if absolutely necessary.",
+			round)})
+	} else if round >= 10 {
 		messages = append(messages, Message{Role: "user", Content: fmt.Sprintf(
-			"[System] Used %d/%d rounds, %d remaining. Begin wrapping up. Focus on key findings.",
-			round, maxRounds, remaining)})
+			"[System] Round %d. Begin wrapping up. Focus on key findings.",
+			round)})
 	}
 	return messages
 }

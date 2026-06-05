@@ -59,16 +59,12 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 	toolErrors := 0
 	totalTokens := 0
 
-	maxRounds := k.determineMaxRounds(ctx, query.Content, len(session.Messages))
-	continuous := k.reActMode == "continuous"
-	if continuous {
-		slog.Debug("ReAct continuous mode — no round limit, LLM decides when to stop")
-	}
-	slog.Debug("ReAct loop start", "query", query.Content[:min(80, len(query.Content))], "max_rounds", maxRounds, "tools", len(tools), "history_msgs", len(messages))
-	for round := 0; continuous || round < maxRounds; round++ {
+	_ = k.determineMaxRounds(ctx, query.Content, len(session.Messages))
+	slog.Debug("ReAct loop start", "query", query.Content[:min(80, len(query.Content))], "tools", len(tools), "history_msgs", len(messages))
+	for round := 0; ; round++ {
 		// Prepare context: compress, snip old output, inject budget hints
-		messages = k.prepareReActRound(ctx, messages, round, maxRounds)
-		slog.Debug("ReAct round — about to call LLM", "round", round+1, "max", maxRounds, "msgs", len(messages))
+		messages = k.prepareReActRound(ctx, messages, round)
+		slog.Debug("ReAct round — about to call LLM", "round", round+1, "msgs", len(messages))
 		// 调用 LLM（如果指定了模型，临时切换）
 		if query.Options.ModelID != "" {
 			if ms, ok := k.llmProvider.(ModelSwitcher); ok { ms.SetModelID(query.Options.ModelID) }
@@ -262,51 +258,15 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 			}
 		}
 	}
-	// Max rounds exceeded
-	if continuous {
-		// Continuous: return last assistant response. LLM should have stopped on its own.
-		var lastContent string
-		for i := len(messages) - 1; i >= 0; i-- {
-			if messages[i].Role == "assistant" && messages[i].Content != "" {
-				lastContent = messages[i].Content
-				break
-			}
+	// Should never reach here — loop exits when LLM returns no tool calls.
+	var lastContent string
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "assistant" && messages[i].Content != "" {
+			lastContent = messages[i].Content
+			break
 		}
-		return &Response{
-			Content:    lastContent,
-			ToolCalls:  totalToolCalls,
-			TokensUsed: totalTokens,
-			Duration:   time.Since(start),
-			Model:      k.llmProvider.GetModelID(),
-		}, nil
 	}
-
-	// Auto mode: forced synthesis
-	k.setState(StateIdle)
-	slog.Debug("ReAct max rounds reached, synthesizing final answer", "rounds", maxRounds, "msgs", len(messages))
-	messages = append(messages, Message{
-		Role: "user",
-		Content: "Research phase is over. You have gathered extensive information. Now synthesize a COMPLETE final answer:\n\n1. Start with a clear, direct answer to the original question\n2. Support each point with specific findings from your research\n3. Use the exact names of files, packages, and patterns you discovered\n4. End with a concrete conclusion or recommendation\n\nDo NOT call any tools. Use ALL the information you collected to give the best possible answer.",
-	})
-	resp, err := k.llmProvider.Chat(ctx, messages, nil, map[string]interface{}{"temperature": 0.3, "max_tokens": 4000, "route": "execution", "no_thinking": true})
-	if err != nil {
-		slog.Warn("Final synthesis failed", "error", err)
-		lastMsg := messages[len(messages)-1]
-		return &Response{Content: lastMsg.Content, ToolCalls: totalToolCalls, TokensUsed: totalTokens, Duration: time.Since(start), Model: k.llmProvider.GetModelID()}, nil
-	}
-	if resp.Usage != nil {
-		totalTokens += resp.Usage.TotalTokens
-	}
-	return &Response{
-		Content:    resp.Content,
-		ToolCalls:  totalToolCalls,
-		TokensUsed: totalTokens,
-		CacheHit:   resp.Usage.PromptCacheHitTokens,
-		CacheMiss:  resp.Usage.PromptCacheMissTokens,
-		Duration:   time.Since(start),
-		Model:      resp.Model,
-	}, nil
-
+	return &Response{Content: lastContent, ToolCalls: totalToolCalls, TokensUsed: totalTokens, Duration: time.Since(start), Model: k.llmProvider.GetModelID()}, nil
 }
 
 func (k *AgentKernel) doReflection(ctx context.Context, sessionID, query, response string, toolCalls, toolErrors int) {

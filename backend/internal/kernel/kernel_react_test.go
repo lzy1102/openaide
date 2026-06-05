@@ -90,29 +90,29 @@ func TestPrepareReActRound_CompressionNotTriggered(t *testing.T) {
 	msgs := []Message{
 		{Role: "user", Content: "short message"},
 	}
-	result := k.prepareReActRound(context.Background(), msgs, 0, 10)
+	result := k.prepareReActRound(context.Background(), msgs, 0)
 	if len(result) != 1 {
 		t.Errorf("expected no change for short context, got %d msgs", len(result))
 	}
 }
 
 func TestPrepareReActRound_BudgetInjection(t *testing.T) {
-	k := &AgentKernel{maxTokens: 1000000, maxRounds: 10}
+	k := &AgentKernel{maxTokens: 1000000}
 	msgs := []Message{
 		{Role: "user", Content: "test"},
 	}
-	// 70% (round 7/10) should trigger budget hint (>60% threshold)
-	result := k.prepareReActRound(context.Background(), msgs, 7, 10)
+	// Round 10 should trigger first budget hint (>=10 threshold)
+	result := k.prepareReActRound(context.Background(), msgs, 10)
 	if len(result) != 2 {
-		t.Fatalf("expected budget injection, got %d msgs", len(result))
+		t.Fatalf("expected budget injection at round 10, got %d msgs", len(result))
 	}
 	if result[1].Role != "user" {
 		t.Error("budget message should be user role")
 	}
 
-	// Final round should inject final warning
-	result2 := k.prepareReActRound(context.Background(), msgs, 9, 10)
+	// Round 21 should trigger second warning (>=20 threshold)
+	result2 := k.prepareReActRound(context.Background(), msgs, 21)
 	if len(result2) != 2 {
-		t.Fatalf("expected final round warning, got %d msgs", len(result2))
+		t.Fatalf("expected warning at round 21, got %d msgs", len(result2))
 	}
 }

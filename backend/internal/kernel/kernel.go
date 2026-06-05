@@ -75,7 +75,6 @@ type Config struct {
 func DefaultConfig() *Config {
 	return &Config{
 		MaxRounds:                  10,
-		ReActMode:                  "auto",
 		MaxTokens:                  4000,
 		SystemPrompt:               defaultSystemPrompt(),
 		PatternMinClusterSize:      8,

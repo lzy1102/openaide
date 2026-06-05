@@ -62,7 +62,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 		startTime := time.Now()
 
 		slog.Info("ReAct stream: entering loop", "query", query.Content[:min(80, len(query.Content))], "max_rounds", maxRounds, "tools", len(tools), "history_msgs", len(messages))
-		for round := 0; round < maxRounds; round++ {
+		for round := 0; ; round++ {
 			slog.Debug("ReAct stream round", "round", round, "msg_count", len(messages))
 			snipOldToolOutputs(messages)
 		// 预算注入：过半后提醒 LLM 剩余轮次
