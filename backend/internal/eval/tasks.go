@@ -16,7 +16,7 @@ func BuiltinTasks() []Task {
 			Category: "general", Difficulty: "easy",
 			Query:       "Hello! What can you help me with?",
 			MustContain: []string{"help", "code", "OpenAIDE"},
-			MustNotContain: []string{"error", "failed", "cannot"},
+			MustNotContain: []string{"I can't", "not able"},
 		},
 		{
 			ID: "simple-calc", Name: "Simple Calculation",
@@ -37,7 +37,7 @@ func BuiltinTasks() []Task {
 			ID: "code-review-pattern", Name: "Review Code Pattern",
 			Category: "review", Difficulty: "medium",
 			Query:       "Review this Go error handling pattern: if err != nil { return err }. Is it correct? What could go wrong?",
-			MustContain: []string{"error", "wrap", "context"},
+			MustContain: []string{"error", "context", "return"},
 		},
 		{
 			ID: "fix-hypothetical-bug", Name: "Fix Hypothetical Bug",

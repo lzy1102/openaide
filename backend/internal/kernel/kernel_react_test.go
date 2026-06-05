@@ -101,8 +101,8 @@ func TestPrepareReActRound_BudgetInjection(t *testing.T) {
 	msgs := []Message{
 		{Role: "user", Content: "test"},
 	}
-	// Mid-point should inject budget hint
-	result := k.prepareReActRound(context.Background(), msgs, 5, 10)
+	// 70% (round 7/10) should trigger budget hint (>60% threshold)
+	result := k.prepareReActRound(context.Background(), msgs, 7, 10)
 	if len(result) != 2 {
 		t.Fatalf("expected budget injection, got %d msgs", len(result))
 	}

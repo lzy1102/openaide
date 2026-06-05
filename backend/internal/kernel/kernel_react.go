@@ -34,23 +34,26 @@ func (k *AgentKernel) prepareReActRound(ctx context.Context, messages []Message,
 
 	snipOldToolOutputs(messages)
 
-	// Budget injection with MemGPT-style memory management hint
-	if round >= maxRounds/2 && round < maxRounds-1 {
-		remaining := maxRounds - round
-		hint := fmt.Sprintf(
-			"[System] Used %d/%d rounds, %d remaining. If you have completed subtasks, use manage_memory(action='archive') to save key findings. Use manage_memory(action='retrieve') to recall past knowledge.",
-			round, maxRounds, remaining)
-		messages = append(messages, Message{Role: "user", Content: hint})
-	} else if round >= maxRounds-1 {
-		// Check if user wants to continue beyond budget
-	if k.queryOptions != nil && k.queryOptions.OnBudgetExhausted != nil {
-		if k.queryOptions.OnBudgetExhausted(round, maxRounds) {
-			return messages // Callback says continue without forced stop
+	// Multi-stage budget injection — progressively stronger signals
+	if round >= maxRounds-1 {
+		if k.queryOptions != nil && k.queryOptions.OnBudgetExhausted != nil {
+			if k.queryOptions.OnBudgetExhausted(round, maxRounds) {
+				return messages
+			}
 		}
-	}
-	messages = append(messages, Message{
-		Role: "user", Content: "[System] Final round — must give final answer. Do NOT call any tools.",
-	})
+		messages = append(messages, Message{
+			Role: "user", Content: "[System] Final round — must give final answer. Do NOT call any tools.",
+		})
+	} else if round >= maxRounds*8/10 {
+		remaining := maxRounds - round
+		messages = append(messages, Message{Role: "user", Content: fmt.Sprintf(
+			"[System] Used %d/%d rounds, %d remaining. Stop exploring. Start synthesizing your final answer. Only call tools if absolutely necessary.",
+			round, maxRounds, remaining)})
+	} else if round >= maxRounds*6/10 {
+		remaining := maxRounds - round
+		messages = append(messages, Message{Role: "user", Content: fmt.Sprintf(
+			"[System] Used %d/%d rounds, %d remaining. Begin wrapping up. Focus on key findings.",
+			round, maxRounds, remaining)})
 	}
 	return messages
 }

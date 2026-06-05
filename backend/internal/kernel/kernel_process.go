@@ -259,12 +259,12 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 		}
 	}
 
-	// 超出最大轮次 → 合成最终回答（smolagents 风格）
+	// 超出最大轮次 → 深度综合（Smolagents + reasoning model）
 	k.setState(StateIdle)
 	slog.Debug("ReAct max rounds reached, synthesizing final answer", "rounds", maxRounds, "msgs", len(messages))
 	messages = append(messages, Message{
 		Role: "user",
-		Content: "Max rounds reached. Based on all findings above, provide a complete summary. Do NOT call tools — output your final answer directly.",
+		Content: "Research phase is over. You have gathered extensive information. Now synthesize a COMPLETE final answer:\n\n1. Start with a clear, direct answer to the original question\n2. Support each point with specific findings from your research\n3. Use the exact names of files, packages, and patterns you discovered\n4. End with a concrete conclusion or recommendation\n\nDo NOT call any tools. Use ALL the information you collected to give the best possible answer.",
 	})
 	resp, err := k.llmProvider.Chat(ctx, messages, nil, map[string]interface{}{"temperature": 0.3, "max_tokens": 4000, "route": "execution", "no_thinking": true})
 	if err != nil {

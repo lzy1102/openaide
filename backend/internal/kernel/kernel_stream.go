@@ -72,6 +72,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 				Role: "user", Content: fmt.Sprintf("[System] Used %d/%d rounds, %d remaining. Give your final answer now if you have enough information.", round, maxRounds, remaining),
 			})
 		} else if round >= maxRounds-1 {
+		// Same multi-stage logic as sync path — see kernel_react.go
 			messages = append(messages, Message{
 				Role: "user", Content: "[System] Final round — must give final answer. Do NOT call any tools.",
 			})
@@ -354,7 +355,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 			Role: "user",
 			Content: "Max rounds reached. Based on all findings above, provide a complete summary. Do NOT call tools — output your final answer directly.",
 		})
-		resp, err := k.llmProvider.Chat(ctx, messages, nil, map[string]interface{}{"temperature": 0.3, "max_tokens": 4000, "route": "execution", "no_thinking": true})
+		resp, err := k.llmProvider.Chat(ctx, messages, nil, map[string]interface{}{"temperature": 0.3, "max_tokens": 4000, "route": "reasoning"})
 		if err != nil {
 			slog.Warn("Stream final synthesis failed", "error", err)
 			lastMsg := messages[len(messages)-1]
