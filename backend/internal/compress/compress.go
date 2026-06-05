@@ -67,6 +67,38 @@ func (c *NovelCompressor) Compress(ctx context.Context, messages []kernel.Messag
 	}
 
 	saved := c.estimateTokens(messages) - c.estimateTokens(result)
+	if saved < 0 {
+		saved = 0
+	}
+
+	// Enforce maxTokens budget: trim oldest history messages if result exceeds limit
+	if maxTokens > 0 && c.estimateTokens(result) > maxTokens {
+		// Separate system prefix from recent messages to trim only the history tail
+		var sysMsgs []kernel.Message
+		var histMsgs []kernel.Message
+		for _, msg := range result {
+			if msg.Role == "system" {
+				sysMsgs = append(sysMsgs, msg)
+			} else {
+				histMsgs = append(histMsgs, msg)
+			}
+		}
+		sysTokens := c.estimateTokens(sysMsgs)
+		budget := maxTokens - sysTokens
+		if budget < 0 {
+			budget = 0
+		}
+		// Drop oldest non-system messages until within budget
+		for len(histMsgs) > 0 && c.estimateTokens(histMsgs) > budget {
+			histMsgs = histMsgs[1:]
+		}
+		result = append(sysMsgs, histMsgs...)
+		saved = c.estimateTokens(messages) - c.estimateTokens(result)
+		if saved < 0 {
+			saved = 0
+		}
+	}
+
 	return result, saved, nil
 }
 
@@ -123,8 +155,9 @@ func (c *NovelCompressor) generateChapterSummary(messages []kernel.Message) stri
 	}
 
 	summary := strings.Join(parts, "，")
-	if len(summary) > c.maxSummaryLength {
-		summary = summary[:c.maxSummaryLength] + "..."
+	if len([]rune(summary)) > c.maxSummaryLength {
+		rs := []rune(summary)
+		summary = string(rs[:c.maxSummaryLength]) + "..."
 	}
 
 	return summary
@@ -146,8 +179,9 @@ func (c *NovelCompressor) generateCliffhanger(messages []kernel.Message) string 
 			}
 			if !hasResponse {
 				content := msg.Content
-				if len(content) > 100 {
-					content = content[:100] + "..."
+				if len([]rune(content)) > 100 {
+					rs := []rune(content)
+					content = string(rs[:100]) + "..."
 				}
 				return content
 			}
