@@ -223,11 +223,32 @@ func detectProjectLangs(dir string) []string {
 		{"package.json", "node"},
 		{"pyproject.toml", "python"},
 		{"Cargo.toml", "rust"},
+		{"pom.xml", "java"},
+		{"build.gradle", "java"},
+		{"build.gradle.kts", "kotlin"},
+		{"CMakeLists.txt", "c"},
+		{"Makefile", "c"},
+		{"Package.swift", "swift"},
 	}
 	var langs []string
+	seen := map[string]bool{}
 	for _, c := range checks {
+		if seen[c.lang] { continue }
 		if _, err := os.Stat(filepath.Join(dir, c.file)); err == nil {
 			langs = append(langs, c.lang)
+			seen[c.lang] = true
+		}
+	}
+	// C#: check for .csproj or .sln files
+	if !seen["csharp"] {
+		if matches, _ := filepath.Glob(filepath.Join(dir, "*.csproj")); len(matches) > 0 {
+			langs = append(langs, "csharp")
+			seen["csharp"] = true
+		}
+		if !seen["csharp"] {
+			if matches, _ := filepath.Glob(filepath.Join(dir, "*.sln")); len(matches) > 0 {
+				langs = append(langs, "csharp")
+			}
 		}
 	}
 	return langs
@@ -236,13 +257,23 @@ func detectProjectLangs(dir string) []string {
 func langConventions(lang string) string {
 	switch lang {
 	case "go":
-		return "- Follow Go conventions: explicit error handling (never ignore errors), short variable names, use defer for cleanup.\n- Tests: table-driven tests with testing.T, test files alongside source (*_test.go).\n- Use gofmt/goimports formatting. Group imports: stdlib, third-party, internal.\n- Prefer composition over inheritance. Keep interfaces small (1-3 methods).\n- Use context.Context for cancellation and deadlines across all I/O operations.\n- Never use panic for control flow. Return errors."
+		return "- Go: explicit error handling, short names, defer for cleanup. Tests: table-driven with testing.T. Format: gofmt. Prefer composition, small interfaces. Use context.Context."
+	case "java":
+		return "- Java: camelCase naming, checked exceptions or unchecked with documentation. Tests: JUnit 5. Build: Maven (pom.xml) or Gradle. Use try-with-resources for AutoCloseable. Prefer immutable objects, dependency injection."
+	case "kotlin":
+		return "- Kotlin: camelCase naming, prefer val over var, use nullable types explicitly (?.). Tests: JUnit 5 or Kotest. Build: Gradle with kotlin DSL. Use coroutines for async, avoid GlobalScope."
+	case "c":
+		return "- C/C++: follow existing code style (clang-format if configured). Check memory management: malloc/free, new/delete paired correctly, no use-after-free. Tests: whatever framework the project uses (CUnit, GTest, Catch2). Use RAII in C++. No undefined behavior."
+	case "csharp":
+		return "- C#: follow Microsoft conventions. Use async/await with Task. Tests: xUnit or NUnit. LINQ for collections, avoid inefficient multiple enumerations. Use 'using' for IDisposable. Properties instead of public fields."
+	case "swift":
+		return "- Swift: follow Swift API Design Guidelines. Use let over var, optionals over force-unwrap. Tests: XCTest. Prefer structs over classes where possible. Use protocol-oriented design. MainActor for UI updates."
 	case "node":
-		return "- Follow the project's existing patterns (ESLint/Prettier config).\n- Use async/await, not raw promises. Handle promise rejections.\n- Tests: use the framework configured in the project (Jest/Mocha/Vitest).\n- Keep components small and focused. One component per file."
+		return "- Node/JS/TS: follow project's ESLint/Prettier config. Use async/await, not raw promises. Handle promise rejections. Tests: the framework in the project (Jest/Mocha/Vitest). One component per file."
 	case "python":
-		return "- Follow PEP 8. Use type hints for function signatures.\n- Tests: use pytest or the framework configured in pyproject.toml.\n- Use virtual environments. Don't install packages globally.\n- Prefer explicit over implicit. Handle exceptions specifically."
+		return "- Python: follow PEP 8, type hints for function signatures. Tests: pytest or project's framework. Virtual environments. Explicit over implicit, handle exceptions specifically."
 	case "rust":
-		return "- Follow Rust idioms: use Result/Option, match exhaustively, derive common traits.\n- Use cargo fmt and cargo clippy. Heed clippy warnings.\n- Tests: #[cfg(test)] modules with #[test] attributes.\n- Own your data: prefer owned types over references in structs."
+		return "- Rust: use Result/Option, match exhaustively, derive common traits. Format: cargo fmt, lint: cargo clippy. Tests: #[cfg(test)] with #[test]. Own your data, prefer owned over borrowed in structs."
 	}
 	return ""
 }
