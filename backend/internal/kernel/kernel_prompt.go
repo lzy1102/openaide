@@ -248,7 +248,7 @@ func promptL3_task_EN(task string) string {
 ### While Writing
 - Handle errors following the project language's conventions (see language-specific rules above).
 - For new functions: add a test following the project's test file pattern and framework.
-- Consider edge cases: empty input, nil, zero values, very large input, concurrent access.
+- Consider edge cases: empty input, null/None/nil, zero values, very large input, concurrent access.
 - Performance: if there's a known better algorithm, use it. Mention the complexity in a comment.
 - Use 'diff_edit' for targeted changes — never rewrite the whole file for a 3-line fix.
 
@@ -267,7 +267,7 @@ func promptL3_task_EN(task string) string {
 3. For every finding, ask: "Would I bet my salary on this being a real bug?"
 
 ### Bug vs. Opinion — label each finding
-- [BUG]: provable — nil pointer, data race, wrong logic, leak. Show the exact trigger path.
+- [BUG]: provable — null dereference, data race, wrong logic, leak. Show the exact trigger path.
 - [DESIGN]: debatable — coupling, naming, abstraction. Propose a specific alternative.
 - [STYLE]: preference — consistent with project conventions? If yes, don't flag.
 
@@ -346,7 +346,7 @@ func promptL3_task_ZH(task string) string {
 ### 写的时候
 - 按项目所用语言的约定处理错误（参见上方语言相关规则）。
 - 新函数：按项目已有的测试文件模式和测试框架加测试。
-- 考虑边界：空输入、nil、零值、超大数据、并发访问。
+- 考虑边界：空输入、null/None/nil、零值、超大数据、并发访问。
 - 性能：如果有已知的更优算法，用更好的。注释里提一下复杂度。
 - 用 'diff_edit' 做精确修改——不要为了改 3 行重写整个文件。
 
