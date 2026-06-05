@@ -6,7 +6,7 @@ func BuiltinTasks() []Task {
 		// ── Easy tasks ──
 		{
 			ID: "explain-concurrency", Name: "Explain Go Concurrency",
-			Category: "teaching", Difficulty: "easy",
+			Category: "think", Difficulty: "easy",
 			Query:        "Explain how goroutines and channels work in Go. Give a short example.",
 			EvalCriteria: "Response explains goroutines (lightweight threads) and channels (communication mechanism) with a valid Go code example. Must mention both concepts.",
 			MustNotContain: []string{"I don't know", "I'm not sure"},
@@ -15,7 +15,7 @@ func BuiltinTasks() []Task {
 			ID: "hello-response", Name: "Greeting Response",
 			Category: "general", Difficulty: "easy",
 			Query:        "Hello! What can you help me with?",
-			EvalCriteria: "Friendly greeting response mentioning the agent's capabilities (coding, code review, research, teaching). Identifies itself as OpenAIDE or an AI coding assistant.",
+			EvalCriteria: "Friendly greeting response mentioning the agent's capabilities (coding, code review, analysis, teaching). Identifies itself as OpenAIDE or an AI coding assistant.",
 			MustNotContain: []string{"I can't", "not able"},
 		},
 		{
@@ -28,7 +28,7 @@ func BuiltinTasks() []Task {
 		// ── Medium tasks ──
 		{
 			ID: "analyze-structure", Name: "Analyze Project Structure",
-			Category: "research", Difficulty: "medium",
+			Category: "think", Difficulty: "medium",
 			Query:        "What are the main packages in this project? List their responsibilities briefly.",
 			EvalCriteria: "Identifies key packages (kernel, tools, api, orchestration, llm, memory, knowledge) and describes each one's role. Shows understanding of the layered architecture. May use tools to explore the codebase.",
 			MustNotContain: []string{"I don't know", "I haven't read"},
@@ -48,7 +48,7 @@ func BuiltinTasks() []Task {
 		},
 		{
 			ID: "explain-actor-model", Name: "Explain Actor Model",
-			Category: "teaching", Difficulty: "medium",
+			Category: "think", Difficulty: "medium",
 			Query:        "Explain the CSP actor pattern used in OpenAIDE's kernel. What problem does it solve?",
 			EvalCriteria: "Explains CSP (Communicating Sequential Processes) actor pattern: each module owns its data in a goroutine, communicates via channels. Mentions benefits: zero locks, no data races, simpler concurrency. Shows understanding of the pattern's value in concurrent systems.",
 			MustNotContain: []string{"I'm not familiar"},
@@ -64,7 +64,7 @@ func BuiltinTasks() []Task {
 		},
 		{
 			ID: "refactoring-plan", Name: "Refactoring Plan",
-			Category: "research", Difficulty: "hard",
+			Category: "think", Difficulty: "hard",
 			Query:        "If you were to split the kernel package into smaller sub-packages, what would you extract and why?",
 			EvalCriteria: "Proposes concrete sub-package extractions (e.g. prompt/, react/, session/, reflection/) with reasoning for each. Mentions interfaces, dependency management. Shows understanding of the kernel's current structure.",
 		},
@@ -78,16 +78,17 @@ func BuiltinTasks() []Task {
 }
 
 // FullCapabilityTasks returns a comprehensive suite covering all agent capabilities.
+// FullCapabilityTasks tests all agent functions
 func FullCapabilityTasks() []Task {
 	return []Task{
 		// ── Reading & Understanding ──
-		{ID: "read-explain", Name: "Read & Explain", Category: "research", Difficulty: "medium",
+		{ID: "read-explain", Name: "Read & Explain", Category: "think", Difficulty: "medium",
 			Query:        "Read backend/internal/eval/eval.go and explain what Runner.RunTasks does. Be specific.",
 			EvalCriteria: "Explains that RunTasks iterates over tasks, calls runOne for each, collects results into a Run struct. Mentions key details: result aggregation, timing, pass/fail tracking, and the Scorecard function. Shows understanding of the code structure by referencing specific fields or methods.",
 			MinToolCalls: 1},
 
 		// ── Searching ──
-		{ID: "search-codebase", Name: "Search Codebase", Category: "research", Difficulty: "medium",
+		{ID: "search-codebase", Name: "Search Codebase", Category: "think", Difficulty: "medium",
 			Query:        "Search for all files that define a function with 'Reflection' in its name. List file paths.",
 			EvalCriteria: "Uses search_files or grep to find Go files containing functions with 'Reflection' in the name. Lists specific file paths (should include llm_reflection.go at minimum). Results are concrete and verifiable.",
 			MinToolCalls: 1},
@@ -105,7 +106,7 @@ func FullCapabilityTasks() []Task {
 			MinToolCalls: 1},
 
 		// ── Knowledge RAG ──
-		{ID: "knowledge-search", Name: "Knowledge Search", Category: "research", Difficulty: "easy",
+		{ID: "knowledge-search", Name: "Knowledge Search", Category: "think", Difficulty: "easy",
 			Query:        "Use search_knowledge to find any stored facts about error handling or context propagation in this project.",
 			EvalCriteria: "Uses the search_knowledge tool. Reports findings (may be empty if no facts stored yet, which is acceptable). Confirms the search was performed.",
 			MinToolCalls: 1},
@@ -117,7 +118,7 @@ func FullCapabilityTasks() []Task {
 			MinToolCalls: 1},
 
 		// ── Architecture Understanding ──
-		{ID: "arch-synthesis", Name: "Architecture Synthesis", Category: "research", Difficulty: "hard",
+		{ID: "arch-synthesis", Name: "Architecture Synthesis", Category: "think", Difficulty: "hard",
 			Query:        "Based on reading key files (CLAUDE.md, kernel/*.go), describe: (1) the layered architecture, (2) the learning pipeline, (3) the CSP actor pattern. Keep under 300 words.",
 			EvalCriteria: "Reads key project files. Describes all three topics: (1) layered architecture from entry points to infra to kernel to tools, (2) learning pipeline with reflection → knowledge → pattern detection → distillation, (3) CSP actor pattern with goroutines and channels. Specific and accurate, not generic. Under ~300 words.",
 			MinToolCalls: 2},
