@@ -32,6 +32,7 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 		MaxRounds:    cfg.Kernel.MaxRounds,
 		MaxTokens:    cfg.Kernel.MaxTokens,
 		SystemPrompt: systemPrompt,
+		ReActMode:    cfg.Kernel.ReActMode,
 	}
 	if kernelConfig.MaxRounds == 0 {
 		kernelConfig.MaxRounds = 10
