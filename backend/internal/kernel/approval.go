@@ -93,9 +93,9 @@ Reply with ONE word: safe, caution, or dangerous.`, req.Tool, req.Args)
 
 	risk := strings.TrimSpace(strings.ToLower(resp.Content))
 	switch {
-	case strings.Contains(risk, "safe"):
+	case risk == "safe":
 		return &ApprovalResult{Approved: true, Reason: "LLM assessed as safe"}
-	case strings.Contains(risk, "caution"):
+	case risk == "caution":
 		return &ApprovalResult{Approved: false, Reason: fmt.Sprintf("LLM assessed as caution: check args '%s'", req.Args)}
 	default:
 		return &ApprovalResult{Approved: false, Reason: fmt.Sprintf("LLM assessed as dangerous: %s", risk)}

@@ -109,7 +109,7 @@ func TestSelfRewarding_Criteria(t *testing.T) {
 	}
 
 	// Update from reflection suggestions
-	exec := &ExecutionRecord{Query: "fix the login bug"}
+	exec := &ExecutionRecord{Query: "fix the login bug", TaskType: "coding"}
 	r.UpdateCriteriaFromReflection(exec, []string{
 		"CRITERIA: For coding tasks, check: (1) file read before edit, (2) diff_edit precision, (3) test pass verification",
 		"regular suggestion without prefix",

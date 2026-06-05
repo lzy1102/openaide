@@ -157,7 +157,7 @@ func (c *NovelCompressor) generateCliffhanger(messages []kernel.Message) string 
 	// 检查是否有失败的工具调用
 	for i := len(messages) - 1; i >= 0; i-- {
 		msg := messages[i]
-		if msg.Role == "tool" && strings.Contains(strings.ToLower(msg.Content), "error") {
+		if msg.Role == "tool" && strings.HasPrefix(strings.TrimSpace(msg.Content), "Error:") {
 			return "存在未解决的工具调用错误"
 		}
 	}
@@ -167,19 +167,14 @@ func (c *NovelCompressor) generateCliffhanger(messages []kernel.Message) string 
 
 // extractTopics 提取主题
 func (c *NovelCompressor) extractTopics(messages []kernel.Message) []string {
-	// 简单关键词提取
+	// Extract frequent meaningful words (no hardcoded term list)
 	keywords := map[string]int{}
-	techTerms := []string{
-		"代码", "函数", "类", "接口", "bug", "错误", "修复",
-		"优化", "性能", "测试", "部署", "git", "commit",
-		"数据库", "API", "HTTP", "JSON", "配置",
-	}
 
 	for _, msg := range messages {
-		lower := strings.ToLower(msg.Content)
-		for _, term := range techTerms {
-			if strings.Contains(lower, strings.ToLower(term)) {
-				keywords[term]++
+		for _, word := range strings.Fields(strings.ToLower(msg.Content)) {
+			word = strings.Trim(word, ".,;:!?()[]{}\"")
+			if len(word) > 3 {
+				keywords[word]++
 			}
 		}
 	}

@@ -92,7 +92,8 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 	} else {
 		// Self-correction loop: if reviewer finds issues, retry
 		for retry := 0; retry < 2; retry++ {
-			if strings.Contains(reviewResult, "NEEDS_FIX") || strings.Contains(reviewResult, "[需要返工]") {
+			reviewUpper := strings.ToUpper(reviewResult)
+			if strings.Contains(reviewUpper, "NEEDS_FIX") || strings.Contains(reviewUpper, "NEEDS FIX") || strings.Contains(reviewResult, "[需要返工]") {
 				fixResult, ferr := o.RunSubAgent(ctx, userID, projectID, "coder",
 					"Fix the issues found by the reviewer. Do NOT add features — only fix the issues listed:\n"+reviewResult,
 					results)
@@ -184,8 +185,9 @@ func (o *Orchestrator) executeBranch(ctx context.Context, userID, projectID, tri
 
 // detectBranchSignal checks if a sub-agent result contains a discovery signal.
 func detectBranchSignal(content string) (bool, string) {
+	upper := strings.ToUpper(content)
 	for _, marker := range []string{"[DISCOVERY:]", "[REPLAN:]", "DISCOVERY:", "REPLAN:"} {
-		if idx := strings.Index(content, marker); idx >= 0 {
+		if idx := strings.Index(upper, marker); idx >= 0 {
 			end := strings.Index(content[idx:], "\n")
 			if end < 0 {
 				end = len(content) - idx

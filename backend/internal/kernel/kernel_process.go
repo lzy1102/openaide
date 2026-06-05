@@ -297,6 +297,7 @@ func (k *AgentKernel) doReflection(ctx context.Context, sessionID, query, respon
 		Success:   toolErrors == 0,
 		ToolCalls: make([]ToolCall, 0),
 		Messages:  k.loadSessionMessages(ctx, sessionID),
+		TaskType:  k.detectTaskType(ctx, query),
 	}
 
 	result, err := k.reflection.Reflect(ctx, sessionID, record)

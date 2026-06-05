@@ -371,29 +371,13 @@ func (c *Config) normalize() {
 		return
 	}
 
-	// 从模型名自动推断 provider；base_url 用户可显式覆盖
+	// Auto-detect provider identity from model name at config load time.
+	// API type follows provider: openai-compatible for most, anthropic for Claude.
 	model := strings.ToLower(c.LLM.Model)
-	provider := "anthropic"
-	baseURL := c.LLM.BaseURL
-
-	switch {
-	case strings.Contains(model, "deepseek"):
-		provider = "deepseek"
-		if baseURL == "" { baseURL = "https://api.deepseek.com/v1" }
-	case strings.Contains(model, "claude"):
-		provider = "anthropic"
-		if baseURL == "" { baseURL = "https://api.anthropic.com" }
-	case strings.Contains(model, "gpt") || strings.Contains(model, "o1") || strings.Contains(model, "o3") || strings.Contains(model, "o4"):
-		provider = "openai"
-		if baseURL == "" { baseURL = "https://api.openai.com/v1" }
-	default:
-		if baseURL == "" { baseURL = "https://api.openai.com/v1" }
-		provider = "openai"
-	}
-
-	providerType := "anthropic"
-	if strings.Contains(baseURL, "openai") || (strings.Contains(baseURL, "/v1") && !strings.Contains(baseURL, "anthropic")) {
-		providerType = "openai"
+	provider, baseURL := resolveProvider(model, c.LLM.BaseURL)
+	providerType := "openai"
+	if provider == "anthropic" {
+		providerType = "anthropic"
 	}
 
 	c.LLM.DefaultProvider = provider
@@ -501,20 +485,42 @@ func expandPath(p, home string) string {
 }
 
 // guessContextSize 从模型名推断上下文大小
-func guessContextSize(model string) int {
+
+// resolveProvider determines provider identity from model name at config load time.
+// This is a startup-time heuristic — not a runtime decision. Users should configure
+// providers explicitly in config.yaml for reliable results.
+func resolveProvider(model, explicitBaseURL string) (provider, baseURL string) {
 	m := strings.ToLower(model)
 	switch {
-	case strings.Contains(m, "gemini") || strings.Contains(m, "1m"):
-		return 1000000
-	case strings.Contains(m, "v4") || strings.Contains(m, "v3"):
-		return 1000000
-	case strings.Contains(m, "opus") || strings.Contains(m, "sonnet") || strings.Contains(m, "haiku"):
-		return 200000
-	case strings.Contains(m, "gpt-4") || strings.Contains(m, "gpt-5") || strings.Contains(m, "o"):
-		return 128000
+	case strings.Contains(m, "deepseek"):
+		baseURL = "https://api.deepseek.com/v1"
+		provider = "deepseek"
+	case strings.Contains(m, "claude") || strings.Contains(m, "anthropic"):
+		baseURL = "https://api.anthropic.com"
+		provider = "anthropic"
+	case strings.Contains(m, "gpt") || strings.Contains(m, "o1") || strings.Contains(m, "o3") || strings.Contains(m, "o4"):
+		baseURL = "https://api.openai.com/v1"
+		provider = "openai"
 	default:
-		return 200000
+		baseURL = "https://api.openai.com/v1"
+		provider = "openai"
 	}
+	if explicitBaseURL != "" {
+		baseURL = explicitBaseURL
+	}
+	return
+}
+
+func guessContextSize(model string) int {
+	m := strings.ToLower(model)
+	// Known model families with large context windows
+	largeCtx := []string{"deepseek-v4", "deepseek-v3", "deepseek-r1", "gemini", "1m", "pro"}
+	for _, prefix := range largeCtx {
+		if strings.Contains(m, prefix) {
+			return 1000000
+		}
+	}
+	return 200000
 }
 
 

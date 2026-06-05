@@ -522,32 +522,15 @@ func (pm *ProjectMind) ConventionsForPrompt() string {
 	return sb.String()
 }
 
-// AnalyzeBuildError 从构建/测试错误中提取约定
+// AnalyzeBuildError records that a build/test error occurred for pattern learning.
+// Actual convention extraction is done by LLM reflection — this just records the event.
 func (pm *ProjectMind) AnalyzeBuildError(output string) {
-	// 命名约定检测
-	if strings.Contains(output, "undefined:") && strings.Contains(output, "snake_case") {
-		pm.LearnConvention("命名使用 camelCase, 不要用 snake_case", "go build 错误")
-	}
-	if strings.Contains(output, "exported") && strings.Contains(output, "should have comment") {
-		pm.LearnConvention("导出符号需要注释", "go build 警告")
-	}
-	// 依赖检测
-	if strings.Contains(output, "cannot find package") {
-		pm.LearnConvention("缺少依赖时先检查 go.mod 和 import 路径", "go build 错误")
-	}
-	if strings.Contains(output, "testify") || strings.Contains(output, "stretchr/testify") {
-		pm.LearnConvention("测试框架: testify (github.com/stretchr/testify)", "测试输出")
-	}
-	// 导入检测
-	if strings.Contains(output, "import cycle") {
-		pm.LearnConvention("注意包之间的循环依赖，考虑拆分或提取公共接口", "go build 错误")
-	}
-	// 错误处理
-	if strings.Contains(output, "error strings should not be capitalized") {
-		pm.LearnConvention("Go 错误消息不要大写开头", "go vet 警告")
-	}
-	if strings.Contains(output, "should not use underscores in Go names") {
-		pm.LearnConvention("Go 命名不要用下划线，用驼峰命名", "go vet 警告")
+	if output != "" {
+		errMsg := output
+		if len(errMsg) > 500 {
+			errMsg = errMsg[:500]
+		}
+		pm.RecordExecution("build", "", false, nil, nil, []string{errMsg}, 0, "")
 	}
 }
 

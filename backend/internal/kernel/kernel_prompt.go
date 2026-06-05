@@ -1,6 +1,7 @@
 package kernel
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -427,119 +428,50 @@ func (k *AgentKernel) buildSystemPrompt(query *Query) string {
 	return sb.String()
 }
 // promptL3 returns the task adapter for the current query.
-// Called per-query as dynamic tail — not cached in system prefix.
-func promptL3(query string) string {
+func (k *AgentKernel) promptL3(ctx context.Context, query string) string {
 	dir := os.Getenv("HOME") + "/.openaide/data/prompts"
-	task := detectTaskType(query)
+	task := k.detectTaskType(ctx, query)
 	if l3 := loadPromptFile(dir, "l3_"+task+".md"); l3 != "" {
 		return l3
 	}
 	if isZhEnv() {
-		return promptL3_task_ZH(detectTaskType(query))
+		return promptL3_task_ZH(task)
 	}
-	return promptL3_task_EN(detectTaskType(query))
+	return promptL3_task_EN(task)
 }
 
+// detectTaskType classifies the query via LLM into one of five task types.
+func (k *AgentKernel) detectTaskType(ctx context.Context, query string) string {
+	prompt := `Classify this user query into exactly one category: coding, review, teaching, research, general.
 
-// detectTaskType returns "coding", "review", "teaching", "research", or "general".
-// Uses keyword scoring: each matching keyword adds 1 point. Highest score wins.
-// On tie, the longest matching keyword's category wins (more specific intent).
-func detectTaskType(query string) string {
-	types := []struct {
-		name     string
-		keywords []string
-	}{
-		{"coding", []string{"code", "fix", "refactor", "implement", "write", "bug", "test",
-			"代码", "修复", "重构", "实现", "写", "测试", "改", "build", "add", "create",
-			"function", "api", "endpoint", "handler", "route", "component", "module", "class"}},
-		{"review", []string{"review", "audit", "check", "security", "vulnerability",
-			"审查", "审计", "检查", "安全", "漏洞"}},
-		{"teaching", []string{"explain", "how", "what", "why", "document", "tutorial",
-			"解释", "怎么", "为什么", "文档", "教程", "介绍", "describe"}},
-		{"research", []string{"research", "investigate", "analyze", "compare", "options",
-			"研究", "调查", "分析", "比较", "方案", "设计", "架构", "design", "architecture"}},
-	}
+Definitions:
+- coding: writing, fixing, refactoring, or implementing code
+- review: auditing, checking security, reviewing changes
+- teaching: explaining concepts, how-to questions, documentation
+- research: investigating, analyzing architecture, comparing options, designing systems
+- general: greetings, chitchat, or none of the above
 
-	scores := make([]int, len(types))
-	type match struct{ cat int; word string }
-	var matches []match
+Query: ` + query + `
 
-	for i, t := range types {
-		for _, kw := range t.keywords {
-			if containsWord(query, kw) {
-				scores[i]++
-				matches = append(matches, match{i, kw})
-			}
-		}
-	}
+Answer with ONLY the category name (one word).`
 
-	best, bestScore := -1, 0
-	for i, s := range scores {
-		if s > bestScore {
-			bestScore = s
-			best = i
-		}
-	}
-	if best < 0 {
+	resp, err := k.llmProvider.Chat(ctx, []Message{
+		{Role: "user", Content: prompt},
+	}, nil, map[string]interface{}{
+		"route":       "execution",
+		"no_thinking": true,
+	})
+	if err != nil {
 		return "general"
 	}
 
-	// Tie-break: longest matching keyword wins
-	tieCount := 0
-	for _, s := range scores {
-		if s == bestScore { tieCount++ }
-	}
-	if tieCount > 1 {
-		longest, longestCat := "", best
-		for _, m := range matches {
-			if scores[m.cat] > 0 && len(m.word) > len(longest) {
-				longest = m.word
-				longestCat = m.cat
-			}
-		}
-		return types[longestCat].name
-	}
-	return types[best].name
-}
-
-// containsWord checks if kw appears as a word or CJK substring.
-// ASCII keywords must match whole words (not substrings like "code" in "codebase").
-// CJK keywords use substring matching (each character is a natural word boundary).
-func containsWord(s, kw string) bool {
-	if len(kw) == 0 {
-		return false
-	}
-	if isCJK(kw) {
-		return strings.Contains(strings.ToLower(s), kw)
-	}
-	lower := strings.ToLower(s)
-	idx := 0
-	for {
-		i := strings.Index(lower[idx:], kw)
-		if i < 0 {
-			return false
-		}
-		pos := idx + i
-		prev := pos == 0 || !isLetter(rune(lower[pos-1]))
-		next := pos+len(kw) >= len(lower) || !isLetter(rune(lower[pos+len(kw)]))
-		if prev && next {
-			return true
-		}
-		idx = pos + 1
-	}
-}
-
-func isCJK(s string) bool {
-	for _, r := range s {
-		if r >= 0x4E00 && r <= 0x9FFF {
-			return true
+	result := strings.TrimSpace(strings.ToLower(resp.Content))
+	for _, cat := range []string{"coding", "review", "teaching", "research", "general"} {
+		if strings.HasPrefix(result, cat) {
+			return cat
 		}
 	}
-	return false
-}
-
-func isLetter(r rune) bool {
-	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
+	return "general"
 }
 
 // loadPromptFile reads a prompt file if it exists.
@@ -552,15 +484,6 @@ func loadPromptFile(dir, name string) string {
 }
 
 // ── Helpers ─────────────────────────────────────────────────
-
-func containsAny(s string, keywords ...string) bool {
-	for _, kw := range keywords {
-		if containsWord(s, kw) {
-			return true
-		}
-	}
-	return false
-}
 
 // defaultSystemPrompt returns the default system prompt based on locale.
 func defaultSystemPrompt() string {

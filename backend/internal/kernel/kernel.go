@@ -281,7 +281,7 @@ func (k *AgentKernel) buildMessages(ctx context.Context, session *Session, query
 	// ── Dynamic Tail: Layers 3-6 (after user query, varies per query) ──
 
 		// L3: Task Adapter (coding/review/teaching/research) — per-query, not cached
-		if l3 := promptL3(query.Content); l3 != "" {
+		if l3 := k.promptL3(ctx, query.Content); l3 != "" {
 			messages = append(messages, Message{Role: "system", Content: l3})
 		}
 

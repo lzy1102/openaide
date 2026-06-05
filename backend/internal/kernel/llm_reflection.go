@@ -185,16 +185,15 @@ func parseReflectionResult(jsonStr string) (*ReflectionResult, error) {
 }
 
 func (r *LLMReflection) criteriaForExecution(exec *ExecutionRecord) string {
-	taskType := detectTaskType(exec.Query)
-	if criteria, ok := r.criteria[taskType]; ok {
-		return fmt.Sprintf("## Evaluation Criteria for %s tasks\n%s\n", taskType, criteria)
+	if criteria, ok := r.criteria[exec.TaskType]; ok {
+		return fmt.Sprintf("## Evaluation Criteria for %s tasks\n%s\n", exec.TaskType, criteria)
 	}
 	return ""
 }
 
 // UpdateCriteriaFromReflection extracts updated criteria from reflection suggestions.
 func (r *LLMReflection) UpdateCriteriaFromReflection(exec *ExecutionRecord, suggestions []string) {
-	taskType := detectTaskType(exec.Query)
+	taskType := exec.TaskType
 	for _, s := range suggestions {
 		if strings.HasPrefix(s, "CRITERIA:") {
 			r.criteria[taskType] = strings.TrimSpace(s[9:])

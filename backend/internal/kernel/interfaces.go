@@ -165,6 +165,7 @@ type ExecutionRecord struct {
 	Error      string     `json:"error,omitempty"`
 	Duration   int64      `json:"duration"`
 	Messages   []Message  `json:"messages,omitempty"` // full ReAct history for process supervision
+	TaskType   string     `json:"task_type,omitempty"` // coding/review/teaching/research/general
 }
 
 // ReflectionResult 反思结果

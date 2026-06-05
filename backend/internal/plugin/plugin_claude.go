@@ -215,64 +215,31 @@ var claudeToolMap = map[string]string{
 	"LSP":            "lsp_definition",
 }
 
-// generateKeywords 从 name 和 description 自动生成中英文关键词
+// generateKeywords derives lightweight keyword hints from plugin name and description.
+// Actual skill detection is LLM-native (SkillActor.DetectSkill); these serve as indexes.
 func generateKeywords(name, description string) []string {
 	var kw []string
-	text := strings.ToLower(name + " " + description)
-
-	// 英文关键词：name 的连字符分隔部分
-	for _, part := range strings.Split(name, "-") {
-		if len(part) > 1 {
-			kw = append(kw, part)
-		}
-	}
-	// name 整体
-	kw = append(kw, name)
-
-	// 英文常用词映射
-	enKeywordMap := map[string][]string{
-		"review":     {"review", "审查", "检查代码", "code review"},
-		"commit":     {"commit", "提交", "git commit", "暂存"},
-		"debug":      {"debug", "调试", "报错", "error", "bug", "不工作"},
-		"refactor":   {"refactor", "重构", "重写", "整理代码"},
-		"explain":    {"explain", "解释", "说明", "什么意思"},
-		"test":       {"test", "测试", "单元测试", "集成测试"},
-		"deploy":     {"deploy", "部署", "发布", "上线"},
-		"security":   {"security", "安全", "漏洞", "审计"},
-		"doc":        {"doc", "文档", "readme", "注释"},
-		"format":     {"format", "格式化", "fmt", "lint"},
-		"build":      {"build", "构建", "编译", "打包"},
-		"ci":         {"ci", "pipeline", "流水线", "持续集成"},
-		"migrate":    {"migrate", "迁移", "数据库迁移"},
-		"translate":  {"translate", "翻译", "译文", "本地化"},
-		"analyze":    {"analyze", "分析", "性能分析", "profiling"},
-		"search":     {"search", "搜索", "查找", "检索"},
-		"fix":        {"fix", "修复", "改正", "修正"},
-		"generate":   {"generate", "生成", "创建", "新建"},
-		"optimize":   {"optimize", "优化", "性能优化"},
-	}
-
 	added := map[string]bool{}
+
+	// Name parts as keywords
 	for _, part := range strings.Split(name, "-") {
-		if terms, ok := enKeywordMap[part]; ok {
-			for _, t := range terms {
-				if !added[t] {
-					kw = append(kw, t)
-					added[t] = true
-				}
-			}
+		if len(part) > 1 && !added[part] {
+			kw = append(kw, part)
+			added[part] = true
 		}
 	}
+	// Whole name
+	if !added[name] {
+		kw = append(kw, name)
+		added[name] = true
+	}
 
-	// 从 description 提取中文关键词（简单启发式）
-	for _, term := range []string{"代码", "审查", "安全", "重构", "调试", "测试", "文档",
-		"部署", "提交", "搜索", "解释", "分析", "翻译", "格式化", "迁移", "优化", "生成",
-		"修复", "构建", "编译", "review", "debug", "test", "security", "deploy",
-		"commit", "refactor", "format", "build", "search", "explain", "translate",
-		"analyze", "migrate", "fix", "generate", "optimize"} {
-		if strings.Contains(text, term) && !added[term] {
-			kw = append(kw, term)
-			added[term] = true
+	// Description words (simple tokenization)
+	for _, word := range strings.Fields(strings.ToLower(description)) {
+		word = strings.Trim(word, ".,;:!?()[]{}\"'")
+		if len(word) > 2 && !added[word] {
+			kw = append(kw, word)
+			added[word] = true
 		}
 	}
 

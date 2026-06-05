@@ -63,21 +63,11 @@ func (r *Router) Route(query string) (provider, model string, matched bool) {
 
 // ============ 内置路由规则 ============
 
-// DefaultRouter 内置路由规则
+// DefaultRouter returns an empty router. Model routing decisions are made by
+// the LLM via route:"execution"/"reasoning" options and the model_routing config.
+// Users can add custom regex rules via config if needed for specific providers.
 func DefaultRouter() *Router {
-	return NewRouter([]RouteRule{
-		// 代码相关任务 → 优先用支持思考的模型
-		{Name: "coding", Pattern: "代码|写.*程序|编程|debug|调试|bug|错误|修复|fix|refactor|重构|函数|function|class|类|API|接口|实现|写.*代码|后端|前端|Go|Python|Rust|TypeScript|编译|build|test|测试", Provider: "", Model: "", Priority: 10},
-
-		// 搜索/知识查询 → 用便宜快速的模型
-		{Name: "search", Pattern: "搜索|查询|查找|最新|什么|怎么|如何|为什么|定义|解释|说明|介绍|简述", Provider: "", Model: "", Priority: 5},
-
-		// 翻译任务
-		{Name: "translate", Pattern: "翻译|translate|译成|英译|中译", Provider: "", Model: "", Priority: 5},
-
-		// 简单对话/问候 → 用便宜模型
-		{Name: "chat", Pattern: "^你好|^嗨|^hello|^hi|谢谢|再见|bye|好的|ok|嗯|哦|天气|笑话|故事", Provider: "", Model: "", Priority: 1},
-	})
+	return NewRouter(nil)
 }
 
 // ============ 路由配置解析 ============
