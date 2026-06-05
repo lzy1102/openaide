@@ -229,6 +229,16 @@ func detectProjectLangs(dir string) []string {
 		{"CMakeLists.txt", "c"},
 		{"Makefile", "c"},
 		{"Package.swift", "swift"},
+		{"composer.json", "php"},
+		{"Gemfile", "ruby"},
+		{"build.sbt", "scala"},
+		{"pubspec.yaml", "dart"},
+		{"mix.exs", "elixir"},
+		{"stack.yaml", "haskell"},
+		{"rebar.config", "erlang"},
+		{"dune-project", "ocaml"},
+		{"cpanfile", "perl"},
+		// Additional: glob-based checks
 	}
 	var langs []string
 	seen := map[string]bool{}
@@ -239,16 +249,23 @@ func detectProjectLangs(dir string) []string {
 			seen[c.lang] = true
 		}
 	}
-	// C#: check for .csproj or .sln files
-	if !seen["csharp"] {
-		if matches, _ := filepath.Glob(filepath.Join(dir, "*.csproj")); len(matches) > 0 {
-			langs = append(langs, "csharp")
-			seen["csharp"] = true
-		}
-		if !seen["csharp"] {
-			if matches, _ := filepath.Glob(filepath.Join(dir, "*.sln")); len(matches) > 0 {
-				langs = append(langs, "csharp")
-			}
+	// Glob-based detection (patterns, not single files)
+	globChecks := []struct{ pattern, lang string }{
+		{"*.csproj", "csharp"},
+		{"*.sln", "csharp"},
+		{"*.cabal", "haskell"},
+		{"*.c", "c"},
+		{"*.cpp", "c"},
+		{"*.r", "r"},
+		{"*.lua", "lua"},
+		{"*.jl", "julia"},
+		{"*.dart", "dart"},
+	}
+	for _, gc := range globChecks {
+		if seen[gc.lang] { continue }
+		if matches, _ := filepath.Glob(filepath.Join(dir, gc.pattern)); len(matches) > 0 {
+			langs = append(langs, gc.lang)
+			seen[gc.lang] = true
 		}
 	}
 	return langs
@@ -259,21 +276,45 @@ func langConventions(lang string) string {
 	case "go":
 		return "- Go: explicit error handling, short names, defer for cleanup. Tests: table-driven with testing.T. Format: gofmt. Prefer composition, small interfaces. Use context.Context."
 	case "java":
-		return "- Java: camelCase naming, checked exceptions or unchecked with documentation. Tests: JUnit 5. Build: Maven (pom.xml) or Gradle. Use try-with-resources for AutoCloseable. Prefer immutable objects, dependency injection."
+		return "- Java: camelCase naming, checked exceptions or unchecked with documentation. Tests: JUnit 5. Build: Maven or Gradle. Use try-with-resources for AutoCloseable. Prefer immutable objects, dependency injection."
 	case "kotlin":
-		return "- Kotlin: camelCase naming, prefer val over var, use nullable types explicitly (?.). Tests: JUnit 5 or Kotest. Build: Gradle with kotlin DSL. Use coroutines for async, avoid GlobalScope."
+		return "- Kotlin: camelCase naming, prefer val over var, nullable types explicitly (?.). Tests: JUnit 5 or Kotest. Build: Gradle with kotlin DSL. Use coroutines for async, avoid GlobalScope."
 	case "c":
-		return "- C/C++: follow existing code style (clang-format if configured). Check memory management: malloc/free, new/delete paired correctly, no use-after-free. Tests: whatever framework the project uses (CUnit, GTest, Catch2). Use RAII in C++. No undefined behavior."
+		return "- C/C++: follow existing clang-format config if present. Check memory: malloc/free paired, no use-after-free, no buffer overflows. C++: RAII, rule of five, smart pointers, no raw new/delete. Tests: CUnit/GTest/Catch2."
 	case "csharp":
-		return "- C#: follow Microsoft conventions. Use async/await with Task. Tests: xUnit or NUnit. LINQ for collections, avoid inefficient multiple enumerations. Use 'using' for IDisposable. Properties instead of public fields."
+		return "- C#: follow Microsoft conventions. Use async/await with Task. Tests: xUnit or NUnit. LINQ for collections, avoid multiple enumeration. 'using' for IDisposable. Properties, not public fields."
 	case "swift":
-		return "- Swift: follow Swift API Design Guidelines. Use let over var, optionals over force-unwrap. Tests: XCTest. Prefer structs over classes where possible. Use protocol-oriented design. MainActor for UI updates."
+		return "- Swift: follow Swift API Design Guidelines. let over var, optionals over force-unwrap. Tests: XCTest. Prefer structs over classes. Protocol-oriented design. MainActor for UI."
+	case "php":
+		return "- PHP: follow PSR-12. Use strict types (declare(strict_types=1)). Use type hints for parameters and returns. Tests: PHPUnit. Prefer dependency injection. Avoid global state. Use Composer for packages."
+	case "ruby":
+		return "- Ruby: follow community style guide (RuboCop). Use symbols for hash keys when appropriate. Tests: RSpec or Minitest. Prefer enumerable methods over loops. Use Bundler for dependencies. Favor composition."
+	case "scala":
+		return "- Scala: prefer immutable data structures, val over var. Use pattern matching, not isInstanceOf. Tests: ScalaTest. Functional style: map/flatMap/fold over loops. Implicit parameters documented. Use sbt or Mill."
+	case "dart":
+		return "- Dart: follow Effective Dart guidelines. Use final over var where possible. Null safety: explicit ? and !. Tests: test package. Async: Future/Stream with async/await. Widget testing with flutter_test if Flutter."
+	case "haskell":
+		return "- Haskell: follow existing style (stylish-haskell or hindent). Pure functions over IO where possible. Use types to encode invariants. Tests: Hspec or Tasty. Avoid partial functions (head, fromJust). Use stack or cabal."
+	case "elixir":
+		return "- Elixir: follow community conventions. Pattern matching over conditionals. Tests: ExUnit. Use with for chaining. Supervisor trees for fault tolerance. Pipe operator for data transformation. Avoid {:ok, _} ignoring errors."
+	case "r":
+		return "- R: follow tidyverse style guide. Use <- for assignment. Vectorized operations over explicit loops. Tests: testthat. Prefer dplyr/purrr over base apply when in tidyverse project. Document functions with roxygen2."
+	case "lua":
+		return "- Lua: follow existing project style. Use local variables by default. Tests: busted or luaunit. Prefer table-based modules. Avoid global namespace pollution. Keep it simple — Lua philosophy."
+	case "julia":
+		return "- Julia: follow SciML style guide. Type-stable functions for performance. Tests: Test standard library. Multiple dispatch over class hierarchies. Use @assert for invariants. Avoid global variables in loops."
+	case "erlang":
+		return "- Erlang: follow Erlang Programming Rules. Let it crash philosophy with supervisor trees. Pattern matching in function heads. Tests: EUnit or Common Test. Use OTP behaviours (gen_server, gen_statem). Immutable data."
+	case "ocaml":
+		return "- OCaml: follow OCaml Programming Guidelines. Prefer pattern matching over if/else. Use types to prevent errors. Tests: Alcotest or OUnit. Use dune for builds. Prefer tail recursion for performance."
+	case "perl":
+		return "- Perl: use strict and warnings. Tests: Test::More or Test2. Use Perl::Tidy or perltidy for formatting. Prefer lexical filehandles and three-arg open. Use CPAN modules over reinventing. Keep regex readable with /x modifier."
 	case "node":
-		return "- Node/JS/TS: follow project's ESLint/Prettier config. Use async/await, not raw promises. Handle promise rejections. Tests: the framework in the project (Jest/Mocha/Vitest). One component per file."
+		return "- Node/JS/TS: follow project's ESLint/Prettier config. async/await, not raw promises. Handle rejections. Tests: the framework in the project (Jest/Mocha/Vitest). One component per file."
 	case "python":
-		return "- Python: follow PEP 8, type hints for function signatures. Tests: pytest or project's framework. Virtual environments. Explicit over implicit, handle exceptions specifically."
+		return "- Python: follow PEP 8, type hints. Tests: pytest or project's framework. Virtual environments. Explicit over implicit, handle exceptions specifically."
 	case "rust":
-		return "- Rust: use Result/Option, match exhaustively, derive common traits. Format: cargo fmt, lint: cargo clippy. Tests: #[cfg(test)] with #[test]. Own your data, prefer owned over borrowed in structs."
+		return "- Rust: use Result/Option, match exhaustively, derive common traits. Format: cargo fmt, lint: cargo clippy. Tests: #[cfg(test)] with #[test]. Own your data."
 	}
 	return ""
 }
