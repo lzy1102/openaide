@@ -212,3 +212,24 @@ type KnowledgeItem struct {
 	Content string   `json:"content"`
 	Tags    []string `json:"tags"`
 }
+
+// KnowledgeAccessor is a minimal interface for knowledge tool access (avoids circular imports).
+type KnowledgeAccessor interface {
+	AddKnowledge(ctx context.Context, title, content, source string, tags []string) (string, error)
+	SearchKnowledge(ctx context.Context, query string, limit int) ([]KnowledgeItem, error)
+}
+
+type ctxKey string
+
+const knowledgeCtxKey ctxKey = "knowledge"
+
+// WithKnowledge injects a KnowledgeAccessor into the context for tool use.
+func WithKnowledge(ctx context.Context, kb KnowledgeAccessor) context.Context {
+	return context.WithValue(ctx, knowledgeCtxKey, kb)
+}
+
+// GetKnowledge retrieves a KnowledgeAccessor from the context.
+func GetKnowledge(ctx context.Context) (KnowledgeAccessor, bool) {
+	kb, ok := ctx.Value(knowledgeCtxKey).(KnowledgeAccessor)
+	return kb, ok
+}

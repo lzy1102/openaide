@@ -8,7 +8,6 @@ import (
 
 	"openaide/backend/internal/kernel"
 	"openaide/backend/internal/projectmind"
-	"openaide/backend/internal/tools"
 )
 
 // PlanApprover 规划审批回调：返回 true 表示批准执行
@@ -269,7 +268,7 @@ func (o *Orchestrator) processSingle(ctx context.Context, userID, projectID, con
 
 	// 注入知识库到 context（供工具 handler 使用）
 	if o.knowledge != nil {
-		ctx = tools.WithKnowledge(ctx, o.knowledge)
+		ctx = kernel.WithKnowledge(ctx, o.knowledge)
 	}
 
 	// 注入 ProjectMind 项目知识
@@ -312,7 +311,7 @@ func (o *Orchestrator) ProcessQueryStream(ctx context.Context, userID, projectID
 
 	// 注入知识库到 context
 	if o.knowledge != nil {
-		ctx = tools.WithKnowledge(ctx, o.knowledge)
+		ctx = kernel.WithKnowledge(ctx, o.knowledge)
 	}
 
 	// 注入 ProjectMind 项目知识

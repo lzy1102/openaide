@@ -526,6 +526,10 @@ func (k *AgentKernel) executeTool(ctx context.Context, tc ToolCall, sessionID st
 		}
 	}
 
+	// Inject knowledge accessor so tools like search_knowledge/add_knowledge can access the KB
+	if k.knowledgeCollector != nil {
+		ctx = WithKnowledge(ctx, k.knowledgeCollector)
+	}
 	result, err := k.toolExecutor.Execute(ctx, tc, sessionID)
 	if err != nil {
 		return &ToolResult{Error: err.Error()}

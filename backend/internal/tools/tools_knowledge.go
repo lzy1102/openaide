@@ -56,22 +56,8 @@ func knowledgeToolDefs() []kernel.ToolDefinition {
 	}
 }
 
-// KnowledgeAccessor 知识库访问接口（避免循环导入）
-type KnowledgeAccessor interface {
-	AddKnowledge(ctx context.Context, title, content, source string, tags []string) (string, error)
-	SearchKnowledge(ctx context.Context, query string, limit int) ([]kernel.KnowledgeItem, error)
-}
+// KnowledgeAccessor and WithKnowledge moved to kernel package
 
-type contextKey string
-
-const knowledgeCtxKey contextKey = "knowledge"
-
-// WithKnowledge 将知识库注入 context
-func WithKnowledge(ctx context.Context, kb KnowledgeAccessor) context.Context {
-	return context.WithValue(ctx, knowledgeCtxKey, kb)
-}
-
-// handleSearchKnowledge 搜索知识库
 func handleSearchKnowledge(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
 	var args struct {
 		Query string `json:"query"`
@@ -84,7 +70,7 @@ func handleSearchKnowledge(ctx context.Context, arguments string) (*kernel.ToolR
 	}
 
 	// 通过 context 获取知识库引用
-	kb, ok := ctx.Value(knowledgeCtxKey).(KnowledgeAccessor)
+	kb, ok := kernel.GetKnowledge(ctx)
 	if !ok || kb == nil {
 		return &kernel.ToolResult{Error: "knowledge base not available"}, nil
 	}
@@ -117,7 +103,7 @@ func handleAddKnowledge(ctx context.Context, arguments string) (*kernel.ToolResu
 		return &kernel.ToolResult{Error: "title and content are required"}, nil
 	}
 
-	kb, ok := ctx.Value(knowledgeCtxKey).(KnowledgeAccessor)
+	kb, ok := kernel.GetKnowledge(ctx)
 	if !ok || kb == nil {
 		return &kernel.ToolResult{Error: "knowledge base not available"}, nil
 	}
