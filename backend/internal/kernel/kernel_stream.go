@@ -39,9 +39,9 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 			if r := recover(); r != nil {
 				slog.Error("panic in stream goroutine", "panic", r)
 				select {
-			case resultChan <- StreamChunk{Type: ChunkTypeError, Error: fmt.Errorf("internal error: %v", r), Done: true}:
-			default:
-			}
+				case resultChan <- StreamChunk{Type: ChunkTypeError, Error: fmt.Errorf("internal error: %v", r), Done: true}:
+				default:
+				}
 			}
 		}()
 
@@ -52,7 +52,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 		}
 
 		k.queryOptions = &query.Options
-	maxRounds := k.maxRounds
+		maxRounds := k.maxRounds
 		if k.adaptiveRounds != nil {
 			maxRounds = k.adaptiveRounds.Calculate(ctx, query.Content, len(session.Messages))
 		}
@@ -65,18 +65,21 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 		for round := 0; ; round++ {
 			slog.Debug("ReAct stream round", "round", round, "msg_count", len(messages))
 			snipOldToolOutputs(messages)
-		// 预算注入：过半后提醒 LLM 剩余轮次
-		if round >= maxRounds/2 && round < maxRounds-1 {
-			remaining := maxRounds - round
-			messages = append(messages, Message{
-				Role: "user", Content: fmt.Sprintf("[System] Used %d/%d rounds, %d remaining. Give your final answer now if you have enough information.", round, maxRounds, remaining),
-			})
-		} else if round >= maxRounds-1 {
-		// Same multi-stage logic as sync path — see kernel_react.go
-			messages = append(messages, Message{
-				Role: "user", Content: "[System] Final round — must give final answer. Do NOT call any tools.",
-			})
-		}
+			// 预算注入：过半后提醒 LLM 剩余轮次
+			if round >= maxRounds {
+				break
+			}
+			if round >= maxRounds/2 && round < maxRounds-1 {
+				remaining := maxRounds - round
+				messages = append(messages, Message{
+					Role: "user", Content: fmt.Sprintf("[System] Used %d/%d rounds, %d remaining. Give your final answer now if you have enough information.", round, maxRounds, remaining),
+				})
+			} else if round >= maxRounds-1 {
+				// Same multi-stage logic as sync path — see kernel_react.go
+				messages = append(messages, Message{
+					Role: "user", Content: "[System] Final round — must give final answer. Do NOT call any tools.",
+				})
+			}
 			// 检查上下文长度，必要时压缩
 			if k.compressor != nil {
 				tokenCount := k.compressor.EstimateTokens(messages)
@@ -97,7 +100,9 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 			}
 
 			if query.Options.ModelID != "" {
-				if ms, ok := k.llmProvider.(ModelSwitcher); ok { ms.SetModelID(query.Options.ModelID) }
+				if ms, ok := k.llmProvider.(ModelSwitcher); ok {
+					ms.SetModelID(query.Options.ModelID)
+				}
 			}
 			llmStream, err := k.llmProvider.ChatStream(ctx, messages, tools, k.buildOptions(query.Options))
 			if err != nil {
@@ -109,9 +114,9 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 				}
 				k.setState(StateError)
 				select {
-			case resultChan <- StreamChunk{Type: ChunkTypeError, Error: err, Done: true}:
-			case <-ctx.Done():
-			}
+				case resultChan <- StreamChunk{Type: ChunkTypeError, Error: err, Done: true}:
+				case <-ctx.Done():
+				}
 				return
 			}
 
@@ -123,9 +128,9 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 			for chunk := range llmStream {
 				if chunk.Error != nil {
 					select {
-				case resultChan <- StreamChunk{Type: ChunkTypeError, Error: chunk.Error, Done: true}:
-				case <-ctx.Done():
-				}
+					case resultChan <- StreamChunk{Type: ChunkTypeError, Error: chunk.Error, Done: true}:
+					case <-ctx.Done():
+					}
 					k.setState(StateError)
 					return
 				}
@@ -181,15 +186,15 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 				session.UpdatedAt = time.Now()
 				ensureSessionTitle(session)
 				if err := k.sessionStore.Update(ctx, session); err != nil {
-		slog.Warn("session update failed", "error", err)
-	}
+					slog.Warn("session update failed", "error", err)
+				}
 				// Copy metadata to avoid concurrent map access in goroutine
-	titleMeta := make(map[string]interface{})
-	for k, v := range session.Metadata {
-		titleMeta[k] = v
-	}
-	session.Metadata = titleMeta
-	go k.generateSessionTitle(session, query.Content)
+				titleMeta := make(map[string]interface{})
+				for k, v := range session.Metadata {
+					titleMeta[k] = v
+				}
+				session.Metadata = titleMeta
+				go k.generateSessionTitle(session, query.Content)
 
 				if k.reflection != nil {
 					go k.doReflection(context.WithoutCancel(ctx), session.ID, query.Content, fullContent.String(), totalToolCalls, toolErrors)
@@ -204,8 +209,12 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 					Timestamp: time.Now(),
 				})
 
+				usage := lastUsage
+				if usage == nil {
+					usage = &TokenUsage{TotalTokens: totalTokens}
+				}
 				select {
-				case resultChan <- StreamChunk{Type: ChunkTypeDone, Done: true, Usage: lastUsage}:
+				case resultChan <- StreamChunk{Type: ChunkTypeDone, Done: true, Usage: usage}:
 				case <-ctx.Done():
 				}
 				return
@@ -250,9 +259,9 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 
 			// 并行执行工具
 			type toolResult struct {
-				id    string
-				name  string
-				msg   Message
+				id   string
+				name string
+				msg  Message
 			}
 			results := make([]toolResult, len(tasks))
 
@@ -266,13 +275,18 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 					continue
 				}
 				if !isParallelSafe(task.Function.Name) {
-					if len(current.indices) > 0 { batches = append(batches, current); current = batch{} }
+					if len(current.indices) > 0 {
+						batches = append(batches, current)
+						current = batch{}
+					}
 					batches = append(batches, batch{indices: []int{i}})
 					continue
 				}
 				current.indices = append(current.indices, i)
 			}
-			if len(current.indices) > 0 { batches = append(batches, current) }
+			if len(current.indices) > 0 {
+				batches = append(batches, current)
+			}
 
 			for _, b := range batches {
 				var wg sync.WaitGroup
@@ -283,15 +297,21 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 					go func(idx int, call ToolCall) {
 						defer wg.Done()
 						var toolCtx context.Context
-						if k.tracer != nil { toolCtx = k.tracer.StartSpan(ctx, session.ID, TraceTool, call.Function.Name) }
+						if k.tracer != nil {
+							toolCtx = k.tracer.StartSpan(ctx, session.ID, TraceTool, call.Function.Name)
+						}
 						r := k.executeTool(ctx, call, session.ID)
 						if k.tracer != nil {
 							var toolErr error
-							if r.Error != "" { toolErr = fmt.Errorf("tool error: %s", r.Error) }
+							if r.Error != "" {
+								toolErr = fmt.Errorf("tool error: %s", r.Error)
+							}
 							k.tracer.EndSpan(toolCtx, map[string]interface{}{"tool": call.Function.Name, "content": r.Content}, toolErr)
 						}
 						content := fmt.Sprintf("%v", r.Content)
-						if r.Error != "" { content = fmt.Sprintf("Error: %s", r.Error); toolErrors++ }
+						if r.Error != "" {
+							content = fmt.Sprintf("Error: %s", r.Error)
+						}
 						results[idx] = toolResult{id: call.ID, name: call.Function.Name, msg: Message{Role: "tool", Content: content, ToolCallID: call.ID}}
 						k.publishEvent(Event{Type: EventToolCallEnded, Source: "kernel", Data: map[string]interface{}{"tool": call.Function.Name, "success": r.Error == "", "session_id": session.ID}, Timestamp: time.Now()})
 					}(i, task.ToolCall)
@@ -301,6 +321,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 			totalToolCalls += len(results)
 			for _, r := range results {
 				if r.msg.Content != "" && strings.HasPrefix(r.msg.Content, "Error:") {
+					toolErrors++
 					slog.Warn("Stream tool failed", "tool", r.name, "error", r.msg.Content[:min(200, len(r.msg.Content))])
 				} else {
 					slog.Debug("Stream tool done", "tool", r.name, "output_len", len(r.msg.Content))
@@ -352,7 +373,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 		k.setState(StateIdle)
 		slog.Debug("ReAct stream max rounds reached, synthesizing", "rounds", maxRounds, "msgs", len(messages), "tokens", totalTokens, "tools", totalToolCalls)
 		messages = append(messages, Message{
-			Role: "user",
+			Role:    "user",
 			Content: "Max rounds reached. Based on all findings above, provide a complete summary. Do NOT call tools — output your final answer directly.",
 		})
 		resp, err := k.llmProvider.Chat(ctx, messages, nil, map[string]interface{}{"temperature": 0.3, "max_tokens": 4000, "route": "reasoning"})
@@ -378,8 +399,8 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 		session.UpdatedAt = time.Now()
 		ensureSessionTitle(session)
 		if err := k.sessionStore.Update(ctx, session); err != nil {
-		slog.Warn("session update failed", "error", err)
-	}
+			slog.Warn("session update failed", "error", err)
+		}
 
 		if k.reflection != nil {
 			go k.doReflection(context.WithoutCancel(ctx), session.ID, query.Content, resp.Content, totalToolCalls, toolErrors)
@@ -387,9 +408,9 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 
 		k.setState(StateIdle)
 		resultChan <- StreamChunk{
-			Type:  ChunkTypeDone,
-			Done:  true,
-			Usage: &TokenUsage{TotalTokens: totalTokens},
+			Type:    ChunkTypeDone,
+			Done:    true,
+			Usage:   &TokenUsage{TotalTokens: totalTokens},
 			Content: resp.Content,
 		}
 	}()
