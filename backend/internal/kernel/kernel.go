@@ -11,6 +11,12 @@ import (
 	"time"
 )
 
+// trackedHandler wraps an EventHandler with a unique ID for safe unsubscribe.
+type trackedHandler struct {
+	id      uint64
+	handler EventHandler
+}
+
 // AgentKernel Agent 内核实现
 // 作为所有 AI 智能的唯一收敛点，实现 ReAct 循环
 type AgentKernel struct {
@@ -39,7 +45,8 @@ type AgentKernel struct {
 	checkpointer Checkpointer
 
 	// 事件系统
-	eventHandlers atomic.Value // []EventHandler — lock-free reads
+	handlerSeq    atomic.Uint64       // monotonic ID counter for tracked handlers
+	eventHandlers atomic.Value        // []trackedHandler — lock-free reads
 
 	// 无锁状态（atomic.Value）
 	systemPrompt atomic.Value // string — read-heavy, written only on config change
@@ -96,7 +103,7 @@ func NewAgentKernel(
 	k.compressor = &SimpleCompressor{}
 	k.systemPrompt.Store(config.SystemPrompt)
 	k.state.Store(StateIdle)
-	k.eventHandlers.Store([]EventHandler{})
+	k.eventHandlers.Store([]trackedHandler{})
 
 	return k
 }
@@ -219,20 +226,27 @@ func (k *AgentKernel) GetState() KernelState {
 	return k.state.Load().(KernelState)
 }
 
-// Subscribe 订阅事件
-func (k *AgentKernel) Subscribe(handler EventHandler) {
-	old := k.eventHandlers.Load().([]EventHandler)
-	newHandlers := make([]EventHandler, len(old)+1)
+// Subscribe 订阅事件，返回 handler ID 用于后续取消订阅
+func (k *AgentKernel) Subscribe(handler EventHandler) uint64 {
+	id := k.handlerSeq.Add(1)
+	old := k.eventHandlers.Load().([]trackedHandler)
+	newHandlers := make([]trackedHandler, len(old)+1)
 	copy(newHandlers, old)
-	newHandlers[len(old)] = handler
+	newHandlers[len(old)] = trackedHandler{id: id, handler: handler}
 	k.eventHandlers.Store(newHandlers)
+	return id
 }
 
-// Unsubscribe 取消订阅
-// 注意: 由于 EventHandlerFunc 是函数类型无法直接比较，调用者应保存 Subscribe 时的返回值
-func (k *AgentKernel) Unsubscribe(handler EventHandler) {
-	// EventHandler 可能是不可比较的函数类型，跳过
-	// 实际使用中 handler 的生命周期跟随应用，通常不需要 Unsubscribe
+// Unsubscribe 通过 ID 取消订阅
+func (k *AgentKernel) Unsubscribe(id uint64) {
+	old := k.eventHandlers.Load().([]trackedHandler)
+	newHandlers := make([]trackedHandler, 0, len(old))
+	for _, th := range old {
+		if th.id != id {
+			newHandlers = append(newHandlers, th)
+		}
+	}
+	k.eventHandlers.Store(newHandlers)
 }
 
 // ============ 内部方法 ============
@@ -370,15 +384,39 @@ func snipOldToolOutputs(messages []Message) {
 			if toolIdx >= keepFull {
 				content := messages[i].Content
 				if len(content) > headLen+tailLen+100 {
-					head := content[:headLen]
-					tail := content[len(content)-tailLen:]
-					snipped := len(content) - headLen - tailLen
+					head := safeSliceHead(content, headLen)
+					tail := safeSliceTail(content, tailLen)
+					snipped := len(content) - len(head) - len(tail)
 					messages[i].Content = fmt.Sprintf("%s\n... [%d chars snipped] ...\n%s", head, snipped, tail)
 				}
 			}
 			toolIdx++
 		}
 	}
+}
+
+// safeSliceHead returns prefix of s up to maxBytes without breaking UTF-8 characters.
+func safeSliceHead(s string, maxBytes int) string {
+	if len(s) <= maxBytes {
+		return s
+	}
+	pos := maxBytes
+	for pos > 0 && s[pos]&0xC0 == 0x80 {
+		pos--
+	}
+	return s[:pos]
+}
+
+// safeSliceTail returns suffix of s approximately tailLen bytes, aligned to UTF-8 boundary.
+func safeSliceTail(s string, tailLen int) string {
+	if len(s) <= tailLen {
+		return s
+	}
+	start := len(s) - tailLen
+	for start < len(s) && s[start]&0xC0 == 0x80 {
+		start++
+	}
+	return s[start:]
 }
 
 func (k *AgentKernel) buildOptions(opts QueryOptions) map[string]interface{} {
@@ -505,24 +543,26 @@ func (k *AgentKernel) GetSlashCommands() map[string]string {
 }
 
 func (k *AgentKernel) publishEvent(event Event) {
-	handlers := k.eventHandlers.Load().([]EventHandler)
+	handlers := k.eventHandlers.Load().([]trackedHandler)
 
-	for _, h := range handlers {
-		h := h
-		go func(handler EventHandler) {
+	for _, th := range handlers {
+		th := th
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
 			done := make(chan struct{}, 1)
 			go func() {
-				handler.HandleEvent(event)
+				th.handler.HandleEvent(event)
 				done <- struct{}{}
 			}()
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer cancel()
-				select {
+
+			select {
 			case <-done:
 			case <-ctx.Done():
-				slog.Warn("Event handler timed out", "event", event.Type)
+				slog.Warn("Event handler timed out", "event", event.Type, "handler_id", th.id)
 			}
-		}(h)
+		}()
 	}
 }
 

@@ -16,11 +16,11 @@ type Kernel interface {
 	// GetState 获取当前状态
 	GetState() KernelState
 
-	// Subscribe 订阅事件
-	Subscribe(handler EventHandler)
+	// Subscribe 订阅事件，返回 handler ID 用于后续取消订阅
+	Subscribe(handler EventHandler) uint64
 
-	// Unsubscribe 取消订阅
-	Unsubscribe(handler EventHandler)
+	// Unsubscribe 通过 ID 取消订阅
+	Unsubscribe(id uint64)
 
 	// GetSlashCommands 获取所有可用的斜杠命令（/name → skillID）
 	GetSlashCommands() map[string]string

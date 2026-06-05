@@ -23,8 +23,8 @@ func (m *mockKernel) ProcessStream(ctx context.Context, query *kernel.Query) (<-
 }
 
 func (m *mockKernel) GetState() kernel.KernelState { return m.state }
-func (m *mockKernel) Subscribe(handler kernel.EventHandler) {}
-func (m *mockKernel) Unsubscribe(handler kernel.EventHandler) {}
+func (m *mockKernel) Subscribe(handler kernel.EventHandler) uint64 { return 0 }
+func (m *mockKernel) Unsubscribe(id uint64)                        {}
 func (m *mockKernel) GetSlashCommands() map[string]string  { return nil }
 
 type mockLLMProvider struct{}
