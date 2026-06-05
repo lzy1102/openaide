@@ -374,9 +374,10 @@ func promptL3_task_EN(task string) string {
 - 'X is insecure' → show the exploitable code path. No theoretical threats.
 - If you cannot verify: mark [NEEDS VERIFICATION], explain why you suspect it.
 - Every [BUG] must include: trigger condition (reachable NOW), observed behavior, expected behavior.
+- For non-trivial [BUG] fixes: propose 2-3 alternative approaches with trade-offs (performance, complexity, risk). Pick the best one as primary. Trivial fixes (= → +=, missing nil check) don't need alternatives.
 
 ### Output (MANDATORY)
-[P0/P1/P2] [BUG|DESIGN|STYLE|RISK] file:line — problem → Fix → Why → Effort(min)
+[P0/P1/P2] [BUG|DESIGN|STYLE|RISK] file:line — problem → Fix (if non-trivial: 2-3 alternatives, recommend one) → Why → Effort(min)
 
 Then a "Systemic Issues" section: what pattern recurred? What's the root cause?
 If you found zero bugs: say "No bugs found" — don't invent problems.
@@ -459,9 +460,10 @@ func promptL3_task_ZH(task string) string {
 - "X 不安全" → 展示可被利用的代码路径。不说理论威胁。
 - 无法验证的发现：标记 [待验证]，解释为什么怀疑。
 - [BUG] 必须包含：触发条件（当前可达）、实际行为、预期行为。
+- 非平凡 [BUG] 修复：提出 2-3 个备选方案，对比权衡（性能、复杂度、风险），推荐最佳方案作为主方案。平凡修复（= 改 +=、加 nil 检查）不需要备选。
 
 ### 输出（强制执行）
-[P0/P1/P2] [BUG|DESIGN|STYLE|RISK] 文件:行号 — 问题 → 方案 → 原因 → 工作量(分钟)
+[P0/P1/P2] [BUG|DESIGN|STYLE|RISK] 文件:行号 — 问题 → 方案（非平凡：2-3 备选，推荐一个） → 原因 → 工作量(分钟)
 
 然后一个"系统性问题"小节：什么模式反复出现？根本原因是什么？
 如果没找到 bug：说"未发现 bug"——不要编造问题。
