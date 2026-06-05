@@ -34,6 +34,11 @@ make run
 
 # Run the CLI
 cd backend && go run ./cmd/cli
+
+# Run evaluation suite
+cd backend && go run ./cmd/eval          # all builtin tasks
+cd backend && go run ./cmd/eval -full    # full capability acceptance
+cd backend && go run ./cmd/eval -quick   # smoke test (easy only)
 ```
 
 ## Architecture
@@ -102,7 +107,7 @@ OpenAIDE is an AI Agent kernel platform in Go. Strictly layered, CSP actor concu
    - `kernel.go` — `AgentKernel` struct, Config, constructor, state management, event system.
    - `kernel_process.go` — `Process()` sync path + `doReflection()` + `autoSaveKnowledge()` + `extractSkillsFromPatterns()`
    - `kernel_stream.go` — `ProcessStream()` streaming path. Tool partitioning with parallel-safe batching.
-   - `kernel_prompt.go` — Layered prompt system (L0-L5), keyword scoring, file overrides, L3 dynamic tail.
+   - `kernel_prompt.go` — Layered prompt system (L0-L5), LLM task classification, file overrides, L3 dynamic tail.
    - `kernel_react.go` — Shared ReAct helpers: prepareReActRound, partitionToolCalls, executeToolBatch
    - `semantic_pattern.go` — SemanticPatternDetector (embedding clustering) + DistillCluster (LLM knowledge extraction)
    - **Sub-packages:**
@@ -160,20 +165,21 @@ OpenAIDE is an AI Agent kernel platform in Go. Strictly layered, CSP actor concu
    - `team.go` — 4 roles with detailed anti-prompt constraints (analyst/coder/reviewer/executor). Each role has "How to work" + "What NOT to do" sections. `routePipeline`: LLM assigns all subtask roles at once. Slash commands: `/analyst`, `/coder`, `/reviewer`, `/executor`, `/team`.
    - `subagent.go` — `RunSubAgent`: isolated session + mini ReAct loop (10 rounds) + role-filtered tools + budget injection + core rules injection + model routing (reasoning vs execution). Sub-agents can actually read, write, and execute — not just return text.
 
-### LLM-driven decision making (replacing hardcoded rules)
+### LLM-driven decision making (zero hardcoded rules)
 
-All judgment calls now delegated to LLM, with rule-based fallbacks:
+All judgment calls delegated to LLM. No keyword matching, no regex routing, no substring heuristics:
+- **Task type classification** (`detectTaskType`): LLM classifies query into coding/review/teaching/research/general (was 45-keyword scoring)
 - **Role assignment** (`assignRole`): LLM picks best team role from task semantics (was 20+ keyword matches)
 - **Pipeline routing** (`routePipeline`): LLM selects needed roles per task (was hardcoded coder→executor→reviewer)
-- **Tool risk assessment** (`AutoApprover.assessWithLLM`): LLM evaluates tool arguments for safety (was hardcoded DangerousTools map)
-- **Skill detection** (`detectWithLLM`): LLM semantic skill matching (was keyword substring scoring)
+- **Model routing**: LLM `route:"execution"/"reasoning"` options (was regex patterns on query text)
+- **Tool risk assessment** (`assessWithLLM`): LLM evaluates tool arguments; exact match parsing (was `Contains("safe")` vulnerable to "unsafe")
+- **Skill detection** (`detectWithLLM`): LLM semantic skill matching (was keyword substring scoring + 18-entry keyword map)
 - **Round estimation** (`AdaptiveRounds.estimateWithLLM`): LLM judges task complexity (was keyword+length heuristics)
 - **Session titles** (`generateSessionTitle`): LLM generates meaningful 3-5 word titles async (was 25-char truncation)
+- **Eval judging**: LLM-as-judge evaluates response quality against natural-language criteria (was `MustContain` keyword matching)
+- **Build error analysis**: LLM reflection extracts conventions (was 7 Go-specific substring patterns)
+- **Plugin keywords**: auto-derived from name + description words (was 18-entry enKeywordMap + 40-term hardcoded list)
 - **User preference** (`detectPreferenceWithLLM`): LLM classifies interaction type (was "代码"/"code" substring)
-- **Router complexity**: removed 17-keyword indicator list; orchestrator LLM planning handles complexity
-- **Reflection**: removed keyword-based quality scoring; LLMReflection handles evaluation with neutral fallback
-- **Planner**: removed "≤5 subtasks" limit; LLM decides appropriate count
-- **Compress**: replaced generic "error" substring with specific error markers
 
 ### Concurrency architecture
 
@@ -286,6 +292,17 @@ LLMReflection learns per-task-type evaluation criteria:
 - **Self-improvement**: After each reflection, LLM can update criteria via `CRITERIA:` prefix in suggestions
 - **Adaptive scoring**: Later reflections use previously learned criteria, making evaluations more precise over time
 
+### Evaluation Framework (LLM-as-Judge)
+
+`backend/internal/eval/` — Benchmark evaluation with LLM semantic judging:
+
+- **LLM-as-Judge**: Uses flash model to judge response quality against natural-language `EvalCriteria` — no keyword matching.
+- **Fallback chain**: Execution model → default model → error (single-model configs work).
+- **Quick pre-checks**: `MustNotContain` (disqualifying patterns) and `MinToolCalls` (tool usage) run before judge.
+- **Task suites**: `BuiltinTasks()` (10 tasks, 3 difficulties), `FullCapabilityTasks()` (7 tasks covering all agent capabilities: read, search, write, diff edit, knowledge RAG, memory, architecture synthesis).
+- **CLI**: `go run ./cmd/eval` with `-full`, `-quick`, `-category`, `-output` flags.
+- **Compare**: `eval.Compare(before, after)` detects regressions and fixes across runs.
+
 ### Memory Management (MemGPT, 2023)
 
 Agent actively manages its own memory via the `manage_memory` tool:
@@ -312,12 +329,11 @@ All tools return structured, agent-friendly output:
 - **Layered architecture**: Stable prefix (L0 Identity + L1 Project + L2 Skill) cached in system message. Dynamic tail (L3 Task Adapter + L5 Reflection + L6 Knowledge RAG) appended per-query.
 - **L0**: Identity + Safety rules, tool strategy (incl. parallel tool guidance), anti-patterns (~400 tokens).
 - **L1**: Project context — working directory, git branch, CLAUDE.md / OPENAIDE.md loading, RepoMap. Auto-detects project language (go/node/python/rust) and injects language-specific conventions.
-- **L3**: Task adapter injected per-query (dynamic tail). Maps task type (coding/review/teaching/research) to mode-specific instructions. Analysis output format ([P0/P1/P2] file:line → Fix → Why → Effort) only in review/research modes — not wasted on coding queries.
-- **Keyword scoring**: `detectTaskType()` uses scoring system with word-boundary matching for English (prevents "code" matching "codebase") and CJK substring matching. Tie-break by longest keyword. Single source of truth — L3 adapters accept task type string directly.
+- **L3**: Task adapter injected per-query (dynamic tail). `detectTaskType()` uses LLM (flash model) to classify query into coding/review/teaching/research/general. Analysis output format ([P0/P1/P2] file:line → Fix → Why → Effort) only in review/research modes — not wasted on coding queries.
 - **File overrides**: Each layer overridable via `~/.openaide/data/prompts/l{0,1,3}_{task}.md`.
 - **Default prompt**: Bilingual (Chinese/English), auto-detected from `LANG` env var.
 - **Runtime hot-reload**: `AgentKernel.SetSystemPrompt()` allows prompt changes without kernel restart.
-- **Skill prompts**: Injected per-query when keywords match, via `skillActor.InjectPrompt()`.
+- **Skill prompts**: LLM semantic skill detection per-query via `skillActor.DetectSkill()`, then injected via `skillActor.InjectPrompt()`.
 
 ### Plugin system (Claude Code compatible)
 
@@ -334,7 +350,7 @@ OpenAIDE is fully compatible with the [Claude Code official plugin specification
 
 **Code locations:**
 - `plugin/plugin.go` — Manager: JSON format plugins + Claude format discovery via `loadClaudeFromDisk()`
-- `plugin/plugin_claude.go` — All Claude format parsing: `DiscoverClaudePlugins()`, `DiscoverClaudeSkills()`, `DiscoverClaudeMCP()`, `DiscoverClaudeHooks()`, YAML frontmatter parsing, tool name mapping, keyword generation, event mapping
+- `plugin/plugin_claude.go` — All Claude format parsing: `DiscoverClaudePlugins()`, `DiscoverClaudeSkills()`, `DiscoverClaudeMCP()`, `DiscoverClaudeHooks()`, YAML frontmatter parsing, tool name mapping, auto keyword generation from name+description, event mapping
 - `kernel/skill.go` — `AddClaudeSkill()` external injection, `GetSlashCommands()`, `autoKeywords()`
 - `infra/app.go` — MCP wiring: `DiscoverClaudeMCP()` → `mcpManager.ConnectServer()` → register tools
 - `infra/app_kernel.go` — Skills wiring: `DiscoverClaudeSkills()` → `sm.AddClaudeSkill()`; Hooks wiring: `DiscoverClaudeHooks()` → `agentKernel.Subscribe()` with shell execution

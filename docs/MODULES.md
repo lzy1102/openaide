@@ -26,8 +26,9 @@
 | **索引** | `internal/index/` | 3 | 代码符号索引 |
 | **反馈** | `internal/feedback/` | 2 | 质量门控评分 |
 | **身份** | `internal/identity/` | 1 | 项目类型检测 |
+| **评估** | `internal/eval/` | 2 | LLM-as-judge 评测框架：语义评判替代关键字匹配 |
 | **语言** | `internal/lang/` | 2 | 国际化 (zh/en) |
-| **入口** | `cmd/server/`, `cmd/cli/` | 6 | API服务器 + REPL + 前端嵌入 |
+| **入口** | `cmd/server/`, `cmd/cli/`, `cmd/eval/` | 8 | API服务器 + REPL + 评测CLI + 前端嵌入 |
 
 ## 依赖关系
 

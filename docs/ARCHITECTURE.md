@@ -46,6 +46,7 @@ cmd/server (API 服务器)       cmd/cli (交互式 REPL)
 | channel | 5 | 外部渠道 (Webhook/飞书/Telegram) |
 | mcp | 2 | MCP 协议 (stdio, 30s 超时) |
 | projectmind | 3 | 持续学习 (代码地图/风险/约定/策略) |
+| eval | 2 | LLM-as-judge 评测框架：语义评判 + 基准任务套件 |
 | lang | 1 | 多语言 (zh/en) |
 
 ## 核心特性
@@ -60,7 +61,7 @@ cmd/server (API 服务器)       cmd/cli (交互式 REPL)
 | **Architect/Editor 路由** | analyst/reviewer → reasoning (pro)，coder/executor → execution (flash) |
 | **DeepPlan 深度规划** | Research → Propose → Select → Plan → Execute → Review |
 | **Team 多 Agent** | /analyst /coder /reviewer /executor /team，独立会话 + 模型路由 |
-| **LLM 决策引擎** | 角色分配/风险评估/技能检测/复杂度估算全部由 LLM 判断 |
+| **LLM 决策引擎** | 所有决策由 LLM 判断：角色分配、风险评估、技能检测、任务类型分类、评测裁判。零硬编码关键字匹配 |
 | **34 个内置工具** | 文件/Git/命令/搜索/知识库/浏览器/桌面/多模态 |
 | **插件系统** | Claude Code 官方格式兼容 (skills/MCP/hooks)，热加载 |
 | **MCP 协议** | JSON-RPC stdio，外部工具生态 |

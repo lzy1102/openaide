@@ -14,6 +14,28 @@ openaide sessions     # 列出所有会话
 openaide --version    # 显示版本
 ```
 
+## 评测 (Evaluation)
+
+```bash
+# 运行全部基准任务 (10 个)
+go run ./cmd/eval
+
+# 完整能力验收 (7 个，覆盖所有 agent 功能)
+go run ./cmd/eval -full
+
+# 快速冒烟测试 (仅 easy)
+go run ./cmd/eval -quick
+
+# 按分类筛选
+go run ./cmd/eval -category coding
+go run ./cmd/eval -category review
+
+# 输出到指定文件
+go run ./cmd/eval -output results.json
+```
+
+评测使用 **LLM-as-Judge**：用 fast model 对回答质量做语义评判，不依赖关键字匹配。
+
 ## REPL 快捷键
 
 | 快捷键 | 功能 |
