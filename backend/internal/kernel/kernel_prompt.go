@@ -292,10 +292,10 @@ func promptL3_task_EN(task string) string {
 - [RISK]: "if someone later changes X, this could break" — the code is correct today but fragile. Limit to 1-2 per review.
 
 ### Anti-False-Positive Rules (MANDATORY — re-check before reporting)
-1. After listing each [BUG]: re-read the surrounding 20 lines. Is the trigger actually reachable?
-2. Concurrency claims: show BOTH goroutines accessing the SAME variable. Then verify NO synchronization primitive (WaitGroup, mutex, channel) stands between them. A goroutine writing before wg.Wait() and the main thread reading after wg.Wait() is NOT a data race.
-3. "This could be a problem if..." → that's [RISK], not [BUG]. Don't label it [BUG].
-4. If you can't write a 3-line test that triggers the bug: it's probably not a bug.
+1. After listing each [BUG]: re-read the surrounding 20 lines. Is the trigger actually reachable in the current code?
+2. Concurrency claims: show BOTH concurrent execution paths accessing the SAME variable. Then verify NO synchronization primitive (lock, barrier, wait-group, channel, join, await) stands between them. If thread A writes, then a barrier, then thread B reads — that's sequential, not a race.
+3. "This could be a problem if someone later changes X..." → that's [RISK], not [BUG]. Only label actual bugs.
+4. If you can't write a minimal test case that triggers the bug: it's probably not a bug.
 
 ### Hard Rules
 - 'X is missing' → grep for X first. 90% of the time it's in the caller.
@@ -304,7 +304,7 @@ func promptL3_task_EN(task string) string {
 - Every [BUG] must include: trigger condition (reachable NOW), observed behavior, expected behavior.
 
 ### Output (MANDATORY)
-[P0/P1/P2] [BUG|DESIGN|STYLE] file:line — problem → Fix → Why → Effort(min)
+[P0/P1/P2] [BUG|DESIGN|STYLE|RISK] file:line — problem → Fix → Why → Effort(min)
 
 Then a "Systemic Issues" section: what pattern recurred? What's the root cause?
 If you found zero bugs: say "No bugs found" — don't invent problems.
@@ -377,10 +377,10 @@ func promptL3_task_ZH(task string) string {
 - [RISK]："如果将来有人改 X 这里会出问题"——代码今天正确但脆弱。每次审查最多 1-2 个。
 
 ### 防误报规则（强制执行 — 报告前重新检查）
-1. 列出每个 [BUG] 后：重读周围 20 行代码。触发条件真的可达吗？
-2. 并发声明：展示两个 goroutine 访问同一个变量。然后验证它们之间没有同步原语（WaitGroup、mutex、channel）。goroutine 在 wg.Wait() 前写入、主线程在 wg.Wait() 后读取 —— 这不是数据竞态。
-3. "如果有人改 X 这里可能出问题" → 这是 [RISK]，不是 [BUG]。不要标成 [BUG]。
-4. 如果你写不出 3 行能触发这个 bug 的测试：可能不是 bug。
+1. 列出每个 [BUG] 后：重读周围 20 行代码。触发条件在当前代码中真的可达吗？
+2. 并发声明：展示两个并发执行路径访问同一个变量。然后验证它们之间没有同步原语（锁、屏障、wait-group、channel、join、await）。如果线程 A 写入、然后过屏障、然后线程 B 读取 —— 这是顺序执行，不是竞态。
+3. "如果有人将来改 X 这里可能出问题" → 这是 [RISK]，不是 [BUG]。只标真正的 bug。
+4. 如果你写不出一个能触发这个 bug 的最小测试用例：可能不是 bug。
 
 ### 硬性规则
 - "缺少 X" → 先用 grep 搜 X。90% 的情况在调用方。
@@ -389,7 +389,7 @@ func promptL3_task_ZH(task string) string {
 - [BUG] 必须包含：触发条件（当前可达）、实际行为、预期行为。
 
 ### 输出（强制执行）
-[P0/P1/P2] [BUG|DESIGN|STYLE] 文件:行号 — 问题 → 方案 → 原因 → 工作量(分钟)
+[P0/P1/P2] [BUG|DESIGN|STYLE|RISK] 文件:行号 — 问题 → 方案 → 原因 → 工作量(分钟)
 
 然后一个"系统性问题"小节：什么模式反复出现？根本原因是什么？
 如果没找到 bug：说"未发现 bug"——不要编造问题。
