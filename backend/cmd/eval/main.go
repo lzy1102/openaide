@@ -15,10 +15,11 @@ import (
 
 func main() {
 	var (
-		configPath = flag.String("config", os.Getenv("HOME")+"/.openaide/config.yaml", "config file path")
-		outputPath = flag.String("output", "eval_results.json", "output file for results")
-		category   = flag.String("category", "", "filter by category (coding/review/research/teaching)")
-		quick      = flag.Bool("quick", false, "only run easy tasks (smoke test)")
+		configPath  = flag.String("config", os.Getenv("HOME")+"/.openaide/config.yaml", "config file path")
+		outputPath  = flag.String("output", "eval_results.json", "output file for results")
+		category    = flag.String("category", "", "filter by category (coding/review/research/teaching)")
+		quick       = flag.Bool("quick", false, "only run easy tasks (smoke test)")
+		fullCap     = flag.Bool("full", false, "run full capability acceptance test")
 	)
 	flag.Parse()
 
@@ -42,7 +43,10 @@ func main() {
 
 	// Select tasks
 	var tasks []eval.Task
-	if *quick {
+	if *fullCap {
+		tasks = eval.FullCapabilityTasks()
+		fmt.Println("Running FULL CAPABILITY acceptance test")
+	} else if *quick {
 		tasks = eval.QuickTasks()
 	} else if *category != "" {
 		tasks = eval.CategoryTasks(*category)
@@ -52,8 +56,8 @@ func main() {
 
 	fmt.Printf("Running %d evaluation tasks...\n\n", len(tasks))
 
-	// Run evaluation
-	runner := eval.NewRunner(app.Kernel)
+	// Run evaluation with LLM as judge
+	runner := eval.NewRunnerWithJudge(app.Kernel, eval.NewLLMJudge(app.LLMGateway))
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 	run := runner.RunTasks(ctx, tasks)
