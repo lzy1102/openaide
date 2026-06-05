@@ -122,6 +122,7 @@ type KernelConfig struct {
 	MaxRounds    int    `json:"max_rounds" yaml:"max_rounds"`
 	MaxTokens    int    `json:"max_tokens" yaml:"max_tokens"`
 	MinRounds    int    `json:"min_rounds" yaml:"min_rounds"`       // 自适应轮次下限（默认5）
+	ReActMode    string `json:"react_mode" yaml:"react_mode"`       // "auto" or "continuous"
 	MaxRoundsCap int    `json:"max_rounds_cap" yaml:"max_rounds_cap"` // 自适应轮次上限（默认30）
 	SystemPrompt string `json:"system_prompt" yaml:"system_prompt"`
 	UnsafeMode   *bool  `json:"unsafe_mode" yaml:"unsafe_mode"`     // 安全模式：true=跳过审批（默认true）

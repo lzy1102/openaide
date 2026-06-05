@@ -53,8 +53,9 @@ type AgentKernel struct {
 	state        atomic.Value // KernelState — write-once, read-often
 
 	// 配置
-	maxRounds int
-	maxTokens int
+	maxRounds  int
+	maxTokens  int
+	reActMode  string // "auto" or "continuous"
 }
 
 // Config 内核配置
@@ -62,6 +63,9 @@ type Config struct {
 	MaxRounds    int
 	MaxTokens    int
 	SystemPrompt string
+
+	// ReActMode: "auto" (planner-driven) or "continuous" (Claude Code style, LLM decides when to stop)
+	ReActMode string
 
 	PatternMinClusterSize      int     // queries to trigger distillation (default 8)
 	PatternSimilarityThreshold float64 // cosine threshold for clustering (default 0.80)
@@ -71,6 +75,7 @@ type Config struct {
 func DefaultConfig() *Config {
 	return &Config{
 		MaxRounds:                  10,
+		ReActMode:                  "auto",
 		MaxTokens:                  4000,
 		SystemPrompt:               defaultSystemPrompt(),
 		PatternMinClusterSize:      8,
@@ -96,8 +101,14 @@ func NewAgentKernel(
 		memory:        memory,
 		sessionStore:  sessions,
 		maxRounds:     config.MaxRounds,
+		reActMode:     config.ReActMode,
 		maxTokens:     config.MaxTokens,
 	}
+
+	if k.reActMode == "" {
+		k.reActMode = "auto"
+	}
+
 
 	// 默认使用简单压缩器
 	k.compressor = &SimpleCompressor{}
@@ -143,6 +154,14 @@ func (k *AgentKernel) SetApprover(a Approver) { k.approver = a }
 func (k *AgentKernel) SetAdaptiveRounds(ar *AdaptiveRounds) { k.adaptiveRounds = ar }
 func (k *AgentKernel) SetMaxRounds(n int) {
 	if n > 0 { k.maxRounds = n; slog.Info("Kernel max_rounds updated", "value", n) }
+}
+
+// SetReActMode switches between "auto" (planner-driven) and "continuous" (LLM-driven).
+func (k *AgentKernel) SetReActMode(mode string) {
+	if mode == "auto" || mode == "continuous" {
+		k.reActMode = mode
+		slog.Info("Kernel react_mode updated", "value", mode)
+	}
 }
 func (k *AgentKernel) SetMaxTokens(n int) {
 	if n > 0 { k.maxTokens = n; slog.Info("Kernel max_tokens updated", "value", n) }

@@ -60,6 +60,10 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 	totalTokens := 0
 
 	maxRounds := k.determineMaxRounds(ctx, query.Content, len(session.Messages))
+	if k.reActMode == "continuous" {
+		maxRounds = 100 // effectively unlimited; LLM decides when to stop
+		slog.Debug("ReAct continuous mode", "max_rounds", maxRounds)
+	}
 	slog.Debug("ReAct loop start", "query", query.Content[:min(80, len(query.Content))], "max_rounds", maxRounds, "tools", len(tools), "history_msgs", len(messages))
 	for round := 0; round < maxRounds; round++ {
 		// Prepare context: compress, snip old output, inject budget hints
