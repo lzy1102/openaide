@@ -571,6 +571,11 @@ func (k *AgentKernel) publishEvent(event Event) {
 
 			done := make(chan struct{}, 1)
 			go func() {
+				defer func() {
+					if r := recover(); r != nil {
+						slog.Warn("Event handler panicked", "event", event.Type, "handler_id", th.id, "panic", r)
+					}
+				}()
 				th.handler.HandleEvent(event)
 				done <- struct{}{}
 			}()

@@ -201,6 +201,12 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 				wg.Add(1)
 				go func(idx int, call ToolCall) {
 					defer wg.Done()
+					defer func() {
+						if r := recover(); r != nil {
+							slog.Error("Tool goroutine panicked", "tool", call.Function.Name, "panic", r)
+							results[idx] = toolResult{id: call.ID, name: call.Function.Name, content: fmt.Sprintf("Error: panic: %v", r), err: fmt.Sprintf("panic: %v", r)}
+						}
+					}()
 					var toolCtx context.Context
 					if k.tracer != nil { toolCtx = k.tracer.StartSpan(ctx, session.ID, TraceTool, call.Function.Name) }
 					r := k.executeTool(ctx, call, session.ID)
