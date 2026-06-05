@@ -14,8 +14,8 @@ func TestDetectTaskType_LLM(t *testing.T) {
 	}{
 		{"fix the bug in login", "coding", "coding"},
 		{"review my pull request", "review", "review"},
-		{"explain how channels work", "teaching", "teaching"},
-		{"analyze the architecture", "research", "research"},
+		{"explain how channels work", "think", "think"},
+		{"analyze the architecture", "think", "think"},
 		{"hello world", "general", "general"},
 		{"", "general", "general"},
 		// LLM response with extra whitespace or newlines should still match
@@ -80,7 +80,7 @@ func TestPromptL3_AnalysisFormat(t *testing.T) {
 	}{
 		{"review my code", "review"},
 		{"audit the security", "review"},
-		{"research the architecture", "research"},
+		{"research the architecture", "think"},
 	} {
 		mock := &MockLLMProvider{
 			responses: []LLMResponse{{Content: tc.response}},
@@ -90,7 +90,7 @@ func TestPromptL3_AnalysisFormat(t *testing.T) {
 		if l3 == "" {
 			t.Errorf("promptL3(%q) returned empty", tc.query)
 		}
-		// Review should contain structured format, research should contain the research spectrum
+		// Review should contain structured format, think should contain the think spectrum
 		if !strings.Contains(l3, "P0/P1/P2") && !strings.Contains(l3, "P0") &&
 			!strings.Contains(l3, "spectrum") && !strings.Contains(l3, "光谱") {
 			t.Errorf("promptL3(%q) missing analysis format", tc.query)

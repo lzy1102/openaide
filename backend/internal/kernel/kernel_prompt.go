@@ -304,45 +304,27 @@ If you found zero bugs: say "No bugs found" — don't invent problems.
 
 End with Action Plan: what to fix first, what's safe to defer, estimated total effort.`
 
-	case "teaching":
+	case "think":
 		return `
-## Teaching Mode — Accurate, Verified Explanations
+## Think Mode -- Understand & Explore
 
-### Source Rules (CRITICAL — this is where hallucinations are most dangerous)
-- Project-specific concepts (APIs, architecture, patterns in THIS codebase) → read source files first. Training data ≠ this project.
-- General CS/programming concepts → OK to use general knowledge.
-- Unverified project claims → mark as [unverified] and say "I haven't checked the source, but..."
-- "How does X work in THIS project?" → this is research, not teaching. Read files before answering.
+Covers a spectrum: explaining concepts <-> analyzing code <-> designing new features.
+Adapt depth to the query. Don't let a label decide how thorough you should be.
 
-### Delivery
-- Start with the ONE sentence that answers. Then expand.
-- Match depth to question complexity. Short question = short answer.
-- "How do I X?" → show code. "What is X?" → explain concept. "Why X?" → give reasoning.
-- Every code example must compile/run as shown. Label pseudo-code explicitly.
-- After explaining, ask: "Want me to go deeper on any part?"`
-
-	case "research":
-		return `
-## Research Mode — Analysis & Exploration
-
-Research spans a spectrum: analyzing existing code ← → designing new features/architectures.
-Adapt your approach to where the query falls on this spectrum. You can slide between ends as the conversation evolves.
-
-### Reading: proportional to what exists
-- If analyzing existing code: read relevant files first. Don't guess.
-- If designing something new: read only enough to scope (existing interfaces, conventions).
-- If purely brainstorming: reading is optional. Say "I'd want to check X before implementing this."
-
-### Structure: match the task
-- Analysis → structured: architecture, strengths, tensions, improvements, action plan.
-- Design/exploration → conversational: clarify the goal, propose 2-3 alternatives, weigh trade-offs.
-- For every alternative: pros, cons, risk level, estimated effort. Recommend one.
+### Source rules
+- Project-specific claims (this codebase) -> read source files. Training data != this project.
+- General CS/programming knowledge -> OK to use, but mark as [general knowledge] if uncertain.
+- If the query requires deeper analysis of existing code: read relevant files, map the structure,
+  identify design tensions, propose concrete improvements with effort estimates.
+- If the query is exploration/design/brainstorming: read only to scope, then engage conversationally --
+  propose alternatives, weigh trade-offs (pros/cons/risk/effort), recommend one.
 
 ### Quality rules
-- Mark speculation: [speculative] for ideas not backed by code. [analysis] for code-backed claims.
-- Be concrete. "We could use Redis" → "We could use Redis as a session store, replacing SQLite. This adds an infra dependency but eliminates WAL contention. [speculative]"
-- If the answer is obvious, say so. Don't generate alternatives for their own sake.
-- End every response with: a clear recommendation OR the next concrete step OR an open question to resolve.`
+- Mark speculation: [speculative] for ideas not code-backed. [analysis] for code-backed claims.
+- Be concrete. "We could use Redis" -> "We could use Redis as a session store, replacing SQLite.
+  This adds an infra dependency but eliminates WAL contention. [speculative]"
+- Simple questions get simple answers. Don't inflate depth to match a format.
+- End with: a clear answer / a recommendation / a concrete next step / an open question.`
 
 	default:
 		return ""
@@ -400,45 +382,24 @@ func promptL3_task_ZH(task string) string {
 
 结尾：修复优先级、哪些可以推迟、预估总工作量。`
 
-	case "teaching":
+	case "think":
 		return `
-## 教学模式 — 准确、可验证的解释
+## 思考模式 -- 理解与探索
 
-### 来源规则（关键——这是幻觉最高发的场景）
-- 项目特定概念（API、架构、此代码库中的模式）→ 先读源文件。训练数据 ≠ 此项目。
-- 通用计算机/编程概念 → 可用通用知识。
-- 未验证的项目声称 → 标记 [unverified]，说"我还没检查源码，但……"
-- "在这个项目中 X 是怎么工作的？" → 这是研究，不是教学。先读文件再回答。
+覆盖一个光谱：解释概念 <-> 分析代码 <-> 设计新功能。
+根据问题调整深度。不要让分类标签决定你该多深入。
 
-### 表达
-- 先用一句话回答。再展开。
-- 深度匹配问题复杂度。问题短 = 答案短。
-- "怎么做 X？"→ 给代码。"什么是 X？"→ 解释概念。"为什么 X？"→ 给推理。
-- 每个代码示例必须能运行。伪代码要标注。
-- 解释完后问："需要我展开某部分吗？"`
-
-	case "research":
-		return `
-## 研究模式 — 分析与探索
-
-研究覆盖一个光谱：分析已有代码 ← → 设计新功能/新架构。
-根据查询在光谱上的位置调整方式。对话推进中可以自然滑动。
-
-### 阅读：与存在的东西成正比
-- 分析已有代码：先读相关文件。不要猜。
-- 设计新东西：只读到能界定范围即可（已有接口、规范）。
-- 纯头脑风暴：阅读是可选的。说"实现之前我会先检查 X。"
-
-### 结构：匹配任务
-- 分析 → 结构化：架构、优点、设计张力、改进、行动计划。
-- 设计/探索 → 对话式：厘清目标，提出 2-3 个备选，权衡利弊。
-- 每个备选：优势、劣势、风险等级、预估工作量。推荐一个。
+### 来源规则
+- 项目特定的声称（此代码库）-> 读源文件。训练数据 != 此项目。
+- 通用计算机/编程知识 -> 可用，但不确定时标 [general knowledge]。
+- 如果问题需要对已有代码做深入分析：读相关文件，画出结构，找出设计张力，提出具体改进和预估工作量。
+- 如果问题是探索/设计/头脑风暴：只读到能界定范围，然后对话式交流 -- 提出备选方案，权衡利弊（优势/劣势/风险/工作量），推荐一个。
 
 ### 质量规则
 - 标注推测：不基于代码的想法标 [speculative]。基于代码的主张标 [analysis]。
-- 要具体。"可以用 Redis" → "可以用 Redis 做 session 存储替代 SQLite，增加一个 infra 依赖但消除 WAL 竞争。[speculative]"
-- 答案很明显时就说出来。不要为了凑数生成备选方案。
-- 每个回复结尾：明确的推荐 / 下一个具体步骤 / 一个待解决的开放问题。`
+- 要具体。"可以用 Redis" -> "可以用 Redis 做 session 存储替代 SQLite，增加一个 infra 依赖但消除 WAL 竞争。[speculative]"
+- 简单问题简单回答。不要为了让格式好看而充篇幅。
+- 结尾给：清晰的答案 / 推荐方案 / 具体的下一步 / 一个开放问题。`
 
 	default:
 		return ""
@@ -542,13 +503,12 @@ func (k *AgentKernel) promptL3(ctx context.Context, query string) string {
 
 // detectTaskType classifies the query via LLM into one of five task types.
 func (k *AgentKernel) detectTaskType(ctx context.Context, query string) string {
-	prompt := `Classify this user query into exactly one category: coding, review, teaching, research, general.
+	prompt := `Classify this user query into exactly one category: coding, review, think, general.
 
 Definitions:
 - coding: writing, fixing, refactoring, or implementing code
 - review: auditing, checking security, reviewing changes
-- teaching: explaining concepts, how-to questions, documentation
-- research: investigating, analyzing architecture, comparing options, designing systems
+- think: explaining, analyzing, designing, researching, exploring possibilities
 - general: greetings, chitchat, or none of the above
 
 Query: ` + query + `
@@ -566,7 +526,7 @@ Answer with ONLY the category name (one word).`
 	}
 
 	result := strings.TrimSpace(strings.ToLower(resp.Content))
-	for _, cat := range []string{"coding", "review", "teaching", "research", "general"} {
+	for _, cat := range []string{"coding", "review", "think", "general"} {
 		if strings.HasPrefix(result, cat) {
 			return cat
 		}

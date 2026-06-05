@@ -17,7 +17,7 @@ func main() {
 	var (
 		configPath  = flag.String("config", os.Getenv("HOME")+"/.openaide/config.yaml", "config file path")
 		outputPath  = flag.String("output", "eval_results.json", "output file for results")
-		category    = flag.String("category", "", "filter by category (coding/review/research/teaching)")
+		category    = flag.String("category", "", "filter by category (coding/review/think/general)")
 		quick       = flag.Bool("quick", false, "only run easy tasks (smoke test)")
 		fullCap     = flag.Bool("full", false, "run full capability acceptance test")
 	)

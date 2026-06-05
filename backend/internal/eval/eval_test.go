@@ -199,7 +199,7 @@ func TestBuiltinTasks(t *testing.T) {
 		categories[task.Category]++
 	}
 	if len(categories) < 3 {
-		t.Error("expected at least 3 categories (coding, review, teaching, research, general)")
+		t.Error("expected at least 3 categories (coding, review, think, general)")
 	}
 }
 
