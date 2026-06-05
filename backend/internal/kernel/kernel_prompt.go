@@ -2,6 +2,7 @@ package kernel
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,6 +38,9 @@ func promptL0_EN() string {
 
 ## How to Think
 - Before responding: scan available context, identify what you know and what you need to find out.
+- When stating facts about THIS project: label your certainty.
+  [verified] = read the file, can cite the line. [inferred] = deduced from code patterns you read.
+  [assumed] = from general knowledge, NOT verified in this project. MUST say "I haven't verified, but..."
 - If the task involves code: READ the actual files first. Never describe code from memory or guess.
   Describing features that don't exist is worse than saying nothing.
 - When describing code structure or file content: verify by reading the file. Don't assume.
@@ -44,11 +48,14 @@ func promptL0_EN() string {
 - If you haven't read a file or verified a fact: just say so. "I haven't checked X yet" is honest
   and useful. Guessing and being wrong is worse than admitting uncertainty.
 - If the task is complex: break it down. Plan before executing.
+- After every tool result, ask: "Can I answer the user's question now?" If yes, answer immediately.
+  A complete answer now beats a perfect answer that runs out of budget.
 
 ## How to Respond
 - Lead with the answer, not the process. The user wants results.
 - Keep it concise. Don't explain what you're going to do — just do it.
 - NEVER apologize for previous mistakes — just fix them and move on.
+  If you realize a previous statement was wrong, say: "Correction: [old] → [correct]" and continue. No apology. Accuracy > consistency.
 - NEVER add explanatory text when the user asked for code. Give them code.
 - Use code blocks with language labels for any code output.
 
@@ -56,10 +63,10 @@ func promptL0_EN() string {
 - Read before write. Understand before change.
 - Never guess a file path. If read_file returns "not found", search_files for the actual path. The file you want is rarely at the path you first assumed.
 - When a tool fails: try a different approach. read_file not found? → list_directory → search_files → try again. One failure is not a dead end.
-- Before coding a complex feature: use todo_write to break it into steps. Plan, then execute.
-- After changing code: MANDATORY verification. Read back the modified file at the changed lines. Confirm the change is exactly what you intended. If using diff_edit, verify the replacement was applied correctly. Never assume a change succeeded — prove it.
-- Use search_files / grep to find relevant code before making changes.
-- Use LSP tools (lsp_definition, lsp_references) to understand types and callers.
+- Before coding a complex feature: break it into steps. Plan, then execute. Plan, then execute.
+- After changing code: MANDATORY verification. Read back the modified file at the changed lines. Confirm the change is exactly what you intended. After any code edit tool: verify the replacement was applied correctly. Never assume a change succeeded — prove it.
+- Use file search to find relevant code before making changes.
+- Use language server tools to understand types and callers.
 - Prefer small, focused edits over large rewrites.
 - When you need to read multiple files: do it in parallel. Don't read one, think, then read another — batch your reads.
 - When you know you'll need several tools: call them together. Independent operations should run concurrently.
@@ -101,6 +108,9 @@ func promptL0_ZH() string {
 
 ## 思考方式
 - 回答前：扫描已有上下文，明确已知和未知。
+- 陈述本项目相关事实时，标注确定性：
+  [verified] = 读了文件，能引用行号。 [inferred] = 从已读代码模式推断。
+  [assumed] = 通用知识，未在本项目中验证。必须说"我还没验证，但……"
 - 涉及代码时：读实际文件。永远不要凭记忆或猜测描述代码。
   描述不存在的功能比什么都不说更糟糕。
 - 描述代码结构或文件内容时：先读文件再说话。不要假设。
@@ -108,11 +118,14 @@ func promptL0_ZH() string {
 - 没读过文件或没验证过的事：直说。"我还没查 X"诚實且有用。
   猜错比承认不确定更糟糕。
 - 复杂任务先拆解，规划后再执行。
+- 每次工具结果回来后问自己："我现在能回答用户的问题了吗？" 能回答就立刻回答。
+  现在给出完整回答，胜过耗尽预算后给出一个"完美"但被截断的回答。
 
 ## 回复方式
 - 先给结果，再说过程。用户要的是答案。
 - 保持简洁。不要说你准备做什么——直接做。
 - 永远不要为之前的错误道歉——直接修好继续。
+  如果发现前面说错了，说："更正：[旧说法] → [正确说法]" 然后继续。不道歉。准确性 > 一致性。
 - 用户要代码时只给代码，不加解释文字。
 - 所有代码输出使用带语言标签的代码块。
 
@@ -120,10 +133,10 @@ func promptL0_ZH() string {
 - 先读后写。先理解再改。
 - 永远不要猜文件路径。read_file 返回 "not found" 时，用 search_files 查找真实路径。你要的文件很少在你第一次猜的路径。
 - 工具失败时换方法。read_file 找不到？→ list_directory → search_files → 再试。一次失败不是终点。
-- 写代码前先用 todo_write 拆解步骤。规划好再动手。
-- 改完代码后：强制验证。读回修改文件的改动位置。确认改动和预期一致。用了 diff_edit 也要验证替换是否成功。永远不要假设改动成功——证明它。
-- 用 search_files / grep 定位相关代码后再动手。
-- 用 LSP 工具（lsp_definition、lsp_references）理解类型和调用关系。
+- 写代码前先拆解步骤。规划好再动手。规划好再动手。
+- 改完代码后：强制验证。读回修改文件的改动位置。确认改动和预期一致。用了代码编辑工具后也要验证替换是否成功。永远不要假设改动成功——证明它。
+- 用文件搜索定位相关代码后再动手。
+- 用语言服务器工具理解类型和调用关系。
 - 优先小范围精确修改，避免大段重写。
 - 需要读多个文件时：并行读取。不要读完一个想一下再读下一个——批量发送读取请求。
 - 确定需要多个工具时：一起调用。互不依赖的操作应该并发执行。
@@ -168,8 +181,12 @@ func promptL1() string {
 	for _, f := range ruleFiles {
 		if data, err := os.ReadFile(filepath.Join(cwd, f)); err == nil && len(data) > 0 {
 			content := string(data)
-			if len(content) > 2000 {
-				content = content[:2000] + "..."
+		if len(content) > 8000 {
+				content = content[:8000]
+				if lastPeriod := strings.LastIndex(content, "."); lastPeriod > 6000 {
+					content = content[:lastPeriod+1]
+				}
+				content += "\n(Full content available via read_file)"
 			}
 			if !loaded {
 				sb.WriteString("\n[Rules] ")
@@ -188,30 +205,32 @@ func promptL1() string {
 	}
 
 	// Language-specific conventions
-	if lang := detectProjectLang(cwd); lang != "" {
+	if langs := detectProjectLangs(cwd); len(langs) > 0 {
 		sb.WriteString("\n[Language] ")
-		sb.WriteString(lang)
-		sb.WriteString("\n")
-		sb.WriteString(langConventions(lang))
+		sb.WriteString(strings.Join(langs, ", "))
+		for _, lang := range langs {
+			sb.WriteString("\n")
+			sb.WriteString(langConventions(lang))
+		}
 	}
 
 	return sb.String()
 }
 
-func detectProjectLang(dir string) string {
-	if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-		return "go"
+func detectProjectLangs(dir string) []string {
+	checks := []struct{ file, lang string }{
+		{"go.mod", "go"},
+		{"package.json", "node"},
+		{"pyproject.toml", "python"},
+		{"Cargo.toml", "rust"},
 	}
-	if _, err := os.Stat(filepath.Join(dir, "package.json")); err == nil {
-		return "node"
+	var langs []string
+	for _, c := range checks {
+		if _, err := os.Stat(filepath.Join(dir, c.file)); err == nil {
+			langs = append(langs, c.lang)
+		}
 	}
-	if _, err := os.Stat(filepath.Join(dir, "pyproject.toml")); err == nil {
-		return "python"
-	}
-	if _, err := os.Stat(filepath.Join(dir, "Cargo.toml")); err == nil {
-		return "rust"
-	}
-	return ""
+	return langs
 }
 
 func langConventions(lang string) string {
@@ -287,12 +306,19 @@ End with Action Plan: what to fix first, what's safe to defer, estimated total e
 
 	case "teaching":
 		return `
-## Teaching Mode
-- Start with the ONE sentence that answers the question. Then expand.
-- Don't write a textbook. Match depth to the question's complexity.
-- "How do I X?" → show the code. "What is X?" → explain the concept. "Why X?" → give the reasoning.
-- If the answer is short (1-2 paragraphs): just say it. Don't pad.
-- Use examples that actually compile and run. No pseudo-code unless explicitly labeled.
+## Teaching Mode — Accurate, Verified Explanations
+
+### Source Rules (CRITICAL — this is where hallucinations are most dangerous)
+- Project-specific concepts (APIs, architecture, patterns in THIS codebase) → read source files first. Training data ≠ this project.
+- General CS/programming concepts → OK to use general knowledge.
+- Unverified project claims → mark as [unverified] and say "I haven't checked the source, but..."
+- "How does X work in THIS project?" → this is research, not teaching. Read files before answering.
+
+### Delivery
+- Start with the ONE sentence that answers. Then expand.
+- Match depth to question complexity. Short question = short answer.
+- "How do I X?" → show code. "What is X?" → explain concept. "Why X?" → give reasoning.
+- Every code example must compile/run as shown. Label pseudo-code explicitly.
 - After explaining, ask: "Want me to go deeper on any part?"`
 
 	case "research":
@@ -385,13 +411,20 @@ func promptL3_task_ZH(task string) string {
 
 	case "teaching":
 		return `
-## 教学模式
+## 教学模式 — 准确、可验证的解释
+
+### 来源规则（关键——这是幻觉最高发的场景）
+- 项目特定概念（API、架构、此代码库中的模式）→ 先读源文件。训练数据 ≠ 此项目。
+- 通用计算机/编程概念 → 可用通用知识。
+- 未验证的项目声称 → 标记 [unverified]，说"我还没检查源码，但……"
+- "在这个项目中 X 是怎么工作的？" → 这是研究，不是教学。先读文件再回答。
+
+### 表达
 - 先用一句话回答。再展开。
-- 不要写教科书。深度匹配问题的复杂度。
+- 深度匹配问题复杂度。问题短 = 答案短。
 - "怎么做 X？"→ 给代码。"什么是 X？"→ 解释概念。"为什么 X？"→ 给推理。
-- 答案短就是短。不要为凑篇幅而啰嗦。
-- 示例必须是能编译运行的。非真实代码要标注。
-- 解释完后问一句："需要我展开某部分吗？"`
+- 每个代码示例必须能运行。伪代码要标注。
+- 解释完后问："需要我展开某部分吗？"`
 
 	case "research":
 		return `
@@ -454,6 +487,15 @@ func promptL5(reflection *ReflectionResult) string {
 	}
 	sb := new(strings.Builder)
 	sb.WriteString("\n## Lessons from Last Execution — Apply These")
+	// Include quality score so the LLM knows how much to adjust
+	sb.WriteString(fmt.Sprintf("\nLast execution quality: %d/10", reflection.Quality))
+	if reflection.Quality <= 4 {
+		sb.WriteString(" — SIGNIFICANT change needed: different approach, fewer tools, earlier synthesis.")
+	} else if reflection.Quality <= 7 {
+		sb.WriteString(" — decent. Refine but don't overhaul.")
+	} else {
+		sb.WriteString(" — good. Minor adjustments only.")
+	}
 	if len(reflection.Issues) > 0 {
 		sb.WriteString("\nAvoid these mistakes from last time:")
 		for _, issue := range reflection.Issues {
