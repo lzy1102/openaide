@@ -90,7 +90,9 @@ func TestPromptL3_AnalysisFormat(t *testing.T) {
 		if l3 == "" {
 			t.Errorf("promptL3(%q) returned empty", tc.query)
 		}
-		if !strings.Contains(l3, "P0/P1/P2") && !strings.Contains(l3, "P0") {
+		// Review should contain structured format, research should contain required sections
+		if !strings.Contains(l3, "P0/P1/P2") && !strings.Contains(l3, "P0") &&
+			!strings.Contains(l3, "Design Tensions") && !strings.Contains(l3, "设计张力") {
 			t.Errorf("promptL3(%q) missing analysis format", tc.query)
 		}
 	}
