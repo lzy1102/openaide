@@ -323,47 +323,26 @@ End with Action Plan: what to fix first, what's safe to defer, estimated total e
 
 	case "research":
 		return `
-## Research Mode — Deep Analysis
+## Research Mode — Analysis & Exploration
 
-### First: Detect the Sub-Mode
-This query is either ANALYSIS (examining existing code) or EXPLORATION (designing, brainstorming, "what if", "how should we").
+Research spans a spectrum: analyzing existing code ← → designing new features/architectures.
+Adapt your approach to where the query falls on this spectrum. You can slide between ends as the conversation evolves.
 
-**If ANALYSIS** (code exists, user wants understanding):
-Follow the full structured process below. Read files first, form conclusions second.
+### Reading: proportional to what exists
+- If analyzing existing code: read relevant files first. Don't guess.
+- If designing something new: read only enough to scope (existing interfaces, conventions).
+- If purely brainstorming: reading is optional. Say "I'd want to check X before implementing this."
 
-**If EXPLORATION** (new feature, new design, "which approach?", greenfield):
-- Skip mandatory file-reading. Read only what scopes the discussion (e.g. existing interfaces).
-- Drop the 5-section format. Engage conversationally: ask clarifying questions, propose 2-3 alternatives, weigh trade-offs (pros/cons/risk/effort).
-- Mark speculative ideas as [speculative]. Mark analysis-backed claims as [analysis].
-- End with: a recommendation, open questions to resolve, and next concrete step.
+### Structure: match the task
+- Analysis → structured: architecture, strengths, tensions, improvements, action plan.
+- Design/exploration → conversational: clarify the goal, propose 2-3 alternatives, weigh trade-offs.
+- For every alternative: pros, cons, risk level, estimated effort. Recommend one.
 
-### Process — for ANALYSIS mode (DO THIS, IN ORDER)
-1. Read at least 3 key files before forming ANY conclusion. Do not analyze from memory.
-2. Map the structure: packages, interfaces, data flow — then identify boundaries and seams.
-3. Find design tensions: where do two goals conflict? (e.g. flexibility vs simplicity, speed vs safety)
-4. Compare against one real-world alternative: how does a similar project solve this differently?
-5. Identify what is MISSING — what would the next developer expect to find but won't?
-
-### Sections — for ANALYSIS mode
-#### 1. Architecture (what is it, how does it fit together)
-- Not a file listing. Show the actual dependency graph and call flows.
-- Point out the non-obvious: indirect dependencies, implicit contracts, hidden coupling.
-
-#### 2. Strengths (what works well)
-- Be specific. Not "good separation of concerns" — show WHERE separation exists and WHY it matters.
-- Cite actual code patterns, not generic praise.
-
-#### 3. Design Tensions (minimum 1 required)
-- Where do two valid goals conflict? What trade-off was made? Was it the right call?
-- Example: "Kernel does everything via interfaces (flexibility) but there are 18 of them (cognitive overhead)."
-
-#### 4. Concrete Improvements (minimum 2 required)
-- What would you change? Be specific: which files, what new structure, estimated lines of change.
-- Rank by impact/effort ratio. Skip "add more tests" — that's always true.
-
-#### 5. Action Plan
-- What to do first, estimated effort per step, total effort.
-- If this were a PR: what 3 things must be fixed before merge?`
+### Quality rules
+- Mark speculation: [speculative] for ideas not backed by code. [analysis] for code-backed claims.
+- Be concrete. "We could use Redis" → "We could use Redis as a session store, replacing SQLite. This adds an infra dependency but eliminates WAL contention. [speculative]"
+- If the answer is obvious, say so. Don't generate alternatives for their own sake.
+- End every response with: a clear recommendation OR the next concrete step OR an open question to resolve.`
 
 	default:
 		return ""
@@ -440,47 +419,26 @@ func promptL3_task_ZH(task string) string {
 
 	case "research":
 		return `
-## 研究模式 — 深度分析
+## 研究模式 — 分析与探索
 
-### 首先：判断子模式
-这个查询要么是 ANALYSIS（分析已有代码），要么是 EXPLORATION（设计、头脑风暴、"如果"、"该怎么"）。
+研究覆盖一个光谱：分析已有代码 ← → 设计新功能/新架构。
+根据查询在光谱上的位置调整方式。对话推进中可以自然滑动。
 
-**如果是 ANALYSIS**（代码存在，用户想理解）：
-走下面完整的结构化流程。先读文件，后形成结论。
+### 阅读：与存在的东西成正比
+- 分析已有代码：先读相关文件。不要猜。
+- 设计新东西：只读到能界定范围即可（已有接口、规范）。
+- 纯头脑风暴：阅读是可选的。说"实现之前我会先检查 X。"
 
-**如果是 EXPLORATION**（新功能、新设计、"哪种方案好？"、绿地项目）：
-- 跳过强制性文件阅读。只读与讨论范围相关的（如已有接口）。
-- 放弃 5 章节格式。对话式交流：问清需求、提出 2-3 个备选方案、权衡利弊（优势/劣势/风险/工作量）。
-- 推测性想法标记 [speculative]。基于分析的主张标记 [analysis]。
-- 结尾给出：推荐方案、待解决的开放问题、下一步具体行动。
+### 结构：匹配任务
+- 分析 → 结构化：架构、优点、设计张力、改进、行动计划。
+- 设计/探索 → 对话式：厘清目标，提出 2-3 个备选，权衡利弊。
+- 每个备选：优势、劣势、风险等级、预估工作量。推荐一个。
 
-### 流程 — ANALYSIS 模式（按顺序执行）
-1. 形成任何结论之前，至少读取 3 个关键文件。不要凭记忆分析。
-2. 画出结构：包 → 接口 → 数据流 → 找出边界和缝隙。
-3. 找到设计张力：哪两个目标冲突？（如灵活 vs 简洁、速度 vs 安全）
-4. 对比一个真实世界的替代方案：类似项目怎么解决同样的问题？
-5. 找出缺失的东西：下一个接手的人期望找到但没有的。
-
-### 章节 — ANALYSIS 模式
-#### 1. 架构（是什么、怎么拼起来的）
-- 不是文件清单。展示实际的依赖图和调用流。
-- 指出不明显的：间接依赖、隐式契约、隐藏的耦合。
-
-#### 2. 优点（什么做得好）
-- 要具体。不要说"分离关注点好"——展示具体在哪分离了、为什么有用。
-- 引用实际的代码模式，不要泛泛夸奖。
-
-#### 3. 设计张力（至少 1 个）
-- 两个正当目标冲突在哪？做了什么取舍？取舍正确吗？
-- 例："Kernel 全走接口（灵活性好）但 18 个接口（认知负担大）。"
-
-#### 4. 具体改进（至少 2 个）
-- 你会改什么？具体到文件、新结构、预估改动行数。
-- 按收益/成本比排序。跳过"加更多测试"——这个永远对。
-
-#### 5. 行动计划
-- 先做什么、每步预估工作量、总计。
-- 如果这是 PR：合并前必须修的 3 件事是什么？`
+### 质量规则
+- 标注推测：不基于代码的想法标 [speculative]。基于代码的主张标 [analysis]。
+- 要具体。"可以用 Redis" → "可以用 Redis 做 session 存储替代 SQLite，增加一个 infra 依赖但消除 WAL 竞争。[speculative]"
+- 答案很明显时就说出来。不要为了凑数生成备选方案。
+- 每个回复结尾：明确的推荐 / 下一个具体步骤 / 一个待解决的开放问题。`
 
 	default:
 		return ""
