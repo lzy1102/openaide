@@ -95,6 +95,9 @@ type ProviderConfig struct {
 	Enabled      bool              `json:"enabled" yaml:"enabled"`
 	Headers      map[string]string `json:"headers,omitempty" yaml:"headers,omitempty"`
 
+	// 嵌入模型（用于知识库/记忆语义搜索和模式蒸馏）
+	EmbeddingModel string `json:"embedding_model,omitempty" yaml:"embedding_model,omitempty"`
+
 	// DeepSeek 特有配置
 	Thinking        *bool  `json:"thinking,omitempty" yaml:"thinking,omitempty"`
 	ReasoningEffort string                 `json:"reasoning_effort,omitempty" yaml:"reasoning_effort,omitempty"`

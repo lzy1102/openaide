@@ -21,6 +21,7 @@ func createLLMGateway(cfg *config.Config) *llm.Gateway {
 			BaseURL:         providerCfg.BaseURL,
 			APIKey:          providerCfg.APIKey,
 			DefaultModel:    providerCfg.DefaultModel,
+			EmbeddingModel:  providerCfg.EmbeddingModel,
 			Timeout:         providerCfg.Timeout,
 			Headers:         providerCfg.Headers,
 			Enabled:         providerCfg.Enabled,
