@@ -85,7 +85,9 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 		}
 	}()
 
-	agentKernel.SetPatternDetector(kernel.NewSemanticPatternDetector(embedder, kernelConfig.PatternMinClusterSize, kernelConfig.PatternSimilarityThreshold))
+	pd := kernel.NewSemanticPatternDetector(embedder, kernelConfig.PatternMinClusterSize, kernelConfig.PatternSimilarityThreshold)
+	pd.SetLLM(gateway) // enables LLM-based clustering when no embedding API available
+	agentKernel.SetPatternDetector(pd)
 	approver := kernel.NewAutoApprover()
 	approver.SetLLM(gateway)
 	if cfg.Kernel.UnsafeMode != nil {

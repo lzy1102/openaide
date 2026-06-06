@@ -9,15 +9,17 @@ import (
 	"sync"
 )
 
-// SemanticPatternDetector clusters user queries by embedding similarity and emits
-// distillable patterns when clusters mature. Uses embedding-based clustering +
-// LLM distillation to extract reusable knowledge.
+// SemanticPatternDetector clusters user queries and emits distillable patterns.
+// Uses embedding-based clustering when an embedder is available, or falls back to
+// LLM-based clustering — no embedding API dependency required.
 type SemanticPatternDetector struct {
-	embedder  Embedder
-	mu        sync.Mutex
-	clusters  []queryCluster
-	minSize   int
-	threshold float64
+	embedder   Embedder
+	llm        LLMProvider // optional: for LLM-based clustering when embedder unavailable
+	mu         sync.Mutex
+	clusters   []queryCluster
+	buffer     []clusterExample // accumulated pairs for LLM-based clustering
+	minSize    int
+	threshold  float64
 }
 
 type queryCluster struct {
@@ -42,28 +44,78 @@ func NewSemanticPatternDetector(embedder Embedder, minSize int, threshold float6
 	}
 }
 
-// Detect collects query+response pairs, clusters them, and returns mature patterns.
-func (d *SemanticPatternDetector) Detect(ctx context.Context, sessionID string, messages []Message) ([]Pattern, error) {
-	if d.embedder == nil || d.embedder.Dimension() == 0 {
-		return nil, nil
-	}
+// SetLLM injects an LLM provider for LLM-based clustering (no embedding required).
+func (d *SemanticPatternDetector) SetLLM(llm LLMProvider) { d.llm = llm }
 
+// Detect collects query+response pairs, clusters them, and returns mature patterns.
+// Uses embedding similarity when embedder is available; falls back to LLM clustering.
+func (d *SemanticPatternDetector) Detect(ctx context.Context, sessionID string, messages []Message) ([]Pattern, error) {
 	pairs := extractPairs(messages)
 	if len(pairs) == 0 { return nil, nil }
-
-	texts := make([]string, len(pairs))
-	for i, p := range pairs { texts[i] = p.query }
-	embs, err := d.embedder.EmbedBatch(ctx, texts)
-	if err != nil || len(embs) == 0 { return nil, err }
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	for i, p := range pairs {
-		if i >= len(embs) { break }
-		d.addToCluster(p, embs[i])
+	// Try embedding-based clustering first
+	if d.embedder != nil && d.embedder.Dimension() > 0 {
+		texts := make([]string, len(pairs))
+		for i, p := range pairs { texts[i] = p.query }
+		embs, err := d.embedder.EmbedBatch(ctx, texts)
+		if err == nil && len(embs) > 0 {
+			for i, p := range pairs {
+				if i >= len(embs) { break }
+				d.addToCluster(p, embs[i])
+			}
+			return d.collectPatterns(), nil
+		}
 	}
-	return d.collectPatterns(), nil
+
+	// Fall back to LLM-based clustering (no embedding needed)
+	if d.llm != nil {
+		d.buffer = append(d.buffer, pairs...)
+		if len(d.buffer) >= 4 {
+			patterns := d.clusterWithLLM(ctx)
+			d.buffer = nil
+			return patterns, nil
+		}
+	}
+
+	return nil, nil
+}
+
+// clusterWithLLM sends accumulated queries to LLM for semantic grouping.
+// No embedding API required — the LLM does the clustering directly.
+func (d *SemanticPatternDetector) clusterWithLLM(ctx context.Context) []Pattern {
+	if d.llm == nil || len(d.buffer) < 4 { return nil }
+
+	var sb strings.Builder
+	sb.WriteString("Group these user queries by topic. A query may belong to multiple groups.\n\n")
+	for i, ex := range d.buffer {
+		sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, truncStr(ex.query, 100)))
+	}
+	sb.WriteString("\nOutput one line per group:\n")
+	sb.WriteString("GROUP: <theme> | queries: <comma-separated numbers> | reusable: yes/no\n")
+	sb.WriteString("Only output groups with 2+ queries. Mark reusable=yes only if the group represents a clear, repeatable pattern worth extracting.")
+
+	resp, err := d.llm.Chat(ctx, []Message{{Role: "user", Content: sb.String()}}, nil,
+		map[string]interface{}{"max_tokens": 300, "temperature": 0, "route": "execution", "no_thinking": true})
+	if err != nil || resp.Content == "" { return nil }
+
+	var patterns []Pattern
+	for _, line := range strings.Split(resp.Content, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "GROUP:") { continue }
+		parts := strings.SplitN(line, "|", 3)
+		theme := strings.TrimPrefix(strings.TrimSpace(parts[0]), "GROUP: ")
+		reusable := len(parts) > 2 && strings.Contains(strings.ToLower(parts[2]), "yes")
+		if theme != "" && reusable {
+			patterns = append(patterns, Pattern{
+				Type: "distillable_cluster", Description: theme,
+				Confidence: 0.7, Frequency: len(d.buffer),
+			})
+		}
+	}
+	return patterns
 }
 
 func (d *SemanticPatternDetector) addToCluster(ex clusterExample, emb []float32) {
