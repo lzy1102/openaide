@@ -36,7 +36,7 @@ type clusterExample struct {
 
 // NewSemanticPatternDetector creates a detector.
 func NewSemanticPatternDetector(embedder Embedder, minSize int, threshold float64) *SemanticPatternDetector {
-	if minSize < 2 { minSize = 2 }
+	if minSize < 3 { minSize = 5 }
 	if threshold <= 0 || threshold > 1 { threshold = 0.80 }
 	return &SemanticPatternDetector{
 		embedder: embedder, minSize: minSize, threshold: threshold,
