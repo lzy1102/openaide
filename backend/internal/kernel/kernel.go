@@ -67,8 +67,8 @@ type Config struct {
 	// ReActMode: "auto" (planner-driven) or "continuous" (Claude Code style, LLM decides when to stop)
 	ReActMode string
 
-	PatternMinClusterSize      int     // queries to trigger distillation (default 5)
-	PatternSimilarityThreshold float64 // cosine threshold for clustering (default 0.80)
+	DistillMinQueries int     // 几个相似查询触发技能提取（默认5）
+	DistillSimilarity float64 // 余弦相似度阈值（默认0.80）
 }
 
 // DefaultConfig 默认配置
@@ -77,8 +77,8 @@ func DefaultConfig() *Config {
 		MaxRounds:                  10,
 		MaxTokens:                  4000,
 		SystemPrompt:               defaultSystemPrompt(),
-		PatternMinClusterSize:      5,
-		PatternSimilarityThreshold: 0.80,
+		DistillMinQueries: 5,
+		DistillSimilarity: 0.80,
 	}
 }
 
