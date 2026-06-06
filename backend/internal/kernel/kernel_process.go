@@ -445,16 +445,6 @@ func (k *AgentKernel) extractSkillsFromPatterns(ctx context.Context, patterns []
 	}
 
 	for i, p := range patterns {
-		// LLM quality gate: is this cluster actually a reusable pattern worth extracting?
-		if k.llmProvider != nil {
-			quality := evaluateClusterQuality(ctx, k.llmProvider, p, i, clusterExamples)
-			if quality < 0.5 {
-				slog.Debug("Cluster rejected by quality gate", "theme", p.Description, "freq", p.Frequency, "quality", quality)
-				continue
-			}
-			p.Confidence = quality
-		}
-
 		theme := strings.ToLower(strings.TrimSpace(p.Description))
 		skillID := "auto-" + strings.ReplaceAll(strings.ReplaceAll(theme, " ", "-"), ":", "")
 		if len(skillID) > 60 { skillID = skillID[:60] }
@@ -464,37 +454,36 @@ func (k *AgentKernel) extractSkillsFromPatterns(ctx context.Context, patterns []
 		keywords := tokenize(theme)
 		if len(keywords) == 0 { keywords = strings.Fields(p.Type) }
 
-		// Mark cluster as distilled after LLM quality gate passed
-		if sd, ok := k.patternDetector.(*SemanticPatternDetector); ok {
-			sd.MarkDistilled(p.Description)
-		}
-
-		// Create skill immediately with simple description
-		simplePrompt := fmt.Sprintf("Auto-detected from %d executions sharing theme: %s", p.Frequency, p.Description)
-		k.skillActor.AddSkill(skillID, skillName, p.Description, simplePrompt, keywords)
-		slog.Info("Auto-extracted skill", "id", skillID, "name", skillName, "frequency", p.Frequency, "quality", fmt.Sprintf("%.2f", p.Confidence))
-
-		// Distillation runs async — updates skill prompt when ready
-		if p.Type == "distillable_cluster" && i < len(clusterExamples) && k.llmProvider != nil {
-			examples := clusterExamples[i]
+		// Single LLM call: evaluate quality + distill if worth it
+		if k.llmProvider != nil {
 			skillID, skillName, desc, kw := skillID, skillName, p.Description, keywords
 			go func() {
 				distillCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 				defer cancel()
-				distilled := DistillCluster(distillCtx, k.llmProvider, examples)
-				if distilled != "" {
-					k.skillActor.AddSkill(skillID, skillName, desc, distilled, kw)
-					if k.knowledgeCollector != nil {
-						k.knowledgeCollector.AddKnowledge(distillCtx,
-							"pattern: "+skillName, distilled, "distillation",
-							append(kw, "auto-distilled", "pattern"))
-					}
-					slog.Info("Skill distilled", "id", skillID, "name", skillName)
+				distilled := evaluateAndDistill(distillCtx, k.llmProvider, p, i, clusterExamples)
+				if distilled == "" {
+					slog.Debug("Cluster rejected by LLM", "theme", desc, "freq", p.Frequency)
+					return
 				}
+				if sd, ok := k.patternDetector.(*SemanticPatternDetector); ok {
+					sd.MarkDistilled(desc)
+				}
+				k.skillActor.AddSkill(skillID, skillName, desc, distilled, kw)
+				if k.knowledgeCollector != nil {
+					k.knowledgeCollector.AddKnowledge(distillCtx,
+						"pattern: "+skillName, distilled, "distillation",
+						append(kw, "auto-distilled", "pattern"))
+				}
+				slog.Info("Skill distilled", "id", skillID, "name", skillName, "freq", p.Frequency)
 			}()
+		} else {
+			simplePrompt := fmt.Sprintf("Auto-detected from %d executions sharing theme: %s", p.Frequency, p.Description)
+			k.skillActor.AddSkill(skillID, skillName, p.Description, simplePrompt, keywords)
+			slog.Info("Auto-extracted skill", "id", skillID, "name", skillName, "frequency", p.Frequency)
 		}
 	}
 }
+
 
 func capitalize(s string) string {
 	if s == "" { return s }

@@ -53,37 +53,30 @@ func TestSemanticPatternDetector_FormsCluster(t *testing.T) {
 	t.Logf("Distillable clusters: %d", len(examples))
 }
 
-func TestDistillCluster_PromptFormat(t *testing.T) {
-	// Verify the prompt asks for tool strategy (Toolformer 2023)
-	// and self-instruction format (Reflexion 2023).
-	// We can't call DistillCluster without an LLM, but verify the key
-	// prompt phrases are present in the codebase.
-	var sb strings.Builder
-	sb.WriteString("You are a knowledge distillation expert. Given similar tasks and their solutions, extract reusable patterns including tool-use strategies.\n\n")
-	sb.WriteString("## Similar Tasks\n\n")
-
-	if !strings.Contains(sb.String(), "tool-use strategies") {
-		t.Error("DistillCluster prompt should include tool-use strategies (Toolformer)")
-	}
-	if !strings.Contains(sb.String(), "knowledge distillation") {
-		t.Error("DistillCluster prompt should reference knowledge distillation")
+func TestEvaluateAndDistill_PromptFormat(t *testing.T) {
+	// Verify evaluateAndDistill handles nil LLM gracefully
+	result := evaluateAndDistill(context.Background(), nil, Pattern{Description: "test", Frequency: 2}, 0, nil)
+	if result != "" {
+		t.Error("evaluateAndDistill should return empty with nil LLM")
 	}
 }
 
-func TestDistillCluster_Examples(t *testing.T) {
+func TestEvaluateAndDistill(t *testing.T) {
 	examples := []clusterExample{
 		{query: "fix login", response: "checked auth/service.go"},
 		{query: "login broken", response: "patched middleware/token.go"},
 	}
-	// 2 < min needed (2), so DistillCluster returns ""
-	result := DistillCluster(context.Background(), nil, examples)
+	// nil LLM returns ""
+	p := Pattern{Description: "login", Frequency: 2}
+	result := evaluateAndDistill(context.Background(), nil, p, 0, [][]clusterExample{examples})
 	if result != "" {
-		t.Error("DistillCluster should return empty with nil LLM")
+		t.Error("evaluateAndDistill should return empty with nil LLM")
 	}
 
-	result = DistillCluster(context.Background(), nil, []clusterExample{})
+	// empty examples returns ""
+	result = evaluateAndDistill(context.Background(), nil, p, 0, [][]clusterExample{{}})
 	if result != "" {
-		t.Error("DistillCluster should return empty with <2 examples")
+		t.Error("evaluateAndDistill should return empty with <2 examples")
 	}
 }
 

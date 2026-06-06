@@ -144,59 +144,38 @@ func (d *SemanticPatternDetector) prune() {
 	if len(d.clusters) > 50 { d.clusters = d.clusters[:50] }
 }
 
-// evaluateClusterQuality uses LLM to judge whether a cluster of similar queries
-// represents a reusable pattern worth extracting as a skill.
-// Returns 0.0–1.0 quality score. Below 0.5 = skip.
-func evaluateClusterQuality(ctx context.Context, llm LLMProvider, p Pattern, idx int, examples [][]clusterExample) float64 {
-	if llm == nil {
-		return 0
-	}
-	prompt := "You are evaluating whether a cluster of user queries forms a coherent, reusable pattern.\n\n"
-	prompt += fmt.Sprintf("Theme: %s\nQuery count: %d\n\n", p.Description, p.Frequency)
-	if idx < len(examples) && len(examples[idx]) > 0 {
-		prompt += "Sample queries:\n"
-		n := len(examples[idx])
-		if n > 5 { n = 5 }
-		for j := 0; j < n; j++ {
-			prompt += fmt.Sprintf("- %s\n", truncStr(examples[idx][j].query, 150))
-		}
-	}
-	prompt += "\nJudge: are these queries truly about the same topic and worth distilling into a reusable skill? "
-	prompt += "Reply with ONLY a number 0.0–1.0 (0=random noise, 1=clearly reusable pattern)."
-
-	resp, err := llm.Chat(ctx, []Message{{Role: "user", Content: prompt}}, nil,
-		map[string]interface{}{"max_tokens": 10, "temperature": 0, "route": "execution", "no_thinking": true})
-	if err != nil || resp.Content == "" {
-		return 0.5 // default pass on error (don't block)
-	}
-	var score float64
-	fmt.Sscanf(strings.TrimSpace(resp.Content), "%f", &score)
-	if score < 0 { score = 0 }
-	if score > 1 { score = 1 }
-	return score
-}
-
-// ── Distillation ─────────────────────────────────────────────
-
-// DistillCluster sends query+response pairs to an LLM and extracts reusable knowledge.
-func DistillCluster(ctx context.Context, llm LLMProvider, examples []clusterExample) string {
-	if llm == nil || len(examples) < 2 { return "" }
+// evaluateAndDistill does quality evaluation + distillation in a single LLM call.
+// Returns "" if the cluster is not worth distilling, or the distilled skill card.
+func evaluateAndDistill(ctx context.Context, llm LLMProvider, p Pattern, idx int, examples [][]clusterExample) string {
+	if llm == nil { return "" }
+	if idx >= len(examples) || len(examples[idx]) < 2 { return "" }
 
 	var sb strings.Builder
-	sb.WriteString("You are a knowledge distillation expert. Given similar tasks and their solutions, extract reusable patterns including tool-use strategies.\n\n")
-	sb.WriteString("## Similar Tasks\n\n")
-	for i, ex := range examples {
-		if i >= 8 { break }
-		sb.WriteString(fmt.Sprintf("### Task %d\n**Query:** %s\n**Solution:** %s\n\n",
-			i+1, truncStr(ex.query, 300), truncStr(ex.response, 800)))
+	sb.WriteString("You are evaluating whether a cluster of similar user queries forms a reusable pattern.\n\n")
+	sb.WriteString(fmt.Sprintf("Theme: %s | Query count: %d\n\n", p.Description, p.Frequency))
+	sb.WriteString("Sample queries:\n")
+	n := len(examples[idx])
+	if n > 8 { n = 8 }
+	for j := 0; j < n; j++ {
+		sb.WriteString(fmt.Sprintf("- Query: %s\n  Response: %s\n\n",
+			truncStr(examples[idx][j].query, 200), truncStr(examples[idx][j].response, 300)))
 	}
-	sb.WriteString("## Your Task\nDistill these into a concise skill card (under 400 words):\n")
-	sb.WriteString("1. **Key files** — which files are always involved\n2. **Tool strategy** — optimal tool sequence\n3. **Gotchas** — specific mistakes to avoid\n4. **Best approach** — step-by-step directive")
+	sb.WriteString("## Task\n")
+	sb.WriteString("Step 1 — Judge: is there a coherent, reusable pattern worth extracting?\n")
+	sb.WriteString("Step 2 — If NOT, reply with ONLY the word SKIP.\n")
+	sb.WriteString("  If YES, distill into a skill card (under 300 words):\n")
+	sb.WriteString("  - Key files always involved\n")
+	sb.WriteString("  - Optimal tool sequence\n")
+	sb.WriteString("  - Specific gotchas to avoid\n")
+	sb.WriteString("  - Step-by-step best approach\n")
 
 	resp, err := llm.Chat(ctx, []Message{{Role: "user", Content: sb.String()}}, nil,
-		map[string]interface{}{"max_tokens": 600, "temperature": 0.3, "route": "execution", "no_thinking": true})
+		map[string]interface{}{"max_tokens": 500, "temperature": 0.2, "route": "execution", "no_thinking": true})
 	if err != nil || resp.Content == "" { return "" }
-	return strings.TrimSpace(resp.Content)
+
+	result := strings.TrimSpace(resp.Content)
+	if strings.HasPrefix(strings.ToUpper(result), "SKIP") { return "" }
+	return result
 }
 
 // ── Helpers ──────────────────────────────────────────────────
