@@ -33,7 +33,7 @@ type clusterExample struct {
 
 // NewSemanticPatternDetector creates a detector.
 func NewSemanticPatternDetector(embedder Embedder, minSize int, threshold float64) *SemanticPatternDetector {
-	if minSize < 1 { minSize = 1 }
+	if minSize < 2 { minSize = 2 }
 	if threshold <= 0 || threshold > 1 { threshold = 0.80 }
 	return &SemanticPatternDetector{
 		embedder: embedder, minSize: minSize, threshold: threshold,
@@ -94,7 +94,7 @@ func (d *SemanticPatternDetector) collectPatterns() []Pattern {
 	var patterns []Pattern
 	for i := range d.clusters {
 		c := &d.clusters[i]
-		if c.distilled || len(c.examples) < 1 { continue }
+		if c.distilled || len(c.examples) < 2 { continue }
 		c.distilled = true
 		theme := extractClusterTheme(c.examples)
 		if theme == "" { continue }
@@ -163,7 +163,7 @@ func evaluateClusterQuality(ctx context.Context, llm LLMProvider, p Pattern, idx
 
 // DistillCluster sends query+response pairs to an LLM and extracts reusable knowledge.
 func DistillCluster(ctx context.Context, llm LLMProvider, examples []clusterExample) string {
-	if llm == nil || len(examples) < 1 { return "" }
+	if llm == nil || len(examples) < 2 { return "" }
 
 	var sb strings.Builder
 	sb.WriteString("You are a knowledge distillation expert. Given similar tasks and their solutions, extract reusable patterns including tool-use strategies.\n\n")
