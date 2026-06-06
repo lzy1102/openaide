@@ -464,7 +464,12 @@ func (k *AgentKernel) extractSkillsFromPatterns(ctx context.Context, patterns []
 		keywords := tokenize(theme)
 		if len(keywords) == 0 { keywords = strings.Fields(p.Type) }
 
-		// Create skill immediately with simple description (no delay)
+		// Mark cluster as distilled after LLM quality gate passed
+		if sd, ok := k.patternDetector.(*SemanticPatternDetector); ok {
+			sd.MarkDistilled(p.Description)
+		}
+
+		// Create skill immediately with simple description
 		simplePrompt := fmt.Sprintf("Auto-detected from %d executions sharing theme: %s", p.Frequency, p.Description)
 		k.skillActor.AddSkill(skillID, skillName, p.Description, simplePrompt, keywords)
 		slog.Info("Auto-extracted skill", "id", skillID, "name", skillName, "frequency", p.Frequency, "quality", fmt.Sprintf("%.2f", p.Confidence))

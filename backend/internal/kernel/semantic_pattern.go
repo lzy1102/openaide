@@ -21,9 +21,10 @@ type SemanticPatternDetector struct {
 }
 
 type queryCluster struct {
-	examples   []clusterExample
-	embeddings [][]float32
-	distilled  bool
+	examples    []clusterExample
+	embeddings  [][]float32
+	distilled   bool
+	lastEmitted int // number of examples when last emitted (0 = never)
 }
 
 type clusterExample struct {
@@ -94,17 +95,33 @@ func (d *SemanticPatternDetector) collectPatterns() []Pattern {
 	var patterns []Pattern
 	for i := range d.clusters {
 		c := &d.clusters[i]
-		if c.distilled || len(c.examples) < 2 { continue }
-		c.distilled = true
+		n := len(c.examples)
+		if c.distilled || n < 2 { continue }
+		// Only re-emit if cluster has grown significantly (2x) since last emission.
+		// Prevents repeated LLM calls for the same cluster at similar sizes.
+		if c.lastEmitted > 0 && n < c.lastEmitted*2 { continue }
+		c.lastEmitted = n
 		theme := extractClusterTheme(c.examples)
 		if theme == "" { continue }
 		patterns = append(patterns, Pattern{
 			Type: "distillable_cluster", Description: theme,
-			Confidence: clampConf(float64(len(c.examples)) / float64(d.minSize) * 0.9),
-			Frequency:  len(c.examples),
+			Confidence: clampConf(float64(n) / float64(max(d.minSize, n)) * 0.9),
+			Frequency:  n,
 		})
 	}
 	return patterns
+}
+
+// MarkDistilled marks a cluster as successfully distilled after LLM quality gate passes.
+func (d *SemanticPatternDetector) MarkDistilled(theme string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for i := range d.clusters {
+		if extractClusterTheme(d.clusters[i].examples) == theme {
+			d.clusters[i].distilled = true
+			return
+		}
+	}
 }
 
 // GetDistillableExamples returns raw examples from recently extracted clusters.
