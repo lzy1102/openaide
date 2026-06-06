@@ -127,6 +127,33 @@ curl -X POST http://localhost:8080/api/v1/chat/stream \
 └── system.en.md    # 自定义英文提示词
 ```
 
+## 技能自动提取（蒸馏）
+
+OpenAIDE 会自动从你的使用模式中学习。当它检测到多个相似查询时，自动提取可复用技能。
+
+```yaml
+kernel:
+  distill_min_queries: 5      # 几个相似查询触发（默认5）
+  distill_similarity: 0.80    # 余弦相似度阈值（默认0.80）
+```
+
+**两种工作模式：**
+- 有 embedding 模型：余弦相似聚类，精确实时
+- 无 embedding 模型：LLM 直接聚类，无需 embedding API
+
+支持 embedding 的提供商：OpenAI `text-embedding-3-small`、智谱 `embedding-3`、通义 `text-embedding-v3`。配置方式：
+
+```yaml
+providers:
+  - name: glm
+    default_model: glm-4.5-flash
+    embedding_model: embedding-3   # 加这行
+```
+
+## 多语言支持
+
+自动检测 21 种语言的项目规范：Go, Java, Kotlin, C/C++, C#, Swift, Python, Rust, Node/JS/TS, PHP, Ruby, Scala, Dart, Elixir, Haskell, Erlang, OCaml, R, Lua, Julia, Perl。
+
 ## 配置文件热更新
 
 修改 `~/.openaide/config.yaml` 后自动重载: `max_rounds`, `max_tokens`, `unsafe_mode`, `log.level`。其他设置需重启。

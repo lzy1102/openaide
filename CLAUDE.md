@@ -243,14 +243,14 @@ OpenAIDE accumulates project knowledge across sessions via `internal/projectmind
 
 After each ReAct loop, the kernel's learning pipeline extracts reusable skills:
 
-1. **SemanticPatternDetector**: Clusters user queries by embedding similarity (cosine > 0.80). Stores query+response pairs in each cluster. Emits `distillable_cluster` pattern when cluster reaches `PatternMinClusterSize` (default 8).
-2. **DistillCluster (async)**: Sends cluster examples to LLM for knowledge distillation — extracts key files, common patterns, gotchas, and best practices. Runs in background goroutine (60s timeout). Updates skill prompt when ready.
-3. **Auto-persist**: Skills write to `~/.openaide/data/skills/auto_skills.json` on every mutation. Reloaded on restart. Distilled knowledge also stored in KnowledgeActor for RAG retrieval.
-4. **Implicit feedback**: No explicit prompts. LLMReflection infers user satisfaction from the full conversation flow — user moves to new topics (positive), reports errors (negative), or continues refining (neutral). Verdict stored as `[good]`/`[bad]`/`[neutral]` prefix in learned field. `RecordKnowledgeUsage` adjusts weights accordingly.
-5. **Toolformer-style strategy**: DistillCluster prompt asks for optimal tool sequence ("read X first, then search Y, then edit Z"). Successful tool patterns are reinforced through distillation.
-6. **Reflexion-style self-improvement**: LLMReflection generates "Key Lesson for Next Time" — a concrete self-instruction stored in KnowledgeActor for future RAG retrieval. When a similar query comes up, the lesson is injected.
+1. **SemanticPatternDetector**: Two clustering paths — embedding-based (cosine > `distill_similarity`) when an embedding model is available, or LLM-based clustering (no embedding API required) as fallback. Accumulates query+response pairs and emits `distillable_cluster` patterns.
+2. **evaluateAndDistill (single LLM call)**: Quality evaluation + distillation combined. LLM judges whether the cluster is worth extracting, then either returns `SKIP` or produces a distilled skill card with key files, tool strategy, gotchas, and best approach.
+3. **Zero hardcoded thresholds**: No minimum cluster size, no frequency gates. The LLM alone decides what's worth distilling. Clusters re-emit only when size doubles (2x) to avoid repeated evaluations.
+4. **Auto-persist**: Skills write to `~/.openaide/data/skills/auto_skills.json` on every mutation. Reloaded on restart. Distilled knowledge also stored in KnowledgeActor for RAG retrieval.
+5. **Implicit feedback**: LLMReflection infers user satisfaction from conversation flow. `RecordKnowledgeUsage` adjusts weights accordingly.
+6. **Configurable**: `distill_min_queries` (default 5) sets buffer threshold. `distill_similarity` (default 0.80) sets cosine threshold for embedding mode.
 
-Legacy `SimpleLearner` (rule-based pattern counting) and `SimplePatternDetector` have been replaced by this unified pipeline.
+Works with ALL LLM providers — no embedding API required.
 
 ### Knowledge Retrieval (Generative Agents-inspired)
 
@@ -447,6 +447,7 @@ providers:
   - name: deepseek             # Architect — deep reasoning
     default_model: deepseek-v4-pro
     timeout: 300
+    # embedding_model: text-embedding-3-small  # optional: for skill distillation
   - name: deepseek-flash       # Editor — fast execution
     default_model: deepseek-v4-flash
     timeout: 120
@@ -454,11 +455,18 @@ model_routing:
   reasoning: deepseek-v4-pro   # analyst, reviewer, reflection
   execution: deepseek-v4-flash # coder, executor, synthesis, classification
 
+# Kernel: ReAct loop + skill distillation
+kernel:
+  distill_min_queries: 5      # queries to trigger skill extraction (default 5)
+  distill_similarity: 0.80    # cosine threshold for embedding clustering (default 0.80)
+
 # Storage: default is SQLite
 storage:
   data_dir: ~/.openaide/data
   session_store: sqlite        # "sqlite" (default), "file", "memory"
 ```
+
+Skill distillation works with ALL providers. If `embedding_model` is set (OpenAI, GLM, Qwen), uses cosine similarity. If not (DeepSeek, Kimi, Anthropic), uses LLM-based clustering — no embedding API required.
 
 ### CLI (REPL)
 
