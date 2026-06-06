@@ -73,7 +73,7 @@ func (d *SemanticPatternDetector) Detect(ctx context.Context, sessionID string, 
 	// Fall back to LLM-based clustering (no embedding needed)
 	if d.llm != nil {
 		d.buffer = append(d.buffer, pairs...)
-		if len(d.buffer) >= 4 {
+		if len(d.buffer) >= d.minSize {
 			patterns := d.clusterWithLLM(ctx)
 			d.buffer = nil
 			return patterns, nil
@@ -86,7 +86,7 @@ func (d *SemanticPatternDetector) Detect(ctx context.Context, sessionID string, 
 // clusterWithLLM sends accumulated queries to LLM for semantic grouping.
 // No embedding API required — the LLM does the clustering directly.
 func (d *SemanticPatternDetector) clusterWithLLM(ctx context.Context) []Pattern {
-	if d.llm == nil || len(d.buffer) < 4 { return nil }
+	if d.llm == nil || len(d.buffer) < d.minSize { return nil }
 
 	var sb strings.Builder
 	sb.WriteString("Group these user queries by topic. A query may belong to multiple groups.\n\n")
