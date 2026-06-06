@@ -445,10 +445,6 @@ func (k *AgentKernel) extractSkillsFromPatterns(ctx context.Context, patterns []
 	}
 
 	for i, p := range patterns {
-		if p.Frequency < 3 {
-			continue
-		}
-
 		// LLM quality gate: is this cluster actually a reusable pattern worth extracting?
 		if k.llmProvider != nil {
 			quality := evaluateClusterQuality(ctx, k.llmProvider, p, i, clusterExamples)

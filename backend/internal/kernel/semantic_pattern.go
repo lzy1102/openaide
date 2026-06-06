@@ -33,7 +33,7 @@ type clusterExample struct {
 
 // NewSemanticPatternDetector creates a detector.
 func NewSemanticPatternDetector(embedder Embedder, minSize int, threshold float64) *SemanticPatternDetector {
-	if minSize < 3 { minSize = 3 }
+	if minSize < 1 { minSize = 1 }
 	if threshold <= 0 || threshold > 1 { threshold = 0.80 }
 	return &SemanticPatternDetector{
 		embedder: embedder, minSize: minSize, threshold: threshold,
@@ -94,7 +94,7 @@ func (d *SemanticPatternDetector) collectPatterns() []Pattern {
 	var patterns []Pattern
 	for i := range d.clusters {
 		c := &d.clusters[i]
-		if c.distilled || len(c.examples) < d.minSize { continue }
+		if c.distilled || len(c.examples) < 1 { continue }
 		c.distilled = true
 		theme := extractClusterTheme(c.examples)
 		if theme == "" { continue }
@@ -131,7 +131,7 @@ func (d *SemanticPatternDetector) prune() {
 // represents a reusable pattern worth extracting as a skill.
 // Returns 0.0–1.0 quality score. Below 0.5 = skip.
 func evaluateClusterQuality(ctx context.Context, llm LLMProvider, p Pattern, idx int, examples [][]clusterExample) float64 {
-	if llm == nil || p.Frequency < 3 {
+	if llm == nil {
 		return 0
 	}
 	prompt := "You are evaluating whether a cluster of user queries forms a coherent, reusable pattern.\n\n"
@@ -163,7 +163,7 @@ func evaluateClusterQuality(ctx context.Context, llm LLMProvider, p Pattern, idx
 
 // DistillCluster sends query+response pairs to an LLM and extracts reusable knowledge.
 func DistillCluster(ctx context.Context, llm LLMProvider, examples []clusterExample) string {
-	if llm == nil || len(examples) < 2 { return "" }
+	if llm == nil || len(examples) < 1 { return "" }
 
 	var sb strings.Builder
 	sb.WriteString("You are a knowledge distillation expert. Given similar tasks and their solutions, extract reusable patterns including tool-use strategies.\n\n")
