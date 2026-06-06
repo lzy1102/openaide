@@ -75,7 +75,6 @@ func (d *SemanticPatternDetector) addToCluster(ex clusterExample, emb []float32)
 			if sim := CosineSimilarity(emb, e); sim > bestSim {
 				bestSim, bestIdx = sim, i
 			}
-			break
 		}
 	}
 
