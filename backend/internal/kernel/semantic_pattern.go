@@ -33,7 +33,7 @@ type clusterExample struct {
 
 // NewSemanticPatternDetector creates a detector.
 func NewSemanticPatternDetector(embedder Embedder, minSize int, threshold float64) *SemanticPatternDetector {
-	if minSize < 3 { minSize = 8 }
+	if minSize < 3 { minSize = 3 }
 	if threshold <= 0 || threshold > 1 { threshold = 0.80 }
 	return &SemanticPatternDetector{
 		embedder: embedder, minSize: minSize, threshold: threshold,
@@ -125,6 +125,38 @@ func (d *SemanticPatternDetector) prune() {
 		return len(d.clusters[i].examples) > len(d.clusters[j].examples)
 	})
 	if len(d.clusters) > 50 { d.clusters = d.clusters[:50] }
+}
+
+// evaluateClusterQuality uses LLM to judge whether a cluster of similar queries
+// represents a reusable pattern worth extracting as a skill.
+// Returns 0.0–1.0 quality score. Below 0.5 = skip.
+func evaluateClusterQuality(ctx context.Context, llm LLMProvider, p Pattern, idx int, examples [][]clusterExample) float64 {
+	if llm == nil || p.Frequency < 3 {
+		return 0
+	}
+	prompt := "You are evaluating whether a cluster of user queries forms a coherent, reusable pattern.\n\n"
+	prompt += fmt.Sprintf("Theme: %s\nQuery count: %d\n\n", p.Description, p.Frequency)
+	if idx < len(examples) && len(examples[idx]) > 0 {
+		prompt += "Sample queries:\n"
+		n := len(examples[idx])
+		if n > 5 { n = 5 }
+		for j := 0; j < n; j++ {
+			prompt += fmt.Sprintf("- %s\n", truncStr(examples[idx][j].query, 150))
+		}
+	}
+	prompt += "\nJudge: are these queries truly about the same topic and worth distilling into a reusable skill? "
+	prompt += "Reply with ONLY a number 0.0–1.0 (0=random noise, 1=clearly reusable pattern)."
+
+	resp, err := llm.Chat(ctx, []Message{{Role: "user", Content: prompt}}, nil,
+		map[string]interface{}{"max_tokens": 10, "temperature": 0, "route": "execution", "no_thinking": true})
+	if err != nil || resp.Content == "" {
+		return 0.5 // default pass on error (don't block)
+	}
+	var score float64
+	fmt.Sscanf(strings.TrimSpace(resp.Content), "%f", &score)
+	if score < 0 { score = 0 }
+	if score > 1 { score = 1 }
+	return score
 }
 
 // ── Distillation ─────────────────────────────────────────────

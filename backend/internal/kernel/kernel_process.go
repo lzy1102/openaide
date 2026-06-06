@@ -445,8 +445,18 @@ func (k *AgentKernel) extractSkillsFromPatterns(ctx context.Context, patterns []
 	}
 
 	for i, p := range patterns {
-		if p.Confidence < 0.7 || p.Frequency < 3 {
+		if p.Frequency < 3 {
 			continue
+		}
+
+		// LLM quality gate: is this cluster actually a reusable pattern worth extracting?
+		if k.llmProvider != nil {
+			quality := evaluateClusterQuality(ctx, k.llmProvider, p, i, clusterExamples)
+			if quality < 0.5 {
+				slog.Debug("Cluster rejected by quality gate", "theme", p.Description, "freq", p.Frequency, "quality", quality)
+				continue
+			}
+			p.Confidence = quality
 		}
 
 		theme := strings.ToLower(strings.TrimSpace(p.Description))
@@ -461,7 +471,7 @@ func (k *AgentKernel) extractSkillsFromPatterns(ctx context.Context, patterns []
 		// Create skill immediately with simple description (no delay)
 		simplePrompt := fmt.Sprintf("Auto-detected from %d executions sharing theme: %s", p.Frequency, p.Description)
 		k.skillActor.AddSkill(skillID, skillName, p.Description, simplePrompt, keywords)
-		slog.Info("Auto-extracted skill", "id", skillID, "name", skillName, "frequency", p.Frequency)
+		slog.Info("Auto-extracted skill", "id", skillID, "name", skillName, "frequency", p.Frequency, "quality", fmt.Sprintf("%.2f", p.Confidence))
 
 		// Distillation runs async — updates skill prompt when ready
 		if p.Type == "distillable_cluster" && i < len(clusterExamples) && k.llmProvider != nil {
