@@ -487,11 +487,17 @@ Skill distillation works with ALL providers. If `embedding_model` is set (OpenAI
 - `cmd/cli/repl_output.go` — pterm/ANSI styling, glamour renderer, output helpers
 - `cmd/cli/setup.go` — interactive setup wizard (language→provider→API key→model)
 
-### Budget injection (Claude Code style)
-
 ### Unbounded ReAct loop (Claude Code style)
 
-No artificial round limits. The LLM decides when to stop by returning a response without tool calls. Token budget via compression is the only guardrail. Fixed-threshold hints at rounds 10, 20, and 50 — gentle reminders, not hard limits.
+No artificial round limits. The LLM decides when to stop. Fixed-threshold hints at rounds 10, 20, 50 — gentle reminders, not hard limits. 200-round safety net prevents pathological infinite loops. Both sync and stream paths use the same injection thresholds.
+
+### User Experience
+
+- **Error messages**: `humanizeError` wraps API errors with human-readable tips (429→quota, 401→bad key, timeout→network, deadline→slow model).
+- **Tool visibility**: One-shot streaming mode shows tool calls on stderr as they execute.
+- **Session continuity**: `getOrCreateSession` auto-resumes the most recent session. Use `-c` flag for explicit continuation.
+- **Config validation**: `validate()` warns on missing API keys and placeholder values at startup.
+- **Cross-session learning**: `SeedFromHistory` pre-loads the pattern detector with query history from past sessions on startup. Pattern detection survives restarts.
 
 ### Architect/Editor model routing
 
