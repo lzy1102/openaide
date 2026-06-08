@@ -87,18 +87,15 @@ func (r *LLMReflection) Reflect(ctx context.Context, sessionID string, execution
 - Error: %s
 - Tool Calls: %d
 - Duration: %dms
-%s
 ## Your Task
 1. Rate overall quality (1-10)
 2. Rate each step: was the tool choice correct? Was the right file read? Was the edit precise?
 3. Identify the BEST decision in this execution (what to reinforce)
 4. Identify the WEAKEST decision (what to fix next time)
-5. **Key Lesson for Next Time** — a 1-3 sentence directive. Be concrete.
-6. **Infer user verdict from the conversation flow**: based on the FULL conversation, did the user seem satisfied? Output in 'learned' field as prefix: [good], [bad], or [neutral].`,
+6. Infer user verdict from conversation: [good]/[bad]/[neutral]`,
 		execution.Query, execution.Response, trace.String(),
 		execution.Success, execution.Error,
-		len(execution.ToolCalls), execution.Duration,
-		trace.String())
+		len(execution.ToolCalls), execution.Duration)
 
 	messages := []Message{
 		{
@@ -112,9 +109,10 @@ func (r *LLMReflection) Reflect(ctx context.Context, sessionID string, execution
 	}
 
 	resp, err := r.llm.Chat(ctx, messages, []ToolDefinition{reflectionTool}, map[string]interface{}{
-		"route":       "reasoning",
-		"temperature": 0.3,
-		"max_tokens":  1000,
+		"route":       "execution",
+		"no_thinking": true,
+		"temperature": 0.2,
+		"max_tokens":  500,
 	})
 	if err != nil {
 		slog.Warn("LLM reflection failed, skipping", "error", err)
