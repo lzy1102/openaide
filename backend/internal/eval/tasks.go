@@ -15,7 +15,7 @@ func BuiltinTasks() []Task {
 			ID: "hello-response", Name: "Greeting Response",
 			Category: "general", Difficulty: "easy",
 			Query:        "Hello! What can you help me with?",
-			EvalCriteria: "Friendly greeting response mentioning the agent's capabilities (coding, code review, analysis, explanation). Identifies itself as OpenAIDE or an AI coding assistant.",
+			EvalCriteria: "Friendly greeting response mentioning helpful capabilities. Identifies itself as OpenAIDE or an AI coding assistant.",
 			MustNotContain: []string{"I can't", "not able"},
 		},
 		{
