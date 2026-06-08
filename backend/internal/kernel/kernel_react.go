@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -118,6 +119,7 @@ type toolExecResult struct {
 // Returns results for appending to messages and the count of tool errors.
 // Shared by both sync (Process) and stream (ProcessStream) paths.
 func (k *AgentKernel) executeToolBatch(ctx context.Context, toolCalls []ToolCall, sessionID string, round int) (results []toolExecResult, toolErrors int) {
+	var toolErrCount atomic.Int32
 	// 1. Validate and prepare tasks
 	tasks := make([]toolExecTask, len(toolCalls))
 	for i, tc := range toolCalls {
@@ -172,7 +174,7 @@ func (k *AgentKernel) executeToolBatch(ctx context.Context, toolCalls []ToolCall
 				if r.Error != "" {
 					errStr = r.Error
 					content = fmt.Sprintf("Error: %s", r.Error)
-					toolErrors++
+					toolErrCount.Add(1)
 				}
 				results[idx] = toolExecResult{ID: call.ID, Name: call.Function.Name, Content: content, Error: errStr}
 				k.publishEvent(Event{Type: EventToolCallEnded, Source: "kernel", Data: map[string]interface{}{"tool": call.Function.Name, "success": r.Error == "", "session_id": sessionID}, Timestamp: time.Now()})
@@ -183,9 +185,11 @@ func (k *AgentKernel) executeToolBatch(ctx context.Context, toolCalls []ToolCall
 		select {
 		case <-done:
 		case <-ctx.Done():
+			toolErrors = int(toolErrCount.Load())
 			return results, toolErrors
 		}
 	}
+	toolErrors = int(toolErrCount.Load())
 	return results, toolErrors
 }
 

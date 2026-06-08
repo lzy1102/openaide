@@ -1,55 +1,65 @@
 {
-  "id": "eval_1780621760",
-  "timestamp": "2026-06-05T09:09:20.56170595+08:00",
+  "id": "eval_1780903871",
+  "timestamp": "2026-06-08T15:31:11.578267142+08:00",
   "results": [
     {
       "task": {
-        "id": "analyze-structure",
-        "name": "Analyze Project Structure",
-        "category": "research",
-        "query": "What are the main packages in this project? List their responsibilities briefly.",
-        "must_contain": [
-          "kernel",
-          "tools",
-          "api"
-        ],
-        "must_not_contain": [
-          "I don't know",
-          "I haven't read"
-        ],
-        "difficulty": "medium"
+        "id": "simple-calc",
+        "name": "Simple Calculation",
+        "category": "coding",
+        "query": "What is the time complexity of binary search? Answer in one sentence.",
+        "eval_criteria": "States that binary search has O(log n) time complexity. Answer is concise (one sentence).",
+        "difficulty": "easy"
       },
       "passed": true,
-      "response": "Here's a breakdown of the project — **OpenAIDE Backend** (an AI coding assistant):\n\n---\n\n## Entry Points (`cmd/`)\n\n| Package | Responsibility |\n|---------|----------------|\n| `cmd/server` | Main server binary — HTTP + WebSocket backend |\n| `cmd/cli` | CLI binary for terminal-based interaction |\n| `cmd/eval` | Evaluation runner for benchmarking |\n\n---\n\n## Core Packages (`internal/`)\n\n### AI \u0026 Agent System\n| Package | Responsibility |\n|---------|----------------|\n| **`kernel`** | Core AI kernel: actors, sessions, skills, semantic patterns, orchestration interfaces, checkpoints, tracing — the heart of the agent system |\n| **`orchestration`** | Task planning \u0026 execution: planner, orchestrator, sub-agents, teams, tree-of-thought reasoning, workspace management |\n| **`llm`** | LLM provider abstraction: OpenAI \u0026 Anthropic gateways, caching, routing, embedding |\n| **`memory`** | Long-term memory: vector storage, archival, memory actor for remembering past context |\n| **`knowledge`** | Knowledge base: store and retrieve structured knowledge from documents |\n| **`projectmind`** | Project-level semantic understanding — builds a mental model of the entire codebase |\n| **`lsp`** | Language Server Protocol client — connects to LSP servers for code intelligence |\n\n### Tools \u0026 Capabilities\n| Package | Responsibility |\n|---------|----------------|\n| **`tools`** | Tool registry + implementations: browser, desktop, filesystem, git, diff editing, LSP, web, knowledge, memory, symbol search, todo, verify claims |\n| **`mcp`** | Model Context Protocol support — MCP server and client |\n| **`compress`** | Context compression using LLM to summarize long conversations |\n| **`lang`** | Language detection and parsing utilities |\n\n### Infrastructure \u0026 Integration\n| Package | Responsibility |\n|---------|----------------|\n| **`infra`** | Application bootstrapping: wires together kernel, LLM, tools, hot-reload, plugin watcher |\n| **`api`** | HTTP/WebSocket server layer: routes, rate limiting, WebSocket sessions |\n| **`config`** | YAML configuration parsing and validation |\n| **`auth`** | Authentication — API key validation |\n| **`channel`** | Multi-channel communication: Feishu (Lark), Telegram, Webhook integrations + message queuing |\n| **`plugin`** | Plugin system: load external plugins (e.g., Claude plugin) |\n| **`event`** | Event types and event bus for decoupled communication |\n| **`identity`** | User identity management |\n| **`git`** | Deep git operations (history, blame, diffs) |\n| **`index`** | Incremental codebase indexing for fast symbol/code search |\n| **`feedback`** | User feedback collection and tracking |\n\n---\n\n**In a nutshell:** `kernel` is the brain, `orchestration` is the planning center, `tools` is the hands, `llm`/`lsp` are the senses, `memory`/`knowledge`/`index` are the long-term memory, and `infra`/`api`/`config` wire everything together.",
-      "duration": 47643073704,
-      "tool_calls": 26,
-      "tokens_used": 43117
+      "response": "Binary search has a time complexity of **O(log n)**, as it halves the search space with each comparison.",
+      "duration": 40379318787,
+      "tool_calls": 0,
+      "tokens_used": 4704
     },
     {
       "task": {
-        "id": "refactoring-plan",
-        "name": "Refactoring Plan",
-        "category": "research",
-        "query": "If you were to split the kernel package into smaller sub-packages, what would you extract and why?",
-        "must_contain": [
-          "package",
-          "extract",
-          "interface",
-          "actor",
-          "session"
+        "id": "explain-concurrency",
+        "name": "Explain Go Concurrency",
+        "category": "think",
+        "query": "Explain how goroutines and channels work in Go. Give a short example.",
+        "eval_criteria": "Response explains goroutines (lightweight threads) and channels (communication mechanism) with a valid Go code example. Must mention both concepts.",
+        "must_not_contain": [
+          "I don't know",
+          "I'm not sure"
         ],
-        "difficulty": "hard"
+        "difficulty": "easy"
       },
       "passed": true,
-      "response": "## Kernel Package Split Proposal\n\nAfter reviewing all 20+ files in `internal/kernel`, here's how I'd split it:\n\n---\n\n### Current State: One Package, Many Concerns\n\nThe kernel package currently bundles ~8 distinct responsibilities into a single namespace: the ReAct loop, type contracts, approval, compression, tracing, session management, embedding, semantic analysis, and adaptive learning — plus 3 already-extracted sub-packages (`actor/`, `graph/`, `trace/`).\n\n---\n\n### Proposed Split\n\n| Sub-package | Files | Rationale |\n|---|---|---|\n| **`kernel/contract`** | `interfaces.go`, `types.go`, `checkpoint.go` | These are the **dependency spine**. Every component depends on `Kernel`, `Message`, `Query`, `StreamChunk`, `LLMProvider`, etc. Extracting them into a lightweight contract package **eliminates import cycles** and lets sub-packages depend on contracts without pulling in the whole kernel. |\n| **`kernel/react`** | `",
-      "duration": 73912563698,
-      "tool_calls": 16,
-      "tokens_used": 93793
+      "response": "## Goroutines \u0026 Channels in Go\n\n**Goroutines** are lightweight threads managed by the Go runtime. **Channels** are the pipes that connect them, enabling safe communication without shared memory.\n\n### Key Ideas\n\n- `go f()` — launches `f` as a concurrent goroutine\n- `make(chan T)` — creates a channel that transports values of type `T`\n- `ch \u003c- value` — **send** a value into the channel\n- `value := \u003c-ch` — **receive** a value from the channel (blocks until one is available)\n- Sends and receives **block** by default, providing synchronization\n\n### Short Example\n\n```go\npackage main\n\nimport \"fmt\"\n\nfunc worker(id int, jobs \u003c-chan int, results chan\u003c- int) {\n    for j := range jobs {       // receive until jobs is closed\n        fmt.Printf(\"worker %d processing job %d\\n\", id, j)\n        results \u003c- j * 2        // send result\n    }\n}\n\nfunc main() {\n    jobs := make(chan int, 5)    // buffered channel (capacity 5)\n    results := make(chan int, 5)\n\n    // Start 3 workers\n    for w := 1; w \u003c= 3; w++ {\n        go worker(w, jobs, results)\n    }\n\n    // Send 5 jobs\n    for j := 1; j \u003c= 5; j++ {\n        jobs \u003c- j\n    }\n    close(jobs)                 // signal workers: no more jobs\n\n    // Collect 5 results\n    for r := 1; r \u003c= 5; r++ {\n        fmt.Println(\"result:\", \u003c-results)\n    }\n}\n```\n\n### How It Works\n\n| Concept | Detail |\n|---|---|\n| **Goroutine** | ~2 KB stack, multiplexed onto OS threads by Go scheduler. Cheap to spawn thousands. |\n| **Channel direction** | `\u003c-chan int` = receive-only; `chan\u003c- int` = send-only — enforced at compile time. |\n| **Buffered vs unbuffered** | `make(chan int)` blocks on every send/receive. `make(chan int, 5)` lets up to 5 sends proceed without a receiver. |\n| **Blocking** | Unbuffered sends block until a receiver is ready (and vice versa) — this is the synchronization mechanism. |\n| **`range ch`** | Loops over values until the channel is **closed**. |\n\nThe Go motto: **\"Don't communicate by sharing memory; share memory by communicating.\"** Channels are the idiomatic way to do that.",
+      "duration": 51412599880,
+      "tool_calls": 0,
+      "tokens_used": 5253
+    },
+    {
+      "task": {
+        "id": "hello-response",
+        "name": "Greeting Response",
+        "category": "general",
+        "query": "Hello! What can you help me with?",
+        "eval_criteria": "Friendly greeting response mentioning helpful capabilities. Identifies itself as OpenAIDE or an AI coding assistant.",
+        "must_not_contain": [
+          "I can't",
+          "not able"
+        ],
+        "difficulty": "easy"
+      },
+      "passed": false,
+      "response": "Hello! 👋 I'm your AI assistant, ready to help with a wide range of tasks. Here's what I can do:\n\n**💻 Coding \u0026 Development**\n- Read, write, and edit code across any language\n- Debug issues, review code, and refactor\n- Search codebases, trace function calls, and find definitions\n- Run commands, manage Git, and diagnose build/lint errors\n\n**🔍 Research \u0026 Analysis**\n- Search the web for up-to-date information\n- Analyze documents, files, and web pages\n- Compare technologies, summarize findings\n\n**📝 Writing \u0026 Content**\n- Draft documents, READMEs, docs\n- Translate, proofread, and improve text\n\n**🌐 Browser Automation**\n- Navigate websites, fill forms, extract data\n- Take screenshots and interact with web pages\n\n**🗂️ Project Management**\n- Plan complex multi-step tasks\n- Track progress with task lists\n- Organize knowledge for future reference\n\n**🖥️ Desktop Interaction**\n- Control mouse/keyboard, take screenshots\n- Interact with desktop applications\n\nJust tell me what you need — whether it's fixing a bug, researching a topic, writing code, or anything else — and I'll get started! 🚀",
+      "duration": 108737489898,
+      "tool_calls": 0,
+      "tokens_used": 4682,
+      "fail_reason": "The agent identifies itself as \"your AI assistant\" rather than the specific required labels \"OpenAIDE\" or \"an AI coding assistant.\""
     }
   ],
-  "total": 2,
+  "total": 3,
   "passed": 2,
-  "avg_time": 60777818701,
-  "avg_tools": 21,
-  "avg_tokens": 68455
+  "avg_time": 66843136188,
+  "avg_tools": 0,
+  "avg_tokens": 4879.666666666667
 }
