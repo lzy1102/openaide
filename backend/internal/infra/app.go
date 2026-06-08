@@ -282,8 +282,7 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 			}
 		}
 		if opencodeInstr != "" {
-			currentPrompt := kernel.LoadSystemPrompt(cfg.Storage.DataDir + "/prompts")
-			agentKernel.SetSystemPrompt(currentPrompt + "\n\n## OpenCode 项目指令\n" + opencodeInstr)
+			agentKernel.SetSystemPrompt(opencodeInstr)
 		}
 	}
 

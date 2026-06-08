@@ -676,29 +676,7 @@ func defaultSystemPrompt() string {
 	return promptL0_EN()
 }
 
-// LoadSystemPrompt loads a custom system prompt from the user directory.
-// System prompts are always built-in; user customizations are in user/*.md.
-// Kept for backward compatibility: if an old system.{lang}.md exists, it's used as SetSystemPrompt.
-func LoadSystemPrompt(dir string) string {
-	suffix := "en"
-	if isZhEnv() { suffix = "zh" }
-	if data, err := os.ReadFile(filepath.Join(dir, "system."+suffix+".md")); err == nil && len(data) > 0 {
-		return string(data)
-	}
-	if data, err := os.ReadFile(filepath.Join(dir, "system.md")); err == nil && len(data) > 0 {
-		return string(data)
-	}
-	return ""
-}
 
-// WriteSystemPrompt writes a user system prompt for backward compatibility.
-// New users should write to ~/.openaide/data/prompts/user/*.md instead.
-func WriteSystemPrompt(dir, prompt string) error {
-	os.MkdirAll(dir, 0755)
-	suffix := "en"
-	if isZhEnv() { suffix = "zh" }
-	return os.WriteFile(filepath.Join(dir, "system."+suffix+".md"), []byte(prompt), 0644)
-}
 
 func isZhEnv() bool {
 	lang := os.Getenv("LANG")

@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"openaide/backend/internal/config"
-	"openaide/backend/internal/kernel"
 )
 
 type onboardText struct {
@@ -37,7 +36,7 @@ var zhText = onboardText{
 	langZH:     "   [1] 中文",
 	langEN:     "   [2] English",
 	langFollow: "   [3] 跟随对话语言",
-	saved:      "✓ 配置已保存到 %s/system.md",
+	saved:      "✓ Profile saved to %s/user/profile.md",
 	editHint:   "你可以随时编辑这个文件来调整我的行为。",
 }
 
@@ -61,7 +60,7 @@ var enText = onboardText{
 	langZH:     "   [1] 中文",
 	langEN:     "   [2] English",
 	langFollow: "   [3] Follow the conversation",
-	saved:      "✓ Profile saved to %s/system.md",
+	saved:      "✓ Profile saved to %s/user/profile.md",
 	editHint:   "You can edit this file anytime to customize me further.",
 }
 
@@ -129,10 +128,7 @@ func runOnboarding(cfg *config.Config, promptsDir string) {
 	}
 
 	// 生成并写入
-	lang := "follow"
-	if zh { lang = "zh" } else { lang = "en" }
-	prompt := buildTailoredPrompt(identity, style, lang)
-	if err := kernel.WriteSystemPrompt(promptsDir, prompt); err != nil {
+	if err := writeUserTemplates(promptsDir+"/user", identity, style, zh); err != nil {
 		fmt.Printf("\n  ⚠ Failed to save: %v\n", err)
 		fmt.Printf("  Default profile will be used.\n\n")
 		return
@@ -254,6 +250,28 @@ Always think from a business perspective: ROI, feasibility, risk.`,
 		}
 	}
 	return identities["1"]
+}
+
+// writeUserTemplates creates template files in the user prompts directory.
+// Each file has bilingual comments explaining its purpose — users uncomment to enable.
+func writeUserTemplates(userDir, identity, style string, zh bool) error {
+	os.MkdirAll(userDir, 0755)
+	var hdr, profile, coding, comm string
+	if zh {
+		hdr = "# OpenAIDE 用户提示词模板\n# 取消注释（删除行首的 #）来启用对应配置\n# 修改完成后重启 openaide 生效\n\n"
+		profile = "# 你的身份和角色\n# 例: 我是后端开发，专注于 Go 微服务架构\n# 例: 我是全栈工程师，熟悉 React + Node.js\n" + identity + "\n\n# 回复风格\n# balanced: 按需调整 | concise: 简洁直接 | detailed: 详尽深入\n# " + style + "\n"
+		coding = "# 编码偏好\n# 例: 所有错误处理都要显式，不要吞掉 error\n# 例: 优先用标准库，不要随便引入第三方依赖\n# 例: 每个 public 函数都要有对应的测试\n"
+		comm = "# 沟通风格\n# 例: 直接给答案，不要先解释你要做什么\n# 例: 改完代码后逐行读 diff 确认正确\n# 例: 不确定的时候直接说，不要猜\n"
+	} else {
+		hdr = "# OpenAIDE User Prompt Templates\n# Uncomment lines (remove leading #) to enable settings\n# Restart openaide after editing\n\n"
+		profile = "# Your role & identity\n# e.g. Backend dev focused on Go microservices\n# e.g. Full-stack engineer with React + Node.js\n" + identity + "\n\n# Response style\n# balanced: adjust to question | concise: short & direct | detailed: thorough\n# " + style + "\n"
+		coding = "# Coding preferences\n# e.g. Always handle errors explicitly\n# e.g. Prefer stdlib over third-party deps\n# e.g. Every public function needs a test\n"
+		comm = "# Communication style\n# e.g. Lead with the answer\n# e.g. After editing, verify by reading back the diff\n# e.g. When uncertain, say so\n"
+	}
+	os.WriteFile(userDir+"/profile.md", []byte(hdr+profile), 0644)
+	os.WriteFile(userDir+"/coding.md", []byte(hdr+coding), 0644)
+	os.WriteFile(userDir+"/communication.md", []byte(hdr+comm), 0644)
+	return nil
 }
 
 func buildTailoredPrompt(identity, style, lang string) string {

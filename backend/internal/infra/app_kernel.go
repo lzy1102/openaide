@@ -25,9 +25,6 @@ import (
 
 func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedder, toolRegistry kernel.ToolExecutor, memManager kernel.Memory, sessionStore kernel.SessionStore) (*kernel.AgentKernel, *plugin.Manager, error) {
 	systemPrompt := cfg.Kernel.SystemPrompt
-	if systemPrompt == "" {
-		systemPrompt = kernel.LoadSystemPrompt(cfg.Storage.DataDir + "/prompts")
-	}
 	kernelConfig := &kernel.Config{
 		MaxRounds:    cfg.Kernel.MaxRounds,
 		MaxTokens:    cfg.Kernel.MaxTokens,
