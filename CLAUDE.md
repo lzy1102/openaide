@@ -328,8 +328,8 @@ All tools return structured, agent-friendly output:
 
 - **Layered architecture**: Stable prefix (L0 Identity + L1 Project + L2 Skill) cached in system message. Dynamic tail (L3 Task Adapter + L5 Reflection + L6 Knowledge RAG) appended per-query.
 - **L0**: Identity + Safety rules, tool strategy (incl. parallel tool guidance), anti-patterns (~400 tokens).
-- **L1**: Project context — working directory, git branch, CLAUDE.md / OPENAIDE.md loading, RepoMap. Auto-detects project language (go/node/python/rust) and injects language-specific conventions.
-- **L3**: Task adapter injected per-query (dynamic tail). `detectTaskType()` uses LLM (flash model) to classify query into coding/review/teaching/research/general. Analysis output format ([P0/P1/P2] file:line → Fix → Why → Effort) only in review/research modes — not wasted on coding queries.
+- **L1**: Project context — working directory, git branch, CLAUDE.md / OPENAIDE.md loading, RepoMap. Auto-detects 21 languages (go/java/python/rust/c/c++/c#/swift/kotlin/node/php/ruby/scala/dart/elixir/haskell/erlang/ocaml/r/lua/julia/perl) and injects language-specific conventions.
+- **L3**: Task adapter injected per-query (dynamic tail). `detectTaskType()` uses LLM (flash model) to classify query into 4 categories: coding/review/think/general. Coding uses 4-phase senior engineer workflow (Assess→Plan→Execute→Self-Review). Review has anti-false-positive rules + [RISK] label. Think covers the full spectrum from explanation to architecture analysis to greenfield design.
 - **File overrides**: Each layer overridable via `~/.openaide/data/prompts/l{0,1,3}_{task}.md`.
 - **Default prompt**: Bilingual (Chinese/English), auto-detected from `LANG` env var.
 - **Runtime hot-reload**: `AgentKernel.SetSystemPrompt()` allows prompt changes without kernel restart.
