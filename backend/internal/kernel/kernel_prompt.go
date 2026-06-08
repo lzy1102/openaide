@@ -3,10 +3,17 @@ package kernel
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 )
+
+// promptVersion is stamped into generated prompt files. When the built-in
+// version is newer than the file on disk, the file is ignored and the built-in
+// prompt is used instead. Users who customize their prompts can remove the
+// version line to keep their version permanently.
+const promptVersion = "openaide-prompt-v2"
 
 // ── Layered Prompt System ──────────────────────────────────
 // Layers are assembled dynamically based on task context.
@@ -648,13 +655,27 @@ Answer with ONLY the category name (one word).`
 	return "general"
 }
 
-// loadPromptFile reads a prompt file if it exists.
+// loadPromptFile reads a prompt file if it exists and is up-to-date.
+// If the file's version is older than the current built-in version, it's ignored
+// so users automatically get prompt improvements on upgrade.
+// Remove the version line from your prompt file to keep your custom version forever.
 func loadPromptFile(dir, name string) string {
 	data, err := os.ReadFile(filepath.Join(dir, name))
 	if err != nil || len(data) == 0 {
 		return ""
 	}
-	return string(data)
+	content := string(data)
+	// Version check: if file has an older version stamp, use built-in instead
+	if i := strings.Index(content, "openaide-prompt-"); i >= 0 {
+		end := i + strings.Index(content[i:], "\n")
+		if end > i { end = i + end }
+		fileVersion := strings.TrimSpace(content[i:end])
+		if fileVersion != promptVersion {
+			slog.Info("Prompt file outdated, using built-in", "file", name, "file_version", fileVersion, "current", promptVersion)
+			return ""
+		}
+	}
+	return content
 }
 
 // ── Helpers ─────────────────────────────────────────────────
@@ -676,13 +697,27 @@ func LoadSystemPrompt(dir string) string {
 		suffix = "zh"
 	}
 	if data, err := os.ReadFile(filepath.Join(dir, "system."+suffix+".md")); err == nil && len(data) > 0 {
-		return string(data)
+		if content := checkPromptVersion(string(data), "system."+suffix+".md"); content != "" { return content }
 	}
 	// Try generic file
 	if data, err := os.ReadFile(filepath.Join(dir, "system.md")); err == nil && len(data) > 0 {
-		return string(data)
+		if content := checkPromptVersion(string(data), "system.md"); content != "" { return content }
 	}
 	return ""
+}
+
+// checkPromptVersion returns the prompt content if version is current, "" if outdated.
+func checkPromptVersion(content, name string) string {
+	if i := strings.Index(content, "openaide-prompt-"); i >= 0 {
+		end := i + strings.Index(content[i:], "\n")
+		if end > i { end = i + end }
+		fileVersion := strings.TrimSpace(content[i:end])
+		if fileVersion != promptVersion {
+			slog.Info("Prompt file outdated, using built-in", "file", name, "file_version", fileVersion, "current", promptVersion)
+			return ""
+		}
+	}
+	return content
 }
 
 // WriteSystemPrompt writes a custom system prompt to disk.
@@ -692,7 +727,9 @@ func WriteSystemPrompt(dir, prompt string) error {
 	if isZhEnv() {
 		suffix = "zh"
 	}
-	return os.WriteFile(filepath.Join(dir, "system."+suffix+".md"), []byte(prompt), 0644)
+	// Stamp version so future upgrades can detect outdated prompts
+	content := "// " + promptVersion + "\n" + prompt
+	return os.WriteFile(filepath.Join(dir, "system."+suffix+".md"), []byte(content), 0644)
 }
 
 func isZhEnv() bool {
