@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 )
@@ -34,26 +35,67 @@ func (k *AgentKernel) prepareReActRound(ctx context.Context, messages []Message,
 
 	snipOldToolOutputs(messages)
 
-	// Budget injection at fixed round thresholds (no hard limit)
-	if round >= 50 {
-		if k.queryOptions != nil && k.queryOptions.OnBudgetExhausted != nil {
+	// Budget injection — show the LLM its own tool usage pattern so it can self-regulate
+	if round >= 10 {
+		toolCounts := countToolCalls(messages)
+		hint := buildBudgetHint(round, toolCounts)
+		messages = append(messages, Message{Role: "user", Content: hint})
+		// Still allow the exhaustion callback for external control
+		if round >= 50 && k.queryOptions != nil && k.queryOptions.OnBudgetExhausted != nil {
 			if k.queryOptions.OnBudgetExhausted(round, 50) {
 				return messages
 			}
 		}
-		messages = append(messages, Message{
-			Role: "user", Content: "[System] Round 50+. You should have enough information. Give your final answer. Only call tools if absolutely essential.",
-		})
-	} else if round >= 20 {
-		messages = append(messages, Message{Role: "user", Content: fmt.Sprintf(
-			"[System] Round %d. Stop exploring. Start synthesizing your final answer. Only call tools if absolutely necessary.",
-			round)})
-	} else if round >= 10 {
-		messages = append(messages, Message{Role: "user", Content: fmt.Sprintf(
-			"[System] Round %d. Begin wrapping up. Focus on key findings.",
-			round)})
 	}
 	return messages
+}
+
+// countToolCalls extracts tool usage stats from message history.
+func countToolCalls(messages []Message) map[string]int {
+	counts := map[string]int{}
+	for _, msg := range messages {
+		if msg.Role == "assistant" {
+			for _, tc := range msg.ToolCalls {
+				counts[tc.Function.Name]++
+			}
+		}
+	}
+	return counts
+}
+
+// buildBudgetHint creates a context-aware hint based on the LLM's actual tool usage.
+func buildBudgetHint(round int, toolCounts map[string]int) string {
+	// Summarize what tools were used
+	totalCalls := 0
+	for _, n := range toolCounts { totalCalls += n }
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("[System] Round %d. You've made %d tool calls so far.", round, totalCalls))
+
+	// Show top tools used
+	if len(toolCounts) > 0 {
+		type kv struct{ k string; v int }
+		var sorted []kv
+		for k, v := range toolCounts { sorted = append(sorted, kv{k, v}) }
+		sort.Slice(sorted, func(i, j int) bool { return sorted[i].v > sorted[j].v })
+		sb.WriteString(" Tools used: ")
+		for i, t := range sorted {
+			if i >= 5 { break }
+			if i > 0 { sb.WriteString(", ") }
+			sb.WriteString(fmt.Sprintf("%s×%d", t.k, t.v))
+		}
+		sb.WriteString(".")
+	}
+
+	// Escalating urgency
+	if round >= 50 {
+		sb.WriteString(" You MUST give your final answer now. Do NOT call any more tools.")
+	} else if round >= 20 {
+		sb.WriteString(" Stop exploring. If you have enough information, give your final answer. Only call tools if absolutely necessary.")
+	} else {
+		sb.WriteString(" Begin wrapping up. Focus on key findings. Avoid further exploration unless essential.")
+	}
+	return sb.String()
 }
 
 // getToolDefinitions returns the tool set for this query,
