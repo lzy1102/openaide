@@ -188,6 +188,7 @@ func (k *AgentKernel) executeToolBatch(ctx context.Context, toolCalls []ToolCall
 		select {
 		case <-done:
 		case <-ctx.Done():
+				wg.Wait() // drain in-flight goroutines before returning results
 			toolErrors = int(toolErrCount.Load())
 			return results, toolErrors
 		}
