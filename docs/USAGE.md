@@ -1,5 +1,46 @@
 # OpenAIDE 使用指南
 
+## 快速开始
+
+```bash
+# 1. 安装后首次运行，跟随引导配置 API Key
+openaide setup
+
+# 2. 试一个简单问题
+openaide "这个项目是干什么的"
+
+# 3. 继续刚才的对话（会话自动保存）
+openaide -c "帮我看看 kernel 包的架构"
+
+# 4. 审查代码
+openaide "review backend/internal/kernel/kernel.go for bugs"
+
+# 5. 修 bug
+openaide "fix the nil pointer bug in eval.go:207"
+```
+
+## 典型工作流
+
+### 工作流 1：探索新项目
+```bash
+openaide "这个项目是做什么的？列出主要模块"
+openaide -c "kernel 包的设计有什么优缺点？"     # -c 继续上一会话
+openaide -c "orchestration 和 kernel 的关系是什么？"
+```
+
+### 工作流 2：审查 + 修 bug
+```bash
+openaide "review backend/internal/kernel/kernel_process.go for bugs"
+# 审查结果会列出 P0/P1/P2 问题，每个带具体行号和修复建议
+openaide -c "fix the P0 bugs you found"         # 继续对话，让 AI 修复
+```
+
+### 工作流 3：设计新功能
+```bash
+openaide "我想加一个 webhook 通知系统，有什么方案？"
+openaide -c "方案 A 更好，帮我实现"               # AI 记得刚才讨论的方案
+```
+
 ## CLI 命令
 
 ```bash
