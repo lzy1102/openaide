@@ -183,7 +183,7 @@ All judgment calls delegated to LLM. No keyword matching, no regex routing, no s
 
 ### Concurrency architecture
 
-**CSP Actor pattern** (zero-lock, single-goroutine ownership): Stateful modules own their data in a single goroutine — external access via channels. Generic Actor + ActorStore[K,V] + SafeMap[K,V] live in `kernel/actor/` (used by 12+ packages). Lock count: 50→19.
+**CSP Actor pattern** (zero-lock, single-goroutine ownership): Stateful modules own their data in a single goroutine — external access via channels. Generic Actor + ActorStore[K,V] + SafeMap[K,V] live in `kernel/actor/` (used by 12+ packages). Lock count: 50→19. Per-request state passed as parameters — no shared mutable state on AgentKernel.
 
 **Goroutine philosophy**: Go's goroutines are extremely cheap (~2KB stack). No artificial concurrency limits (semaphores removed from event dispatch). Event handlers get direct goroutine dispatch with context.WithTimeout for safety.
 
