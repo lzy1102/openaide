@@ -65,22 +65,12 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 		for round := 0; ; round++ {
 			slog.Debug("ReAct stream round", "round", round, "msg_count", len(messages))
 			snipOldToolOutputs(messages)
-			// Safety net: 200 rounds is far beyond any reasonable task
+			// Safety net + self-aware budget injection (shared with sync path)
 		if round >= 200 {
 			slog.Error("ReAct stream safety limit reached", "round", round)
 			break
 		}
-		// Budget injection at fixed thresholds (same as sync path)
-		if round == 15 {
-			messages = append(messages, Message{
-				Role: "user", Content: fmt.Sprintf("[System] Round %d. If you have enough information, give your final answer now.", round),
-			})
-		}
-		if round == 30 {
-			messages = append(messages, Message{
-				Role: "user", Content: "[System] Round 30 — strongly consider giving your final answer now.",
-			})
-		}
+		messages = k.prepareReActRound(ctx, messages, round)
 			// 检查上下文长度，必要时压缩
 			if k.compressor != nil {
 				tokenCount := k.compressor.EstimateTokens(messages)
