@@ -56,6 +56,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 			maxRounds = k.adaptiveRounds.Calculate(ctx, query.Content, len(session.Messages))
 		}
 		totalTokens := 0
+	promptTokens := 0
 		totalToolCalls := 0
 		toolErrors := 0
 		startTime := time.Now()
@@ -69,7 +70,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 			slog.Error("ReAct stream safety limit reached", "round", round)
 			break
 		}
-		messages = k.prepareReActRound(ctx, messages, round)
+		messages = k.prepareReActRound(ctx, messages, round, promptTokens)
 			// 检查上下文长度，必要时压缩
 			if k.compressor != nil {
 				tokenCount := k.compressor.EstimateTokens(messages)
@@ -157,7 +158,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 				if chunk.Usage != nil {
 					lastUsage = chunk.Usage
 					totalTokens += chunk.Usage.TotalTokens
-					k.lastPromptTokens = chunk.Usage.PromptTokens
+					promptTokens = chunk.Usage.PromptTokens
 				}
 			}
 

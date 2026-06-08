@@ -53,9 +53,8 @@ type AgentKernel struct {
 	state        atomic.Value // KernelState — write-once, read-often
 
 	// 配置
-	maxRounds        int
-	maxTokens        int
-	lastPromptTokens int // API-returned token count for compression accuracy
+	maxRounds  int
+	maxTokens  int
 }
 
 // Config 内核配置

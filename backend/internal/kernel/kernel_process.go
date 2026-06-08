@@ -58,6 +58,7 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 	var totalToolCalls atomic.Int32
 	toolErrors := 0
 	totalTokens := 0
+	promptTokens := 0 // API-returned count for accurate compression
 
 	_ = k.determineMaxRounds(ctx, query.Content, len(session.Messages))
 	slog.Debug("ReAct loop start", "query", query.Content[:min(80, len(query.Content))], "tools", len(tools), "history_msgs", len(messages))
@@ -69,7 +70,7 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 			break
 		}
 		// Prepare context: compress, snip old output, inject budget hints
-		messages = k.prepareReActRound(ctx, messages, round)
+		messages = k.prepareReActRound(ctx, messages, round, promptTokens)
 		slog.Debug("ReAct round — about to call LLM", "round", round+1, "msgs", len(messages))
 		// 调用 LLM（如果指定了模型，临时切换）
 		if query.Options.ModelID != "" {
@@ -91,7 +92,7 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 
 		if llmResp.Usage != nil {
 			totalTokens += llmResp.Usage.TotalTokens
-			k.lastPromptTokens = llmResp.Usage.PromptTokens
+			promptTokens = llmResp.Usage.PromptTokens
 		}
 		slog.Debug("ReAct LLM response", "round", round, "model", llmResp.Model, "content_len", len(llmResp.Content), "tool_calls", len(llmResp.ToolCalls), "reasoning_len", len(llmResp.ReasoningContent), "tokens", llmResp.Usage)
 
