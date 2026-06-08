@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 )
 
 // LLMReflection 基于 LLM 调用的反思实现。
 // 无降级：如果 LLM 不可用，agent 本身已无法工作，不应假装能打分。
 type LLMReflection struct {
 	llm      LLMProvider
+	mu       sync.RWMutex
 	criteria map[string]string // per-task-type evaluation criteria (Self-Rewarding 2024)
 }
 
@@ -25,11 +27,15 @@ func NewLLMReflection(llm LLMProvider) *LLMReflection {
 
 // SetCriteria sets evaluation criteria for a task type.
 func (r *LLMReflection) SetCriteria(taskType, criteria string) {
+	r.mu.Lock()
 	r.criteria[taskType] = criteria
+	r.mu.Unlock()
 }
 
 // GetCriteria returns evaluation criteria for a task type.
 func (r *LLMReflection) GetCriteria(taskType string) string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	return r.criteria[taskType]
 }
 
@@ -185,6 +191,8 @@ func parseReflectionResult(jsonStr string) (*ReflectionResult, error) {
 }
 
 func (r *LLMReflection) criteriaForExecution(exec *ExecutionRecord) string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	if criteria, ok := r.criteria[exec.TaskType]; ok {
 		return fmt.Sprintf("## Evaluation Criteria for %s tasks\n%s\n", exec.TaskType, criteria)
 	}
@@ -193,6 +201,8 @@ func (r *LLMReflection) criteriaForExecution(exec *ExecutionRecord) string {
 
 // UpdateCriteriaFromReflection extracts updated criteria from reflection suggestions.
 func (r *LLMReflection) UpdateCriteriaFromReflection(exec *ExecutionRecord, suggestions []string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	taskType := exec.TaskType
 	for _, s := range suggestions {
 		if strings.HasPrefix(s, "CRITERIA:") {
