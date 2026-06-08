@@ -63,6 +63,12 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 	_ = k.determineMaxRounds(ctx, query.Content, len(session.Messages))
 	slog.Debug("ReAct loop start", "query", query.Content[:min(80, len(query.Content))], "tools", len(tools), "history_msgs", len(messages))
 	for round := 0; ; round++ {
+		// Safety net: 200 rounds is far beyond any reasonable task.
+		// Only triggers if the LLM is stuck in a pathological loop.
+		if round >= 200 {
+			slog.Error("ReAct safety limit reached — LLM may be stuck", "round", round)
+			break
+		}
 		// Prepare context: compress, snip old output, inject budget hints
 		messages = k.prepareReActRound(ctx, messages, round)
 		slog.Debug("ReAct round — about to call LLM", "round", round+1, "msgs", len(messages))

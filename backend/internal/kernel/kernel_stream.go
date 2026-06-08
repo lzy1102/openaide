@@ -65,21 +65,22 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 		for round := 0; ; round++ {
 			slog.Debug("ReAct stream round", "round", round, "msg_count", len(messages))
 			snipOldToolOutputs(messages)
-			// 预算注入：过半后提醒 LLM 剩余轮次
-			if round >= maxRounds {
-				break
-			}
-			if round >= maxRounds/2 && round < maxRounds-1 {
-				remaining := maxRounds - round
-				messages = append(messages, Message{
-					Role: "user", Content: fmt.Sprintf("[System] Used %d/%d rounds, %d remaining. Give your final answer now if you have enough information.", round, maxRounds, remaining),
-				})
-			} else if round >= maxRounds-1 {
-				// Same multi-stage logic as sync path — see kernel_react.go
-				messages = append(messages, Message{
-					Role: "user", Content: "[System] Final round — must give final answer. Do NOT call any tools.",
-				})
-			}
+			// Safety net: 200 rounds is far beyond any reasonable task
+		if round >= 200 {
+			slog.Error("ReAct stream safety limit reached", "round", round)
+			break
+		}
+		// Budget injection at fixed thresholds (same as sync path)
+		if round == 15 {
+			messages = append(messages, Message{
+				Role: "user", Content: fmt.Sprintf("[System] Round %d. If you have enough information, give your final answer now.", round),
+			})
+		}
+		if round == 30 {
+			messages = append(messages, Message{
+				Role: "user", Content: "[System] Round 30 — strongly consider giving your final answer now.",
+			})
+		}
 			// 检查上下文长度，必要时压缩
 			if k.compressor != nil {
 				tokenCount := k.compressor.EstimateTokens(messages)
