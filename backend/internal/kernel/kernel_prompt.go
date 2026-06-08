@@ -3,17 +3,10 @@ package kernel
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 )
-
-// promptVersion is stamped into generated prompt files. When the built-in
-// version is newer than the file on disk, the file is ignored and the built-in
-// prompt is used instead. Users who customize their prompts can remove the
-// version line to keep their version permanently.
-const promptVersion = "openaide-prompt-v2"
 
 // ── Layered Prompt System ──────────────────────────────────
 // Layers are assembled dynamically based on task context.
@@ -583,24 +576,26 @@ func promptL5(reflection *ReflectionResult) string {
 
 // ── Builders ────────────────────────────────────────────────
 
-// buildSystemPrompt assembles the stable prompt prefix (L0+L1+L3).
-// Each layer can be overridden by a file in ~/.openaide/data/prompts/.
-// If the file exists, it's used; otherwise the hardcoded default is used.
+// buildSystemPrompt assembles the stable prompt prefix (L0+L1+L2+user).
+// Built-in prompts are always used; user customizations are loaded from
+// ~/.openaide/data/prompts/user/*.md and appended (never override system).
 func (k *AgentKernel) buildSystemPrompt(query *Query) string {
 	zh := isZhEnv()
 	dir := os.Getenv("HOME") + "/.openaide/data/prompts"
 	var sb strings.Builder
 
-	// L0: Identity + Safety (file-overridable)
-	l0 := loadPromptFile(dir, "l0.md")
-	if l0 == "" {
-		if zh {
-			l0 = promptL0_ZH()
-		} else {
-			l0 = promptL0_EN()
-		}
+	// L0: Identity + Safety (always built-in)
+	if zh {
+		sb.WriteString(promptL0_ZH())
+	} else {
+		sb.WriteString(promptL0_EN())
 	}
-	sb.WriteString(l0)
+
+	// User custom prompts: appended after system layers, never overwritten on upgrade
+	if userPrompt := loadUserPrompts(dir); userPrompt != "" {
+		sb.WriteString("\n\n")
+		sb.WriteString(userPrompt)
+	}
 
 	// L1: Project context (always auto-generated)
 	if l1 := promptL1(); l1 != "" {
@@ -611,11 +606,7 @@ func (k *AgentKernel) buildSystemPrompt(query *Query) string {
 }
 // promptL3 returns the task adapter for the current query.
 func (k *AgentKernel) promptL3(ctx context.Context, query string) string {
-	dir := os.Getenv("HOME") + "/.openaide/data/prompts"
 	task := k.detectTaskType(ctx, query)
-	if l3 := loadPromptFile(dir, "l3_"+task+".md"); l3 != "" {
-		return l3
-	}
 	if isZhEnv() {
 		return promptL3_task_ZH(task)
 	}
@@ -655,27 +646,24 @@ Answer with ONLY the category name (one word).`
 	return "general"
 }
 
-// loadPromptFile reads a prompt file if it exists and is up-to-date.
-// If the file's version is older than the current built-in version, it's ignored
-// so users automatically get prompt improvements on upgrade.
-// Remove the version line from your prompt file to keep your custom version forever.
-func loadPromptFile(dir, name string) string {
-	data, err := os.ReadFile(filepath.Join(dir, name))
-	if err != nil || len(data) == 0 {
-		return ""
+// loadUserPrompts reads all .md files from the user prompts directory and
+// concatenates them. User prompts are additive — appended after system layers,
+// never override built-in prompts. Upgrades never touch user files.
+// Directory: ~/.openaide/data/prompts/user/*.md
+func loadUserPrompts(dir string) string {
+	userDir := filepath.Join(dir, "user")
+	entries, err := os.ReadDir(userDir)
+	if err != nil { return "" }
+
+	var sb strings.Builder
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") { continue }
+		data, err := os.ReadFile(filepath.Join(userDir, e.Name()))
+		if err != nil || len(data) == 0 { continue }
+		sb.WriteString(string(data))
+		sb.WriteString("\n")
 	}
-	content := string(data)
-	// Version check: if file has an older version stamp, use built-in instead
-	if i := strings.Index(content, "openaide-prompt-"); i >= 0 {
-		end := i + strings.Index(content[i:], "\n")
-		if end > i { end = i + end }
-		fileVersion := strings.TrimSpace(content[i:end])
-		if fileVersion != promptVersion {
-			slog.Info("Prompt file outdated, using built-in", "file", name, "file_version", fileVersion, "current", promptVersion)
-			return ""
-		}
-	}
-	return content
+	return sb.String()
 }
 
 // ── Helpers ─────────────────────────────────────────────────
@@ -688,48 +676,28 @@ func defaultSystemPrompt() string {
 	return promptL0_EN()
 }
 
-// LoadSystemPrompt loads a custom system prompt from a directory.
-// Looks for system.{lang}.md first, then system.md, then falls back to default.
+// LoadSystemPrompt loads a custom system prompt from the user directory.
+// System prompts are always built-in; user customizations are in user/*.md.
+// Kept for backward compatibility: if an old system.{lang}.md exists, it's used as SetSystemPrompt.
 func LoadSystemPrompt(dir string) string {
-	// Try language-specific file
 	suffix := "en"
-	if isZhEnv() {
-		suffix = "zh"
-	}
+	if isZhEnv() { suffix = "zh" }
 	if data, err := os.ReadFile(filepath.Join(dir, "system."+suffix+".md")); err == nil && len(data) > 0 {
-		if content := checkPromptVersion(string(data), "system."+suffix+".md"); content != "" { return content }
+		return string(data)
 	}
-	// Try generic file
 	if data, err := os.ReadFile(filepath.Join(dir, "system.md")); err == nil && len(data) > 0 {
-		if content := checkPromptVersion(string(data), "system.md"); content != "" { return content }
+		return string(data)
 	}
 	return ""
 }
 
-// checkPromptVersion returns the prompt content if version is current, "" if outdated.
-func checkPromptVersion(content, name string) string {
-	if i := strings.Index(content, "openaide-prompt-"); i >= 0 {
-		end := i + strings.Index(content[i:], "\n")
-		if end > i { end = i + end }
-		fileVersion := strings.TrimSpace(content[i:end])
-		if fileVersion != promptVersion {
-			slog.Info("Prompt file outdated, using built-in", "file", name, "file_version", fileVersion, "current", promptVersion)
-			return ""
-		}
-	}
-	return content
-}
-
-// WriteSystemPrompt writes a custom system prompt to disk.
+// WriteSystemPrompt writes a user system prompt for backward compatibility.
+// New users should write to ~/.openaide/data/prompts/user/*.md instead.
 func WriteSystemPrompt(dir, prompt string) error {
 	os.MkdirAll(dir, 0755)
 	suffix := "en"
-	if isZhEnv() {
-		suffix = "zh"
-	}
-	// Stamp version so future upgrades can detect outdated prompts
-	content := "// " + promptVersion + "\n" + prompt
-	return os.WriteFile(filepath.Join(dir, "system."+suffix+".md"), []byte(content), 0644)
+	if isZhEnv() { suffix = "zh" }
+	return os.WriteFile(filepath.Join(dir, "system."+suffix+".md"), []byte(prompt), 0644)
 }
 
 func isZhEnv() bool {
