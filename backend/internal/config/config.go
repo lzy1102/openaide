@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -302,7 +303,28 @@ func Load(path string) (*Config, error) {
 	config.normalize()
 	config.resolvePaths()
 	config.autoDetectMaxTokens()
+	config.validate()
 	return config, nil
+}
+
+
+// validate checks for common config mistakes and prints warnings.
+func (c *Config) validate() {
+	for i := range c.LLM.Providers {
+		p := &c.LLM.Providers[i]
+		if p.APIKey == "" || p.APIKey == "sk-your-key" {
+			fmt.Fprintf(os.Stderr, "⚠  Provider %q has no API key set. Please edit %s\n", p.Name, os.Getenv("HOME")+"/.openaide/config.yaml")
+		}
+		if p.Type == "openai" && p.BaseURL != "" {
+			// coding plan detection
+			if strings.Contains(p.BaseURL, "coding/paas") {
+				slog.Info("Coding plan detected", "provider", p.Name)
+			}
+		}
+	}
+	if len(c.LLM.Providers) > 0 && c.LLM.DefaultProvider == "" {
+		fmt.Fprintf(os.Stderr, "⚠  No default_provider set. Using first provider: %s\n", c.LLM.Providers[0].Name)
+	}
 }
 
 // autoDetectMaxTokens 从模型名自动推断上下文大小

@@ -217,14 +217,23 @@ func main() {
 			os.Exit(1)
 		}
 		var full strings.Builder
+		shownTools := map[string]bool{}
 		for chunk := range ch {
-			if chunk.Type == kernel.ChunkTypeError {
-				fmt.Fprintf(os.Stderr, "\n%s\n", lang.T("err.process", chunk.Content))
+			switch chunk.Type {
+			case kernel.ChunkTypeError:
+				fmt.Fprintf(os.Stderr, "\n✗ %s\n", chunk.Content)
 				os.Exit(1)
-			}
-			if chunk.Type == kernel.ChunkTypeContent {
+			case kernel.ChunkTypeContent:
 				fmt.Print(chunk.Content)
 				full.WriteString(chunk.Content)
+			case kernel.ChunkTypeToolCall:
+				name := chunk.Content
+				if !shownTools[name] {
+					shownTools[name] = true
+					fmt.Fprintf(os.Stderr, "  ⚙ %s …\r", name)
+				}
+			case kernel.ChunkTypeToolDone:
+				fmt.Fprintf(os.Stderr, "\033[K")
 			}
 		}
 		fmt.Println()
