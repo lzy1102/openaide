@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -55,7 +56,7 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 
 	// 5. ReAct 循环
 	k.setState(StateThinking)
-	totalToolCalls := 0
+	var totalToolCalls atomic.Int32
 	toolErrors := 0
 	totalTokens := 0
 
@@ -120,7 +121,7 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 
 			// 触发反思（如果启用）
 			if k.reflection != nil {
-				go k.doReflection(context.WithoutCancel(ctx), session.ID, query.Content, llmResp.Content, totalToolCalls, toolErrors)
+				go k.doReflection(context.WithoutCancel(ctx), session.ID, query.Content, llmResp.Content, int(totalToolCalls.Load()), toolErrors)
 			}
 
 			k.setState(StateIdle)
@@ -138,7 +139,7 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 			}
 			return &Response{
 				Content:    llmResp.Content,
-				ToolCalls:  totalToolCalls,
+				ToolCalls:  int(totalToolCalls.Load()),
 				TokensUsed: totalTokens,
 				CacheHit:   cacheHit,
 				CacheMiss:  cacheMiss,
@@ -231,12 +232,12 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 		return &Response{Content: "", Error: ctx.Err().Error()}, nil
 	}
 		}
-		totalToolCalls += len(results)
+		totalToolCalls.Add(int32(len(results)))
 
 		// 按原始顺序添加 tool 结果
 		for _, r := range results {
 			if r.id == "" {
-				r.id = fmt.Sprintf("result_auto_%d", totalToolCalls)
+				r.id = fmt.Sprintf("result_auto_%d", totalToolCalls.Load())
 			}
 			messages = append(messages, Message{
 				Role:       "tool",
@@ -272,7 +273,7 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 			break
 		}
 	}
-	return &Response{Content: lastContent, ToolCalls: totalToolCalls, TokensUsed: totalTokens, Duration: time.Since(start), Model: k.llmProvider.GetModelID()}, nil
+	return &Response{Content: lastContent, ToolCalls: int(totalToolCalls.Load()), TokensUsed: totalTokens, Duration: time.Since(start), Model: k.llmProvider.GetModelID()}, nil
 }
 
 func (k *AgentKernel) doReflection(ctx context.Context, sessionID, query, response string, toolCalls, toolErrors int) {
