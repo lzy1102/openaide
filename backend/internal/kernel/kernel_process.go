@@ -242,9 +242,6 @@ func (k *AgentKernel) doReflection(ctx context.Context, sessionID, query, respon
 	}
 
 	// Self-Rewarding: update evaluation criteria from reflection suggestions
-	if lr, ok := k.reflection.(*LLMReflection); ok {
-		lr.UpdateCriteriaFromReflection(&record, result.Suggestions)
-	}
 
 	// 存储反思结果到会话 + 知识使用反馈
 	if result != nil && k.sessionStore != nil {

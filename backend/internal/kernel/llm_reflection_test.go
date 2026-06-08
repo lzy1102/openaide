@@ -96,27 +96,12 @@ func TestLLMReflection_NoMessages(t *testing.T) {
 	}
 }
 
-func TestSelfRewarding_Criteria(t *testing.T) {
+func TestLLMReflection_Stateless(t *testing.T) {
+	// LLMReflection is stateless — no shared mutable state, no criteria map.
+	// Each Reflect call is independent. Safe for concurrent use.
 	r := NewLLMReflection(nil)
-	if r.criteria == nil {
-		t.Fatal("criteria map should be initialized")
-	}
-
-	// Set criteria
-	r.SetCriteria("coding", "Check: correct tool sequence, minimal edits, verification after change")
-	if got := r.GetCriteria("coding"); got == "" {
-		t.Error("should retrieve coding criteria")
-	}
-
-	// Update from reflection suggestions
-	exec := &ExecutionRecord{Query: "fix the login bug", TaskType: "coding"}
-	r.UpdateCriteriaFromReflection(exec, []string{
-		"CRITERIA: For coding tasks, check: (1) file read before edit, (2) diff_edit precision, (3) test pass verification",
-		"regular suggestion without prefix",
-	})
-	updated := r.GetCriteria("coding")
-	if !stringsContains(updated, "diff_edit precision") {
-		t.Errorf("criteria should be updated from CRITERIA: prefix, got: %s", updated)
+	if r.llm != nil {
+		t.Error("expected nil llm")
 	}
 }
 
