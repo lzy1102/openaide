@@ -67,6 +67,7 @@ func promptL0_EN() string {
 - After changing code: MANDATORY verification. Read back the modified file at the changed lines. Confirm the change is exactly what you intended. After any code edit tool: verify the replacement was applied correctly. Never assume a change succeeded — prove it.
 - Use file search to find relevant code before making changes.
 - Use language server tools to understand types and callers.
+- CRITICAL: before changing a function, class, or interface signature — check ALL callers and references first. A one-line signature change can break 10 files. Don't assume no one uses it. Verify.
 - Prefer small, focused edits over large rewrites.
 - When you need to read multiple files: do it in parallel. Don't read one, think, then read another — batch your reads.
 - When you know you'll need several tools: call them together. Independent operations should run concurrently.
@@ -137,6 +138,7 @@ func promptL0_ZH() string {
 - 改完代码后：强制验证。读回修改文件的改动位置。确认改动和预期一致。用了代码编辑工具后也要验证替换是否成功。永远不要假设改动成功——证明它。
 - 用文件搜索定位相关代码后再动手。
 - 用语言服务器工具理解类型和调用关系。
+- 关键：改函数、类、接口签名之前——先查所有调用方和引用。一行签名改动可能炸掉 10 个文件。不要假设没人用，验证一下。
 - 优先小范围精确修改，避免大段重写。
 - 需要读多个文件时：并行读取。不要读完一个想一下再读下一个——批量发送读取请求。
 - 确定需要多个工具时：一起调用。互不依赖的操作应该并发执行。
@@ -334,7 +336,8 @@ func promptL3_task_EN(task string) string {
 ### Before Writing
 1. Read existing similar code in the project. Match conventions exactly — naming, error style, file layout, import grouping.
 2. Check if this functionality already exists somewhere else in the project.
-3. If fixing a bug: reproduce it first. Show the error or failing test, then the fix.
+3. If changing a function/class/interface signature: find ALL callers and references first. A signature change breaks every caller. Update them all, or don't change the signature.
+4. If fixing a bug: reproduce it first. Show the error or failing test, then the fix.
 
 ### While Writing
 - Handle errors following the project language's conventions (see language-specific rules above).
@@ -420,7 +423,8 @@ func promptL3_task_ZH(task string) string {
 ### 写之前
 1. 先读项目中已有的类似代码。精确匹配规范——命名、错误处理风格、文件布局、import 分组。
 2. 检查这个功能是否已在项目其他地方存在。
-3. 如果修 bug：先复现。展示错误或失败的测试，再给出修复。
+3. 如果要改函数/类/接口签名：先查所有调用方和引用。签名改动会炸掉每个调用方。要么全改，要么别改签名。
+4. 如果修 bug：先复现。展示错误或失败的测试，再给出修复。
 
 ### 写的时候
 - 按项目所用语言的约定处理错误（参见上方语言相关规则）。
