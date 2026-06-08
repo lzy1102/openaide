@@ -489,11 +489,9 @@ Skill distillation works with ALL providers. If `embedding_model` is set (OpenAI
 
 ### Budget injection (Claude Code style)
 
-Instead of hard-capping ReAct rounds and forcing synthesis, the LLM sees remaining budget:
+### Unbounded ReAct loop (Claude Code style)
 
-- Round >= maxRounds/2: `"[系统] 已使用 N/M 轮，剩余 X 轮。如信息足够请直接给出结论。"`
-- Round >= maxRounds-1: `"[系统] 最后一轮，必须给出最终结论，禁止调用工具。"`
-- Only if budget exhausted: synthesis via flash model (no thinking, `route: "execution"`)
+No artificial round limits. The LLM decides when to stop by returning a response without tool calls. Token budget via compression is the only guardrail. Fixed-threshold hints at rounds 10, 20, and 50 — gentle reminders, not hard limits.
 
 ### Architect/Editor model routing
 

@@ -1,17 +1,18 @@
 # OpenAIDE 模块职责分工文档
 
-> 版本: v3.0.0
-> 更新: 2026-05-22
+> 版本: v3.1.0
+> 更新: 2026-06-08
 
 ## 模块清单
 
 | 模块 | 路径 | 文件数 | 核心职责 |
 |------|------|--------|----------|
-| **内核** | `internal/kernel/` | 30 | Agent核心：CSP Actor(Session/Skill/Memory)、SafeMap、ReAct循环、反思、学习 |
-| **LLM** | `internal/llm/` | 6 | 多提供商网关、OpenAI兼容、Anthropic原生、Embedding、Prompt缓存 |
+| **内核** | `internal/kernel/` | 35 | Agent核心：无限ReAct循环、CSP Actor、4分类LLM任务识别、4阶段编码工作流、反思、技能蒸馏、提示词系统 |
+| **LLM** | `internal/llm/` | 6 | 多提供商网关、OpenAI兼容、Anthropic原生、Embedding、Prompt缓存、LLM聚类 |
 | **工具** | `internal/tools/` | 12 | 34个工具：文件/Git/命令/搜索/知识库/浏览器/桌面/多模态 |
 | **记忆** | `internal/memory/` | 4 | SQLite存储 + 批量嵌入 + 向量缓存 |
 | **编排** | `internal/orchestration/` | 5 | DeepPlan管线、智能路由、隔离子Agent、Team(4角色) |
+| **评估** | `internal/eval/` | 2 | LLM-as-Judge评测框架：语义评判 + 基准任务套件 + 回归检测 |
 | **API** | `internal/api/` | 3 | REST + SSE + WebSocket + Prometheus metrics |
 | **基础设施** | `internal/infra/` | 7 | DI容器 + 热重载 + 插件热加载 + 追踪 |
 | **配置** | `internal/config/` | 2 | JSON/YAML配置管理 |

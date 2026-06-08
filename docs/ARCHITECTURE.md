@@ -61,7 +61,11 @@ cmd/server (API 服务器)       cmd/cli (交互式 REPL)
 | **Architect/Editor 路由** | analyst/reviewer → reasoning (pro)，coder/executor → execution (flash) |
 | **DeepPlan 深度规划** | Research → Propose → Select → Plan → Execute → Review |
 | **Team 多 Agent** | /analyst /coder /reviewer /executor /team，独立会话 + 模型路由 |
-| **LLM 决策引擎** | 所有决策由 LLM 判断：角色分配、风险评估、技能检测、任务类型分类、评测裁判。零硬编码关键字匹配 |
+| **LLM 决策引擎** | 所有决策由 LLM 判断：4 分类任务识别、风险评估、技能检测、LLM-as-Judge 评测。零硬编码关键字匹配 |
+| **无限 ReAct** | 无轮次上限，LLM 自己决定何时停止。仅 token 预算兜底，不强制合成 |
+| **技能蒸馏** | embedding 聚类 + LLM 聚类双路径。单一 LLM 调用完成质量评估+精炼。零硬编码阈值，全提供商兼容 |
+| **编码工作流** | 4 阶段工程师思维模型：评估影响→规划方案→小步执行→自检审查 |
+| **多语言** | 自动检测 21 种语言项目规范，注入语言特定约定 |
 | **34 个内置工具** | 文件/Git/命令/搜索/知识库/浏览器/桌面/多模态 |
 | **插件系统** | Claude Code 官方格式兼容 (skills/MCP/hooks)，热加载 |
 | **MCP 协议** | JSON-RPC stdio，外部工具生态 |
