@@ -91,6 +91,7 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 
 		if llmResp.Usage != nil {
 			totalTokens += llmResp.Usage.TotalTokens
+			k.lastPromptTokens = llmResp.Usage.PromptTokens
 		}
 		slog.Debug("ReAct LLM response", "round", round, "model", llmResp.Model, "content_len", len(llmResp.Content), "tool_calls", len(llmResp.ToolCalls), "reasoning_len", len(llmResp.ReasoningContent), "tokens", llmResp.Usage)
 

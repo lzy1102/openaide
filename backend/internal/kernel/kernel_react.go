@@ -23,6 +23,10 @@ func (k *AgentKernel) prepareReActRound(ctx context.Context, messages []Message,
 	// Compression: 90% threshold (Claude Code uses 92%)
 	if k.compressor != nil {
 		tokenCount := k.compressor.EstimateTokens(messages)
+		// Use API-returned token count for better accuracy when available
+		if k.lastPromptTokens > 0 && k.lastPromptTokens > tokenCount {
+			tokenCount = k.lastPromptTokens
+		}
 		if tokenCount > k.maxTokens*9/10 {
 			compressed, saved, err := k.compressor.Compress(ctx, messages, k.maxTokens)
 			if err == nil {

@@ -157,6 +157,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 				if chunk.Usage != nil {
 					lastUsage = chunk.Usage
 					totalTokens += chunk.Usage.TotalTokens
+					k.lastPromptTokens = chunk.Usage.PromptTokens
 				}
 			}
 
