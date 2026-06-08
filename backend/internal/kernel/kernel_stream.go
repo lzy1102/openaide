@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -215,135 +214,34 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 			k.setState(StateToolCalling)
 			slog.Debug("ReAct stream executing tools", "round", round, "tool_count", len(lastToolCalls))
 
-			type streamToolTask struct {
-				ToolCall
-				skip   bool
-				reason string
-			}
-			tasks := make([]streamToolTask, len(lastToolCalls))
-			for i, tc := range lastToolCalls {
-				tasks[i] = streamToolTask{ToolCall: tc}
-				if tc.Function.Name == "" {
-					tasks[i].skip = true
-					tasks[i].reason = "工具名称为空，已跳过"
-				} else if tc.ID == "" {
-					tc.ID = fmt.Sprintf("call_auto_%d_%d", round, i)
-					tasks[i] = streamToolTask{ToolCall: tc}
+			// Send tool_call events for stream (unique to stream path)
+			for _, tc := range lastToolCalls {
+				if tc.Function.Name == "" { continue }
+				select {
+				case resultChan <- StreamChunk{Type: ChunkTypeToolCall, ToolCallID: tc.ID, ToolName: tc.Function.Name}:
+				case <-ctx.Done(): return
 				}
 			}
 
-			// 发送 tool_call 事件（跳过无效的）
-			for _, task := range tasks {
-				if task.skip {
-					continue
+			// Execute tools (shared with sync path)
+			execResults, batchErrors := k.executeToolBatch(ctx, lastToolCalls, session.ID, round)
+			toolErrors += batchErrors
+			totalToolCalls += len(execResults)
+
+			// Send tool_done events + append results
+			for _, r := range execResults {
+				if r.ID == "" {
+					r.ID = fmt.Sprintf("result_auto_%d", totalToolCalls)
 				}
 				select {
-				case resultChan <- StreamChunk{
-					Type:       ChunkTypeToolCall,
-					ToolCallID: task.ID,
-					ToolName:   task.Function.Name,
-				}:
-				case <-ctx.Done():
-					return
+				case resultChan <- StreamChunk{Type: ChunkTypeToolDone, ToolCallID: r.ID, ToolName: r.Name}:
+				case <-ctx.Done(): return
 				}
-			}
-
-			// 并行执行工具
-			type toolResult struct {
-				id   string
-				name string
-				msg  Message
-			}
-			results := make([]toolResult, len(tasks))
-
-			// 按并发安全性分组：安全工具可并行，不安全工具单独成组串行
-			type batch struct{ indices []int }
-			var batches []batch
-			current := batch{}
-			for i, task := range tasks {
-				if task.skip {
-					results[i] = toolResult{id: task.ID, msg: Message{Role: "tool", Content: task.reason, ToolCallID: task.ID}}
-					continue
-				}
-				if !isParallelSafe(task.Function.Name) {
-					if len(current.indices) > 0 {
-						batches = append(batches, current)
-						current = batch{}
-					}
-					batches = append(batches, batch{indices: []int{i}})
-					continue
-				}
-				current.indices = append(current.indices, i)
-			}
-			if len(current.indices) > 0 {
-				batches = append(batches, current)
-			}
-
-			for _, b := range batches {
-				var wg sync.WaitGroup
-				for _, i := range b.indices {
-					task := tasks[i]
-					k.publishEvent(Event{Type: EventToolCallStarted, Source: "kernel", Data: map[string]interface{}{"tool": task.Function.Name, "session_id": session.ID}, Timestamp: time.Now()})
-					wg.Add(1)
-					go func(idx int, call ToolCall) {
-						defer wg.Done()
-						var toolCtx context.Context
-						if k.tracer != nil {
-							toolCtx = k.tracer.StartSpan(ctx, session.ID, TraceTool, call.Function.Name)
-						}
-						r := k.executeTool(ctx, call, session.ID)
-						if k.tracer != nil {
-							var toolErr error
-							if r.Error != "" {
-								toolErr = fmt.Errorf("tool error: %s", r.Error)
-							}
-							k.tracer.EndSpan(toolCtx, map[string]interface{}{"tool": call.Function.Name, "content": r.Content}, toolErr)
-						}
-						content := fmt.Sprintf("%v", r.Content)
-						if r.Error != "" {
-							content = fmt.Sprintf("Error: %s", r.Error)
-						}
-						results[idx] = toolResult{id: call.ID, name: call.Function.Name, msg: Message{Role: "tool", Content: content, ToolCallID: call.ID}}
-						k.publishEvent(Event{Type: EventToolCallEnded, Source: "kernel", Data: map[string]interface{}{"tool": call.Function.Name, "success": r.Error == "", "session_id": session.ID}, Timestamp: time.Now()})
-					}(i, task.ToolCall)
-				}
-				wg.Wait()
-			}
-			totalToolCalls += len(results)
-			for _, r := range results {
-				if r.msg.Content != "" && strings.HasPrefix(r.msg.Content, "Error:") {
-					toolErrors++
-					slog.Warn("Stream tool failed", "tool", r.name, "error", r.msg.Content[:min(200, len(r.msg.Content))])
-				} else {
-					slog.Debug("Stream tool done", "tool", r.name, "output_len", len(r.msg.Content))
-				}
-			}
-			slog.Debug("ReAct stream round done", "round", round, "tools_executed", len(results))
-
-			// 发送 tool_done 事件 + 添加到消息列表
-			for _, r := range results {
-				select {
-				case resultChan <- StreamChunk{
-					Type:       ChunkTypeToolDone,
-					ToolCallID: r.id,
-					ToolName:   r.name,
-					ToolResult: &ToolResult{Content: r.msg.Content},
-				}:
-				case <-ctx.Done():
-					return
-				}
-				messages = append(messages, r.msg)
-			}
-
-			// 发送进度事件
-			select {
-			case resultChan <- StreamChunk{
-				Type:        ChunkTypeProgress,
-				Round:       round + 1,
-				TotalRounds: maxRounds,
-			}:
-			case <-ctx.Done():
-				return
+				messages = append(messages, Message{
+					Role:       "tool",
+					Content:    r.Content,
+					ToolCallID: r.ID,
+				})
 			}
 
 			// 每轮结束后保存检查点

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -156,99 +155,19 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 
 		// 并行执行工具调用
 		k.setState(StateToolCalling)
-		type toolResult struct {
-			id      string
-			name    string
-			content string
-			err     string
-		}
-
-		type toolCallTask struct {
-			ToolCall
-			skip   bool
-			reason string
-		}
-		tasks := make([]toolCallTask, len(llmResp.ToolCalls))
-		for i, tc := range llmResp.ToolCalls {
-			tasks[i] = toolCallTask{ToolCall: tc}
-			if tc.Function.Name == "" {
-				tasks[i].skip = true
-				tasks[i].reason = "工具名称为空，已跳过"
-			} else if tc.ID == "" {
-				tc.ID = fmt.Sprintf("call_auto_%d_%d", round, i)
-				tasks[i] = toolCallTask{ToolCall: tc}
-			}
-		}
-
-		results := make([]toolResult, len(tasks))
-
-		// Partition by concurrency safety
-		type batch struct{ indices []int }
-		var batches []batch
-		current := batch{}
-		for i, task := range tasks {
-			if task.skip {
-				results[i] = toolResult{id: task.ID, content: task.reason, err: task.reason}
-				continue
-			}
-			if !isParallelSafe(task.Function.Name) {
-				if len(current.indices) > 0 { batches = append(batches, current); current = batch{} }
-				batches = append(batches, batch{indices: []int{i}})
-				continue
-			}
-			current.indices = append(current.indices, i)
-		}
-		if len(current.indices) > 0 { batches = append(batches, current) }
-
-		for _, b := range batches {
-			var wg sync.WaitGroup
-			for _, i := range b.indices {
-				task := tasks[i]
-				k.publishEvent(Event{Type: EventToolCallStarted, Source: "kernel", Data: map[string]interface{}{"tool": task.Function.Name, "session_id": session.ID}, Timestamp: time.Now()})
-				wg.Add(1)
-				go func(idx int, call ToolCall) {
-					defer wg.Done()
-					defer func() {
-						if r := recover(); r != nil {
-							slog.Error("Tool goroutine panicked", "tool", call.Function.Name, "panic", r)
-							results[idx] = toolResult{id: call.ID, name: call.Function.Name, content: fmt.Sprintf("Error: panic: %v", r), err: fmt.Sprintf("panic: %v", r)}
-						}
-					}()
-					var toolCtx context.Context
-					if k.tracer != nil { toolCtx = k.tracer.StartSpan(ctx, session.ID, TraceTool, call.Function.Name) }
-					r := k.executeTool(ctx, call, session.ID)
-					if k.tracer != nil {
-						var toolErr error
-						if r.Error != "" { toolErr = fmt.Errorf("tool error: %s", r.Error) }
-						k.tracer.EndSpan(toolCtx, map[string]interface{}{"tool": call.Function.Name, "content": r.Content}, toolErr)
-					}
-					content := fmt.Sprintf("%v", r.Content)
-					errStr := ""
-					if r.Error != "" { errStr = r.Error; content = fmt.Sprintf("Error: %s", r.Error); toolErrors++ }
-					results[idx] = toolResult{id: call.ID, name: call.Function.Name, content: content, err: errStr}
-					k.publishEvent(Event{Type: EventToolCallEnded, Source: "kernel", Data: map[string]interface{}{"tool": call.Function.Name, "success": r.Error == "", "session_id": session.ID}, Timestamp: time.Now()})
-				}(i, task.ToolCall)
-			}
-			// Check for cancellation while waiting for tool execution
-	done := make(chan struct{})
-	go func() { wg.Wait(); close(done) }()
-	select {
-	case <-done:
-	case <-ctx.Done():
-		return &Response{Content: "", Error: ctx.Err().Error()}, nil
-	}
-		}
-		totalToolCalls.Add(int32(len(results)))
+		execResults, batchErrors := k.executeToolBatch(ctx, llmResp.ToolCalls, session.ID, round)
+		toolErrors += batchErrors
+		totalToolCalls.Add(int32(len(execResults)))
 
 		// 按原始顺序添加 tool 结果
-		for _, r := range results {
-			if r.id == "" {
-				r.id = fmt.Sprintf("result_auto_%d", totalToolCalls.Load())
+		for _, r := range execResults {
+			if r.ID == "" {
+				r.ID = fmt.Sprintf("result_auto_%d", totalToolCalls.Load())
 			}
 			messages = append(messages, Message{
 				Role:       "tool",
-				Content:    r.content,
-				ToolCallID: r.id,
+				Content:    r.Content,
+				ToolCallID: r.ID,
 			})
 		}
 

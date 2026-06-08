@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -98,6 +99,96 @@ func buildBudgetHint(round int, toolCounts map[string]int) string {
 	return sb.String()
 }
 
+// toolExecTask is a prepared tool call ready for execution.
+type toolExecTask struct {
+	ToolCall
+	skip   bool
+	reason string
+}
+
+// toolExecResult is the result of executing a single tool call.
+type toolExecResult struct {
+	ID      string
+	Name    string
+	Content string
+	Error   string
+}
+
+// executeToolBatch prepares, partitions, and executes tool calls concurrently.
+// Returns results for appending to messages and the count of tool errors.
+// Shared by both sync (Process) and stream (ProcessStream) paths.
+func (k *AgentKernel) executeToolBatch(ctx context.Context, toolCalls []ToolCall, sessionID string, round int) (results []toolExecResult, toolErrors int) {
+	// 1. Validate and prepare tasks
+	tasks := make([]toolExecTask, len(toolCalls))
+	for i, tc := range toolCalls {
+		tasks[i] = toolExecTask{ToolCall: tc}
+		if tc.Function.Name == "" {
+			tasks[i].skip = true
+			tasks[i].reason = "tool name empty, skipped"
+		} else if tc.ID == "" {
+			tc.ID = fmt.Sprintf("call_auto_%d_%d", round, i)
+			tasks[i] = toolExecTask{ToolCall: tc}
+		}
+	}
+
+	results = make([]toolExecResult, len(tasks))
+
+	// 2. Partition by concurrency safety: parallel-safe tools run together, others sequential
+	type batch struct{ indices []int }
+	var batches []batch
+	current := batch{}
+	for i, task := range tasks {
+		if task.skip {
+			results[i] = toolExecResult{ID: task.ID, Content: task.reason, Error: task.reason}
+			continue
+		}
+		if !isParallelSafe(task.Function.Name) {
+			if len(current.indices) > 0 { batches = append(batches, current); current = batch{} }
+			batches = append(batches, batch{indices: []int{i}})
+			continue
+		}
+		current.indices = append(current.indices, i)
+	}
+	if len(current.indices) > 0 { batches = append(batches, current) }
+
+	// 3. Execute batches (parallel within batch, sequential between batches)
+	for _, b := range batches {
+		var wg sync.WaitGroup
+		for _, i := range b.indices {
+			task := tasks[i]
+			k.publishEvent(Event{Type: EventToolCallStarted, Source: "kernel", Data: map[string]interface{}{"tool": task.Function.Name, "session_id": sessionID}, Timestamp: time.Now()})
+			wg.Add(1)
+			go func(idx int, call ToolCall) {
+				defer wg.Done()
+				defer func() {
+					if r := recover(); r != nil {
+						slog.Error("Tool goroutine panicked", "tool", call.Function.Name, "panic", r)
+						results[idx] = toolExecResult{ID: call.ID, Name: call.Function.Name, Content: fmt.Sprintf("Error: panic: %v", r), Error: fmt.Sprintf("panic: %v", r)}
+					}
+				}()
+				r := k.executeTool(ctx, call, sessionID)
+				content := fmt.Sprintf("%v", r.Content)
+				errStr := ""
+				if r.Error != "" {
+					errStr = r.Error
+					content = fmt.Sprintf("Error: %s", r.Error)
+					toolErrors++
+				}
+				results[idx] = toolExecResult{ID: call.ID, Name: call.Function.Name, Content: content, Error: errStr}
+				k.publishEvent(Event{Type: EventToolCallEnded, Source: "kernel", Data: map[string]interface{}{"tool": call.Function.Name, "success": r.Error == "", "session_id": sessionID}, Timestamp: time.Now()})
+			}(i, task.ToolCall)
+		}
+		done := make(chan struct{})
+		go func() { wg.Wait(); close(done) }()
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return results, toolErrors
+		}
+	}
+	return results, toolErrors
+}
+
 // getToolDefinitions returns the tool set for this query,
 // optionally filtered by skill or explicit tool filter
 func (k *AgentKernel) getToolDefinitions(ctx context.Context, queryContent string, opts QueryOptions) []ToolDefinition {
@@ -148,40 +239,6 @@ func (k *AgentKernel) finalizeResponse(ctx context.Context, session *Session, qu
 	go k.compressMemory(ctx, session.ID)
 	// Periodically decay unused skills
 	if k.skillActor != nil { go k.skillActor.DecayUnused() }
-}
-
-// executeToolBatch runs a group of tool calls concurrently (all are parallel-safe).
-// Returns aggregated tool results, total count, and any per-tool errors (non-fatal).
-func (k *AgentKernel) executeToolBatch(ctx context.Context, toolCalls []ToolCall, sessionID string) (results []string, count int) {
-	results = make([]string, len(toolCalls))
-	if len(toolCalls) == 0 {
-		return results, 0
-	}
-
-	// Simple concurrent execution — all tools in this batch are parallel-safe
-	type toolEntry struct {
-		idx  int
-		name string
-		resp string
-	}
-	ch := make(chan toolEntry, len(toolCalls))
-	for i, tc := range toolCalls {
-		go func(i int, tc ToolCall) {
-			res := k.executeTool(ctx, tc, sessionID)
-			prefix := ""
-			if res.Error != "" {
-				prefix = "Error: "
-			}
-			content := fmt.Sprintf("%v", res.Content)
-				ch <- toolEntry{i, tc.Function.Name, prefix + content}
-		}(i, tc)
-	}
-	for range toolCalls {
-		e := <-ch
-		results[e.idx] = fmt.Sprintf("### %s\n%s", e.name, e.resp)
-	}
-
-	return results, len(toolCalls)
 }
 
 // buildFinalMessage constructs the assistant message with optional reasoning and tool calls.

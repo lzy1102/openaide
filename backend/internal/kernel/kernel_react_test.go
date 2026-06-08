@@ -116,3 +116,28 @@ func TestPrepareReActRound_BudgetInjection(t *testing.T) {
 		t.Fatalf("expected warning at round 21, got %d msgs", len(result2))
 	}
 }
+
+func TestExecuteToolBatch_Empty(t *testing.T) {
+	k := NewAgentKernel(&MockLLMProvider{}, &MockToolExecutor{}, &MockMemory{}, NewSessionStoreAdapter(), DefaultConfig())
+	results, errs := k.executeToolBatch(context.Background(), nil, "s1", 0)
+	if len(results) != 0 {
+		t.Errorf("expected empty results, got %d", len(results))
+	}
+	if errs != 0 {
+		t.Errorf("expected 0 errors, got %d", errs)
+	}
+}
+
+func TestExecuteToolBatch_SkipEmpty(t *testing.T) {
+	k := NewAgentKernel(&MockLLMProvider{}, &MockToolExecutor{}, &MockMemory{}, NewSessionStoreAdapter(), DefaultConfig())
+	calls := []ToolCall{
+		{ID: "1", Function: FunctionCall{Name: ""}},
+	}
+	results, _ := k.executeToolBatch(context.Background(), calls, "s1", 0)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Error == "" {
+		t.Error("empty tool name should be skipped with error")
+	}
+}
