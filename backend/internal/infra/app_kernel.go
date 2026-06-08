@@ -91,6 +91,7 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 	if similarity <= 0 { similarity = 0.80 }
 	pd := kernel.NewSemanticPatternDetector(embedder, minQueries, similarity)
 	pd.SetLLM(gateway) // enables LLM-based clustering when no embedding API available
+	pd.SeedFromHistory(context.Background(), sessionStore, 20) // pre-load from recent sessions
 	agentKernel.SetPatternDetector(pd)
 	approver := kernel.NewAutoApprover()
 	approver.SetLLM(gateway)

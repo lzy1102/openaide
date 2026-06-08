@@ -3,6 +3,7 @@ package kernel
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"math"
 	"sort"
 	"strings"
@@ -47,6 +48,28 @@ func NewSemanticPatternDetector(embedder Embedder, minSize int, threshold float6
 
 // SetLLM injects an LLM provider for LLM-based clustering (no embedding required).
 func (d *SemanticPatternDetector) SetLLM(llm LLMProvider) { d.llm = llm }
+
+// SeedFromHistory pre-loads the detector with query+response pairs from past sessions.
+// Call once during startup to enable cross-session pattern detection after restarts.
+func (d *SemanticPatternDetector) SeedFromHistory(ctx context.Context, store SessionStore, limit int) {
+	if store == nil { return }
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	// List all sessions for all users (most recent first)
+	sessions, err := store.List(ctx, "", "", limit, 0)
+	if err != nil || len(sessions) == 0 { return }
+
+	var pairs []clusterExample
+	for _, s := range sessions {
+		if len(s.Messages) == 0 { continue }
+		pairs = append(pairs, extractPairs(s.Messages)...)
+	}
+	if len(pairs) > 0 {
+		d.buffer = append(d.buffer, pairs...)
+		slog.Info("Pattern detector seeded from history", "sessions", len(sessions), "pairs", len(pairs))
+	}
+}
 
 // Detect collects query+response pairs, clusters them, and returns mature patterns.
 // Uses embedding similarity when embedder is available; falls back to LLM clustering.
