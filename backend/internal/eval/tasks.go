@@ -101,9 +101,9 @@ func FullCapabilityTasks() []Task {
 
 		// ── Diff Editing ──
 		{ID: "diff-edit-precise", Name: "Precise Diff Edit", Category: "coding", Difficulty: "medium",
-			Query:        "In backend/internal/eval/tasks.go, add a comment '// FullCapabilityTasks tests all agent functions' right before the 'func FullCapabilityTasks' line. Use diff_edit.",
-			EvalCriteria: "Successfully adds the specified comment to the file. The response confirms the change was made, showing the modified code or stating the edit is complete.",
-			MinToolCalls: 1},
+			Query:        "First write a file /tmp/openaide_diff_target.txt with content 'line1\nline2\nline3'. Then use diff_edit to change 'line2' to 'line2-edited'. Finally read the file to confirm the change.",
+			EvalCriteria: "Successfully creates /tmp/openaide_diff_target.txt, uses diff_edit to precisely change 'line2' to 'line2-edited', and verifies by reading the file. The final content must show 'line2-edited' on the second line with 'line1' and 'line3' unchanged.",
+			MinToolCalls: 2},
 
 		// ── Knowledge RAG ──
 		{ID: "knowledge-search", Name: "Knowledge Search", Category: "think", Difficulty: "easy",
