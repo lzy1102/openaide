@@ -330,7 +330,8 @@ All tools return structured, agent-friendly output:
 - **L0**: Identity + Safety rules, tool strategy (incl. parallel tool guidance), anti-patterns (~400 tokens).
 - **L1**: Project context — working directory, git branch, CLAUDE.md / OPENAIDE.md loading, RepoMap. Auto-detects 21 languages (go/java/python/rust/c/c++/c#/swift/kotlin/node/php/ruby/scala/dart/elixir/haskell/erlang/ocaml/r/lua/julia/perl) and injects language-specific conventions.
 - **L3**: Task adapter injected per-query (dynamic tail). `detectTaskType()` uses LLM (flash model) to classify query into 4 categories: coding/review/think/general. Coding uses 4-phase senior engineer workflow (Assess→Plan→Execute→Self-Review). Review has anti-false-positive rules + [RISK] label. Think covers the full spectrum from explanation to architecture analysis to greenfield design.
-- **File overrides**: Each layer overridable via `~/.openaide/data/prompts/l{0,1,3}_{task}.md`.
+- **User customization**: Add `.md` files to `~/.openaide/data/prompts/user/` — auto-appended after system layers. Never overwritten on upgrade. Onboarding creates commented templates.
+- **System prompts**: Always built-in (compiled Go code). Upgrades apply immediately — no disk files to conflict.
 - **Default prompt**: Bilingual (Chinese/English), auto-detected from `LANG` env var.
 - **Runtime hot-reload**: `AgentKernel.SetSystemPrompt()` allows prompt changes without kernel restart.
 - **Skill prompts**: LLM semantic skill detection per-query via `skillActor.DetectSkill()`, then injected via `skillActor.InjectPrompt()`.
@@ -430,7 +431,7 @@ openaide --verbose 2>&1 | grep -i "claude\|plugin\|hook"
 ├── knowledge.db               ← KnowledgeActor (SQLite + vector index)
 ├── memory.db                  ← MemoryActor (SQLite + vector cache)
 ├── prompts/
-│   ├── system.zh.md / system.en.md  ← system prompt (auto-generated, user-editable)
+│   └── user/                  ← user custom prompts (template on first install)
 ├── plugins/                   ← Claude-format plugins (hot-reload every 5min)
 ├── skills/
 ├── project_mind.json          ← cross-session facts (CodeMap, RiskMap, Conventions)
@@ -554,7 +555,7 @@ Response → doReflection (LLMReflection) → quality score 1-10
 ├── sessions.db        ← SessionActor (SQLite, default)
 ├── knowledge.db       ← KnowledgeActor (SQLite)
 ├── memory.db          ← MemoryActor (SQLite)
-├── prompts/           ← system.{lang}.md
+├── prompts/user/      ← user custom prompts (editable templates)
 ├── plugins/           ← Claude-format plugins (hot-reload every 5min)
 ├── skills/
 ├── project_mind.json          ← cross-session facts (CodeMap, RiskMap, Conventions)
