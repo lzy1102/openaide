@@ -84,7 +84,7 @@ OpenAIDE is an AI Agent kernel platform in Go. Strictly layered, CSP actor concu
 ### Design Principles
 
 - **LLM is the brain.** No rule-based fallbacks. Skill matching, risk assessment, round estimation, reflection, distillation — all LLM-native. LLM unavailable = agent dead. No degradation.
-- **CSP Actors.** Stateful modules own their data in one goroutine. External access via channels. Zero locks for core data paths.
+- **CSP Actors.** Stateful modules own their data in one goroutine. External access via channels. Zero locks for core data paths. Per-request state passed as parameters — never stored on shared structs.
 - **Goroutines are cheap.** No artificial semaphores. Direct goroutine dispatch for event handlers. `context.WithoutCancel` for async tasks.
 - **Prompt is layered.** Stable prefix (L0+L1+L2) cached. Dynamic tail (L3+L5+L6) per-query. Analysis format only in review/research modes.
 
