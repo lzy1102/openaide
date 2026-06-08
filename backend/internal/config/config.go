@@ -312,8 +312,10 @@ func Load(path string) (*Config, error) {
 func (c *Config) validate() {
 	for i := range c.LLM.Providers {
 		p := &c.LLM.Providers[i]
-		if p.APIKey == "" || p.APIKey == "sk-your-key" {
-			fmt.Fprintf(os.Stderr, "⚠  Provider %q has no API key set. Please edit %s\n", p.Name, os.Getenv("HOME")+"/.openaide/config.yaml")
+		if p.APIKey == "" {
+			slog.Warn("Provider has no API key — requests will fail", "provider", p.Name)
+		} else if strings.Contains(p.APIKey, "你的") || p.APIKey == "sk-your-key" {
+			slog.Warn("Provider API key looks like a placeholder — replace with your real key", "provider", p.Name)
 		}
 		if p.Type == "openai" && p.BaseURL != "" {
 			// coding plan detection
