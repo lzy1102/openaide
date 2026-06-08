@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -277,7 +278,7 @@ func (g *Gateway) ChatWithProvider(ctx context.Context, providerName string, mes
 	}
 	if err != nil {
 		slog.Error("LLM chat failed", "provider", providerName, "error", err, "duration", time.Since(start))
-		return nil, err
+		return nil, humanizeError(err)
 	}
 
 	if g.cache != nil {
@@ -467,6 +468,33 @@ func (g *Gateway) FallbackEmbed(ctx context.Context, text string) ([]float32, er
 }
 
 // ============ 实现 kernel.LLMProvider 接口 ============
+
+// humanizeError wraps common API errors with user-friendly messages.
+func humanizeError(err error) error {
+	if err == nil { return nil }
+	msg := err.Error()
+	switch {
+	case containsAny(msg, "429", "余额不足", "insufficient", "quota", "rate limit"):
+		return fmt.Errorf("%w\n  💡 账户余额不足或超出速率限制。请检查 API Key 余额或稍后重试。", err)
+	case containsAny(msg, "401", "unauthorized", "invalid api key", "access denied"):
+		return fmt.Errorf("%w\n  💡 API Key 无效。请检查 ~/.openaide/config.yaml 中的 api_key 是否正确。", err)
+	case containsAny(msg, "404", "not found"):
+		return fmt.Errorf("%w\n  💡 模型或接口不存在。请检查 base_url 和 default_model 配置是否正确。", err)
+	case containsAny(msg, "timeout", "deadline", "connection refused"):
+		return fmt.Errorf("%w\n  💡 网络超时或无法连接。请检查网络和 base_url 是否正确。", err)
+	case containsAny(msg, "context deadline"):
+		return fmt.Errorf("%w\n  💡 请求超时。模型响应太慢，可以尝试增大 timeout 配置或换更快的模型。", err)
+	}
+	return err
+}
+
+func containsAny(s string, substrs ...string) bool {
+	lower := strings.ToLower(s)
+	for _, sub := range substrs {
+		if strings.Contains(lower, strings.ToLower(sub)) { return true }
+	}
+	return false
+}
 
 // Ensure Gateway implements kernel.LLMProvider
 var _ kernel.LLMProvider = (*Gateway)(nil)
