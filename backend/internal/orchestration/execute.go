@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"golang.org/x/sync/errgroup"
 
@@ -34,6 +35,7 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 	roleMap := o.routePipeline(ctx, plan)
 	var results []string
 	var branches []Branch
+	var branchMu sync.Mutex
 	totalTools := 0
 
 	// Phase 1: Execute subtasks in dependency order
@@ -42,15 +44,21 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 	for _, group := range groups {
 		g, gCtx := errgroup.WithContext(ctx)
 		for _, st := range group {
+			st := st // capture
 			g.Go(func() error {
-				roleName := roleMap[st.ID-1]
+				idx := st.ID - 1
+				if idx < 0 || idx >= len(results) {
+					return fmt.Errorf("subtask ID %d out of range [1-%d]", st.ID, len(results))
+				}
+				roleName := roleMap[idx]
 				if roleName == "" {
 					roleName = "coder"
 				}
 				var deps []string
 				for _, depID := range st.DependsOn {
-					if results[depID-1] != "" {
-						deps = append(deps, results[depID-1])
+					depIdx := depID - 1
+					if depIdx >= 0 && depIdx < len(results) && results[depIdx] != "" {
+						deps = append(deps, results[depIdx])
 					}
 				}
 				task := fmt.Sprintf("Goal: %s\nStep: %s\nDetails: %s", plan.Goal, st.Title, st.Description)
@@ -58,11 +66,13 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 				if err != nil {
 					return fmt.Errorf("subtask %d (%s): %w", st.ID, roleName, err)
 				}
-				results[st.ID-1] = r
+				results[idx] = r
 				// Check for branch trigger
 				if triggered, signal := detectBranchSignal(r); triggered {
 					branch := o.executeBranch(gCtx, userID, projectID, signal, results, &branches)
+					branchMu.Lock()
 					branches = append(branches, branch)
+					branchMu.Unlock()
 				}
 				return nil
 			})
