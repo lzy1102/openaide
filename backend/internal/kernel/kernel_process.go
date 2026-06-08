@@ -51,7 +51,6 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 	tools := k.getToolDefinitions(ctx, query.Content, query.Options)
 
 	// Store query options for callback access during ReAct loop
-	k.queryOptions = &query.Options
 
 	// 5. ReAct 循环
 	k.setState(StateThinking)
@@ -70,7 +69,7 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 			break
 		}
 		// Prepare context: compress, snip old output, inject budget hints
-		messages = k.prepareReActRound(ctx, messages, round, promptTokens)
+		messages = k.prepareReActRound(ctx, messages, round, promptTokens, &query.Options)
 		slog.Debug("ReAct round — about to call LLM", "round", round+1, "msgs", len(messages))
 		// 调用 LLM（如果指定了模型，临时切换）
 		if query.Options.ModelID != "" {
@@ -157,7 +156,7 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 
 		// 并行执行工具调用
 		k.setState(StateToolCalling)
-		execResults, batchErrors := k.executeToolBatch(ctx, llmResp.ToolCalls, session.ID, round)
+		execResults, batchErrors := k.executeToolBatch(ctx, llmResp.ToolCalls, session.ID, round, &query.Options)
 		toolErrors += batchErrors
 		totalToolCalls.Add(int32(len(execResults)))
 

@@ -19,7 +19,7 @@ import (
 // 1. Compress context if exceeds 90% of token budget
 // 2. Snips old tool outputs to avoid context bloat
 // 3. Injects budget reminder when approaching round limit
-func (k *AgentKernel) prepareReActRound(ctx context.Context, messages []Message, round int, promptTokens int) []Message {
+func (k *AgentKernel) prepareReActRound(ctx context.Context, messages []Message, round int, promptTokens int, opts *QueryOptions) []Message {
 	// Compression: 90% threshold (Claude Code uses 92%)
 	if k.compressor != nil {
 		tokenCount := k.compressor.EstimateTokens(messages)
@@ -46,8 +46,8 @@ func (k *AgentKernel) prepareReActRound(ctx context.Context, messages []Message,
 		hint := buildBudgetHint(round, toolCounts)
 		messages = append(messages, Message{Role: "user", Content: hint})
 		// Still allow the exhaustion callback for external control
-		if round >= 50 && k.queryOptions != nil && k.queryOptions.OnBudgetExhausted != nil {
-			if k.queryOptions.OnBudgetExhausted(round, 50) {
+		if round >= 50 && opts != nil && opts.OnBudgetExhausted != nil {
+			if opts.OnBudgetExhausted(round, 50) {
 				return messages
 			}
 		}
@@ -121,7 +121,7 @@ type toolExecResult struct {
 // executeToolBatch prepares, partitions, and executes tool calls concurrently.
 // Returns results for appending to messages and the count of tool errors.
 // Shared by both sync (Process) and stream (ProcessStream) paths.
-func (k *AgentKernel) executeToolBatch(ctx context.Context, toolCalls []ToolCall, sessionID string, round int) (results []toolExecResult, toolErrors int) {
+func (k *AgentKernel) executeToolBatch(ctx context.Context, toolCalls []ToolCall, sessionID string, round int, opts *QueryOptions) (results []toolExecResult, toolErrors int) {
 	var toolErrCount atomic.Int32
 	// 1. Validate and prepare tasks
 	tasks := make([]toolExecTask, len(toolCalls))
@@ -171,7 +171,7 @@ func (k *AgentKernel) executeToolBatch(ctx context.Context, toolCalls []ToolCall
 						results[idx] = toolExecResult{ID: call.ID, Name: call.Function.Name, Content: fmt.Sprintf("Error: panic: %v", r), Error: fmt.Sprintf("panic: %v", r)}
 					}
 				}()
-				r := k.executeTool(ctx, call, sessionID)
+				r := k.executeTool(ctx, call, sessionID, opts)
 				content := fmt.Sprintf("%v", r.Content)
 				errStr := ""
 				if r.Error != "" {

@@ -36,7 +36,6 @@ type AgentKernel struct {
 	skillActor *SkillActor // CSP actor, zero-lock
 	approver         Approver
 	adaptiveRounds   *AdaptiveRounds
-	queryOptions     *QueryOptions // 当前查询的选项（含交互回调）
 
 	// 跟踪系统
 	tracer  Tracer
@@ -467,9 +466,9 @@ func isParallelSafe(name string) bool {
 	return parallelSafeTools[name]
 }
 
-func (k *AgentKernel) executeTool(ctx context.Context, tc ToolCall, sessionID string) *ToolResult {
+func (k *AgentKernel) executeTool(ctx context.Context, tc ToolCall, sessionID string, opts *QueryOptions) *ToolResult {
 	// 交互审批（REPL pterm 回调）
-	if k.queryOptions != nil && k.queryOptions.OnApproval != nil {
+	if opts != nil && opts.OnApproval != nil {
 		if _, dangerous := DangerousTools[tc.Function.Name]; dangerous {
 			var path string
 			var args struct {
@@ -478,7 +477,7 @@ func (k *AgentKernel) executeTool(ctx context.Context, tc ToolCall, sessionID st
 			if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err == nil {
 				path = args.Path
 			}
-			if !k.queryOptions.OnApproval(tc.Function.Name, path, tc.Function.Arguments) {
+			if !opts.OnApproval(tc.Function.Name, path, tc.Function.Arguments) {
 				return &ToolResult{Error: "user denied"}
 			}
 		}
