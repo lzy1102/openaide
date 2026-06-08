@@ -362,9 +362,9 @@ func (k *AgentKernel) doReflection(ctx context.Context, sessionID, query, respon
 					slog.Warn("session update failed", "error", err)
 				}
 
-				// Auto-extract skills from recurring high-confidence patterns
+				// Auto-extract skills from patterns (sync within doReflection goroutine)
 				if k.skillActor != nil {
-					go k.extractSkillsFromPatterns(context.WithoutCancel(ctx), patterns)
+					k.extractSkillsFromPatterns(context.WithoutCancel(ctx), patterns)
 				}
 			}
 		}

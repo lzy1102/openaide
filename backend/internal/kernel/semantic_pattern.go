@@ -20,6 +20,7 @@ type SemanticPatternDetector struct {
 	buffer     []clusterExample // accumulated pairs for LLM-based clustering
 	minSize    int
 	threshold  float64
+	pending    sync.WaitGroup  // track async distillation goroutines
 }
 
 type queryCluster struct {
