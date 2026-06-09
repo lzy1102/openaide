@@ -57,6 +57,7 @@ func TestBus_WildcardSubscriber(t *testing.T) {
 func TestBus_GetEvents(t *testing.T) {
 	bus := NewBus()
 	bus.EnablePersistence(t.TempDir())
+	defer bus.Shutdown()
 
 	for i := 0; i < 5; i++ {
 		bus.Publish(kernel.Event{Type: "evt", Source: "test"})

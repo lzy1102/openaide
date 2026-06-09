@@ -1,6 +1,6 @@
 {
-  "id": "eval_1780908869",
-  "timestamp": "2026-06-08T16:54:29.692140752+08:00",
+  "id": "eval_1780966643",
+  "timestamp": "2026-06-09T08:57:23.493677827+08:00",
   "results": [
     {
       "task": {
@@ -16,10 +16,10 @@
         "difficulty": "easy"
       },
       "passed": true,
-      "response": "Hi! I'm your coding assistant. Here's what I can help with:\n\n- **Code changes** — Write, refactor, or fix code in your project\n- **Debugging** — Find bugs, trace call chains, read stack traces\n- **Code review** — Analyze code quality, find issues, suggest improvements\n- **Exploration** — Search your codebase, understand architecture, trace dependencies\n- **Testing** — Write tests, run them, analyze failures\n- **Git** — Check diffs, history, blame, status\n- **Research** — Search the web for docs, APIs, or solutions\n\nWhat are you working on?",
-      "duration": 43747956052,
+      "response": "Hey! I'm a coding assistant — I can help with:\n\n- **Reading \u0026 understanding code** in this project\n- **Writing, editing, and refactoring** code\n- **Debugging \u0026 fixing bugs** (finding root causes, not just symptoms)\n- **Searching** the codebase, git history, or the web\n- **Running commands**, tests, and builds\n- **Explaining** architecture, patterns, and design decisions\n\nWhat are you working on?",
+      "duration": 16803643476,
       "tool_calls": 0,
-      "tokens_used": 5598
+      "tokens_used": 5590
     },
     {
       "task": {
@@ -31,10 +31,10 @@
         "difficulty": "easy"
       },
       "passed": true,
-      "response": "Binary search has **O(log n)** time complexity because it halves the search space on each iteration.",
-      "duration": 48638119731,
+      "response": "Binary search has **O(log n)** time complexity because it halves the search space on each step.",
+      "duration": 20213854494,
       "tool_calls": 0,
-      "tokens_used": 5757
+      "tokens_used": 5758
     },
     {
       "task": {
@@ -50,15 +50,15 @@
         "difficulty": "easy"
       },
       "passed": true,
-      "response": "## Goroutines \u0026 Channels in Go\n\n### Goroutines\n\nA **goroutine** is a lightweight thread managed by the Go runtime. Launch one with `go`:\n\n```go\ngo doSomething(arg1, arg2)\n```\n\nThey're cheap (~2KB stack, grows/shrinks dynamically) and multiplexed onto OS threads by the Go scheduler.\n\n### Channels\n\nA **channel** is a typed conduit for goroutines to communicate and synchronize. Create one with `make`:\n\n```go\nch := make(chan int)    // unbuffered — blocks until both sender and receiver are ready\nch := make(chan int, 3) // buffered — blocks only when buffer is full (send) or empty (recv)\n```\n\n### Example — Fan-out, Fan-in\n\n```go\npackage main\n\nimport (\n\t\"fmt\"\n\t\"time\"\n)\n\n// worker simulates work and sends the result back on ch\nfunc worker(id int, jobs \u003c-chan int, results chan\u003c- int) {\n\tfor j := range jobs { // exits loop when jobs is closed\n\t\tfmt.Printf(\"worker %d processing job %d\\n\", id, j)\n\t\ttime.Sleep(100 * time.Millisecond) // simulate work\n\t\tresults \u003c- j * 2\n\t}\n}\n\nfunc main() {\n\tjobs := make(chan int, 5)\n\tresults := make(chan int, 5)\n\n\t// Fan-out: 3 workers read from the same jobs channel\n\tfor w := 1; w \u003c= 3; w++ {\n\t\tgo worker(w, jobs, results)\n\t}\n\n\t// Send 5 jobs\n\tfor j := 1; j \u003c= 5; j++ {\n\t\tjobs \u003c- j\n\t}\n\tclose(jobs) // signal workers: no more jobs\n\n\t// Collect 5 results\n\tfor r := 1; r \u003c= 5; r++ {\n\t\tfmt.Printf(\"result: %d\\n\", \u003c-results)\n\t}\n}\n```\n\n**Key points:**\n\n| Concept | Detail |\n|---|---|\n| `\u003c-chan T` | receive-only channel (safe to pass to consumers) |\n| `chan\u003c- T` | send-only channel (safe to pass to producers) |\n| `close(ch)` | signals \"no more values\"; receivers get zero value after drain |\n| `range ch` | loops until channel is closed |\n| `select` | wait on multiple channel operations simultaneously |\n| Unbuffered | sender blocks until receiver is ready (synchronization) |\n| Buffered | sender blocks only when buffer is full (decoupling) |\n\n### Common pattern: `select` with timeout\n\n```go\nselect {\ncase msg := \u003c-ch:\n    fmt.Println(\"got:\", msg)\ncase \u003c-time.After(2 * time.Second):\n    fmt.Println(\"timed out\")\n}\n```\n\nGo's philosophy: **\"Don't communicate by sharing memory; share memory by communicating.\"** Channels are the primary mechanism for that.",
-      "duration": 65473001578,
+      "response": "## Goroutines \u0026 Channels in Go\n\n### Goroutines\n\nA **goroutine** is a lightweight thread managed by the Go runtime. Launch one with `go`:\n\n```go\ngo doSomething(arg)\n```\n\nThey're cheap (~2KB stack, grows/shrinks as needed). You can easily run thousands.\n\n### Channels\n\n**Channels** are typed conduits that let goroutines communicate and synchronize without shared memory.\n\n```go\nch := make(chan int)   // unbuffered — blocks until both sender and receiver are ready\nch := make(chan int, 3) // buffered — blocks only when buffer is full\n```\n\n### Short Example\n\n```go\npackage main\n\nimport (\n\t\"fmt\"\n\t\"time\"\n)\n\nfunc producer(ch chan\u003c- string) {       // send-only channel\n\tfor i := 0; i \u003c 3; i++ {\n\t\tch \u003c- fmt.Sprintf(\"msg-%d\", i)   // blocks if no one is receiving\n\t}\n\tclose(ch)                            // signals: no more values\n}\n\nfunc consumer(ch \u003c-chan string) {       // receive-only channel\n\tfor msg := range ch {               // loops until channel is closed\n\t\tfmt.Println(\"got:\", msg)\n\t}\n}\n\nfunc main() {\n\tch := make(chan string)\n\n\tgo producer(ch)    // launches goroutine\n\tgo consumer(ch)    // launches goroutine\n\n\ttime.Sleep(time.Second) // wait for goroutines to finish\n}\n```\n\n**Output:**\n```\ngot: msg-0\ngot: msg-1\ngot: msg-2\n```\n\n### Key Concepts\n\n| Concept | What it does |\n|---|---|\n| `go f()` | Starts `f` as a goroutine |\n| `ch \u003c- x` | Send `x` to channel (blocks if full) |\n| `x := \u003c-ch` | Receive from channel (blocks if empty) |\n| `close(ch)` | Close channel; receivers see zero value after drain |\n| `range ch` | Iterate over channel until it's closed |\n| `select` | Wait on multiple channel operations |\n\n### `select` — multiplex channels\n\n```go\nselect {\ncase msg := \u003c-ch1:\n\tfmt.Println(\"from ch1:\", msg)\ncase msg := \u003c-ch2:\n\tfmt.Println(\"from ch2:\", msg)\ncase \u003c-time.After(2 * time.Second):\n\tfmt.Println(\"timed out\")\n}\n```\n\n### The mental model\n\n\u003e **\"Don't communicate by sharing memory; share memory by communicating.\"**\n\nGoroutines do the work. Channels wire them together. No locks needed for most patterns.",
+      "duration": 55767071832,
       "tool_calls": 0,
-      "tokens_used": 6364
+      "tokens_used": 6299
     }
   ],
   "total": 3,
   "passed": 3,
-  "avg_time": 52619692453,
+  "avg_time": 30928189934,
   "avg_tools": 0,
-  "avg_tokens": 5906.333333333333
+  "avg_tokens": 5882.333333333333
 }

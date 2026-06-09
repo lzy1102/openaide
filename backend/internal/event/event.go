@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,8 +21,10 @@ type Bus struct {
 
 	persistEnabled bool
 	dataDir        string
+	persistCh      chan kernel.Event
+	persistDone    chan struct{}
 	events         []kernel.Event
-	eventsMu       sync.Mutex // write-heavy, keep as mutex
+	eventsMu       sync.Mutex
 }
 
 // NewBus 创建事件总线
@@ -31,21 +34,31 @@ func NewBus() *Bus {
 	}
 }
 
-// EnablePersistence 启用持久化
+// EnablePersistence 启用持久化，启动单 worker 串行写磁盘
 func (b *Bus) EnablePersistence(dataDir string) error {
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		return err
 	}
 	b.persistEnabled = true
 	b.dataDir = dataDir
+	b.persistCh = make(chan kernel.Event, 256)
+	b.persistDone = make(chan struct{})
+	go b.persistenceWorker()
 	return b.loadEvents()
+}
+
+// Shutdown 停止持久化 worker，等待写入完成
+func (b *Bus) Shutdown() {
+	if b.persistDone != nil {
+		close(b.persistCh)
+		<-b.persistDone
+	}
 }
 
 const maxEvents = 10000
 
 // Publish 发布事件
 func (b *Bus) Publish(event kernel.Event) {
-	// Always maintain ring buffer (for GetEvents/Replay)
 	b.eventsMu.Lock()
 	b.events = append(b.events, event)
 	if len(b.events) > maxEvents {
@@ -53,9 +66,13 @@ func (b *Bus) Publish(event kernel.Event) {
 	}
 	b.eventsMu.Unlock()
 
-	// Optional disk persistence
+	// Non-blocking send to persistence worker
 	if b.persistEnabled {
-		go b.persistEvent(event)
+		select {
+		case b.persistCh <- event:
+		default:
+			slog.Warn("Event persistence channel full, dropping event")
+		}
 	}
 	// Dispatch
 	if handlers, ok := b.handlers.Load(event.Type); ok {
@@ -120,18 +137,22 @@ func (b *Bus) Replay(ctx context.Context, from time.Time, to time.Time, handler 
 
 // ============ 内部方法 ============
 
-func (b *Bus) persistEvent(event kernel.Event) {
+func (b *Bus) persistenceWorker() {
+	defer close(b.persistDone)
+	for event := range b.persistCh {
+		b.writeEventFile(event)
+	}
+}
+
+func (b *Bus) writeEventFile(event kernel.Event) {
 	path := filepath.Join(b.dataDir, fmt.Sprintf("event_%d.json", time.Now().UnixNano()))
 	data, err := json.Marshal(event)
-	if err != nil {
-		return
-	}
+	if err != nil { return }
 	os.WriteFile(path, data, 0644)
 
 	// Rotate: keep only the last 1000 event files
 	entries, _ := os.ReadDir(b.dataDir)
 	if len(entries) > 1100 {
-		// Sort by name (which is time-sorted since names are timestamps)
 		cutoff := len(entries) - 1000
 		for _, e := range entries[:cutoff] {
 			if strings.HasSuffix(e.Name(), ".json") {
