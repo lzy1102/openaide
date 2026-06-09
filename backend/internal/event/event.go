@@ -49,7 +49,7 @@ func (b *Bus) EnablePersistence(dataDir string) error {
 
 // Shutdown 停止持久化 worker，等待写入完成
 func (b *Bus) Shutdown() {
-	if b.persistDone != nil {
+	if b.persistCh != nil {
 		close(b.persistCh)
 		<-b.persistDone
 	}
@@ -67,7 +67,7 @@ func (b *Bus) Publish(event kernel.Event) {
 	b.eventsMu.Unlock()
 
 	// Non-blocking send to persistence worker
-	if b.persistEnabled {
+	if b.persistEnabled && b.persistCh != nil {
 		select {
 		case b.persistCh <- event:
 		default:
