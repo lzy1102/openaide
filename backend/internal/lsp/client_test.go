@@ -42,7 +42,7 @@ func TestServerCommand_AllLanguages(t *testing.T) {
 			if err != nil {
 				t.Fatalf("serverCommand(%q) error: %v", tt.language, err)
 			}
-			if cmd.Path != tt.wantCommand {
+			if filepath.Base(cmd.Path) != tt.wantCommand && cmd.Path != tt.wantCommand {
 				t.Errorf("expected %q, got %q", tt.wantCommand, cmd.Path)
 			}
 		})
