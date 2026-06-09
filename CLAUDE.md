@@ -185,7 +185,9 @@ All judgment calls delegated to LLM. No keyword matching, no regex routing, no s
 
 **CSP Actor pattern** (zero-lock, single-goroutine ownership): Stateful modules own their data in a single goroutine — external access via channels. Generic Actor + ActorStore[K,V] + SafeMap[K,V] live in `kernel/actor/` (used by 12+ packages). Lock count: 50→19. Per-request state passed as parameters — no shared mutable state on AgentKernel.
 
-**Goroutine philosophy**: Go's goroutines are extremely cheap (~2KB stack). No artificial concurrency limits (semaphores removed from event dispatch). Event handlers get direct goroutine dispatch with context.WithTimeout for safety.
+**Channel-first design**: "Share memory by communicating" — data flows through channels, not shared maps with locks. Event persistence uses a single worker goroutine with buffered channel (no per-event goroutine spawn). Tool registries own their channels. Locks reserved for the few cases where they're the right tool (LSP ID routing, file I/O).
+
+**Goroutine philosophy**: Every goroutine has a clear lifecycle — started, stopped, or tied to a context. No fire-and-forget goroutines without panic recovery. No global goroutine pools. `context.WithTimeout` for safety, `context.WithoutCancel` for async cleanup.
 
 Key fixes from audit:
 - **Deadlock**: SkillManager RLock held during LLM call → fixed by moving LLM call outside actor
