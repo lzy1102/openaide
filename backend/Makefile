@@ -28,6 +28,10 @@ build:
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/openaide-server ./cmd/server
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/openaide ./cmd/cli
 
+build-desktop:
+	@echo "Building desktop app (requires CGO + WebView2/WebKit)..."
+	go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/openaide-desktop ./cmd/desktop
+
 install: build
 	@mkdir -p ~/.openaide/bin
 	@cp $(BIN_DIR)/openaide ~/.openaide/bin/openaide

@@ -13,3 +13,5 @@ cmd/server/frontend/
 .idea/
 .vscode/
 *.swp
+backend/desktop
+desktop

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenAIDE</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Sidebar -->
+    <aside id="sidebar">
+      <div id="session-list">
+        <button onclick="newSession()">+ New Session</button>
+        <div id="sessions"></div>
+      </div>
+      <div id="file-tree">
+        <h3>Files</h3>
+        <div id="files"></div>
+      </div>
+    </aside>
+
+    <!-- Main Chat -->
+    <main id="chat">
+      <div id="messages"></div>
+      <div id="tool-status"></div>
+      <div id="input-area">
+        <textarea id="input" placeholder="Ask OpenAIDE..." rows="3"></textarea>
+        <button onclick="sendMessage()">Send</button>
+      </div>
+    </main>
+
+    <!-- Right Panel (diff viewer) -->
+    <aside id="right-panel">
+      <h3>Changes</h3>
+      <div id="diff-viewer"></div>
+    </aside>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
