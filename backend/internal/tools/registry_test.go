@@ -47,7 +47,8 @@ func TestRegistry_Execute(t *testing.T) {
 
 func TestBuiltinTools_AllHaveHandlers(t *testing.T) {
 	tools := BuiltinTools()
-	handlers := BuiltinHandlers()
+	r := NewRegistry()
+	handlers := r.BuiltinHandlers()
 	if len(tools) < 14 {
 		t.Errorf("expected at least 14 tools, got %d", len(tools))
 	}

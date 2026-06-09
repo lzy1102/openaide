@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 
@@ -54,7 +55,7 @@ tools = append(tools, memoryToolDefs()...)
 }
 
 // BuiltinHandlers returns all built-in tool handlers.
-func BuiltinHandlers() map[string]kernel.ToolHandler {
+func (r *Registry) BuiltinHandlers() map[string]kernel.ToolHandler {
 	return map[string]kernel.ToolHandler{
 		"read_file":          handleReadFile,
 		"write_file":         handleWriteFile,
@@ -91,7 +92,9 @@ func BuiltinHandlers() map[string]kernel.ToolHandler {
 		"desktop_drag":       handleDesktopDrag,
 		"todo_write":         handleTodoWrite,
 		"todo_read":          handleTodoRead,
-		"ask_user":           handleAskUser,
+		"ask_user": func(ctx context.Context, args string) (*kernel.ToolResult, error) {
+			return r.handleAskUser(ctx, args)
+		},
 		"lsp_definition":     handleLSPDefinition,
 		"lsp_references":     handleLSPReferences,
 		"lsp_hover":          handleLSPHover,
@@ -105,7 +108,7 @@ func BuiltinHandlers() map[string]kernel.ToolHandler {
 // RegisterBuiltins registers all built-in tools into the registry.
 func RegisterBuiltins(registry *Registry) error {
 	tools := BuiltinTools()
-	handlers := BuiltinHandlers()
+	handlers := registry.BuiltinHandlers()
 	for _, tool := range tools {
 		name := tool.Function.Name
 		handler, ok := handlers[name]

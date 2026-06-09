@@ -16,12 +16,25 @@ type registryData struct {
 // Registry is a lock-free tool registry using atomic.Value.
 // Writes are rare (init only), reads are on every query.
 type Registry struct {
-	data atomic.Value // *registryData
+	data             atomic.Value    // *registryData
+	pendingQuestions chan string     // questions from ask_user tool (buffered, non-blocking)
+}
+
+// GetPendingQuestions drains and returns all pending user questions.
+func (r *Registry) GetPendingQuestions() []string {
+	if r.pendingQuestions == nil { return nil }
+	var qs []string
+	for {
+		select {
+		case q := <-r.pendingQuestions: qs = append(qs, q)
+		default: return qs
+		}
+	}
 }
 
 // NewRegistry creates a lock-free tool registry.
 func NewRegistry() *Registry {
-	r := &Registry{}
+	r := &Registry{pendingQuestions: make(chan string, 32)}
 	r.data.Store(&registryData{
 		definitions: make(map[string]kernel.ToolDefinition),
 		handlers:    make(map[string]kernel.ToolHandler),

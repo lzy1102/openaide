@@ -8,7 +8,8 @@ import (
 
 func TestHandleAskUser(t *testing.T) {
 	ctx := context.Background()
-	result, err := handleAskUser(ctx, `{"question":"Which approach do you prefer?","options":["Option A","Option B"]}`)
+	r := NewRegistry()
+	result, err := r.handleAskUser(ctx, `{"question":"Which approach do you prefer?","options":["Option A","Option B"]}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -25,7 +26,8 @@ func TestHandleAskUser(t *testing.T) {
 
 func TestHandleAskUser_NoOptions(t *testing.T) {
 	ctx := context.Background()
-	result, _ := handleAskUser(ctx, `{"question":"What is your name?"}`)
+	r := NewRegistry()
+	result, _ := r.handleAskUser(ctx, `{"question":"What is your name?"}`)
 	if result.Error != "" {
 		t.Fatal(result.Error)
 	}
@@ -35,14 +37,14 @@ func TestHandleAskUser_NoOptions(t *testing.T) {
 }
 
 func TestGetPendingQuestions(t *testing.T) {
-	// Clear any leftover questions from previous tests
-	GetPendingQuestions()
+	r := NewRegistry()
+	r.GetPendingQuestions() // clear any leftovers
 
 	ctx := context.Background()
-	handleAskUser(ctx, `{"question":"Q1?"}`)
-	handleAskUser(ctx, `{"question":"Q2?"}`)
+	r.handleAskUser(ctx, `{"question":"Q1?"}`)
+	r.handleAskUser(ctx, `{"question":"Q2?"}`)
 
-	questions := GetPendingQuestions()
+	questions := r.GetPendingQuestions()
 	if len(questions) != 2 {
 		t.Fatalf("expected 2 questions, got %d", len(questions))
 	}
@@ -50,17 +52,16 @@ func TestGetPendingQuestions(t *testing.T) {
 		t.Error("question order mismatch")
 	}
 
-	// Second call should return empty (questions are consumed)
-	remaining := GetPendingQuestions()
+	remaining := r.GetPendingQuestions()
 	if len(remaining) != 0 {
 		t.Error("questions should be consumed after first GetPendingQuestions")
 	}
 }
 
 func TestHandleAskUser_CrossPlatform(t *testing.T) {
-	// ask_user is pure Go (in-memory), works on all platforms
 	ctx := context.Background()
-	result, _ := handleAskUser(ctx, `{"question":"Test?"}`)
+	r := NewRegistry()
+	result, _ := r.handleAskUser(ctx, `{"question":"Test?"}`)
 	if result.Error != "" {
 		t.Error("ask_user should work cross-platform")
 	}

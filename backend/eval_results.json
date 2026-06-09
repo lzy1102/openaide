@@ -1,7 +1,22 @@
 {
-  "id": "eval_1780966643",
-  "timestamp": "2026-06-09T08:57:23.493677827+08:00",
+  "id": "eval_1780972951",
+  "timestamp": "2026-06-09T10:42:31.776392685+08:00",
   "results": [
+    {
+      "task": {
+        "id": "simple-calc",
+        "name": "Simple Calculation",
+        "category": "coding",
+        "query": "What is the time complexity of binary search? Answer in one sentence.",
+        "eval_criteria": "States that binary search has O(log n) time complexity. Answer is concise (one sentence).",
+        "difficulty": "easy"
+      },
+      "passed": true,
+      "response": "Binary search runs in **O(log n)** time, as it halves the search space with each comparison.",
+      "duration": 28113229401,
+      "tool_calls": 0,
+      "tokens_used": 5759
+    },
     {
       "task": {
         "id": "hello-response",
@@ -16,25 +31,10 @@
         "difficulty": "easy"
       },
       "passed": true,
-      "response": "Hey! I'm a coding assistant — I can help with:\n\n- **Reading \u0026 understanding code** in this project\n- **Writing, editing, and refactoring** code\n- **Debugging \u0026 fixing bugs** (finding root causes, not just symptoms)\n- **Searching** the codebase, git history, or the web\n- **Running commands**, tests, and builds\n- **Explaining** architecture, patterns, and design decisions\n\nWhat are you working on?",
-      "duration": 16803643476,
+      "response": "Hi! I'm an AI coding assistant. I can help you with:\n\n- **Reading \u0026 understanding code** — navigating the repo, explaining functions, tracing call chains\n- **Writing \u0026 editing code** — implementing features, fixing bugs, refactoring\n- **Debugging** — finding root causes, checking diagnostics, running tests\n- **Searching** — finding files, symbols, usages, or web resources\n- **Git operations** — viewing diffs, history, blame\n- **Running commands** — builds, tests, scripts\n\nThis looks like a Go backend project (`openaide/backend`). What are you working on?",
+      "duration": 36763692897,
       "tool_calls": 0,
-      "tokens_used": 5590
-    },
-    {
-      "task": {
-        "id": "simple-calc",
-        "name": "Simple Calculation",
-        "category": "coding",
-        "query": "What is the time complexity of binary search? Answer in one sentence.",
-        "eval_criteria": "States that binary search has O(log n) time complexity. Answer is concise (one sentence).",
-        "difficulty": "easy"
-      },
-      "passed": true,
-      "response": "Binary search has **O(log n)** time complexity because it halves the search space on each step.",
-      "duration": 20213854494,
-      "tool_calls": 0,
-      "tokens_used": 5758
+      "tokens_used": 5601
     },
     {
       "task": {
@@ -50,15 +50,15 @@
         "difficulty": "easy"
       },
       "passed": true,
-      "response": "## Goroutines \u0026 Channels in Go\n\n### Goroutines\n\nA **goroutine** is a lightweight thread managed by the Go runtime. Launch one with `go`:\n\n```go\ngo doSomething(arg)\n```\n\nThey're cheap (~2KB stack, grows/shrinks as needed). You can easily run thousands.\n\n### Channels\n\n**Channels** are typed conduits that let goroutines communicate and synchronize without shared memory.\n\n```go\nch := make(chan int)   // unbuffered — blocks until both sender and receiver are ready\nch := make(chan int, 3) // buffered — blocks only when buffer is full\n```\n\n### Short Example\n\n```go\npackage main\n\nimport (\n\t\"fmt\"\n\t\"time\"\n)\n\nfunc producer(ch chan\u003c- string) {       // send-only channel\n\tfor i := 0; i \u003c 3; i++ {\n\t\tch \u003c- fmt.Sprintf(\"msg-%d\", i)   // blocks if no one is receiving\n\t}\n\tclose(ch)                            // signals: no more values\n}\n\nfunc consumer(ch \u003c-chan string) {       // receive-only channel\n\tfor msg := range ch {               // loops until channel is closed\n\t\tfmt.Println(\"got:\", msg)\n\t}\n}\n\nfunc main() {\n\tch := make(chan string)\n\n\tgo producer(ch)    // launches goroutine\n\tgo consumer(ch)    // launches goroutine\n\n\ttime.Sleep(time.Second) // wait for goroutines to finish\n}\n```\n\n**Output:**\n```\ngot: msg-0\ngot: msg-1\ngot: msg-2\n```\n\n### Key Concepts\n\n| Concept | What it does |\n|---|---|\n| `go f()` | Starts `f` as a goroutine |\n| `ch \u003c- x` | Send `x` to channel (blocks if full) |\n| `x := \u003c-ch` | Receive from channel (blocks if empty) |\n| `close(ch)` | Close channel; receivers see zero value after drain |\n| `range ch` | Iterate over channel until it's closed |\n| `select` | Wait on multiple channel operations |\n\n### `select` — multiplex channels\n\n```go\nselect {\ncase msg := \u003c-ch1:\n\tfmt.Println(\"from ch1:\", msg)\ncase msg := \u003c-ch2:\n\tfmt.Println(\"from ch2:\", msg)\ncase \u003c-time.After(2 * time.Second):\n\tfmt.Println(\"timed out\")\n}\n```\n\n### The mental model\n\n\u003e **\"Don't communicate by sharing memory; share memory by communicating.\"**\n\nGoroutines do the work. Channels wire them together. No locks needed for most patterns.",
-      "duration": 55767071832,
+      "response": "## Goroutines \u0026 Channels in Go\n\n**Goroutine** — a lightweight thread managed by the Go runtime. Launch one with `go`:\n\n```go\ngo doWork()   // runs concurrently\n```\n\n**Channel** — a typed conduit for goroutines to communicate and synchronize. Create one with `make`:\n\n```go\nch := make(chan int)   // unbuffered (blocks until receiver is ready)\nch := make(chan int, 3) // buffered (blocks when full)\n```\n\n### How they work together\n\n- `ch \u003c- value` — **send** (blocks until someone receives, or buffer has room)\n- `value := \u003c-ch` — **receive** (blocks until data is available)\n- `close(ch)` — signals no more values; receivers get the zero value after drain\n\n### Example — fan-out / fan-in\n\n```go\npackage main\n\nimport (\n\t\"fmt\"\n\t\"sync\"\n)\n\nfunc producer(ch chan\u003c- int) {\n\tfor i := 0; i \u003c 5; i++ {\n\t\tch \u003c- i // send\n\t}\n\tclose(ch)\n}\n\nfunc worker(id int, in \u003c-chan int, out chan\u003c- int, wg *sync.WaitGroup) {\n\tdefer wg.Done()\n\tfor v := range in { // receives until channel is closed\n\t\tout \u003c- v * v // process \u0026 forward\n\t\tfmt.Printf(\"worker %d: %d -\u003e %d\\n\", id, v, v*v)\n\t}\n}\n\nfunc main() {\n\tjobs := make(chan int)\n\tresults := make(chan int, 5)\n\tvar wg sync.WaitGroup\n\n\tgo producer(jobs) // 1 producer goroutine\n\n\t// 3 worker goroutines competing for jobs\n\tfor i := 1; i \u003c= 3; i++ {\n\t\twg.Add(1)\n\t\tgo worker(i, jobs, results, \u0026wg)\n\t}\n\n\t// close results once all workers finish\n\tgo func() {\n\t\twg.Wait()\n\t\tclose(results)\n\t}()\n\n\t// collect results\n\tfor r := range results {\n\t\tfmt.Println(\"result:\", r)\n\t}\n}\n```\n\n### Key mental model\n\n| Concept | Analogy |\n|---|---|\n| Goroutine | A worker you hire with `go` — nearly free (2–4 KB stack) |\n| Unbuffered channel | A handoff — sender waits until receiver is ready |\n| Buffered channel | A mailbox — sender drops off up to N items without waiting |\n| `close(ch)` | \"No more mail\" — `range ch` exits cleanly |\n| `select` | A switch that waits on *multiple* channel operations |\n\n**Don't communicate by sharing memory; share memory by communicating.** — Go proverb. Channels are the primary synchronization mechanism, replacing mutexes in many patterns.",
+      "duration": 73392059499,
       "tool_calls": 0,
-      "tokens_used": 6299
+      "tokens_used": 6342
     }
   ],
   "total": 3,
   "passed": 3,
-  "avg_time": 30928189934,
+  "avg_time": 46089660599,
   "avg_tools": 0,
-  "avg_tokens": 5882.333333333333
+  "avg_tokens": 5900.666666666667
 }

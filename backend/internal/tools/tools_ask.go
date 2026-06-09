@@ -9,9 +9,7 @@ import (
 )
 
 // ── User Clarification Tool ─────────────────────────────────
-// Uses a buffered channel — CSP, zero locks.
-
-var pendingQuestions = make(chan string, 32)
+// Each Registry owns its question channel — no global state.
 
 func askToolDefs() []kernel.ToolDefinition {
 	return []kernel.ToolDefinition{
@@ -40,7 +38,7 @@ func askToolDefs() []kernel.ToolDefinition {
 	}
 }
 
-func handleAskUser(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
+func (r *Registry) handleAskUser(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
 	var args struct {
 		Question string   `json:"question"`
 		Options  []string `json:"options,omitempty"`
@@ -48,7 +46,7 @@ func handleAskUser(ctx context.Context, arguments string) (*kernel.ToolResult, e
 	json.Unmarshal([]byte(arguments), &args)
 
 	select {
-	case pendingQuestions <- args.Question:
+	case r.pendingQuestions <- args.Question:
 	default:
 	}
 
@@ -62,17 +60,4 @@ func handleAskUser(ctx context.Context, arguments string) (*kernel.ToolResult, e
 	}
 	msg += "// The user will respond to this question. Wait for their answer before proceeding.\n"
 	return &kernel.ToolResult{Content: msg}, nil
-}
-
-// GetPendingQuestions drains the channel and returns all pending questions.
-func GetPendingQuestions() []string {
-	var questions []string
-	for {
-		select {
-		case q := <-pendingQuestions:
-			questions = append(questions, q)
-		default:
-			return questions
-		}
-	}
 }

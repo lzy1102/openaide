@@ -19,9 +19,9 @@ import (
 	"openaide/backend/internal/mcp"
 	"openaide/backend/internal/memory"
 	"openaide/backend/internal/orchestration"
+	"openaide/backend/internal/tools"
 	"openaide/backend/internal/plugin"
 	"openaide/backend/internal/projectmind"
-	"openaide/backend/internal/tools"
 )
 
 // Application 应用容器
@@ -34,6 +34,7 @@ type Application struct {
 	ChannelRegistry    *channel.Registry
 	TaskQueue          *channel.TaskQueue
 	PluginManager      *plugin.Manager
+	ToolRegistry   *tools.Registry
 	MCPManager    *mcp.Manager
 	sessionActor  *kernel.SessionActor // CSP actor, owns all session state
 	pluginWatcher *PluginWatcher       // hot-reload
@@ -58,6 +59,7 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 		tools.SetSearXNGURL(cfg.Search.SearXNGURL)
 	}
 	toolRegistry := tools.NewRegistry()
+	app.ToolRegistry = toolRegistry
 	if err := tools.RegisterBuiltins(toolRegistry); err != nil {
 		return nil, fmt.Errorf("register builtin tools failed: %w", err)
 	}
