@@ -66,9 +66,13 @@ jobs:
 
       - name: Build Desktop Binary (${{ matrix.name }})
         working-directory: backend
+        env:
+          GOOS: ${{ matrix.name }}
+          GOARCH: amd64
+          CGO_ENABLED: 1
         run: |
           mkdir -p bin
-          GOOS=${{ matrix.name }} GOARCH=amd64 CGO_ENABLED=1 go build -ldflags="-s -w" -o bin/openaide-desktop-${{ matrix.name }}-amd64${{ matrix.ext }} ./cmd/desktop
+          go build -ldflags="-s -w" -o bin/openaide-desktop-${{ matrix.name }}-amd64${{ matrix.ext }} ./cmd/desktop
 
       - name: Package for macOS (create .app bundle)
         if: runner.os == 'macOS'
