@@ -17,8 +17,11 @@ LLM 在处理任何请求前自动获得此文件内容，无需手动探索项�
 ## Common commands
 
 ```bash
-# Build both binaries → bin/openaide + bin/openaide-server
+# Build server + CLI binaries → bin/openaide + bin/openaide-server
 make build
+
+# Build desktop app (requires CGO + WebKit/WebView2)
+make build-desktop
 
 # Run all tests
 make test
@@ -48,8 +51,9 @@ OpenAIDE is an AI Agent kernel platform in Go. Strictly layered, CSP actor concu
 ```
 ┌──────────────────────────────────────────────────────────┐
 │                    Entry Points                          │
-│  cmd/server (REST + SSE + WebSocket)                     │
-│  cmd/cli   (REPL: readline + glamour + pterm)            │
+│  cmd/server   (REST + SSE + WebSocket)                     │
+│  cmd/cli      (REPL: readline + glamour + pterm)           │
+│  cmd/desktop  (Wails v2: Go + WebView)                     │
 ├──────────────────────────────────────────────────────────┤
 │                 infra/Application                        │
 │  DI container — wires kernel, tools, plugins, channels   │
@@ -92,6 +96,7 @@ OpenAIDE is an AI Agent kernel platform in Go. Strictly layered, CSP actor concu
 
 - **`backend/cmd/server/main.go`** — Production server. Loads config from `~/.openaide/config.yaml`, starts the HTTP API server.
 - **`backend/cmd/cli/main.go`** — Interactive CLI. **REPL mode** (rich terminal readline with markdown rendering, pterm styling). `-c` flag resumes last session. On first run, triggers interactive onboarding (`onboard.go`). One-shot mode: `openaide "fix this bug"`.
+- **`backend/cmd/desktop/main.go`** — Desktop application (Wails v2). Go backend reuses kernel/orchestration directly — no HTTP layer. HTML/CSS/JS frontend with 3-panel layout. Build: `make build-desktop`.
 - **`backend/cmd/cli/setup.go`** — `openaide setup` interactive configuration wizard. Step-by-step: language → provider → API key → model → SearXNG. Auto-generates valid `config.yaml` with dual-model setup and tests connection.
 - **`backend/cmd/cli/onboard.go`** — First-run onboarding. Template questions (role/style/language) → `NewApplication()` → LLM interview (2-round open-ended dialogue) → generates custom `system.md` → hot-reloads via `SetSystemPrompt()`.
 
