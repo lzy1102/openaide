@@ -28,21 +28,27 @@ build:
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/openaide-server ./cmd/server
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/openaide ./cmd/cli
 
+# Desktop app: bare binary (go build, no packaging)
 build-desktop:
-	@echo "Building desktop app (requires CGO + WebView2/WebKit)..."
+	@echo "Building desktop binary..."
 	@GOOS=$$(go env GOOS); GOARCH=$$(go env GOARCH); \
 	go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/openaide-desktop-$$GOOS-$$GOARCH ./cmd/desktop
 
-build-desktop-all: build-desktop-linux build-desktop-darwin build-desktop-windows
+# Desktop packaging: requires Wails CLI (`go install github.com/wailsapp/wails/v2/cmd/wails@latest`)
+# Creates platform-specific installers:
+#   Windows: NSIS installer (.exe)
+#   macOS: .app bundle (.dmg with create-dmg)
+#   Linux: AppImage
+package-desktop: package-desktop-linux package-desktop-darwin package-desktop-windows
 
-build-desktop-linux:
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/openaide-desktop-linux-amd64 ./cmd/desktop
+package-desktop-linux:
+	cd .. && wails build -platform linux/amd64 -o $(BIN_DIR)/openaide-desktop-linux-amd64
 
-build-desktop-darwin:
-	GOOS=darwin GOARCH=amd64 CGO_ENABLED=1 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/openaide-desktop-darwin-amd64 ./cmd/desktop
+package-desktop-darwin:
+	cd .. && wails build -platform darwin/amd64 -o $(BIN_DIR)/openaide-desktop-darwin-amd64
 
-build-desktop-windows:
-	GOOS=windows GOARCH=amd64 CGO_ENABLED=1 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/openaide-desktop-windows-amd64.exe ./cmd/desktop
+package-desktop-windows:
+	cd .. && wails build -platform windows/amd64 -nsis -o $(BIN_DIR)/openaide-desktop-windows-amd64
 
 install: build
 	@mkdir -p ~/.openaide/bin
