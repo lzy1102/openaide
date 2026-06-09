@@ -30,7 +30,19 @@ build:
 
 build-desktop:
 	@echo "Building desktop app (requires CGO + WebView2/WebKit)..."
-	go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/openaide-desktop ./cmd/desktop
+	@GOOS=$$(go env GOOS); GOARCH=$$(go env GOARCH); \
+	go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/openaide-desktop-$$GOOS-$$GOARCH ./cmd/desktop
+
+build-desktop-all: build-desktop-linux build-desktop-darwin build-desktop-windows
+
+build-desktop-linux:
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/openaide-desktop-linux-amd64 ./cmd/desktop
+
+build-desktop-darwin:
+	GOOS=darwin GOARCH=amd64 CGO_ENABLED=1 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/openaide-desktop-darwin-amd64 ./cmd/desktop
+
+build-desktop-windows:
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=1 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/openaide-desktop-windows-amd64.exe ./cmd/desktop
 
 install: build
 	@mkdir -p ~/.openaide/bin

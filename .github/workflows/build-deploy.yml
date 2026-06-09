@@ -5,6 +5,7 @@ on:
     tags: ['v*']
 
 jobs:
+  # ── Server + CLI (static, CGO_ENABLED=0, all platforms) ──
   build:
     runs-on: ubuntu-latest
     permissions:
@@ -26,4 +27,41 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: bin/openaide*
+          generate_release_notes: true
+
+  # ── Desktop App (Wails, CGO required, per-platform) ──
+  build-desktop:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: linux
+            deps: libgtk-3-dev libwebkit2gtk-4.0-dev
+          - os: macos-latest
+            name: darwin
+            deps: ""
+          - os: windows-latest
+            name: windows
+            deps: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - name: Install Linux Dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ${{ matrix.deps }}
+
+      - name: Build Desktop (${{ matrix.name }})
+        run: cd backend && make build-desktop-${{ matrix.name }}
+
+      - name: Upload Desktop Artifact
+        uses: softprops/action-gh-release@v1
+        with:
+          files: bin/openaide-desktop-${{ matrix.name }}*
           generate_release_notes: true
