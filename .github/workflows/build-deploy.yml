@@ -64,20 +64,47 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y ${{ matrix.deps }}
 
-      - name: Install Wails CLI
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
-
-      - name: Setup Frontend
+      - name: Build Desktop Binary (${{ matrix.name }})
+        working-directory: backend
         run: |
-          mkdir -p frontend-desktop/node_modules
-          echo '{"name":"openaide-desktop","private":true}' > frontend-desktop/package.json
+          mkdir -p bin
+          GOOS=${{ matrix.name }} GOARCH=amd64 CGO_ENABLED=1 go build -ldflags="-s -w" -o bin/openaide-desktop-${{ matrix.name }}-amd64${{ matrix.ext }} ./cmd/desktop
 
-      - name: Package Desktop (${{ matrix.name }})
+      - name: Package for macOS (create .app bundle)
+        if: runner.os == 'macOS'
         run: |
-          wails build -platform ${{ matrix.name }}/amd64 -o bin/openaide-desktop-${{ matrix.name }}-amd64${{ matrix.ext }}
+          mkdir -p bin/OpenAIDE.app/Contents/MacOS
+          cp backend/bin/openaide-desktop-darwin-amd64 bin/OpenAIDE.app/Contents/MacOS/openaide
+          cat > bin/OpenAIDE.app/Contents/Info.plist << 'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>CFBundleName</key><string>OpenAIDE</string>
+            <key>CFBundleExecutable</key><string>openaide</string>
+            <key>CFBundleIdentifier</key><string>com.openaide.desktop</string>
+            <key>CFBundleVersion</key><string>1.0.0</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>LSMinimumSystemVersion</key><string>10.15</string>
+          </dict></plist>
+          PLIST
+          cd bin && zip -r openaide-desktop-darwin-amd64.zip OpenAIDE.app
+        shell: bash
+
+      - name: Package for Windows (zip)
+        if: runner.os == 'Windows'
+        run: |
+          Compress-Archive -Path backend/bin/openaide-desktop-windows-amd64.exe -DestinationPath bin/openaide-desktop-windows-amd64.zip
+        shell: powershell
+
+      - name: Package for Linux (tar.gz)
+        if: runner.os == 'Linux'
+        run: |
+          cd backend/bin && tar -czf openaide-desktop-linux-amd64.tar.gz openaide-desktop-linux-amd64
 
       - name: Upload Desktop Artifact
         uses: softprops/action-gh-release@v1
         with:
-          files: bin/openaide-desktop-${{ matrix.name }}*
+          files: |
+            backend/bin/openaide-desktop-${{ matrix.name }}*
+            bin/openaide-desktop-${{ matrix.name }}*
           generate_release_notes: true
