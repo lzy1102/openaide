@@ -41,7 +41,7 @@ jobs:
           - os: ubuntu-latest
             name: linux
             ext: ""
-            deps: libgtk-3-dev libwebkit2gtk-4.0-dev
+            deps: libgtk-3-dev libwebkit2gtk-4.1-dev
           - os: macos-latest
             name: darwin
             ext: ""
