@@ -97,6 +97,7 @@ jobs:
       - name: Package for Windows (zip)
         if: runner.os == 'Windows'
         run: |
+          mkdir bin
           Compress-Archive -Path backend/bin/openaide-desktop-windows-amd64.exe -DestinationPath bin/openaide-desktop-windows-amd64.zip
         shell: powershell
 
