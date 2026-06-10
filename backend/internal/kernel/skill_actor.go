@@ -19,6 +19,7 @@ type Skill struct {
 	Keywords     []string `json:"keywords"`
 	Tools        []string `json:"tools"`
 	AllowedTools []string `json:"allowed_tools"`
+	Scripts      []string `json:"scripts,omitempty"`   // executable scripts bundled with the skill
 	Enabled      bool     `json:"enabled"`
 
 	UsageCount   int       `json:"usage_count"`
@@ -66,13 +67,14 @@ func (a *SkillActor) AddSkill(id, name, description, prompt string, keywords []s
 	})
 }
 
-func (a *SkillActor) AddClaudeSkill(id, name, description, prompt string, keywords []string, allowedTools []string) {
+func (a *SkillActor) AddClaudeSkill(id, name, description, prompt string, keywords []string, allowedTools []string, scripts []string) {
 	a.super.Send(func() {
 		a.skills[id] = &Skill{
 			ID: id, Name: name, Description: description,
 			Prompt: prompt, Keywords: keywords,
 			Enabled: true, Confidence: 0.6,
 			AllowedTools: allowedTools,
+			Scripts:      scripts,
 		}
 		a.save()
 	})
@@ -154,7 +156,15 @@ func (a *SkillActor) GetTools(ctx context.Context, query string) []string {
 func (a *SkillActor) InjectPrompt(ctx context.Context, query string, basePrompt string) string {
 	skill := a.DetectSkill(ctx, query)
 	if skill == nil { return basePrompt }
-	return basePrompt + fmt.Sprintf("\n\n## Current Active Skill: %s\n%s", skill.Name, skill.Prompt)
+	result := basePrompt + fmt.Sprintf("\n\n## Current Active Skill: %s\n%s", skill.Name, skill.Prompt)
+	if len(skill.Scripts) > 0 {
+		result += "\n### Available Scripts\n"
+		for _, s := range skill.Scripts {
+			result += fmt.Sprintf("- `%s`\n", s)
+		}
+		result += "Use execute_command to run these scripts with the full path above."
+	}
+	return result
 }
 
 // ── Feedback ──────────────────────────────────────────────

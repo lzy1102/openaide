@@ -62,7 +62,7 @@ func TestSkillActor_GetTools(t *testing.T) {
 	llm := &mockLLM{resp: "deploy"}
 	a := NewSkillActor(llm)
 	a.AddClaudeSkill("deploy", "Deploy", "Deploy stuff", "deploy prompt",
-		[]string{"deploy"}, []string{"execute_command", "read_file"})
+		[]string{"deploy"}, []string{"execute_command", "read_file"}, nil)
 
 	tools := a.GetTools(context.Background(), "deploy")
 	if len(tools) != 2 {

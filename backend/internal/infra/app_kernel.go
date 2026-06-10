@@ -45,7 +45,7 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 	// Skill actor (CSP, zero-lock)
 	skillActor := kernel.NewSkillActor(gateway)
 	for _, cs := range plugin.DiscoverClaudeSkills(cfg.Storage.DataDir + "/plugins") {
-		skillActor.AddClaudeSkill(cs.ID, cs.Name, cs.Description, cs.Prompt, cs.Keywords, cs.AllowedTools)
+		skillActor.AddClaudeSkill(cs.ID, cs.Name, cs.Description, cs.Prompt, cs.Keywords, cs.AllowedTools, cs.Scripts)
 	}
 	// Enable skill persistence — auto-extracted skills survive restarts
 	autoSkillPath := cfg.Storage.DataDir + "/skills/auto_skills.json"
@@ -77,7 +77,7 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 		defer ticker.Stop()
 		for range ticker.C {
 			for _, cs := range plugin.DiscoverClaudeSkills(cfg.Storage.DataDir + "/plugins") {
-				skillActor.AddClaudeSkill(cs.ID, cs.Name, cs.Description, cs.Prompt, cs.Keywords, cs.AllowedTools)
+				skillActor.AddClaudeSkill(cs.ID, cs.Name, cs.Description, cs.Prompt, cs.Keywords, cs.AllowedTools, cs.Scripts)
 			}
 		}
 	}()

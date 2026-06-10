@@ -115,6 +115,17 @@ func DiscoverClaudeSkills(pluginsDir string) []ClaudeSkill {
 				continue
 			}
 
+			// Scan for bundled scripts
+			var scripts []string
+			scriptsDir := filepath.Join(skillDir, "scripts")
+			if scriptEntries, err := os.ReadDir(scriptsDir); err == nil {
+				for _, sf := range scriptEntries {
+					if !sf.IsDir() && isExecutableFile(sf) {
+						scripts = append(scripts, filepath.Join(scriptsDir, sf.Name()))
+					}
+				}
+			}
+
 			result = append(result, ClaudeSkill{
 				PluginName:   e.Name(),
 				ID:           e.Name() + "/" + se.Name(),
@@ -123,6 +134,7 @@ func DiscoverClaudeSkills(pluginsDir string) []ClaudeSkill {
 				Prompt:       body,
 				AllowedTools: mapClaudeTools(fm.AllowedTools),
 				Keywords:     generateKeywords(fm.Name, fm.Description),
+				Scripts:      scripts,
 				ArgumentHint: fm.ArgumentHint,
 			})
 		}
@@ -140,6 +152,7 @@ type ClaudeSkill struct {
 	Prompt       string
 	AllowedTools []string // Claude 工具名（已映射为 OpenAIDE 工具名）
 	Keywords     []string // 自动生成的关键词
+	Scripts      []string // 技能附带的脚本路径
 	ArgumentHint string
 }
 
@@ -188,6 +201,21 @@ func MapClaudeTool(claudeName string) string {
 }
 
 // mapClaudeTools 批量映射工具名
+// isExecutableFile checks if a file is executable (not a directory, .sh/.py/.rb or +x).
+func isExecutableFile(e os.DirEntry) bool {
+	if e.IsDir() { return false }
+	name := e.Name()
+	// Executable by extension
+	for _, ext := range []string{".sh", ".py", ".rb", ".js", ".ts"} {
+		if strings.HasSuffix(name, ext) { return true }
+	}
+	// Executable by permission (binary or script with +x)
+	if info, err := e.Info(); err == nil {
+		return info.Mode()&0111 != 0
+	}
+	return false
+}
+
 func mapClaudeTools(claudeNames []string) []string {
 	var result []string
 	for _, n := range claudeNames {
