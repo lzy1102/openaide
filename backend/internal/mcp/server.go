@@ -120,7 +120,8 @@ func (s *Server) handleCallTool(req jsonrpcRequest) {
 		Name      string                 `json:"name"`
 		Arguments map[string]interface{} `json:"arguments,omitempty"`
 	}
-	if err := json.Unmarshal(req.Params, &params); err != nil {
+	paramsBytes, _ := json.Marshal(req.Params)
+	if err := json.Unmarshal(paramsBytes, &params); err != nil {
 		s.sendError(req.ID, -32602, "Invalid params", err.Error())
 		return
 	}

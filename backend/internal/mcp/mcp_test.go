@@ -19,11 +19,11 @@ func TestManager_ConnectInvalid(t *testing.T) {
 	}
 }
 
-func TestManager_GetTools(t *testing.T) {
+func TestManager_GetServerTools(t *testing.T) {
 	m := NewManager()
-	tools := m.GetAllTools()
+	tools := m.GetServerTools("nonexistent")
 	if tools == nil {
-		t.Log("GetAllTools returns nil when no servers connected (expected)")
+		t.Log("GetServerTools returns nil when no servers connected (expected)")
 	}
 }
 

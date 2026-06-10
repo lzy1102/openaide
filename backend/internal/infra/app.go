@@ -66,21 +66,28 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 	mcpManager := mcp.NewManager()
 	if cfg.MCP.Enabled {
 		for _, srvCfg := range cfg.MCP.Servers {
-			slog.Info("Connecting MCP server", "id", srvCfg.ID, "command", srvCfg.Command)
-			if err := mcpManager.ConnectServer(srvCfg.ID, srvCfg.Command, srvCfg.Args...); err != nil {
-				slog.Warn("Failed to connect MCP server, skipping", "id", srvCfg.ID, "error", err)
+			var connErr error
+			if srvCfg.Type == "sse" || srvCfg.URL != "" {
+				slog.Info("Connecting MCP server (SSE)", "id", srvCfg.ID, "url", srvCfg.URL)
+				connErr = mcpManager.ConnectServer(srvCfg.ID, "sse", srvCfg.URL)
+			} else {
+				slog.Info("Connecting MCP server (stdio)", "id", srvCfg.ID, "command", srvCfg.Command)
+				connErr = mcpManager.ConnectServer(srvCfg.ID, srvCfg.Command, srvCfg.Args...)
+			}
+			if connErr != nil {
+				slog.Warn("Failed to connect MCP server, skipping", "id", srvCfg.ID, "error", connErr)
 				continue
 			}
 			for _, mcpTool := range mcpManager.GetServerTools(srvCfg.ID) {
 				def := kernel.ToolDefinition{
 					Type: "function",
 					Function: kernel.FunctionDef{
-						Name:        mcpTool.Name,
-						Description: mcpTool.Description,
-						Parameters:  mcpTool.InputSchema,
+						Name:        mcpTool.Function.Name,
+						Description: mcpTool.Function.Description,
+						Parameters:  mcpTool.Function.Parameters,
 					},
 				}
-				serverID, toolName := srvCfg.ID, mcpTool.Name
+				serverID, toolName := srvCfg.ID, mcpTool.Function.Name
 				handler := kernel.ToolHandler(func(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
 					var args map[string]interface{}
 					if arguments != "" {
@@ -88,29 +95,12 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 							return &kernel.ToolResult{Error: fmt.Sprintf("invalid args: %v", err)}, nil
 						}
 					}
-					result, err := mcpManager.CallTool(serverID, toolName, args)
-					if err != nil {
-						return &kernel.ToolResult{Error: err.Error()}, nil
-					}
-					var content string
-					for _, item := range result.Content {
-						if item.Type == "text" && item.Text != "" {
-							if content != "" {
-								content += "\n"
-							}
-							content += item.Text
-						}
-					}
-					errStr := ""
-					if result.IsError {
-						errStr = content
-					}
-					return &kernel.ToolResult{Content: content, Error: errStr}, nil
+					return mcpManager.CallTool(serverID, toolName, args)
 				})
 				if err := toolRegistry.Register(def, handler); err != nil {
-					slog.Warn("MCP tool registration skipped, duplicate name", "tool", mcpTool.Name, "error", err)
+					slog.Warn("MCP tool registration skipped, duplicate name", "tool", mcpTool.Function.Name, "error", err)
 				} else {
-					slog.Info("MCP tool registered", "server", srvCfg.ID, "tool", mcpTool.Name)
+					slog.Info("MCP tool registered", "server", srvCfg.ID, "tool", mcpTool.Function.Name)
 				}
 			}
 		}
@@ -118,30 +108,43 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 	// Claude 插件中的 .mcp.json
 	if cfg.MCP.Enabled {
 		for name, srv := range plugin.DiscoverClaudeMCP(cfg.Storage.DataDir + "/plugins") {
-			if srv.Type != "stdio" && srv.Type != "" {
+			isSSE := srv.Type == "sse" || srv.URL != ""
+			if srv.Type != "stdio" && srv.Type != "" && !isSSE {
 				slog.Debug("MCP server type not supported, skipping", "name", name, "type", srv.Type)
 				continue
 			}
-			cmd := srv.Command
-			if cmd == "" {
-				slog.Warn("MCP server missing command, skipping", "name", name)
-				continue
-			}
-			slog.Info("Connecting MCP server (Claude plugin)", "name", name, "command", cmd)
-			if err := mcpManager.ConnectServer(name, cmd, srv.Args...); err != nil {
-				slog.Warn("Failed to connect Claude MCP server, skipping", "name", name, "error", err)
-				continue
+			if isSSE {
+				url := srv.URL
+				if url == "" {
+					url = srv.Command
+				}
+				slog.Info("Connecting MCP server (Claude plugin SSE)", "name", name, "url", url)
+				if err := mcpManager.ConnectServer(name, "sse", url); err != nil {
+					slog.Warn("Failed to connect Claude MCP server, skipping", "name", name, "error", err)
+					continue
+				}
+			} else {
+				cmd := srv.Command
+				if cmd == "" {
+					slog.Warn("MCP server missing command, skipping", "name", name)
+					continue
+				}
+				slog.Info("Connecting MCP server (Claude plugin)", "name", name, "command", cmd)
+				if err := mcpManager.ConnectServer(name, cmd, srv.Args...); err != nil {
+					slog.Warn("Failed to connect Claude MCP server, skipping", "name", name, "error", err)
+					continue
+				}
 			}
 			for _, mcpTool := range mcpManager.GetServerTools(name) {
 				def := kernel.ToolDefinition{
 					Type: "function",
 					Function: kernel.FunctionDef{
-						Name:        mcpTool.Name,
-						Description: mcpTool.Description,
-						Parameters:  mcpTool.InputSchema,
+						Name:        mcpTool.Function.Name,
+						Description: mcpTool.Function.Description,
+						Parameters:  mcpTool.Function.Parameters,
 					},
 				}
-				serverID, toolName := name, mcpTool.Name
+				serverID, toolName := name, mcpTool.Function.Name
 				handler := kernel.ToolHandler(func(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
 					var args map[string]interface{}
 					if arguments != "" {
@@ -149,29 +152,12 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 							return &kernel.ToolResult{Error: fmt.Sprintf("invalid args: %v", err)}, nil
 						}
 					}
-					result, err := mcpManager.CallTool(serverID, toolName, args)
-					if err != nil {
-						return &kernel.ToolResult{Error: err.Error()}, nil
-					}
-					var content string
-					for _, item := range result.Content {
-						if item.Type == "text" && item.Text != "" {
-							if content != "" {
-								content += "\n"
-							}
-							content += item.Text
-						}
-					}
-					errStr := ""
-					if result.IsError {
-						errStr = content
-					}
-					return &kernel.ToolResult{Content: content, Error: errStr}, nil
+					return mcpManager.CallTool(serverID, toolName, args)
 				})
 				if err := toolRegistry.Register(def, handler); err != nil {
-					slog.Warn("Claude MCP tool registration skipped, duplicate", "tool", mcpTool.Name, "error", err)
+					slog.Warn("Claude MCP tool registration skipped, duplicate", "tool", mcpTool.Function.Name, "error", err)
 				} else {
-					slog.Info("Claude MCP tool registered", "server", name, "tool", mcpTool.Name)
+					slog.Info("Claude MCP tool registered", "server", name, "tool", mcpTool.Function.Name)
 				}
 			}
 		}
@@ -260,24 +246,13 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 				}
 				for _, mcpTool := range mcpManager.GetServerTools(id) {
 					def := kernel.ToolDefinition{Type: "function", Function: kernel.FunctionDef{
-						Name: mcpTool.Name, Description: mcpTool.Description, Parameters: mcpTool.InputSchema,
+						Name: mcpTool.Function.Name, Description: mcpTool.Function.Description, Parameters: mcpTool.Function.Parameters,
 					}}
-					serverID, toolName := id, mcpTool.Name
+					serverID, toolName := id, mcpTool.Function.Name
 					toolRegistry.Register(def, kernel.ToolHandler(func(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
 						var args map[string]interface{}
 						if arguments != "" { json.Unmarshal([]byte(arguments), &args) }
-						result, _ := mcpManager.CallTool(serverID, toolName, args)
-						if result == nil { return &kernel.ToolResult{Error: "tool call failed"}, nil }
-						var content string
-						for _, item := range result.Content {
-							if item.Type == "text" && item.Text != "" {
-								if content != "" { content += "\n" }
-								content += item.Text
-							}
-						}
-						errStr := ""
-						if result.IsError { errStr = content }
-						return &kernel.ToolResult{Content: content, Error: errStr}, nil
+						return mcpManager.CallTool(serverID, toolName, args)
 					}))
 				}
 				slog.Info("OpenCode MCP connected", "id", id)
