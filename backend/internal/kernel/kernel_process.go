@@ -462,14 +462,22 @@ func extractSkillContext(examples []clusterExample) skillContext {
 				toolCount[tool]++
 			}
 		}
-		// Scan for generated script files (.sh/.py/.rb/.js) — mentions in response
+		// Scan for reusable generated scripts — files that appear inside code blocks
+		// or are explicitly marked as scripts/templates. Excludes regular coding files.
+		inCodeBlock := false
 		for _, line := range strings.Split(ex.response, "\n") {
-			if strings.Contains(line, ".sh") || strings.Contains(line, ".py") ||
-				strings.Contains(line, ".rb") || strings.Contains(line, ".js") {
-				for _, word := range strings.Fields(line) {
-					if strings.HasSuffix(word, ".sh") || strings.HasSuffix(word, ".py") ||
-						strings.HasSuffix(word, ".rb") || strings.HasSuffix(word, ".js") {
-						fileCount[strings.Trim(word, "`'\".,;:!?()[]{}")]++
+			if strings.HasPrefix(strings.TrimSpace(line), "```") {
+				inCodeBlock = !inCodeBlock
+				continue
+			}
+			if !inCodeBlock { continue } // only look inside code blocks
+			lower := strings.ToLower(line)
+			for _, ext := range []string{".sh", ".py", ".rb", ".js"} {
+				if strings.Contains(lower, ext) {
+					for _, word := range strings.Fields(line) {
+						if strings.HasSuffix(strings.Trim(word, "`'\".,;:!?()[]{}"), ext) {
+							fileCount[strings.Trim(word, "`'\".,;:!?()[]{}")]++
+						}
 					}
 				}
 			}
