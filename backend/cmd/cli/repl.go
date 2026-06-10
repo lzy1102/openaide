@@ -336,7 +336,7 @@ var history []string // 会话内查询历史（Ctrl+R 搜索）
 			}
 			selected, _ := pterm.DefaultInteractiveMultiselect.
 				WithOptions(taskOpts).
-				WithDefaultText(fmt.Sprintf(lang.T("repl.select_subtasks", len(plan.Subtasks)))).
+				WithDefaultText(lang.T("repl.select_subtasks", len(plan.Subtasks))).
 				WithMaxHeight(12).
 				Show()
 			if len(selected) > 0 {
