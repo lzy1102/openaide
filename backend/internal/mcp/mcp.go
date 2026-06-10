@@ -18,6 +18,7 @@ import (
 // Transport abstracts the underlying MCP communication channel.
 type Transport interface {
 	Call(method string, params interface{}) (json.RawMessage, error)
+	Notify(method string, params interface{}) error
 	Close() error
 }
 
@@ -37,6 +38,7 @@ type stdioTransport struct {
 	stdout *bufio.Scanner
 	mu     sync.Mutex
 	idSeq  int
+	done   chan struct{}
 }
 
 func newStdioTransport(command string, args ...string) (*stdioTransport, error) {
@@ -48,7 +50,7 @@ func newStdioTransport(command string, args ...string) (*stdioTransport, error) 
 	if err := cmd.Start(); err != nil { return nil, err }
 
 	return &stdioTransport{
-		cmd: cmd, stdin: stdin, stdout: bufio.NewScanner(stdout),
+		cmd: cmd, stdin: stdin, stdout: bufio.NewScanner(stdout), done: make(chan struct{}),
 	}, nil
 }
 
@@ -64,11 +66,39 @@ func (t *stdioTransport) Call(method string, params interface{}) (json.RawMessag
 		return nil, fmt.Errorf("mcp write: %w", err)
 	}
 
-	if !t.stdout.Scan() {
-		return nil, fmt.Errorf("mcp read: %v", t.stdout.Err())
+	type scanResult struct {
+		data []byte
+		err  error
 	}
+	ch := make(chan scanResult, 1)
+	go func() {
+		if !t.stdout.Scan() {
+			ch <- scanResult{err: fmt.Errorf("mcp read: %v", t.stdout.Err())}
+			return
+		}
+		ch <- scanResult{data: t.stdout.Bytes()}
+	}()
 
-	return t.parseResponse(t.stdout.Bytes())
+	select {
+	case r := <-ch:
+		if r.err != nil {
+			return nil, r.err
+		}
+		return t.parseResponse(r.data)
+	case <-time.After(30 * time.Second):
+		t.cmd.Process.Kill()
+		return nil, fmt.Errorf("mcp timeout after 30s")
+	}
+}
+
+func (t *stdioTransport) Notify(method string, params interface{}) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	// JSON-RPC notification: no id field
+	req := jsonrpcRequest{JSONRPC: "2.0", Method: method, Params: params}
+	body, _ := json.Marshal(req)
+	_, err := fmt.Fprintf(t.stdin, "%s\n", body)
+	return err
 }
 
 func (t *stdioTransport) Close() error {
@@ -91,27 +121,29 @@ func (t *stdioTransport) parseResponse(data []byte) (json.RawMessage, error) {
 	return resp.Result, nil
 }
 
-// ============ SSE / HTTP Transport ============
+// ============ HTTP Transport (MCP SSE-compatible POST) ============
+//
+// This is the MCP "Streamable HTTP" transport — JSON-RPC over HTTP POST.
+// It works with servers that accept POST to /message and return JSON in the response body.
+// Note: this is NOT the legacy SSE transport (GET /sse for streaming events).
+// Most MCP servers in the ecosystem (including @anthropic/mcp-server-sse) now use
+// this Streamable HTTP variant, not the older SSE+separate-channel model.
 
-type sseTransport struct {
-	baseURL   string
-	client    *http.Client
-	mu        sync.Mutex
-	idSeq     int
-	closeCh   chan struct{}
+type httpTransport struct {
+	baseURL string
+	client  *http.Client
+	mu      sync.Mutex
+	idSeq   int
 }
 
-func newSSETransport(baseURL string) (*sseTransport, error) {
-	t := &sseTransport{
+func newHTTPTransport(baseURL string) (*httpTransport, error) {
+	return &httpTransport{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		client:  &http.Client{Timeout: 60 * time.Second},
-		closeCh: make(chan struct{}),
-	}
-	// Validate connectivity with a ping (mcp sends initialized notification)
-	return t, nil
+	}, nil
 }
 
-func (t *sseTransport) Call(method string, params interface{}) (json.RawMessage, error) {
+func (t *httpTransport) Call(method string, params interface{}) (json.RawMessage, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.idSeq++
@@ -130,18 +162,17 @@ func (t *sseTransport) Call(method string, params interface{}) (json.RawMessage,
 		return nil, fmt.Errorf("mcp http %d: %s", httpResp.StatusCode, string(respBody))
 	}
 
-	// SSE response: "data: {...}\n\n" or plain JSON
 	data, _ := io.ReadAll(httpResp.Body)
 	dataStr := strings.TrimSpace(string(data))
 
-	// Strip SSE "data: " prefix if present
+	// Strip SSE "data: " prefix if present (some servers wrap in SSE format)
 	if strings.HasPrefix(dataStr, "data: ") {
 		dataStr = strings.TrimPrefix(dataStr, "data: ")
 	}
 
 	var resp jsonrpcResponse
 	if err := json.Unmarshal([]byte(dataStr), &resp); err != nil {
-		return nil, fmt.Errorf("mcp sse parse: %w", err)
+		return nil, fmt.Errorf("mcp parse: %w", err)
 	}
 	if resp.Error != nil {
 		return nil, fmt.Errorf("mcp error %d: %s", resp.Error.Code, resp.Error.Message)
@@ -149,10 +180,20 @@ func (t *sseTransport) Call(method string, params interface{}) (json.RawMessage,
 	return resp.Result, nil
 }
 
-func (t *sseTransport) Close() error {
-	close(t.closeCh)
+func (t *httpTransport) Notify(method string, params interface{}) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	req := jsonrpcRequest{JSONRPC: "2.0", Method: method, Params: params}
+	body, _ := json.Marshal(req)
+	resp, err := t.client.Post(t.baseURL+"/message", "application/json", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
 	return nil
 }
+
+func (t *httpTransport) Close() error { return nil }
 
 // ============ Client ============
 
@@ -163,9 +204,11 @@ func ConnectStdio(command string, args ...string) (*Client, error) {
 	return newClient(t)
 }
 
-// ConnectSSE connects to a remote MCP server via HTTP/SSE.
+// ConnectSSE connects to a remote MCP server via HTTP (MCP Streamable transport).
+// Despite the name "SSE" (matching ecosystem convention in .mcp.json),
+// this uses HTTP POST — the standard MCP Streamable HTTP transport.
 func ConnectSSE(serverURL string) (*Client, error) {
-	t, err := newSSETransport(serverURL)
+	t, err := newHTTPTransport(serverURL)
 	if err != nil { return nil, err }
 	return newClient(t)
 }
@@ -177,8 +220,10 @@ func Connect(command string, args ...string) (*Client, error) {
 
 var defaultInitParams = map[string]interface{}{
 	"protocolVersion": "2024-11-05",
-	"capabilities":    map[string]interface{}{},
-	"clientInfo":      map[string]string{"name": "openaide", "version": "3.0.0"},
+	"capabilities": map[string]interface{}{
+		"tools": map[string]interface{}{},
+	},
+	"clientInfo": map[string]string{"name": "openaide", "version": "3.0.0"},
 }
 
 func newClient(t Transport) (*Client, error) {
@@ -186,6 +231,11 @@ func newClient(t Transport) (*Client, error) {
 	if _, err := c.call("initialize", defaultInitParams); err != nil {
 		t.Close()
 		return nil, fmt.Errorf("mcp init failed: %w", err)
+	}
+	// MCP lifecycle: client must send initialized notification after initialize
+	if err := c.notify("notifications/initialized", nil); err != nil {
+		t.Close()
+		return nil, fmt.Errorf("mcp initialized notification failed: %w", err)
 	}
 	if err := c.discoverTools(); err != nil {
 		t.Close()
@@ -196,6 +246,10 @@ func newClient(t Transport) (*Client, error) {
 
 func (c *Client) call(method string, params interface{}) (json.RawMessage, error) {
 	return c.transport.Call(method, params)
+}
+
+func (c *Client) notify(method string, params interface{}) error {
+	return c.transport.Notify(method, params)
 }
 
 // discoverTools fetches tool definitions from the MCP server.
@@ -240,8 +294,11 @@ func (c *Client) CallTool(name string, args map[string]interface{}) (*kernel.Too
 
 	var callResp struct {
 		Content []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
+			Type     string `json:"type"`
+			Text     string `json:"text"`
+			Data     string `json:"data"`     // base64 for images
+			MIMEType string `json:"mimeType"` // for images/resources
+			URI      string `json:"uri"`      // for resource links
 		} `json:"content"`
 		IsError bool `json:"isError"`
 	}
@@ -249,27 +306,47 @@ func (c *Client) CallTool(name string, args map[string]interface{}) (*kernel.Too
 		return nil, fmt.Errorf("parse call result: %w", err)
 	}
 
-	var texts []string
+	var parts []string
 	for _, item := range callResp.Content {
-		if item.Text != "" {
-			texts = append(texts, item.Text)
+		switch item.Type {
+		case "text":
+			if item.Text != "" {
+				parts = append(parts, item.Text)
+			}
+		case "image":
+			if item.Data != "" {
+				parts = append(parts, fmt.Sprintf("[image: %s, %d bytes]", item.MIMEType, len(item.Data)))
+			}
+		case "resource":
+			if item.Text != "" {
+				parts = append(parts, item.Text)
+			} else if item.URI != "" {
+				parts = append(parts, fmt.Sprintf("[resource: %s]", item.URI))
+			}
+		default:
+			if item.Text != "" {
+				parts = append(parts, item.Text)
+			}
 		}
 	}
-	content := strings.Join(texts, "\n")
+	content := strings.Join(parts, "\n")
 	if callResp.IsError {
 		return &kernel.ToolResult{Error: content}, nil
 	}
 	return &kernel.ToolResult{Content: content}, nil
 }
 
-// Close shuts down the transport.
-func (c *Client) Close() error { return c.transport.Close() }
+// Close sends shutdown and closes the transport.
+func (c *Client) Close() error {
+	c.notify("shutdown", nil)
+	return c.transport.Close()
+}
 
 // ============ JSON-RPC Types ============
 
 type jsonrpcRequest struct {
 	JSONRPC string      `json:"jsonrpc"`
-	ID      int         `json:"id"`
+	ID      int         `json:"id,omitempty"`
 	Method  string      `json:"method"`
 	Params  interface{} `json:"params,omitempty"`
 }
