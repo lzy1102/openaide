@@ -392,8 +392,16 @@ func (k *AgentKernel) extractSkillsFromPatterns(ctx context.Context, patterns []
 				if sd, ok := k.patternDetector.(*SemanticPatternDetector); ok {
 					sd.MarkDistilled(desc)
 				}
-				allowedTools := extractToolPattern(clusterExamples[i])
-				k.skillActor.AddDistilledSkill(skillID, skillName, desc, distilled, kw, allowedTools)
+				// Extract tool + file patterns from cluster
+			ctx := extractSkillContext(clusterExamples[i])
+			// Append file hints to the distilled prompt
+			if len(ctx.Files) > 0 {
+				distilled += "\n\n## Generated Scripts\nThese files are commonly created:\n"
+				for _, f := range ctx.Files {
+					distilled += fmt.Sprintf("- `%s`\n", f)
+				}
+			}
+			k.skillActor.AddDistilledSkill(skillID, skillName, desc, distilled, kw, ctx.Tools)
 				if k.knowledgeCollector != nil {
 					k.knowledgeCollector.AddKnowledge(distillCtx,
 						"pattern: "+skillName, distilled, "distillation",
@@ -429,28 +437,56 @@ func extractVerdictFromLearned(learned string) (verdict string, clean string) {
 	return "", learned
 }
 
-// extractToolPattern scans cluster examples for commonly used tools.
-// Returns the top tools that appear in >50% of examples.
-func extractToolPattern(examples []clusterExample) []string {
-	if len(examples) < 2 { return nil }
+// skillContext holds extracted patterns from a query cluster.
+type skillContext struct {
+	Tools []string // commonly used tools
+	Files []string // commonly created/modified script files
+}
+
+// extractSkillContext scans cluster examples for tools and generated scripts.
+func extractSkillContext(examples []clusterExample) skillContext {
+	if len(examples) < 2 {
+		return skillContext{}
+	}
+	var ctx skillContext
+
+	// Count tools and files across examples
 	toolCount := map[string]int{}
+	fileCount := map[string]int{}
 	for _, ex := range examples {
-		// Simple heuristic: count tool mentions in responses
+		lower := strings.ToLower(ex.response)
 		for _, tool := range []string{"read_file", "search_files", "list_directory", "execute_command",
 			"write_file", "diff_edit", "git_log", "git_diff", "git_status", "git_blame",
 			"web_search", "web_fetch", "search_knowledge", "manage_memory"} {
-			if strings.Contains(strings.ToLower(ex.response), tool) {
+			if strings.Contains(lower, tool) {
 				toolCount[tool]++
 			}
 		}
-	}
-	threshold := len(examples) / 2
-	if threshold < 2 { threshold = 2 }
-	var result []string
-	for tool, count := range toolCount {
-		if count >= threshold {
-			result = append(result, tool)
+		// Scan for generated script files (.sh/.py/.rb/.js) — mentions in response
+		for _, line := range strings.Split(ex.response, "\n") {
+			if strings.Contains(line, ".sh") || strings.Contains(line, ".py") ||
+				strings.Contains(line, ".rb") || strings.Contains(line, ".js") {
+				for _, word := range strings.Fields(line) {
+					if strings.HasSuffix(word, ".sh") || strings.HasSuffix(word, ".py") ||
+						strings.HasSuffix(word, ".rb") || strings.HasSuffix(word, ".js") {
+						fileCount[strings.Trim(word, "`'\".,;:!?()[]{}")]++
+					}
+				}
+			}
 		}
 	}
-	return result
+
+	threshold := len(examples) / 2
+	if threshold < 2 { threshold = 2 }
+	for tool, count := range toolCount {
+		if count >= threshold {
+			ctx.Tools = append(ctx.Tools, tool)
+		}
+	}
+	for file, count := range fileCount {
+		if count >= threshold {
+			ctx.Files = append(ctx.Files, file)
+		}
+	}
+	return ctx
 }
