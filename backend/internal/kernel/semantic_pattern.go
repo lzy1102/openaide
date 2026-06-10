@@ -238,6 +238,9 @@ func evaluateAndDistill(ctx context.Context, llm LLMProvider, p Pattern, idx int
 	}
 	sb.WriteString("## Task\n")
 	sb.WriteString("Step 1 — Judge: is there a coherent, reusable pattern worth extracting?\n")
+	sb.WriteString("  CRITICAL: Be conservative. Only distill if the SAME concrete task is done repeatedly\n")
+	sb.WriteString("  with the SAME approach and tools. Coding tasks with different logic each time → SKIP.\n")
+	sb.WriteString("  Different files created each time → SKIP. Same tool sequence + same outcome → KEEP.\n")
 	sb.WriteString("Step 2 — If NOT, reply with ONLY the word SKIP.\n")
 	sb.WriteString("  If YES, distill into a skill card (under 300 words):\n")
 	sb.WriteString("  - Key files always involved\n")
