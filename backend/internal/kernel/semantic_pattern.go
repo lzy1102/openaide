@@ -22,6 +22,7 @@ type SemanticPatternDetector struct {
 	llmGroups map[string][]clusterExample // theme → examples from last LLM clustering
 	minSize   int
 	threshold float64
+	seenCount map[string]int // sessionID → last processed message count (dedup)
 	pending   sync.WaitGroup // track async distillation goroutines
 }
 
@@ -74,8 +75,22 @@ func (d *SemanticPatternDetector) SeedFromHistory(ctx context.Context, store Ses
 
 // Detect collects query+response pairs, clusters them, and returns mature patterns.
 // Uses embedding similarity when embedder is available; falls back to LLM clustering.
+// Only processes NEW messages since last call per session to avoid re-adding pairs.
 func (d *SemanticPatternDetector) Detect(ctx context.Context, sessionID string, messages []Message) ([]Pattern, error) {
-	pairs := extractPairs(messages)
+	d.mu.Lock()
+	prev := d.seenCount[sessionID]
+	if d.seenCount == nil { d.seenCount = make(map[string]int) }
+	d.seenCount[sessionID] = len(messages)
+	d.mu.Unlock()
+
+	// Only extract pairs from new messages since last detection
+	var newMsgs []Message
+	if prev > 0 && prev < len(messages) {
+		newMsgs = messages[prev:]
+	} else if prev == 0 {
+		newMsgs = messages
+	}
+	pairs := extractPairs(newMsgs)
 	if len(pairs) == 0 { return nil, nil }
 
 	d.mu.Lock()
@@ -188,7 +203,7 @@ func (d *SemanticPatternDetector) collectPatterns() []Pattern {
 	for i := range d.clusters {
 		c := &d.clusters[i]
 		n := len(c.examples)
-		if c.distilled || n < 2 { continue }
+		if c.distilled || n < d.minSize { continue }
 		// Only re-emit if cluster has grown significantly (2x) since last emission.
 		// Prevents repeated LLM calls for the same cluster at similar sizes.
 		if c.lastEmitted > 0 && n < c.lastEmitted*2 { continue }
