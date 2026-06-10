@@ -41,8 +41,11 @@ type stdioTransport struct {
 	done   chan struct{}
 }
 
-func newStdioTransport(command string, args ...string) (*stdioTransport, error) {
+func newStdioTransport(command string, args []string, env []string) (*stdioTransport, error) {
 	cmd := exec.Command(command, args...)
+	if env != nil {
+		cmd.Env = env
+	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil { return nil, err }
 	stdout, err := cmd.StdoutPipe()
@@ -198,8 +201,8 @@ func (t *httpTransport) Close() error { return nil }
 // ============ Client ============
 
 // ConnectStdio connects to a local MCP server via stdio.
-func ConnectStdio(command string, args ...string) (*Client, error) {
-	t, err := newStdioTransport(command, args...)
+func ConnectStdio(command string, args []string, env []string) (*Client, error) {
+	t, err := newStdioTransport(command, args, env)
 	if err != nil { return nil, err }
 	return newClient(t)
 }
@@ -215,7 +218,7 @@ func ConnectSSE(serverURL string) (*Client, error) {
 
 // Connect is the legacy API — stdio only, kept for backward compatibility.
 func Connect(command string, args ...string) (*Client, error) {
-	return ConnectStdio(command, args...)
+	return ConnectStdio(command, args, nil)
 }
 
 var defaultInitParams = map[string]interface{}{
@@ -400,8 +403,9 @@ func NewManager() *Manager {
 }
 
 // ConnectServer connects to an MCP server. Supports both stdio and SSE.
-// For stdio: pass command + args. For SSE: pass "sse" as command, URL as first arg.
-func (m *Manager) ConnectServer(id, command string, args ...string) error {
+// For stdio: pass command + args + optional env (key=value format, nil inherits parent).
+// For SSE: pass "sse" as command, URL as first arg.
+func (m *Manager) ConnectServer(id, command string, args []string, env []string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -417,7 +421,7 @@ func (m *Manager) ConnectServer(id, command string, args ...string) error {
 		if !strings.HasPrefix(url, "http") { url = command }
 		c, err = ConnectSSE(url)
 	} else {
-		c, err = ConnectStdio(command, args...)
+		c, err = ConnectStdio(command, args, env)
 	}
 	if err != nil {
 		return fmt.Errorf("mcp connect %q: %w", id, err)
@@ -444,6 +448,16 @@ func (m *Manager) CallTool(serverID, toolName string, args map[string]interface{
 		return nil, fmt.Errorf("mcp server %q not found", serverID)
 	}
 	return c.CallTool(toolName, args)
+}
+
+// EnvMap converts a map to key=value env slice for exec.Cmd.
+func EnvMap(m map[string]string) []string {
+	if len(m) == 0 { return nil }
+	env := make([]string, 0, len(m))
+	for k, v := range m {
+		env = append(env, k+"="+v)
+	}
+	return env
 }
 
 // Shutdown disconnects all servers.

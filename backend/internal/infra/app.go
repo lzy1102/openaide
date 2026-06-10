@@ -69,10 +69,10 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 			var connErr error
 			if srvCfg.Type == "sse" || srvCfg.URL != "" {
 				slog.Info("Connecting MCP server (SSE)", "id", srvCfg.ID, "url", srvCfg.URL)
-				connErr = mcpManager.ConnectServer(srvCfg.ID, "sse", srvCfg.URL)
+				connErr = mcpManager.ConnectServer(srvCfg.ID, "sse", []string{srvCfg.URL}, nil)
 			} else {
 				slog.Info("Connecting MCP server (stdio)", "id", srvCfg.ID, "command", srvCfg.Command)
-				connErr = mcpManager.ConnectServer(srvCfg.ID, srvCfg.Command, srvCfg.Args...)
+				connErr = mcpManager.ConnectServer(srvCfg.ID, srvCfg.Command, srvCfg.Args, mcp.EnvMap(srvCfg.Env))
 			}
 			if connErr != nil {
 				slog.Warn("Failed to connect MCP server, skipping", "id", srvCfg.ID, "error", connErr)
@@ -95,7 +95,7 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 					url = srv.Command
 				}
 				slog.Info("Connecting MCP server (Claude plugin SSE)", "name", name, "url", url)
-				if err := mcpManager.ConnectServer(name, "sse", url); err != nil {
+				if err := mcpManager.ConnectServer(name, "sse", []string{url}, nil); err != nil {
 					slog.Warn("Failed to connect Claude MCP server, skipping", "name", name, "error", err)
 					continue
 				}
@@ -106,7 +106,7 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 					continue
 				}
 				slog.Info("Connecting MCP server (Claude plugin)", "name", name, "command", cmd)
-				if err := mcpManager.ConnectServer(name, cmd, srv.Args...); err != nil {
+				if err := mcpManager.ConnectServer(name, cmd, srv.Args, mcp.EnvMap(srv.Env)); err != nil {
 					slog.Warn("Failed to connect Claude MCP server, skipping", "name", name, "error", err)
 					continue
 				}
@@ -192,7 +192,7 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 		for _, srv := range opencodeMCP {
 			if srv.Command != "" {
 				id := "opencode-" + srv.Command
-				if err := mcpManager.ConnectServer(id, srv.Command, srv.Args...); err != nil {
+				if err := mcpManager.ConnectServer(id, srv.Command, srv.Args, nil); err != nil {
 					slog.Warn("OpenCode MCP connect failed", "id", id, "error", err)
 					continue
 				}

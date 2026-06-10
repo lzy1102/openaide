@@ -160,11 +160,12 @@ type MCPConfig struct {
 
 // MCPServerEntry MCP 服务器配置
 type MCPServerEntry struct {
-	ID      string   `json:"id" yaml:"id"`
-	Type    string   `json:"type,omitempty" yaml:"type,omitempty"`       // "stdio" (default) or "sse"
-	Command string   `json:"command,omitempty" yaml:"command,omitempty"` // required for stdio
-	Args    []string `json:"args,omitempty" yaml:"args,omitempty"`
-	URL     string   `json:"url,omitempty" yaml:"url,omitempty"` // required for sse
+	ID      string            `json:"id" yaml:"id"`
+	Type    string            `json:"type,omitempty" yaml:"type,omitempty"`       // "stdio" (default) or "sse"
+	Command string            `json:"command,omitempty" yaml:"command,omitempty"` // required for stdio
+	Args    []string          `json:"args,omitempty" yaml:"args,omitempty"`
+	URL     string            `json:"url,omitempty" yaml:"url,omitempty"` // required for sse
+	Env     map[string]string `json:"env,omitempty" yaml:"env,omitempty"` // env vars for stdio
 }
 
 // ChannelsConfig 渠道配置

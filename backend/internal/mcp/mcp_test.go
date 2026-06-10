@@ -13,7 +13,7 @@ func TestNewManager(t *testing.T) {
 
 func TestManager_ConnectInvalid(t *testing.T) {
 	m := NewManager()
-	err := m.ConnectServer("test", "nonexistent-command-xyz")
+	err := m.ConnectServer("test", "nonexistent-command-xyz", nil, nil)
 	if err == nil {
 		t.Log("expected error for nonexistent command")
 	}
