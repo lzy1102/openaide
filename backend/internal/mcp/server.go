@@ -70,18 +70,25 @@ func (s *Server) handleRequest(req jsonrpcRequest) {
 	switch req.Method {
 	case "initialize":
 		s.handleInitialize(req)
+	case "ping":
+		s.handlePing(req)
 	case "tools/list":
 		s.handleListTools(req)
 	case "tools/call":
 		s.handleCallTool(req)
 	case "notifications/initialized":
-		// 无需回复
+		// no response needed
 	case "shutdown":
 		s.handleShutdown(req)
 	default:
 		s.sendError(req.ID, -32601, "Method not found",
 			fmt.Sprintf("unknown method: %s", req.Method))
 	}
+}
+
+// handlePing responds to heartbeat checks.
+func (s *Server) handlePing(req jsonrpcRequest) {
+	s.sendResult(req.ID, map[string]interface{}{})
 }
 
 // handleInitialize 处理 MCP 初始化握手
@@ -139,12 +146,15 @@ func (s *Server) handleCallTool(req jsonrpcRequest) {
 	}, "mcp")
 
 	contentStr := ""
+	isError := false
 	if err != nil {
 		contentStr = fmt.Sprintf("Error: %s", err.Error())
+		isError = true
 	} else if result != nil {
 		contentStr = fmt.Sprintf("%v", result.Content)
 		if result.Error != "" {
 			contentStr = fmt.Sprintf("Error: %s", result.Error)
+			isError = true
 		}
 	}
 
@@ -152,7 +162,7 @@ func (s *Server) handleCallTool(req jsonrpcRequest) {
 		Content: []ContentItem{
 			{Type: "text", Text: contentStr},
 		},
-		IsError: result.Error != "",
+		IsError: isError,
 	})
 }
 
@@ -185,6 +195,7 @@ func (s *Server) sendError(id int, code int, message string, data string) {
 		Error: &jsonrpcError{
 			Code:    code,
 			Message: message,
+			Data:    data,
 		},
 	})
 	jsonData = append(jsonData, '\n')

@@ -78,31 +78,7 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 				slog.Warn("Failed to connect MCP server, skipping", "id", srvCfg.ID, "error", connErr)
 				continue
 			}
-			for _, mcpTool := range mcpManager.GetServerTools(srvCfg.ID) {
-				def := kernel.ToolDefinition{
-					Type: "function",
-					Function: kernel.FunctionDef{
-						Name:        mcpTool.Function.Name,
-						Description: mcpTool.Function.Description,
-						Parameters:  mcpTool.Function.Parameters,
-					},
-				}
-				serverID, toolName := srvCfg.ID, mcpTool.Function.Name
-				handler := kernel.ToolHandler(func(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
-					var args map[string]interface{}
-					if arguments != "" {
-						if err := json.Unmarshal([]byte(arguments), &args); err != nil {
-							return &kernel.ToolResult{Error: fmt.Sprintf("invalid args: %v", err)}, nil
-						}
-					}
-					return mcpManager.CallTool(serverID, toolName, args)
-				})
-				if err := toolRegistry.Register(def, handler); err != nil {
-					slog.Warn("MCP tool registration skipped, duplicate name", "tool", mcpTool.Function.Name, "error", err)
-				} else {
-					slog.Info("MCP tool registered", "server", srvCfg.ID, "tool", mcpTool.Function.Name)
-				}
-			}
+			registerMCPTools(toolRegistry, mcpManager, srvCfg.ID, "")
 		}
 	}
 	// Claude 插件中的 .mcp.json
@@ -135,31 +111,7 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 					continue
 				}
 			}
-			for _, mcpTool := range mcpManager.GetServerTools(name) {
-				def := kernel.ToolDefinition{
-					Type: "function",
-					Function: kernel.FunctionDef{
-						Name:        mcpTool.Function.Name,
-						Description: mcpTool.Function.Description,
-						Parameters:  mcpTool.Function.Parameters,
-					},
-				}
-				serverID, toolName := name, mcpTool.Function.Name
-				handler := kernel.ToolHandler(func(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
-					var args map[string]interface{}
-					if arguments != "" {
-						if err := json.Unmarshal([]byte(arguments), &args); err != nil {
-							return &kernel.ToolResult{Error: fmt.Sprintf("invalid args: %v", err)}, nil
-						}
-					}
-					return mcpManager.CallTool(serverID, toolName, args)
-				})
-				if err := toolRegistry.Register(def, handler); err != nil {
-					slog.Warn("Claude MCP tool registration skipped, duplicate", "tool", mcpTool.Function.Name, "error", err)
-				} else {
-					slog.Info("Claude MCP tool registered", "server", name, "tool", mcpTool.Function.Name)
-				}
-			}
+			registerMCPTools(toolRegistry, mcpManager, name, "Claude ")
 		}
 	}
 
@@ -244,17 +196,7 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 					slog.Warn("OpenCode MCP connect failed", "id", id, "error", err)
 					continue
 				}
-				for _, mcpTool := range mcpManager.GetServerTools(id) {
-					def := kernel.ToolDefinition{Type: "function", Function: kernel.FunctionDef{
-						Name: mcpTool.Function.Name, Description: mcpTool.Function.Description, Parameters: mcpTool.Function.Parameters,
-					}}
-					serverID, toolName := id, mcpTool.Function.Name
-					toolRegistry.Register(def, kernel.ToolHandler(func(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
-						var args map[string]interface{}
-						if arguments != "" { json.Unmarshal([]byte(arguments), &args) }
-						return mcpManager.CallTool(serverID, toolName, args)
-					}))
-				}
+				registerMCPTools(toolRegistry, mcpManager, id, "OpenCode ")
 				slog.Info("OpenCode MCP connected", "id", id)
 			}
 		}
@@ -428,5 +370,34 @@ func (a *Application) SetAutoApprove(on bool) {
 func (a *Application) SetModel(model string) {
 	if a.LLMGateway != nil {
 		a.LLMGateway.SetDefaultModel(model)
+	}
+}
+
+// registerMCPTools registers all tools from a connected MCP server into the tool registry.
+func registerMCPTools(toolRegistry *tools.Registry, mcpManager *mcp.Manager, serverID string, logPrefix string) {
+	for _, mcpTool := range mcpManager.GetServerTools(serverID) {
+		def := kernel.ToolDefinition{
+			Type: "function",
+			Function: kernel.FunctionDef{
+				Name:        mcpTool.Function.Name,
+				Description: mcpTool.Function.Description,
+				Parameters:  mcpTool.Function.Parameters,
+			},
+		}
+		serverID, toolName := serverID, mcpTool.Function.Name
+		handler := kernel.ToolHandler(func(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
+			var args map[string]interface{}
+			if arguments != "" {
+				if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+					return &kernel.ToolResult{Error: fmt.Sprintf("invalid args: %v", err)}, nil
+				}
+			}
+			return mcpManager.CallTool(serverID, toolName, args)
+		})
+		if err := toolRegistry.Register(def, handler); err != nil {
+			slog.Warn(logPrefix+"MCP tool registration skipped, duplicate", "tool", mcpTool.Function.Name, "error", err)
+		} else {
+			slog.Info(logPrefix+"MCP tool registered", "server", serverID, "tool", mcpTool.Function.Name)
+		}
 	}
 }

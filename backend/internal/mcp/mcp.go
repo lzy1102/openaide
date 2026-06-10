@@ -361,6 +361,7 @@ type jsonrpcResponse struct {
 type jsonrpcError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
+	Data    string `json:"data,omitempty"`
 }
 
 // Shared types used by both Client and Server.
