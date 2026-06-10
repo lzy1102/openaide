@@ -14,14 +14,15 @@ import (
 // Uses embedding-based clustering when an embedder is available, or falls back to
 // LLM-based clustering — no embedding API dependency required.
 type SemanticPatternDetector struct {
-	embedder   Embedder
-	llm        LLMProvider // optional: for LLM-based clustering when embedder unavailable
-	mu         sync.Mutex
-	clusters   []queryCluster
-	buffer     []clusterExample // accumulated pairs for LLM-based clustering
-	minSize    int
-	threshold  float64
-	pending    sync.WaitGroup  // track async distillation goroutines
+	embedder  Embedder
+	llm       LLMProvider // optional: for LLM-based clustering when embedder unavailable
+	mu        sync.Mutex
+	clusters  []queryCluster
+	buffer    []clusterExample        // accumulated pairs for LLM-based clustering
+	llmGroups map[string][]clusterExample // theme → examples from last LLM clustering
+	minSize   int
+	threshold float64
+	pending   sync.WaitGroup // track async distillation goroutines
 }
 
 type queryCluster struct {
@@ -125,6 +126,8 @@ func (d *SemanticPatternDetector) clusterWithLLM(ctx context.Context) []Pattern 
 		map[string]interface{}{"max_tokens": 300, "temperature": 0, "route": "execution", "no_thinking": true})
 	if err != nil || resp.Content == "" { return nil }
 
+	d.llmGroups = make(map[string][]clusterExample)
+
 	var patterns []Pattern
 	for _, line := range strings.Split(resp.Content, "\n") {
 		line = strings.TrimSpace(line)
@@ -132,13 +135,26 @@ func (d *SemanticPatternDetector) clusterWithLLM(ctx context.Context) []Pattern 
 		parts := strings.SplitN(line, "|", 3)
 		theme := strings.TrimPrefix(strings.TrimSpace(parts[0]), "GROUP: ")
 		reusable := len(parts) > 2 && strings.Contains(strings.ToLower(parts[2]), "yes")
-		if theme != "" && reusable {
-			patterns = append(patterns, Pattern{
-				Type: "distillable_cluster", Description: theme,
-				Confidence: 0.7, Frequency: len(d.buffer),
-			})
+		if theme == "" || !reusable { continue }
+
+		// Parse query indices to extract matching examples
+		if len(parts) > 1 {
+			numsStr := strings.TrimPrefix(strings.TrimSpace(parts[1]), "queries:")
+			numsStr = strings.TrimSpace(numsStr)
+			for _, s := range strings.Split(numsStr, ",") {
+				var n int
+				if _, err := fmt.Sscanf(strings.TrimSpace(s), "%d", &n); err == nil && n > 0 && n <= len(d.buffer) {
+					d.llmGroups[theme] = append(d.llmGroups[theme], d.buffer[n-1])
+				}
+			}
 		}
+
+		patterns = append(patterns, Pattern{
+			Type: "distillable_cluster", Description: theme,
+			Confidence: 0.7, Frequency: len(d.buffer),
+		})
 	}
+	d.buffer = nil // clear accumulated buffer regardless
 	return patterns
 }
 
@@ -188,6 +204,39 @@ func (d *SemanticPatternDetector) collectPatterns() []Pattern {
 	return patterns
 }
 
+// GetExamplesByTheme returns the examples for a cluster matching the given theme.
+// Searches embedding-based clusters first, then falls back to LLM-grouped examples.
+// Returns nil if no cluster matches.
+func (d *SemanticPatternDetector) GetExamplesByTheme(theme string) []clusterExample {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	// Check embedding-based clusters
+	for _, c := range d.clusters {
+		if extractClusterTheme(c.examples) == theme && len(c.examples) >= 2 {
+			return c.examples
+		}
+	}
+
+	// Fall back to LLM-grouped examples
+	if len(d.llmGroups) > 0 {
+		// Direct match
+		if ex, ok := d.llmGroups[theme]; ok && len(ex) >= 2 {
+			return ex
+		}
+		// Fuzzy: check if any key contains the theme or vice versa
+		for k, ex := range d.llmGroups {
+			if len(ex) < 2 { continue }
+			if strings.Contains(strings.ToLower(k), strings.ToLower(theme)) ||
+				strings.Contains(strings.ToLower(theme), strings.ToLower(k)) {
+				return ex
+			}
+		}
+	}
+
+	return nil
+}
+
 // MarkDistilled marks a cluster as successfully distilled after LLM quality gate passes.
 func (d *SemanticPatternDetector) MarkDistilled(theme string) {
 	d.mu.Lock()
@@ -222,19 +271,19 @@ func (d *SemanticPatternDetector) prune() {
 
 // evaluateAndDistill does quality evaluation + distillation in a single LLM call.
 // Returns "" if the cluster is not worth distilling, or the distilled skill card.
-func evaluateAndDistill(ctx context.Context, llm LLMProvider, p Pattern, idx int, examples [][]clusterExample) string {
+func evaluateAndDistill(ctx context.Context, llm LLMProvider, p Pattern, examples []clusterExample) string {
 	if llm == nil { return "" }
-	if idx >= len(examples) || len(examples[idx]) < 2 { return "" }
+	if len(examples) < 2 { return "" }
 
 	var sb strings.Builder
 	sb.WriteString("You are evaluating whether a cluster of similar user queries forms a reusable pattern.\n\n")
 	sb.WriteString(fmt.Sprintf("Theme: %s | Query count: %d\n\n", p.Description, p.Frequency))
 	sb.WriteString("Sample queries:\n")
-	n := len(examples[idx])
+	n := len(examples)
 	if n > 8 { n = 8 }
 	for j := 0; j < n; j++ {
 		sb.WriteString(fmt.Sprintf("- Query: %s\n  Response: %s\n\n",
-			truncStr(examples[idx][j].query, 200), truncStr(examples[idx][j].response, 300)))
+			truncStr(examples[j].query, 200), truncStr(examples[j].response, 300)))
 	}
 	sb.WriteString("## Task\n")
 	sb.WriteString("Step 1 — Judge: is there a coherent, reusable pattern worth extracting?\n")

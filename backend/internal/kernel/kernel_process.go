@@ -362,13 +362,10 @@ func (k *AgentKernel) extractSkillsFromPatterns(ctx context.Context, patterns []
 	if k.skillActor == nil || !k.distillEnabled {
 		return
 	}
-	// Get cluster examples for distillation
-	var clusterExamples [][]clusterExample
-	if sd, ok := k.patternDetector.(*SemanticPatternDetector); ok {
-		clusterExamples = sd.GetDistillableExamples()
-	}
+	sd, _ := k.patternDetector.(*SemanticPatternDetector)
 
-	for i, p := range patterns {
+	for _, p := range patterns {
+		p := p // capture loop variable for goroutine
 		theme := strings.ToLower(strings.TrimSpace(p.Description))
 		skillID := "auto-" + strings.ReplaceAll(strings.ReplaceAll(theme, " ", "-"), ":", "")
 		if len(skillID) > 60 { skillID = skillID[:60] }
@@ -378,45 +375,54 @@ func (k *AgentKernel) extractSkillsFromPatterns(ctx context.Context, patterns []
 		keywords := tokenize(theme)
 		if len(keywords) == 0 { keywords = strings.Fields(p.Type) }
 
-		// Single LLM call: evaluate quality + distill if worth it
-		if k.llmProvider != nil {
-			skillID, skillName, desc, kw := skillID, skillName, p.Description, keywords
-			go func() {
-				distillCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-				defer cancel()
-				distilled := evaluateAndDistill(distillCtx, k.llmProvider, p, i, clusterExamples)
-				if distilled == "" {
-					slog.Debug("Cluster rejected by LLM", "theme", desc, "freq", p.Frequency)
-					return
-				}
-				if sd, ok := k.patternDetector.(*SemanticPatternDetector); ok {
-					sd.MarkDistilled(desc)
-				}
-				// Extract tool + file patterns from cluster
-			ctx := extractSkillContext(clusterExamples[i])
-			// Append file hints to the distilled prompt
-			if len(ctx.Files) > 0 {
-				distilled += "\n\n## Generated Scripts\nThese files are commonly created:\n"
-				for _, f := range ctx.Files {
-					distilled += fmt.Sprintf("- `%s`\n", f)
-				}
-			}
-			k.skillActor.AddDistilledSkill(skillID, skillName, desc, distilled, kw, ctx.Tools)
-				if k.knowledgeCollector != nil {
-					k.knowledgeCollector.AddKnowledge(distillCtx,
-						"pattern: "+skillName, distilled, "distillation",
-						append(kw, "auto-distilled", "pattern"))
-				}
-				slog.Info("Skill distilled", "id", skillID, "name", skillName, "freq", p.Frequency)
-			}()
-		} else {
+		if k.llmProvider == nil {
 			simplePrompt := fmt.Sprintf("Auto-detected from %d executions sharing theme: %s", p.Frequency, p.Description)
 			k.skillActor.AddSkill(skillID, skillName, p.Description, simplePrompt, keywords)
 			slog.Info("Auto-extracted skill", "id", skillID, "name", skillName, "frequency", p.Frequency)
+			continue
 		}
+
+		// Get examples for this specific pattern's cluster
+		examples := []clusterExample{}
+		if sd != nil {
+			examples = sd.GetExamplesByTheme(p.Description)
+		}
+		if len(examples) < 2 {
+			slog.Debug("Cluster too small for distillation", "theme", p.Description, "examples", len(examples))
+			continue
+		}
+
+		// Capture all values before the goroutine to avoid closure bugs
+		sid, sname, desc, kw := skillID, skillName, p.Description, keywords
+		go func() {
+			distillCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+			distilled := evaluateAndDistill(distillCtx, k.llmProvider, p, examples)
+			if distilled == "" {
+				slog.Debug("Cluster rejected by LLM", "theme", desc, "freq", p.Frequency)
+				return
+			}
+			if sd != nil {
+				sd.MarkDistilled(desc)
+			}
+			// Extract tool + file patterns from cluster
+			skillCtx := extractSkillContext(examples)
+			if len(skillCtx.Files) > 0 {
+				distilled += "\n\n## Generated Scripts\nThese files are commonly created:\n"
+				for _, f := range skillCtx.Files {
+					distilled += fmt.Sprintf("- `%s`\n", f)
+				}
+			}
+			k.skillActor.AddDistilledSkill(sid, sname, desc, distilled, kw, skillCtx.Tools)
+			if k.knowledgeCollector != nil {
+				k.knowledgeCollector.AddKnowledge(distillCtx,
+					"pattern: "+sname, distilled, "distillation",
+					append(kw, "auto-distilled", "pattern"))
+			}
+			slog.Info("Skill distilled", "id", sid, "name", sname, "freq", p.Frequency)
+		}()
 	}
 }
-
 
 func capitalize(s string) string {
 	if s == "" { return s }

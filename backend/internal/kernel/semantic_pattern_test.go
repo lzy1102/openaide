@@ -55,7 +55,7 @@ func TestSemanticPatternDetector_FormsCluster(t *testing.T) {
 
 func TestEvaluateAndDistill_PromptFormat(t *testing.T) {
 	// Verify evaluateAndDistill handles nil LLM gracefully
-	result := evaluateAndDistill(context.Background(), nil, Pattern{Description: "test", Frequency: 2}, 0, nil)
+	result := evaluateAndDistill(context.Background(), nil, Pattern{Description: "test", Frequency: 2}, nil)
 	if result != "" {
 		t.Error("evaluateAndDistill should return empty with nil LLM")
 	}
@@ -68,13 +68,13 @@ func TestEvaluateAndDistill(t *testing.T) {
 	}
 	// nil LLM returns ""
 	p := Pattern{Description: "login", Frequency: 2}
-	result := evaluateAndDistill(context.Background(), nil, p, 0, [][]clusterExample{examples})
+	result := evaluateAndDistill(context.Background(), nil, p, examples)
 	if result != "" {
 		t.Error("evaluateAndDistill should return empty with nil LLM")
 	}
 
-	// empty examples returns ""
-	result = evaluateAndDistill(context.Background(), nil, p, 0, [][]clusterExample{{}})
+	// <2 examples returns ""
+	result = evaluateAndDistill(context.Background(), nil, p, []clusterExample{{}})
 	if result != "" {
 		t.Error("evaluateAndDistill should return empty with <2 examples")
 	}
