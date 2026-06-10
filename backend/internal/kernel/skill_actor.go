@@ -58,10 +58,17 @@ func NewSkillActor(llm LLMProvider) *SkillActor {
 // ── Skill Management ─────────────────────────────────────
 
 func (a *SkillActor) AddSkill(id, name, description, prompt string, keywords []string) {
+	a.AddDistilledSkill(id, name, description, prompt, keywords, nil)
+}
+
+// AddDistilledSkill creates a skill from the distillation pipeline with optional tool restrictions.
+// AllowedTools is derived from the tools actually used in the successful query cluster.
+func (a *SkillActor) AddDistilledSkill(id, name, description, prompt string, keywords []string, allowedTools []string) {
 	a.super.Send(func() {
 		a.skills[id] = &Skill{
 			ID: id, Name: name, Description: description,
 			Prompt: prompt, Keywords: keywords,
+			AllowedTools: allowedTools,
 			Enabled: true, Confidence: 0.5,
 		}
 	})

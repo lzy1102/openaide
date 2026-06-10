@@ -392,7 +392,8 @@ func (k *AgentKernel) extractSkillsFromPatterns(ctx context.Context, patterns []
 				if sd, ok := k.patternDetector.(*SemanticPatternDetector); ok {
 					sd.MarkDistilled(desc)
 				}
-				k.skillActor.AddSkill(skillID, skillName, desc, distilled, kw)
+				allowedTools := extractToolPattern(clusterExamples[i])
+				k.skillActor.AddDistilledSkill(skillID, skillName, desc, distilled, kw, allowedTools)
 				if k.knowledgeCollector != nil {
 					k.knowledgeCollector.AddKnowledge(distillCtx,
 						"pattern: "+skillName, distilled, "distillation",
@@ -426,4 +427,30 @@ func extractVerdictFromLearned(learned string) (verdict string, clean string) {
 		}
 	}
 	return "", learned
+}
+
+// extractToolPattern scans cluster examples for commonly used tools.
+// Returns the top tools that appear in >50% of examples.
+func extractToolPattern(examples []clusterExample) []string {
+	if len(examples) < 2 { return nil }
+	toolCount := map[string]int{}
+	for _, ex := range examples {
+		// Simple heuristic: count tool mentions in responses
+		for _, tool := range []string{"read_file", "search_files", "list_directory", "execute_command",
+			"write_file", "diff_edit", "git_log", "git_diff", "git_status", "git_blame",
+			"web_search", "web_fetch", "search_knowledge", "manage_memory"} {
+			if strings.Contains(strings.ToLower(ex.response), tool) {
+				toolCount[tool]++
+			}
+		}
+	}
+	threshold := len(examples) / 2
+	if threshold < 2 { threshold = 2 }
+	var result []string
+	for tool, count := range toolCount {
+		if count >= threshold {
+			result = append(result, tool)
+		}
+	}
+	return result
 }
