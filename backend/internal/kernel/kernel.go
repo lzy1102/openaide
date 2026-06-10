@@ -52,8 +52,9 @@ type AgentKernel struct {
 	state        atomic.Value // KernelState — write-once, read-often
 
 	// 配置
-	maxRounds  int
-	maxTokens  int
+	maxRounds      int
+	maxTokens      int
+	distillEnabled bool
 }
 
 // Config 内核配置
@@ -63,6 +64,7 @@ type Config struct {
 	SystemPrompt string
 
 
+	DistillEnabled     bool    // 启用自动技能提取（默认true）
 	DistillMinQueries int     // 几个相似查询触发技能提取（默认5）
 	DistillSimilarity float64 // 余弦相似度阈值（默认0.80）
 }
@@ -73,6 +75,7 @@ func DefaultConfig() *Config {
 		MaxRounds:                  10,
 		MaxTokens:                  4000,
 		SystemPrompt:               defaultSystemPrompt(),
+		DistillEnabled:     true,
 		DistillMinQueries: 5,
 		DistillSimilarity: 0.80,
 	}
@@ -95,8 +98,9 @@ func NewAgentKernel(
 		toolExecutor:  tools,
 		memory:        memory,
 		sessionStore:  sessions,
-		maxRounds:     config.MaxRounds,
-		maxTokens:     config.MaxTokens,
+		maxRounds:       config.MaxRounds,
+		maxTokens:       config.MaxTokens,
+		distillEnabled:  config.DistillEnabled,
 	}
 
 

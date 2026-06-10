@@ -359,7 +359,7 @@ func (k *AgentKernel) autoSaveKnowledge(ctx context.Context, sessionID, query, r
 // extractSkillsFromPatterns analyzes detected patterns and auto-creates skills
 // for recurring successful patterns.
 func (k *AgentKernel) extractSkillsFromPatterns(ctx context.Context, patterns []Pattern) {
-	if k.skillActor == nil {
+	if k.skillActor == nil || !k.distillEnabled {
 		return
 	}
 	// Get cluster examples for distillation
