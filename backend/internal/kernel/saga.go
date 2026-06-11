@@ -14,11 +14,9 @@ type SagaStep struct {
 // Failed steps' compensations are skipped (they didn't complete).
 // Returns the first error encountered.
 func RunSaga(steps []SagaStep) error {
-	completed := 0
 	for i, step := range steps {
 		if err := step.Execute(); err != nil {
 			slog.Warn("Saga step failed, compensating", "step", step.Name, "error", err)
-			// Compensate in reverse order
 			for j := i - 1; j >= 0; j-- {
 				if steps[j].Compensate != nil {
 					if cerr := steps[j].Compensate(); cerr != nil {
@@ -28,8 +26,6 @@ func RunSaga(steps []SagaStep) error {
 			}
 			return err
 		}
-		completed++
 	}
-	_ = completed
 	return nil
 }

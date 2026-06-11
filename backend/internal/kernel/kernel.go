@@ -612,7 +612,7 @@ func ensureSessionTitle(session *Session) {
 }
 
 // generateSessionTitle 用 LLM 生成有意义的会话标题（异步，不阻塞）
-func (k *AgentKernel) generateSessionTitle(session *Session, firstQuery string) {
+func (k *AgentKernel) generateSessionTitle(sessionID, firstQuery string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	resp, err := k.llmProvider.Chat(ctx, []Message{
@@ -623,11 +623,19 @@ func (k *AgentKernel) generateSessionTitle(session *Session, firstQuery string) 
 	}
 	title := strings.TrimSpace(resp.Content)
 	if title != "" && len([]rune(title)) <= 50 {
-		session.Metadata["title"] = title
-		k.sessionStore.Update(ctx, session)
+		k.setSessionTitle(ctx, sessionID, title)
 	}
 }
 
+
+// setSessionTitle atomically sets a session title from the title goroutine.
+func (k *AgentKernel) setSessionTitle(ctx context.Context, sessionID, title string) {
+	session, err := k.sessionStore.Get(ctx, sessionID)
+	if err != nil || session == nil { return }
+	if session.Metadata == nil { session.Metadata = make(map[string]interface{}) }
+	session.Metadata["title"] = title
+	k.sessionStore.Update(ctx, session)
+}
 
 // loadSessionMessages loads recent session messages for process supervision.
 func (k *AgentKernel) loadSessionMessages(ctx context.Context, sessionID string) []Message {

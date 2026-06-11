@@ -212,10 +212,9 @@ func (k *AgentKernel) getToolDefinitions(ctx context.Context, queryContent strin
 	return tools
 }
 
-// finalizeResponse performs all post-ReAct work shared by both paths:
-// save memory, update session, generate title, run reflection, close tracer
-func (k *AgentKernel) finalizeResponse(ctx context.Context, session *Session, query *Query, response string, toolCalls int) {
-	// Saga: save memory → update session, with compensation
+// finalizeResponse performs all post-ReAct work shared by sync and stream paths:
+// save memory, update session, generate title, run reflection.
+func (k *AgentKernel) finalizeResponse(ctx context.Context, session *Session, query *Query, response string, toolCalls, toolErrors int) {
 	RunSaga([]SagaStep{
 		{
 			Name: "save-memory",
@@ -223,10 +222,7 @@ func (k *AgentKernel) finalizeResponse(ctx context.Context, session *Session, qu
 				k.saveToMemory(ctx, session.ID, session.Messages)
 				return nil
 			},
-			Compensate: func() error {
-				// Best-effort: remove saved items (MemoryActor is eventually consistent)
-				return nil
-			},
+			Compensate: func() error { return nil },
 		},
 		{
 			Name: "update-session",
@@ -235,17 +231,15 @@ func (k *AgentKernel) finalizeResponse(ctx context.Context, session *Session, qu
 				ensureSessionTitle(session)
 				return k.sessionStore.Update(ctx, session)
 			},
-			Compensate: nil, // session update is idempotent
+			Compensate: nil,
 		},
 	})
 
-	// Async: generate meaningful title and run reflection
-	go k.generateSessionTitle(session, query.Content)
+	go k.generateSessionTitle(session.ID, query.Content)
 	if k.reflection != nil {
-		go k.doReflection(ctx, session.ID, query.Content, response, toolCalls, 0)
+		go k.doReflection(ctx, session.ID, query.Content, response, toolCalls, toolErrors)
 	}
 	go k.compressMemory(ctx, session.ID)
-	// Periodically decay unused skills
 	if k.skillActor != nil { go k.skillActor.DecayUnused() }
 }
 

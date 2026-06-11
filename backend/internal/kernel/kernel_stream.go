@@ -181,24 +181,8 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 
 			// 无工具调用 -> 返回结果
 			if len(lastToolCalls) == 0 {
-				k.saveToMemory(ctx, session.ID, messages)
 				session.Messages = messages
-				session.UpdatedAt = time.Now()
-				ensureSessionTitle(session)
-				if err := k.sessionStore.Update(ctx, session); err != nil {
-					slog.Warn("session update failed", "error", err)
-				}
-				// Copy metadata to avoid concurrent map access in goroutine
-				titleMeta := make(map[string]interface{})
-				for k, v := range session.Metadata {
-					titleMeta[k] = v
-				}
-				session.Metadata = titleMeta
-				go k.generateSessionTitle(session, query.Content)
-
-				if k.reflection != nil {
-					go k.doReflection(context.WithoutCancel(ctx), session.ID, query.Content, fullContent.String(), totalToolCalls, toolErrors)
-				}
+				k.finalizeResponse(context.WithoutCancel(ctx), session, query, fullContent.String(), totalToolCalls, toolErrors)
 
 				slog.Debug("ReAct stream complete", "rounds", round+1, "tokens", totalTokens, "tools", totalToolCalls, "model", k.llmProvider.GetModelID(), "duration", time.Since(startTime))
 				k.setState(StateIdle)
@@ -293,17 +277,8 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 		messages = append(messages, Message{
 			Role: "assistant", Content: resp.Content,
 		})
-		k.saveToMemory(ctx, session.ID, messages)
 		session.Messages = messages
-		session.UpdatedAt = time.Now()
-		ensureSessionTitle(session)
-		if err := k.sessionStore.Update(ctx, session); err != nil {
-			slog.Warn("session update failed", "error", err)
-		}
-
-		if k.reflection != nil {
-			go k.doReflection(context.WithoutCancel(ctx), session.ID, query.Content, resp.Content, totalToolCalls, toolErrors)
-		}
+		k.finalizeResponse(context.WithoutCancel(ctx), session, query, resp.Content, totalToolCalls, toolErrors)
 
 		k.setState(StateIdle)
 		resultChan <- StreamChunk{
