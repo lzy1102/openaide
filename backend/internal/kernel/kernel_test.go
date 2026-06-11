@@ -33,6 +33,18 @@ func (m *MockLLMProvider) ChatStream(ctx context.Context, messages []Message, to
 		close(ch)
 		return ch, nil
 	}
+	// Fallback to Chat responses for backward compat (Process now wraps ProcessStream)
+	if m.index < len(m.responses) {
+		resp := m.responses[m.index]
+		m.index++
+		ch := make(chan StreamChunk, 2)
+		// Send a single chunk with both content and tool calls — the stream loop
+		// accumulates tool calls from the last non-Done chunk before Done.
+		ch <- StreamChunk{Content: resp.Content, ToolCalls: resp.ToolCalls}
+		ch <- StreamChunk{Type: ChunkTypeDone, Done: true, Usage: resp.Usage}
+		close(ch)
+		return ch, nil
+	}
 	ch := make(chan StreamChunk, 1)
 	ch <- StreamChunk{Content: "流式响应", Done: true}
 	close(ch)

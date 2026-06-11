@@ -5,206 +5,56 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"sync/atomic"
 	"time"
 )
 
-// Process 处理用户查询（同步）
+// Process handles a user query synchronously by delegating to ProcessStream
+// and collecting all stream chunks into a single Response.
+// This eliminates ~200 lines of duplicated ReAct loop logic.
 func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, error) {
 	start := time.Now()
 
-	if k.tracer != nil {
-		ctx = k.tracer.StartSpan(ctx, query.SessionID, TraceSession, "process")
-		defer k.tracer.EndSpan(ctx, nil, nil)
-	}
-
-	// 1. 发布查询接收事件
-	k.publishEvent(Event{
-		Type:      EventQueryReceived,
-		Source:    "kernel",
-		Data:      map[string]interface{}{"session_id": query.SessionID, "content": query.Content},
-		Timestamp: time.Now(),
-	})
-
-	if k.tracer != nil {
-		k.tracer.Record(ctx, &TraceEvent{
-			Type:      TraceSession,
-			Name:      "query_received",
-			SessionID: query.SessionID,
-			Input:     map[string]interface{}{"content": query.Content, "options": query.Options},
-			Status:    TraceStatusOK,
-		})
-	}
-
-	// 2. 获取或创建会话
-	session, err := k.getOrCreateSession(ctx, query)
+	stream, err := k.ProcessStream(ctx, query)
 	if err != nil {
-		if k.tracer != nil {
-			k.tracer.EndSpan(ctx, nil, err)
-		}
-		return nil, fmt.Errorf("session error: %w", err)
+		return nil, err
 	}
 
-	// 3. Unified query analysis — one LLM call for task type + skill + complexity
-	k.cachedAnalysis = k.analyzeQuery(ctx, query.Content)
-	if k.cachedAnalysis != nil && k.cachedAnalysis.SkillID != "" && k.skillActor != nil {
-		k.skillActor.UsePreMatch(k.cachedAnalysis.SkillID)
-	}
-	defer func() { k.cachedAnalysis = nil }()
-
-	// 4. 构建消息列表
-	messages := k.buildMessages(ctx, session, query)
-	// 5. Get tool definitions (skill-filtered if applicable)
-	tools := k.getToolDefinitions(ctx, query.Content, query.Options)
-
-	// 6. ReAct 循环
-	k.setState(StateThinking)
-	var totalToolCalls atomic.Int32
-	toolErrors := 0
+	var content strings.Builder
+	toolCalls := 0
 	totalTokens := 0
-	promptTokens := 0 // API-returned count for accurate compression
 
-	_ = k.determineMaxRounds(ctx, query.Content, len(session.Messages))
-	slog.Debug("ReAct loop start", "query", query.Content[:min(80, len(query.Content))], "tools", len(tools), "history_msgs", len(messages))
-	for round := 0; ; round++ {
-		// Safety net: 200 rounds is far beyond any reasonable task.
-		// Only triggers if the LLM is stuck in a pathological loop.
-		if round >= 200 {
-			slog.Error("ReAct safety limit reached — LLM may be stuck", "round", round)
-			break
-		}
-		// Prepare context: compress, snip old output, inject budget hints
-		messages = k.prepareReActRound(ctx, messages, round, promptTokens, &query.Options)
-		slog.Debug("ReAct round — about to call LLM", "round", round+1, "msgs", len(messages))
-		// 调用 LLM（如果指定了模型，临时切换）
-		if query.Options.ModelID != "" {
-			if ms, ok := k.llmProvider.(ModelSwitcher); ok { ms.SetModelID(query.Options.ModelID) }
-		}
-		var llmCtx context.Context
-		if k.tracer != nil {
-			llmCtx = k.tracer.StartSpan(ctx, session.ID, TraceLLM, fmt.Sprintf("chat_round_%d", round))
-		}
-		llmResp, err := k.llmProvider.Chat(ctx, messages, tools, k.buildOptions(query.Options))
-		if k.tracer != nil {
-			output := map[string]interface{}{"model": llmResp.Model, "usage": llmResp.Usage}
-			k.tracer.EndSpan(llmCtx, output, err)
-		}
-		if err != nil {
-			k.setState(StateError)
-			return nil, fmt.Errorf("llm error: %w", err)
-		}
-
-		if llmResp.Usage != nil {
-			totalTokens += llmResp.Usage.TotalTokens
-			promptTokens = llmResp.Usage.PromptTokens
-		}
-		slog.Debug("ReAct LLM response", "round", round, "model", llmResp.Model, "content_len", len(llmResp.Content), "tool_calls", len(llmResp.ToolCalls), "reasoning_len", len(llmResp.ReasoningContent), "tokens", llmResp.Usage)
-
-		// 添加 assistant 消息（包含 reasoning_content）
-		messages = append(messages, Message{
-			Role:             "assistant",
-			Content:          llmResp.Content,
-			ReasoningContent: llmResp.ReasoningContent,
-			ToolCalls:        llmResp.ToolCalls,
-		})
-
-		// 无工具调用 -> 返回结果
-		if len(llmResp.ToolCalls) == 0 {
-			k.setState(StateResponding)
-
-			// 保存到记忆
-			k.saveToMemory(ctx, session.ID, messages)
-
-			// 更新会话
-			session.Messages = messages
-			session.UpdatedAt = time.Now()
-			ensureSessionTitle(session)
-			if err := k.sessionStore.Update(ctx, session); err != nil {
-		slog.Warn("session update failed", "error", err)
-	}
-			// Copy metadata before async goroutine
-	titleCopy := make(map[string]interface{})
-	for k, v := range session.Metadata {
-		titleCopy[k] = v
-	}
-	session.Metadata = titleCopy
-	go k.generateSessionTitle(session, query.Content)
-
-			// 触发反思（如果启用）
-			if k.reflection != nil {
-				go k.doReflection(context.WithoutCancel(ctx), session.ID, query.Content, llmResp.Content, int(totalToolCalls.Load()), toolErrors)
+	for chunk := range stream {
+		switch chunk.Type {
+		case ChunkTypeContent:
+			content.WriteString(chunk.Content)
+		case ChunkTypeToolCall:
+			toolCalls++
+			content.Reset() // tool round, reset for final answer
+		case ChunkTypeDone:
+			if chunk.Usage != nil {
+				totalTokens = chunk.Usage.TotalTokens
 			}
-
-			k.setState(StateIdle)
-			k.publishEvent(Event{
-				Type:      EventResponseEnded,
-				Source:    "kernel",
-				Data:      map[string]interface{}{"session_id": session.ID, "tokens": totalTokens},
-				Timestamp: time.Now(),
-			})
-
-			cacheHit, cacheMiss := 0, 0
-			if llmResp.Usage != nil {
-				cacheHit = llmResp.Usage.PromptCacheHitTokens
-				cacheMiss = llmResp.Usage.PromptCacheMissTokens
+			if chunk.Content != "" {
+				content.WriteString(chunk.Content)
 			}
-			return &Response{
-				Content:    llmResp.Content,
-				ToolCalls:  int(totalToolCalls.Load()),
-				TokensUsed: totalTokens,
-				CacheHit:   cacheHit,
-				CacheMiss:  cacheMiss,
-				Duration:   time.Since(start),
-				Model:      llmResp.Model,
-			}, nil
-		}
-
-		// 并行执行工具调用
-		k.setState(StateToolCalling)
-		execResults, batchErrors := k.executeToolBatch(ctx, llmResp.ToolCalls, session.ID, round, &query.Options)
-		toolErrors += batchErrors
-		totalToolCalls.Add(int32(len(execResults)))
-
-		// 按原始顺序添加 tool 结果
-		for _, r := range execResults {
-			if r.ID == "" {
-				r.ID = fmt.Sprintf("result_auto_%d", totalToolCalls.Load())
-			}
-			messages = append(messages, Message{
-				Role:       "tool",
-				Content:    r.Content,
-				ToolCallID: r.ID,
-			})
-		}
-
-		// 每轮结束后保存检查点
-		if k.checkpointer != nil {
-			cp := &Checkpoint{
-				SessionID: session.ID,
-				Round:     round + 1,
-				Messages:  messages,
-			}
-			if err := k.checkpointer.Save(ctx, session.ID, cp); err != nil {
-				slog.Warn("Failed to save checkpoint", "round", round, "error", err)
-			}
-			if k.tracer != nil {
-				k.tracer.Record(ctx, &TraceEvent{
-					Type: TraceCheckpoint, Name: "checkpoint_save", SessionID: session.ID,
-					Input: map[string]interface{}{"round": round + 1, "messages": len(messages)},
-					Status: TraceStatusOK,
-				})
+		case ChunkTypeError:
+			if chunk.Error != nil {
+				return nil, chunk.Error
 			}
 		}
 	}
-	// Should never reach here — loop exits when LLM returns no tool calls.
-	var lastContent string
-	for i := len(messages) - 1; i >= 0; i-- {
-		if messages[i].Role == "assistant" && messages[i].Content != "" {
-			lastContent = messages[i].Content
-			break
-		}
+
+	model := ""
+	if k.llmProvider != nil {
+		model = k.llmProvider.GetModelID()
 	}
-	return &Response{Content: lastContent, ToolCalls: int(totalToolCalls.Load()), TokensUsed: totalTokens, Duration: time.Since(start), Model: k.llmProvider.GetModelID()}, nil
+	return &Response{
+		Content:    content.String(),
+		ToolCalls:  toolCalls,
+		TokensUsed: totalTokens,
+		Duration:   time.Since(start),
+		Model:      model,
+	}, nil
 }
 
 func (k *AgentKernel) doReflection(ctx context.Context, sessionID, query, response string, toolCalls, toolErrors int) {
