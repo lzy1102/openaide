@@ -69,6 +69,9 @@ OpenAIDE is an AI Agent kernel platform in Go. Strictly layered, CSP actor concu
 │  │    │       │        │                               │ │
 │  │    LLM   Tools   Reflection                        │ │
 │  │                                                    │ │
+│  │  Before each loop:                                  │ │
+│  │    analyzeQuery (unified: task+skill+complexity)    │ │
+│  │                                                      │ │
 │  │  After each loop:                                  │ │
 │  │    doReflection → QualityGate → autoSaveKnowledge  │ │
 │  │    SemanticPatternDetector → DistillCluster        │ │
@@ -170,6 +173,26 @@ OpenAIDE is an AI Agent kernel platform in Go. Strictly layered, CSP actor concu
    - `team.go` — 4 roles with detailed anti-prompt constraints (analyst/coder/reviewer/executor). Each role has "How to work" + "What NOT to do" sections. `routePipeline`: LLM assigns all subtask roles at once. Slash commands: `/analyst`, `/coder`, `/reviewer`, `/executor`, `/team`.
    - `subagent.go` — `RunSubAgent`: isolated session + mini ReAct loop (10 rounds) + role-filtered tools + budget injection + core rules injection + model routing (reasoning vs execution). Sub-agents can actually read, write, and execute — not just return text.
 
+### Unified Query Analysis (single-pass pre-execution)
+
+Before the ReAct loop, `kernel_analyze.go:analyzeQuery()` makes ONE holistic LLM call that replaces what was previously 3-4 fragmented micro-judgments:
+
+```
+analyzeQuery(query, available_skills):
+  → TaskType (coding/review/think/general)
+  → SkillID (matched skill, or empty)
+  → Complexity (estimated rounds)
+  → Strategy (one-sentence approach hint)
+```
+
+**Before**: `detectTaskType()` + `SkillActor.DetectSkill()` + `AdaptiveRounds.estimateWithLLM()` — three independent 30-token calls, each blind to the others' context.
+
+**After**: One structured call sees the full picture (query + all skills + their tools) and makes a coherent decision. Results are cached on `AgentKernel.cachedAnalysis` and consumed by:
+- `detectTaskType()` → uses cache, skips LLM
+- `SkillActor.InjectPrompt()` / `GetTools()` → `UsePreMatch(skillID)` → `DetectSkill` returns pre-matched skill without LLM
+- `determineMaxRounds()` → uses `cachedAnalysis.Complexity`
+- Falls back gracefully to individual LLM calls when analysis fails.
+
 ### LLM-driven decision making (zero hardcoded rules)
 
 All judgment calls delegated to LLM. No keyword matching, no regex routing, no substring heuristics:
@@ -231,7 +254,7 @@ OpenAIDE reads and integrates with other agent ecosystems:
 - **Rule files**: Auto-loads OPENAIDE.md, CLAUDE.md, CODEBUDDY.md, CONVENTIONS.md, `.github/copilot-instructions.md`, `.cursor/rules/*.md` — write once, works across OpenAIDE + Claude Code + Cursor + Aider + OpenCode + Copilot.
 - **Claude Code plugins**: Full format support (manifest, skills, MCP, hooks). See plugin system section.
 - **OpenCode config**: Auto-discovers `opencode.json` in project root — imports MCP servers + instructions.
-- **MCP protocol**: Universal standard across all major coding agents (stdio transport, 30s timeout).
+- **MCP protocol**: Universal standard across all major coding agents. Supports stdio (subprocess, 30s timeout) and HTTP/SSE (POST to /message). Full MCP lifecycle: initialize → initialized notification → tools/list → tools/call → shutdown. Handles text, image, and resource content types.
 
 ### Continuous learning (ProjectMind — gets smarter every task)
 
@@ -251,11 +274,13 @@ OpenAIDE accumulates project knowledge across sessions via `internal/projectmind
 After each ReAct loop, the kernel's learning pipeline extracts reusable skills:
 
 1. **SemanticPatternDetector**: Two clustering paths — embedding-based (cosine > `distill_similarity`) when an embedding model is available, or LLM-based clustering (no embedding API required) as fallback. Accumulates query+response pairs and emits `distillable_cluster` patterns.
-2. **evaluateAndDistill (single LLM call)**: Quality evaluation + distillation combined. LLM judges whether the cluster is worth extracting, then either returns `SKIP` or produces a distilled skill card with key files, tool strategy, gotchas, and best approach.
-3. **Zero hardcoded thresholds**: No minimum cluster size, no frequency gates. The LLM alone decides what's worth distilling. Clusters re-emit only when size doubles (2x) to avoid repeated evaluations.
-4. **Auto-persist**: Skills write to `~/.openaide/data/skills/auto_skills.json` on every mutation. Reloaded on restart. Distilled knowledge also stored in KnowledgeActor for RAG retrieval.
-5. **Implicit feedback**: LLMReflection infers user satisfaction from conversation flow. `RecordKnowledgeUsage` adjusts weights accordingly.
-6. **Configurable**: `distill_min_queries` (default 5) sets buffer threshold. `distill_similarity` (default 0.80) sets cosine threshold for embedding mode.
+2. **evaluateAndDistill (single LLM call)**: Quality evaluation + distillation combined. LLM judges whether the cluster is worth extracting, then either returns `SKIP` or produces a distilled skill card with key files, tool strategy, gotchas, and best approach. Takes `[]clusterExample` directly (not `[][]clusterExample` + index).
+3. **GetExamplesByTheme**: Looks up cluster examples by theme text. Searches embedding-based clusters first, then falls back to LLM-grouped examples (`llmGroups`). Used by `extractSkillsFromPatterns` to feed correct examples to distillation.
+4. **LLM-based clustering**: `clusterWithLLM` now parses query indices from LLM output to populate `llmGroups` (theme→examples mapping). Previously examples were discarded.
+5. **Dedup in Detect**: `seenCount` per session tracks processed message count — only new pairs are added to clusters. Prevents 2-3x cluster inflation from re-processing the same messages every ReAct round.
+6. **Auto-persist**: Skills write to `~/.openaide/data/skills/auto_skills.json` on every mutation. Reloaded on restart. Distilled knowledge also stored in KnowledgeActor for RAG retrieval.
+7. **Implicit feedback**: LLMReflection infers user satisfaction from conversation flow. `RecordKnowledgeUsage` adjusts weights accordingly.
+8. **Configurable**: `distill_min_queries` (default 5) sets buffer threshold and `collectPatterns` minimum size. `distill_similarity` (default 0.80) sets cosine threshold for embedding mode. `distill_enabled` (default true) disables entire pipeline.
 
 Works with ALL LLM providers — no embedding API required.
 
@@ -353,18 +378,27 @@ OpenAIDE is fully compatible with the [Claude Code official plugin specification
 |-----------|------|-------|-------------|
 | Manifest | `.claude-plugin/plugin.json` | Phase 1 | Plugin metadata (name, version, description) |
 | Skills | `skills/*/SKILL.md` | Phase 1 | YAML frontmatter + Markdown body. Auto-discovered, registered as slash commands (`/skill-name`). Keywords auto-generated from name + description (Chinese + English). Claude tool names mapped to OpenAIDE equivalents (Read→read_file, Bash→execute_command, etc.) |
-| MCP Servers | `.mcp.json` | Phase 2 | Declarative MCP server config: `{name: {type, command, args, url}}`. Stdio servers auto-connected, tools auto-registered. SSE/HTTP logged and skipped (limited to stdio transport). |
+| MCP Servers | `.mcp.json` | Phase 2 | Declarative MCP server config: `{name: {type, command, args, url, env}}`. Both stdio (subprocess) and SSE (HTTP POST to /message) transports supported. Tools auto-registered with `mcp_` prefix. Env vars passed to stdio subprocesses. |
 | Hooks | `hooks/hooks.json` | Phase 2 | Event-driven shell commands: `[{event, command, tools}]`. Claude events mapped to OpenAIDE: `PreToolUse→tool_call_started`, `PostToolUse→tool_call_ended`, `Stop→session_ended`, `SessionStart→session_created`. 30s timeout per hook, non-blocking goroutine. Tool name filter support with reverse mapping. |
 
 **Code locations:**
-- `plugin/plugin.go` — Manager: JSON format plugins + Claude format discovery via `loadClaudeFromDisk()`
-- `plugin/plugin_claude.go` — All Claude format parsing: `DiscoverClaudePlugins()`, `DiscoverClaudeSkills()`, `DiscoverClaudeMCP()`, `DiscoverClaudeHooks()`, YAML frontmatter parsing, tool name mapping, auto keyword generation from name+description, event mapping
-- `kernel/skill.go` — `AddClaudeSkill()` external injection, `GetSlashCommands()`, `autoKeywords()`
-- `infra/app.go` — MCP wiring: `DiscoverClaudeMCP()` → `mcpManager.ConnectServer()` → register tools
-- `infra/app_kernel.go` — Skills wiring: `DiscoverClaudeSkills()` → `sm.AddClaudeSkill()`; Hooks wiring: `DiscoverClaudeHooks()` → `agentKernel.Subscribe()` with shell execution
+- `plugin/plugin.go` — Manager: JSON format plugins + Claude format discovery via `loadClaudeFromDisk()`. `Reload()` with `Enabled` state preservation (no overwrite). `RunMessageHooks()` and `RunEventHooks()` for hook execution pipeline.
+- **`backend/internal/mcp/mcp.go`** — MCP client: `Transport` interface (Call/Notify/Close), `stdioTransport` (subprocess, 30s timeout), `httpTransport` (MCP Streamable HTTP POST /message). Full lifecycle + content type handling (text/image/resource). `Manager` + `EnvMap` helper.
+- `plugin/plugin_claude.go` — All Claude format parsing: `DiscoverClaudePlugins()`, `DiscoverClaudeSkills()`, `DiscoverClaudeMCP()`, `DiscoverClaudeHooks()`, YAML frontmatter parsing, tool name mapping, auto keyword generation from name+description, event mapping, script discovery
+- `kernel/skill_actor.go` — `AddClaudeSkill()` preserves runtime stats on re-add (Confidence/Usage/Success/Enabled survive hot-reload). `UsePreMatch()` for unified query analysis integration. `ListEnabled()` and `GetSkill()` for external skill inspection.
+- `infra/app.go` — MCP wiring: `DiscoverClaudeMCP()` → `mcpManager.ConnectServer()` → `registerMCPTools()`. PluginWatcher with unified reload callback.
+- `infra/app_kernel.go` — Skills + Hooks wiring at startup. Hook execution injects `OPENAIDE_EVENT`, `OPENAIDE_TOOL_NAME`, `OPENAIDE_SESSION_ID` as env vars.
+- `infra/plugin_watcher.go` — fsnotify-based directory watcher with debounce. Triggers unified reload (plugin manager + skills) on new directory creation.
+
+**Hot-reload**: `PluginWatcher` in `infra/app.go` watches the plugins directory via fsnotify. New directories trigger a single unified reload callback that rescans both plugin metadata AND Claude skills. `AddClaudeSkill` preserves accumulated stats (Confidence, UsageCount) on re-add — no 5-minute stats reset.
+
+**Hook environment variables**: Hook commands receive:
+- `OPENAIDE_EVENT` — mapped event type (e.g., `tool_call_started`)
+- `OPENAIDE_TOOL_NAME` — name of the tool being called/applied
+- `OPENAIDE_SESSION_ID` — current session identifier
 
 **Ecosystem compatibility:**
-- Full Claude Code plugin format support
+- Full Claude Code plugin format support (manifests, skills, MCP, hooks)
 - Bridge to OpenCode/Codex/Cursor via `acplugin` conversion tool
 - MCP: universal standard across all 5 major coding agents
 
@@ -439,7 +473,7 @@ openaide --verbose 2>&1 | grep -i "claude\|plugin\|hook"
 ├── memory.db                  ← MemoryActor (SQLite + vector cache)
 ├── prompts/
 │   └── user/                  ← user custom prompts (template on first install)
-├── plugins/                   ← Claude-format plugins (hot-reload every 5min)
+├── plugins/                   ← Claude-format plugins (hot-reload via fsnotify, preserves stats)
 ├── skills/
 ├── project_mind.json          ← cross-session facts (CodeMap, RiskMap, Conventions)
 │   └── auto_skills.json       ← auto-extracted + distilled skills
@@ -462,6 +496,21 @@ providers:
 model_routing:
   reasoning: deepseek-v4-pro   # analyst, reviewer, reflection
   execution: deepseek-v4-flash # coder, executor, synthesis, classification
+
+# MCP: Model Context Protocol servers (optional)
+mcp:
+  enabled: true
+  servers:
+    # Stdio transport — spawn a local subprocess
+    - id: filesystem
+      command: npx
+      args: ["-y", "@anthropic/mcp-server-filesystem", "/path"]
+      env:
+        HOME: /home/user
+    # SSE/HTTP transport — connect to a remote MCP server
+    - id: tavily
+      type: sse
+      url: https://mcp.tavily.com/sse
 
 # Kernel: ReAct loop + skill distillation
 kernel:
@@ -549,9 +598,10 @@ Response → doReflection (LLMReflection) → quality score 1-10
   │       → Store in knowledge.db (with weight, adjusted by RecordKnowledgeUsage)
   │
   └─→ SemanticPatternDetector → embedding clustering (cosine > 0.80)
-        → cluster ≥ 8 → extractSkillFromPatterns()
-          → async DistillCluster (LLM knowledge extraction)
-          → SkillActor (auto-persist to auto_skills.json)
+        or LLM clustering (no embedder) → llmGroups (theme→examples)
+        → collectPatterns (n ≥ minSize) → extractSkillsFromPatterns()
+          → GetExamplesByTheme → evaluateAndDistill (LLM quality gate)
+          → AddDistilledSkill → onSave (auto_skills.json)
           → KnowledgeActor (RAG-searchable)
 ```
 
@@ -563,7 +613,7 @@ Response → doReflection (LLMReflection) → quality score 1-10
 ├── knowledge.db       ← KnowledgeActor (SQLite)
 ├── memory.db          ← MemoryActor (SQLite)
 ├── prompts/user/      ← user custom prompts (editable templates)
-├── plugins/           ← Claude-format plugins (hot-reload every 5min)
+├── plugins/           ← Claude-format plugins (hot-reload via fsnotify, preserves stats)
 ├── skills/
 ├── project_mind.json          ← cross-session facts (CodeMap, RiskMap, Conventions)
 │   └── auto_skills.json       ← auto-extracted + distilled skills
