@@ -335,7 +335,11 @@ func (k *AgentKernel) injectMemoryContext(ctx context.Context, messages []Messag
 }
 
 // determineMaxRounds calculates the ReAct loop limit (adaptive or config-based).
+// Uses cached result from unified query analysis when available.
 func (k *AgentKernel) determineMaxRounds(ctx context.Context, queryContent string, historyLen int) int {
+	if k.cachedAnalysis != nil && k.cachedAnalysis.Complexity > 0 {
+		return k.cachedAnalysis.Complexity
+	}
 	if k.adaptiveRounds != nil {
 		return k.adaptiveRounds.Calculate(ctx, queryContent, historyLen)
 	}

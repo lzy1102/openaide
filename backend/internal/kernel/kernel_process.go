@@ -45,14 +45,19 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 		return nil, fmt.Errorf("session error: %w", err)
 	}
 
-	// 3. 构建消息列表
+	// 3. Unified query analysis — one LLM call for task type + skill + complexity
+	k.cachedAnalysis = k.analyzeQuery(ctx, query.Content)
+	if k.cachedAnalysis != nil && k.cachedAnalysis.SkillID != "" && k.skillActor != nil {
+		k.skillActor.UsePreMatch(k.cachedAnalysis.SkillID)
+	}
+	defer func() { k.cachedAnalysis = nil }()
+
+	// 4. 构建消息列表
 	messages := k.buildMessages(ctx, session, query)
-	// 4. Get tool definitions (skill-filtered if applicable)
+	// 5. Get tool definitions (skill-filtered if applicable)
 	tools := k.getToolDefinitions(ctx, query.Content, query.Options)
 
-	// Store query options for callback access during ReAct loop
-
-	// 5. ReAct 循环
+	// 6. ReAct 循环
 	k.setState(StateThinking)
 	var totalToolCalls atomic.Int32
 	toolErrors := 0

@@ -118,7 +118,24 @@ func (a *SkillActor) SetAutoDetect(on bool) {
 
 // DetectSkill finds the best matching skill for a query.
 // The LLM call runs OUTSIDE the actor to avoid blocking.
+// If a preMatch was set via UsePreMatch (from unified query analysis),
+// it returns that skill directly without an LLM call.
 func (a *SkillActor) DetectSkill(ctx context.Context, query string) *Skill {
+	// Check for pre-matched skill from unified query analysis
+	var preMatch *Skill
+	a.super.Send(func() {
+		if a.lastUsed != "" {
+			if s, ok := a.skills[a.lastUsed]; ok {
+				preMatch = s
+			}
+			a.lastUsed = "" // consume once
+		}
+	})
+	if preMatch != nil {
+		slog.Debug("Skill pre-matched (no LLM call)", "skill", preMatch.ID)
+		return preMatch
+	}
+
 	slog.Info("Skill actor detect", "query", query[:min(80, len(query))])
 
 	// Step 1: prepare skill list inside actor
@@ -162,12 +179,42 @@ func (a *SkillActor) DetectSkill(ctx context.Context, query string) *Skill {
 	return nil
 }
 
+// prematched tracks a pre-matched skill ID to skip redundant LLM detection.
+// Set by the unified query analysis. Cleared after one use.
+func (a *SkillActor) UsePreMatch(skillID string) {
+	a.super.Send(func() { a.lastUsed = skillID })
+}
+
 // GetTools returns the allowed tools for a skill.
 func (a *SkillActor) GetTools(ctx context.Context, query string) []string {
 	skill := a.DetectSkill(ctx, query)
 	if skill == nil { return nil }
 	if len(skill.AllowedTools) > 0 { return skill.AllowedTools }
 	return skill.Tools
+}
+
+// ListEnabled returns all enabled skills (for query analysis, outside actor).
+func (a *SkillActor) ListEnabled() []*Skill {
+	var result []*Skill
+	a.super.Send(func() {
+		for _, s := range a.skills {
+			if s.Enabled {
+				result = append(result, s)
+			}
+		}
+	})
+	return result
+}
+
+// GetSkill returns a skill by ID (for query analysis, outside actor).
+func (a *SkillActor) GetSkill(id string) *Skill {
+	var result *Skill
+	a.super.Send(func() {
+		if s, ok := a.skills[id]; ok {
+			result = s
+		}
+	})
+	return result
 }
 
 // InjectPrompt injects the skill prompt into the system prompt.

@@ -26,6 +26,13 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 		return nil, fmt.Errorf("session error: %w", err)
 	}
 
+	// Unified query analysis — one LLM call replaces detectTaskType + DetectSkill + estimateComplexity
+	k.cachedAnalysis = k.analyzeQuery(ctx, query.Content)
+	if k.cachedAnalysis != nil && k.cachedAnalysis.SkillID != "" && k.skillActor != nil {
+		k.skillActor.UsePreMatch(k.cachedAnalysis.SkillID)
+	}
+	defer func() { k.cachedAnalysis = nil }()
+
 	messages := k.buildMessages(ctx, session, query)
 
 	tools := k.getToolDefinitions(ctx, query.Content, query.Options)
@@ -51,7 +58,9 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 		}
 
 		maxRounds := k.maxRounds
-		if k.adaptiveRounds != nil {
+		if k.cachedAnalysis != nil && k.cachedAnalysis.Complexity > 0 {
+			maxRounds = k.cachedAnalysis.Complexity
+		} else if k.adaptiveRounds != nil {
 			maxRounds = k.adaptiveRounds.Calculate(ctx, query.Content, len(session.Messages))
 		}
 		totalTokens := 0
