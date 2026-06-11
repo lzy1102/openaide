@@ -72,17 +72,6 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 	}
 	agentKernel.SetSkillActor(skillActor)
 
-	// Periodic plugin rescan — new plugins detected without restart
-	go func() {
-		ticker := time.NewTicker(5 * time.Minute)
-		defer ticker.Stop()
-		for range ticker.C {
-			for _, cs := range plugin.DiscoverClaudeSkills(cfg.Storage.DataDir + "/plugins") {
-				skillActor.AddClaudeSkill(cs.ID, cs.Name, cs.Description, cs.Prompt, cs.Keywords, cs.AllowedTools, cs.Scripts)
-			}
-		}
-	}()
-
 	minQueries := cfg.Kernel.DistillMinQueries
 	if minQueries <= 0 { minQueries = 5 }
 	similarity := cfg.Kernel.DistillSimilarity
@@ -185,7 +174,14 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 				defer cancel()
 				cmd := exec.CommandContext(ctx, "sh", "-c", hook.Command)
-				cmd.Env = append(os.Environ(), "OPENAIDE_EVENT="+evt.Type)
+				cmd.Env = os.Environ()
+				cmd.Env = append(cmd.Env, "OPENAIDE_EVENT="+evt.Type)
+				if sid, _ := evt.Data["session_id"].(string); sid != "" {
+					cmd.Env = append(cmd.Env, "OPENAIDE_SESSION_ID="+sid)
+				}
+				if tn, _ := evt.Data["tool"].(string); tn != "" {
+					cmd.Env = append(cmd.Env, "OPENAIDE_TOOL_NAME="+tn)
+				}
 				if out, err := cmd.CombinedOutput(); err != nil {
 					slog.Debug("Hook command failed", "event", hook.Event, "error", err, "output", string(out))
 				}

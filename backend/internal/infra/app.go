@@ -140,8 +140,19 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 	app.Kernel = agentKernel
 	app.PluginManager = pluginMgr
 
-	// Plugin hot-reload
-	pluginWatcher := NewPluginWatcher(cfg.Storage.DataDir+"/plugins", pluginMgr.Reload)
+	// Plugin hot-reload — reloads manager metadata + skills in one shot
+	pluginDir := cfg.Storage.DataDir + "/plugins"
+	skillActor := agentKernel.GetSkillActor()
+	pluginReloader := func() []string {
+		newIDs := pluginMgr.Reload()
+		if skillActor != nil {
+			for _, cs := range plugin.DiscoverClaudeSkills(pluginDir) {
+				skillActor.AddClaudeSkill(cs.ID, cs.Name, cs.Description, cs.Prompt, cs.Keywords, cs.AllowedTools, cs.Scripts)
+			}
+		}
+		return newIDs
+	}
+	pluginWatcher := NewPluginWatcher(pluginDir, pluginReloader)
 	if err := pluginWatcher.Start(); err != nil {
 		slog.Warn("Plugin hot-reload unavailable", "error", err)
 	} else {

@@ -76,12 +76,23 @@ func (a *SkillActor) AddDistilledSkill(id, name, description, prompt string, key
 
 func (a *SkillActor) AddClaudeSkill(id, name, description, prompt string, keywords []string, allowedTools []string, scripts []string) {
 	a.super.Send(func() {
-		a.skills[id] = &Skill{
-			ID: id, Name: name, Description: description,
-			Prompt: prompt, Keywords: keywords,
-			Enabled: true, Confidence: 0.6,
-			AllowedTools: allowedTools,
-			Scripts:      scripts,
+		existing, ok := a.skills[id]
+		if ok {
+			// Update metadata while preserving accumulated stats
+			existing.Name = name
+			existing.Description = description
+			existing.Prompt = prompt
+			existing.Keywords = keywords
+			existing.AllowedTools = allowedTools
+			existing.Scripts = scripts
+		} else {
+			a.skills[id] = &Skill{
+				ID: id, Name: name, Description: description,
+				Prompt: prompt, Keywords: keywords,
+				Enabled: true, Confidence: 0.6,
+				AllowedTools: allowedTools,
+				Scripts:      scripts,
+			}
 		}
 		a.save()
 	})

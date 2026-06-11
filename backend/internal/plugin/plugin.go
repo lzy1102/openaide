@@ -226,10 +226,11 @@ func (m *Manager) loadFromDisk() {
 		data, _ := os.ReadFile(filepath.Join(m.dir, e.Name()))
 		var p Plugin
 		if json.Unmarshal(data, &p) == nil {
-			m.plugins.Store(p.ID, &p)
-			for _, fn := range m.onLoad.Load().([]func(*Plugin)) {
-				fn(&p)
+			// Preserve runtime state if already loaded
+			if existing, ok := m.plugins.Load(p.ID); ok {
+				p.Enabled = existing.Enabled
 			}
+			m.plugins.Store(p.ID, &p)
 		}
 	}
 }
