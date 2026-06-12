@@ -30,9 +30,6 @@ type Orchestrator struct {
 	PreviewTimeout time.Duration
 	DeepTimeout    time.Duration
 
-	// Agent 间共享工作区
-	workspace *Workspace
-
 	// 项目持久记忆（跨会话积累）
 	mind *projectmind.ProjectMind
 

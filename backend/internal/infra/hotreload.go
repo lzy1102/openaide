@@ -101,12 +101,13 @@ func (r *ConfigReloader) doReload() {
 
 		// Kernel settings (hot-reloadable via concrete type)
 		if ak, ok := r.app.Kernel.(*kernel.AgentKernel); ok {
-			if cfg.Kernel.MaxRounds > 0 && cfg.Kernel.MaxRounds != r.app.Config.Kernel.MaxRounds {
-				ak.SetMaxRounds(cfg.Kernel.MaxRounds)
-			}
-			if cfg.Kernel.MaxTokens > 0 && cfg.Kernel.MaxTokens != r.app.Config.Kernel.MaxTokens {
-				ak.SetMaxTokens(cfg.Kernel.MaxTokens)
-			}
+			ak.ApplyConfig(
+				cfg.Kernel.DistillEnabled,
+				cfg.Kernel.MaxRounds,
+				cfg.Kernel.MaxTokens,
+				cfg.Kernel.MinRounds,
+				cfg.Kernel.MaxRoundsCap,
+			)
 		}
 
 		// LLM gateway: update model IDs and routing

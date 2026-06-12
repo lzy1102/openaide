@@ -171,12 +171,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 			}
 
 			// 添加 assistant 消息
-			messages = append(messages, Message{
-				Role:             "assistant",
-				Content:          fullContent.String(),
-				ReasoningContent: reasoningContent.String(),
-				ToolCalls:        lastToolCalls,
-			})
+			messages = append(messages, buildFinalMessage(fullContent.String(), reasoningContent.String(), lastToolCalls))
 			slog.Debug("ReAct stream LLM response", "round", round, "content_len", fullContent.Len(), "tool_calls", len(lastToolCalls), "reasoning_len", reasoningContent.Len(), "tokens", totalTokens)
 
 			// 无工具调用 -> 返回结果
@@ -274,9 +269,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 		}
 		slog.Debug("ReAct stream synthesis complete", "tokens", totalTokens, "tools", totalToolCalls, "model", resp.Model, "duration", time.Since(startTime))
 		// 追加合成结果到消息历史
-		messages = append(messages, Message{
-			Role: "assistant", Content: resp.Content,
-		})
+		messages = append(messages, buildFinalMessage(resp.Content, "", nil))
 		session.Messages = messages
 		k.finalizeResponse(context.WithoutCancel(ctx), session, query, resp.Content, totalToolCalls, toolErrors)
 

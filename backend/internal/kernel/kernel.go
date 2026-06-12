@@ -158,6 +158,15 @@ func (k *AgentKernel) SetMaxTokens(n int) {
 	if n > 0 { k.maxTokens = n; slog.Info("Kernel max_tokens updated", "value", n) }
 }
 
+// ApplyConfig hot-reloads mutable kernel settings from config.
+// Only updates values that are safe to change mid-session.
+func (k *AgentKernel) ApplyConfig(distillEnabled bool, maxRounds, maxTokens, minRounds, maxRoundsCap int) {
+	if maxRounds > 0 { k.maxRounds = maxRounds }
+	if maxTokens > 0 { k.maxTokens = maxTokens }
+	k.distillEnabled = distillEnabled
+	slog.Info("Kernel config applied", "distill", distillEnabled, "max_rounds", k.maxRounds, "max_tokens", k.maxTokens)
+}
+
 func (k *AgentKernel) SetTracer(t Tracer) {
 	k.tracer = t
 }
