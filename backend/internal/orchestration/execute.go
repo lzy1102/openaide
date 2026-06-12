@@ -32,6 +32,10 @@ func (o *Orchestrator) ExecuteWithPlan(ctx context.Context, userID, projectID, c
 // Supports branch-converge: sub-agents can signal discovery, triggering a parallel
 // analysis branch whose results converge back into the main task line.
 func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, content string, plan *Plan, opts kernel.QueryOptions) (*kernel.Response, error) {
+	// Generate custom roles for this task via LLM (falls back to defaults)
+	if o.team != nil {
+		o.team.GenerateRoles(ctx, content)
+	}
 	roleMap := o.routePipeline(ctx, plan)
 	var results []string
 	var branches []Branch

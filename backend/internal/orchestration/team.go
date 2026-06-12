@@ -127,21 +127,34 @@ You run tests, execute commands, and verify results.
 // Delegate 将任务委派给团队执行 — 使用图路由
 // 先由 lead 角色决定分析路径，然后按图执行
 func (t *Team) Delegate(ctx context.Context, userID, projectID, query string, opts kernel.QueryOptions) (*kernel.Response, error) {
-	roleQuery := fmt.Sprintf(`根据以下用户请求，从可用角色中选择最合适的：
-可用角色: %s
-用户请求: %s
-只回复角色名称（analyst/coder/reviewer/executor），不要其他内容。`, t.roleNames(), query)
+	t.GenerateRoles(ctx, query)
 
-	roleResp, err := t.orchestrator.ProcessQuery(ctx, "team-lead", projectID, roleQuery, kernel.QueryOptions{MaxTokens: 50})
+	roleQuery := fmt.Sprintf(`从以下角色中选最适合这个任务的:
+可用角色: %s
+
+用户请求: %s
+
+只回复角色 ID，不要其他内容。`, t.roleNames(), query)
+
+	resp, err := t.orchestrator.ProcessQuery(ctx, "team-lead", projectID, roleQuery, kernel.QueryOptions{MaxTokens: 50})
 	if err != nil {
-		router := t.buildAllChain("分析员")
-		return t.executeGraph(ctx, query, opts, router)
+		// fallback: use first available role
+		for _, r := range t.roles {
+			return t.executeGraph(ctx, query, opts, t.buildSingleGraph(r))
+		}
 	}
 
-	roleName := strings.TrimSpace(roleResp.Content)
+	roleName := strings.TrimSpace(resp.Content)
 	role, ok := t.roles[roleName]
 	if !ok {
-		role = t.roles["analyst"]
+		// fallback: pick first dynamic role
+		for _, r := range t.roles {
+			role = r
+			break
+		}
+		if role == nil {
+			return nil, fmt.Errorf("no roles available")
+		}
 	}
 
 	router := t.buildSingleGraph(role)
