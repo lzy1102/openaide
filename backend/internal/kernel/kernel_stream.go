@@ -28,8 +28,8 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 
 	// Unified query analysis — one LLM call replaces detectTaskType + DetectSkill + estimateComplexity
 	k.cachedAnalysis = k.analyzeQuery(ctx, query.Content)
-	if k.cachedAnalysis != nil && k.cachedAnalysis.SkillID != "" && k.skillActor != nil {
-		k.skillActor.UsePreMatch(k.cachedAnalysis.SkillID)
+	if k.skillActor != nil {
+		k.skillActor.UsePreMatch(k.cachedAnalysis.SkillID) // "" = no match -> skip
 	}
 	defer func() { k.cachedAnalysis = nil }()
 

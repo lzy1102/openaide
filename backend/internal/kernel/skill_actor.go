@@ -41,6 +41,7 @@ type SkillActor struct {
 	skills     map[string]*Skill
 	autoDetect bool
 	lastUsed   string // ID of most recently activated skill
+	noSkill    bool   // set by UsePreMatch("") to skip LLM detection entirely
 	onSave     func() // optional persistence callback
 }
 
@@ -117,23 +118,29 @@ func (a *SkillActor) SetAutoDetect(on bool) {
 // ── Detection ────────────────────────────────────────────
 
 // DetectSkill finds the best matching skill for a query.
-// The LLM call runs OUTSIDE the actor to avoid blocking.
-// If a preMatch was set via UsePreMatch (from unified query analysis),
-// it returns that skill directly without an LLM call.
+// If UsePreMatch was called (from unified query analysis):
+//   - with a skill ID: returns that skill directly, no LLM call
+//   - with "": returns nil immediately, no LLM call (already analyzed, no match)
 func (a *SkillActor) DetectSkill(ctx context.Context, query string) *Skill {
-	// Check for pre-matched skill from unified query analysis
+	// Check for pre-match or no-match signal from unified query analysis
 	var preMatch *Skill
+	var noMatch bool
 	a.super.Send(func() {
+		noMatch = a.noSkill
 		if a.lastUsed != "" {
 			if s, ok := a.skills[a.lastUsed]; ok {
 				preMatch = s
 			}
-			a.lastUsed = "" // consume once
+			a.lastUsed = ""
 		}
+		a.noSkill = false // consume once
 	})
 	if preMatch != nil {
 		slog.Debug("Skill pre-matched (no LLM call)", "skill", preMatch.ID)
 		return preMatch
+	}
+	if noMatch {
+		return nil
 	}
 
 	slog.Info("Skill actor detect", "query", query[:min(80, len(query))])
@@ -179,10 +186,19 @@ func (a *SkillActor) DetectSkill(ctx context.Context, query string) *Skill {
 	return nil
 }
 
-// prematched tracks a pre-matched skill ID to skip redundant LLM detection.
-// Set by the unified query analysis. Cleared after one use.
+// UsePreMatch sets a pre-matched skill ID from the unified query analysis.
+// If skillID is empty, it signals that no skill matched — DetectSkill returns nil without LLM.
+// If skillID is set, DetectSkill returns that skill directly without LLM.
 func (a *SkillActor) UsePreMatch(skillID string) {
-	a.super.Send(func() { a.lastUsed = skillID })
+	a.super.Send(func() {
+		if skillID == "" {
+			a.noSkill = true
+			a.lastUsed = ""
+		} else {
+			a.noSkill = false
+			a.lastUsed = skillID
+		}
+	})
 }
 
 // GetTools returns the allowed tools for a skill.
