@@ -52,8 +52,12 @@ Return a JSON object with these fields:
 - strategy: a ONE-SENTENCE strategy hint for the agent
 - post_process: array of steps to run after the task. Choose from:
     "reflect" — worth reviewing what worked/didn't (complex or novel tasks)
-    "knowledge" — worth saving facts to knowledge base (new discoveries)
-    "distill" — worth extracting as reusable skill (recurring pattern)
+    "knowledge" — worth saving facts to knowledge base (new discoveries,
+      file purposes, project conventions, gotchas)
+    "distill" — worth extracting as a reusable skill (recurring task pattern
+      with consistent tools, files, and approach). Skills become slash commands
+      with auto-generated prompts. Only flag when you've seen the SAME pattern
+      multiple times — not one-off tasks.
 
 ## Rules
 - Coding/bugfix: match relevant skill, complexity 10-30
