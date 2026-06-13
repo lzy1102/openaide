@@ -155,7 +155,7 @@ func (k *AgentKernel) doReflection(ctx context.Context, sessionID, query, respon
 
 // autoSaveKnowledge 自动知识抽取 — 质量门控通过后存入知识库
 func (k *AgentKernel) autoSaveKnowledge(ctx context.Context, sessionID, query, response string, toolCalls, toolErrors int) {
-	if k.knowledgeCollector == nil {
+	if k.knowledgeCollector == nil || !k.knowledgeEnabled {
 		return
 	}
 

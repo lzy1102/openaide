@@ -103,6 +103,7 @@ func (r *ConfigReloader) doReload() {
 		if ak, ok := r.app.Kernel.(*kernel.AgentKernel); ok {
 			ak.ApplyConfig(
 				cfg.Kernel.DistillEnabled,
+				cfg.Kernel.KnowledgeEnabled,
 				cfg.Kernel.MaxRounds,
 				cfg.Kernel.MaxTokens,
 				cfg.Kernel.MinRounds,

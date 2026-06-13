@@ -128,6 +128,7 @@ type KernelConfig struct {
 	MinRounds    int    `json:"min_rounds" yaml:"min_rounds"`       // 自适应轮次下限（默认5）
 	MaxRoundsCap int    `json:"max_rounds_cap" yaml:"max_rounds_cap"` // 自适应轮次上限（默认30）
 	DistillEnabled     bool    `json:"distill_enabled" yaml:"distill_enabled"`                 // 启用自动技能提取（默认true）
+	KnowledgeEnabled   bool    `json:"knowledge_enabled" yaml:"knowledge_enabled"`             // 启用自动知识入库（默认true）
 	DistillMinQueries int     `json:"distill_min_queries" yaml:"distill_min_queries"`         // 几个相似查询触发技能提取（默认5）
 	DistillSimilarity float64 `json:"distill_similarity" yaml:"distill_similarity"`             // 余弦相似度阈值（默认0.80）
 	SystemPrompt string `json:"system_prompt" yaml:"system_prompt"`

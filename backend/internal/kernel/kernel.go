@@ -57,7 +57,8 @@ type AgentKernel struct {
 	// 配置
 	maxRounds      int
 	maxTokens      int
-	distillEnabled bool
+	distillEnabled   bool
+	knowledgeEnabled bool
 }
 
 // Config 内核配置
@@ -68,6 +69,7 @@ type Config struct {
 
 
 	DistillEnabled     bool    // 启用自动技能提取（默认true）
+	KnowledgeEnabled   bool    // 启用自动知识入库（默认true）
 	DistillMinQueries int     // 几个相似查询触发技能提取（默认5）
 	DistillSimilarity float64 // 余弦相似度阈值（默认0.80）
 }
@@ -79,6 +81,7 @@ func DefaultConfig() *Config {
 		MaxTokens:                  4000,
 		SystemPrompt:               defaultSystemPrompt(),
 		DistillEnabled:     true,
+		KnowledgeEnabled:   true,
 		DistillMinQueries: 5,
 		DistillSimilarity: 0.80,
 	}
@@ -103,7 +106,8 @@ func NewAgentKernel(
 		sessionStore:  sessions,
 		maxRounds:       config.MaxRounds,
 		maxTokens:       config.MaxTokens,
-		distillEnabled:  config.DistillEnabled,
+		distillEnabled:   config.DistillEnabled,
+		knowledgeEnabled: config.KnowledgeEnabled,
 	}
 
 
@@ -160,11 +164,12 @@ func (k *AgentKernel) SetMaxTokens(n int) {
 
 // ApplyConfig hot-reloads mutable kernel settings from config.
 // Only updates values that are safe to change mid-session.
-func (k *AgentKernel) ApplyConfig(distillEnabled bool, maxRounds, maxTokens, minRounds, maxRoundsCap int) {
+func (k *AgentKernel) ApplyConfig(distillEnabled, knowledgeEnabled bool, maxRounds, maxTokens, minRounds, maxRoundsCap int) {
 	if maxRounds > 0 { k.maxRounds = maxRounds }
 	if maxTokens > 0 { k.maxTokens = maxTokens }
 	k.distillEnabled = distillEnabled
-	slog.Info("Kernel config applied", "distill", distillEnabled, "max_rounds", k.maxRounds, "max_tokens", k.maxTokens)
+	k.knowledgeEnabled = knowledgeEnabled
+	slog.Info("Kernel config applied", "distill", distillEnabled, "knowledge", knowledgeEnabled, "max_rounds", k.maxRounds, "max_tokens", k.maxTokens)
 }
 
 func (k *AgentKernel) SetTracer(t Tracer) {
