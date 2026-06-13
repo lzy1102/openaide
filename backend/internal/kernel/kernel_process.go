@@ -109,11 +109,10 @@ func (k *AgentKernel) doReflection(ctx context.Context, sessionID, query, respon
 		slog.Warn("session update failed", "error", err)
 	}
 
-			// 反馈：本次使用的知识质量如何
-			if k.knowledgeCollector != nil {
+			// 反馈：本次使用的知识质量如何（仅当 LLM 判定值得存）
+			if k.cachedAnalysis.HasPostProcess("knowledge") && k.knowledgeCollector != nil {
 				if docIDsRaw, ok := session.Metadata["knowledge_doc_ids"]; ok {
 					if docIDs, ok := docIDsRaw.([]string); ok && len(docIDs) > 0 {
-				// Store "Key Lesson" in knowledge base for future retrieval (Reflexion pattern)
 				if result.Learned != "" {
 					k.knowledgeCollector.AddKnowledge(ctx, "lesson: "+query[:min(80, len(query))], result.Learned, "reflection", []string{"lesson", "reflection", "self-improvement"})
 				}
@@ -126,8 +125,8 @@ func (k *AgentKernel) doReflection(ctx context.Context, sessionID, query, respon
 
 	// 持久化学习洞察
 
-	// 检测对话模式
-	if k.patternDetector != nil && k.sessionStore != nil {
+	// 检测对话模式 + 技能提取（仅当 LLM 判定值得蒸馏）
+	if k.cachedAnalysis.HasPostProcess("distill") && k.patternDetector != nil && k.sessionStore != nil {
 		session, err := k.sessionStore.Get(ctx, sessionID)
 		if err == nil && session != nil {
 			patterns, pErr := k.patternDetector.Detect(ctx, sessionID, session.Messages)
@@ -148,8 +147,10 @@ func (k *AgentKernel) doReflection(ctx context.Context, sessionID, query, respon
 		}
 	}
 
-	// 自动知识抽取：质量门控通过后存入知识库
-	k.autoSaveKnowledge(ctx, sessionID, query, response, toolCalls, toolErrors)
+	// 自动知识抽取：质量门控通过后存入知识库（仅当 LLM 判定值得存）
+	if k.cachedAnalysis.HasPostProcess("knowledge") {
+		k.autoSaveKnowledge(ctx, sessionID, query, response, toolCalls, toolErrors)
+	}
 }
 
 // autoSaveKnowledge 自动知识抽取 — 质量门控通过后存入知识库

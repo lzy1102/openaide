@@ -170,7 +170,8 @@ OpenAIDE is an AI Agent kernel platform in Go. Strictly layered, CSP actor concu
 8. **`backend/internal/orchestration/`** (3 files + subagent.go) — Full task lifecycle management:
    - `orchestrator.go` — `ProcessQuery` → LLM planning → DeepPlan pipeline. `executePlan` with **self-correcting loop**: test→review→analyst(root cause)→coder(fix)→retry (until pass or BLOCKED). **Branch-converge model**: sub-agent signals `[DISCOVERY:]` → branch(analyze+fix) → converge back to main line → update remaining steps. `CleanupOldSessions` for sub-agent session GC.
    - `planner.go` — `Planner`: Research (multi-round hypothesis→verify→report, read-only tools), Propose (2-3 alternatives with reasoning/pros/cons/risk/effort), PlanWithApproach (detailed plan from chosen approach).
-   - `team.go` — 4 roles with detailed anti-prompt constraints (analyst/coder/reviewer/executor). Each role has "How to work" + "What NOT to do" sections. `routePipeline`: LLM assigns all subtask roles at once. Slash commands: `/analyst`, `/coder`, `/reviewer`, `/executor`, `/team`.
+   - `team.go` — Team with LLM-defined dynamic roles. `GenerateRoles`: LLM analyzes the task and outputs custom roles (name, description, prompt, tools) as JSON. Falls back to 4 default roles (analyst/coder/reviewer/executor). `routePipeline`: LLM assigns all subtask roles at once.
+   - `team_roles.go` — `GenerateRoles()` prompts LLM to define task-specific roles from scratch. Available tools list injected so LLM assigns minimal tool sets. `AddRole()` for manual role injection.
    - `subagent.go` — `RunSubAgent`: isolated session + mini ReAct loop (10 rounds) + role-filtered tools + budget injection + core rules injection + model routing (reasoning vs execution). Sub-agents can actually read, write, and execute — not just return text.
 
 ### Unified Query Analysis (single-pass pre-execution)
@@ -197,8 +198,8 @@ analyzeQuery(query, available_skills):
 
 All judgment calls delegated to LLM. No keyword matching, no regex routing, no substring heuristics:
 - **Task type classification** (`detectTaskType`): LLM classifies query into coding/review/teaching/research/general (was 45-keyword scoring)
-- **Role assignment** (`assignRole`): LLM picks best team role from task semantics (was 20+ keyword matches)
-- **Pipeline routing** (`routePipeline`): LLM selects needed roles per task (was hardcoded coder→executor→reviewer)
+- **Role generation** (`GenerateRoles`): LLM defines custom roles for each task — not picking from a preset list, but designing role names, prompts, and tool sets from scratch based on the task at hand. Skills, plugins, and user config can inject additional roles via `AddRole()`.
+- **Pipeline routing** (`routePipeline`): LLM selects needed roles per task from available roles (dynamic or default)
 - **Model routing**: LLM `route:"execution"/"reasoning"` options (was regex patterns on query text)
 - **Tool risk assessment** (`assessWithLLM`): LLM evaluates tool arguments; exact match parsing (was `Contains("safe")` vulnerable to "unsafe")
 - **Skill detection** (`detectWithLLM`): LLM semantic skill matching (was keyword substring scoring + 18-entry keyword map)
@@ -243,7 +244,7 @@ OpenAIDE's unique value: deep pre-execution analysis before any code changes.
 - **Propose alternatives**: LLM generates 2-3 approaches with pros/cons/risk/effort/reasoning. User selects from TUI overlay.
 - **Decision rationale**: Each proposal includes a `reasoning` field explaining *why* this option exists and when to choose it.
 - **Self-reflection loop**: After review, if `[需要返工]` is detected, auto-loops back to coder for fixes (max 2 retries).
-- **Smart routing**: `routePipeline()` LLM selects needed roles per task. `assignRole()` LLM picks best role per subtask.
+- **Smart role generation**: `GenerateRoles()` LLM defines custom roles per task. `routePipeline()` LLM assigns subtasks to roles. Fallback to 4 defaults.
 - **Context-isolated sub-agents**: `RunSubAgent()` creates fresh sessions per role — main agent sees only result summaries, not intermediate tool calls.
 - **Editable plans**: Foundation for user editing subtask order/add/delete in TUI overlay.
 
@@ -365,7 +366,7 @@ All tools return structured, agent-friendly output:
 - **User customization**: Add `.md` files to `~/.openaide/data/prompts/user/` — auto-appended after system layers. Never overwritten on upgrade. Onboarding creates commented templates.
 - **System prompts**: Always built-in (compiled Go code). Upgrades apply immediately — no disk files to conflict.
 - **Default prompt**: Bilingual (Chinese/English), auto-detected from `LANG` env var.
-- **Runtime hot-reload**: `AgentKernel.SetSystemPrompt()` allows prompt changes without kernel restart.
+- **Runtime hot-reload**: `AgentKernel.SetSystemPrompt()` allows prompt changes without kernel restart. `ConfigReloader` hot-reloads all settings including `distillEnabled`, `MaxRounds`, `MaxTokens`, `MinRounds`, `MaxRoundsCap` without restart.
 - **Skill prompts**: LLM semantic skill detection per-query via `skillActor.DetectSkill()`, then injected via `skillActor.InjectPrompt()`.
 
 ### Plugin system (Claude Code compatible)
@@ -546,7 +547,7 @@ Skill distillation works with ALL providers. If `embedding_model` is set (OpenAI
 
 ### Unbounded ReAct loop (Claude Code style)
 
-No artificial round limits. The LLM decides when to stop. Fixed-threshold hints at rounds 10, 20, 50 — gentle reminders, not hard limits. 200-round safety net prevents pathological infinite loops. Both sync and stream paths use the same injection thresholds.
+No artificial round limits. The LLM decides when to stop. Budget hints at rounds 10, 20, 50 — gentle reminders, not hard limits. 200-round safety net. Sync path (`Process`) is a thin wrapper over `ProcessStream` — both share one canonical ReAct implementation in `kernel_stream.go`. `finalizeResponse` unifies post-loop work (save memory, update session, generate title, reflection).
 
 ### User Experience
 

@@ -236,11 +236,11 @@ func (k *AgentKernel) finalizeResponse(ctx context.Context, session *Session, qu
 	})
 
 	go k.generateSessionTitle(session.ID, query.Content)
-	if k.reflection != nil {
+	if k.reflection != nil && k.cachedAnalysis.HasPostProcess("reflect") {
 		go k.doReflection(ctx, session.ID, query.Content, response, toolCalls, toolErrors)
 	}
 	go k.compressMemory(ctx, session.ID)
-	if k.skillActor != nil { go k.skillActor.DecayUnused() }
+	if k.skillActor != nil && k.cachedAnalysis.HasPostProcess("distill") { go k.skillActor.DecayUnused() }
 }
 
 // buildFinalMessage constructs the assistant message with optional reasoning and tool calls.
