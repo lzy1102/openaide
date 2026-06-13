@@ -66,16 +66,16 @@ func TestShouldDiscard(t *testing.T) {
 
 func TestGate_Pass(t *testing.T) {
 	g := NewGate()
-	if g.MinScore != 0.6 {
-		t.Errorf("default min score should be 0.6")
+	// LLM-first: Reflection Quality >= 5 passes (trust LLM judgment)
+	if !g.Pass("test", "response", 1, 0, &kernel.ReflectionResult{Quality: 7}) {
+		t.Error("Quality 7 should pass")
 	}
-	r := &Result{
-		ToolSuccesses: 1, ToolFailures: 0,
-		UserVerdict: VerdictNone,
-		Reflection:  &kernel.ReflectionResult{Quality: 6},
+	if g.Pass("test", "response", 0, 3, &kernel.ReflectionResult{Quality: 3}) {
+		t.Error("Quality 3 should fail")
 	}
-	if !g.Pass("", "", r.ToolSuccesses, r.ToolFailures, r.Reflection) {
-		t.Error("should pass")
+	// No reflection + no LLM: falls back to formula
+	if !g.Pass("test", "response", 3, 0, nil) {
+		t.Error("3 success, 0 failures should pass formula")
 	}
 }
 

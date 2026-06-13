@@ -133,7 +133,9 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 	kAct.SetEmbedder(embedder)
 	kAct.SetLLM(gateway)
 	agentKernel.SetKnowledgeCollector(kAct)
-	agentKernel.SetQualityGate(feedback.NewGate())
+	gate := feedback.NewGate()
+	gate.SetLLM(gateway)
+	agentKernel.SetQualityGate(gate)
 
 	// 接入身份检测 + 事件总线 + 高级压缩器
 	if projIdentity, err := identity.NewDetector().Detect(context.Background(), "."); err == nil && projIdentity != nil {
