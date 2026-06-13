@@ -73,7 +73,8 @@ OpenAIDE is an AI Agent kernel platform in Go. Strictly layered, CSP actor concu
 │  │    analyzeQuery (unified: task+skill+complexity)    │ │
 │  │                                                      │ │
 │  │  After each loop:                                  │ │
-│  │    doReflection → QualityGate → autoSaveKnowledge  │ │
+│  │    doReflection (LLM post_process) → QualityGate   │ │
+│  │    → autoSaveKnowledge → DistillCluster            │ │
 │  │    SemanticPatternDetector → DistillCluster        │ │
 │  └────────────────────────────────────────────────────┘ │
 │                                                          │
@@ -513,10 +514,12 @@ mcp:
       type: sse
       url: https://mcp.tavily.com/sse
 
-# Kernel: ReAct loop + skill distillation
+# Kernel: ReAct loop + skill distillation + knowledge accumulation
 kernel:
-  distill_min_queries: 5      # queries to trigger skill extraction (default 5)
-  distill_similarity: 0.80    # cosine threshold for embedding clustering (default 0.80)
+  distill_enabled: true        # auto-extract skills from patterns (default true)
+  knowledge_enabled: true      # auto-save knowledge to base (default true)
+  distill_min_queries: 5       # queries to trigger skill extraction (default 5)
+  distill_similarity: 0.80     # cosine threshold for embedding clustering (default 0.80)
 
 # Storage: default is SQLite
 storage:
@@ -592,7 +595,8 @@ After each ReAct loop (async, via `context.WithoutCancel`):
 ```
 Response → doReflection (LLMReflection) → quality score 1-10
   │
-  ├─→ autoSaveKnowledge (QualityGate: 40% tool + 30% reflect + 30% user)
+  ├─→ autoSaveKnowledge (gated by post_process + knowledge_enabled config)
+  │     → QualityGate (LLM-first: reflection.Quality >= 5 or direct LLM ask)
   │     → KnowledgeActor.Refine()
   │       → Dedup (cosine > 0.85 → merge)
   │       → LLM extract (title + facts + files + errors + decisions)
