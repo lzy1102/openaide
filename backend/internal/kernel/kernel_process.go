@@ -57,7 +57,7 @@ func (k *AgentKernel) Process(ctx context.Context, query *Query) (*Response, err
 	}, nil
 }
 
-func (k *AgentKernel) doReflection(ctx context.Context, sessionID, query, response string, toolCalls, toolErrors int) {
+func (k *AgentKernel) doReflection(ctx context.Context, sessionID, query, response string, toolCalls, toolErrors int, analysis *QueryAnalysis) {
 	if k.reflection == nil {
 		return
 	}
@@ -110,7 +110,7 @@ func (k *AgentKernel) doReflection(ctx context.Context, sessionID, query, respon
 	}
 
 			// 反馈：本次使用的知识质量如何（仅当 LLM 判定值得存）
-			if k.cachedAnalysis != nil && k.cachedAnalysis.HasPostProcess("knowledge") && k.knowledgeCollector != nil {
+			if analysis != nil && analysis.HasPostProcess("knowledge") && k.knowledgeCollector != nil {
 				if docIDsRaw, ok := session.Metadata["knowledge_doc_ids"]; ok {
 					if docIDs, ok := docIDsRaw.([]string); ok && len(docIDs) > 0 {
 				if result.Learned != "" {
@@ -126,7 +126,7 @@ func (k *AgentKernel) doReflection(ctx context.Context, sessionID, query, respon
 	// 持久化学习洞察
 
 	// 检测对话模式 + 技能提取（仅当 LLM 判定值得蒸馏）
-	if k.cachedAnalysis != nil && k.cachedAnalysis.HasPostProcess("distill") && k.patternDetector != nil && k.sessionStore != nil {
+	if analysis != nil && analysis.HasPostProcess("distill") && k.patternDetector != nil && k.sessionStore != nil {
 		session, err := k.sessionStore.Get(ctx, sessionID)
 		if err == nil && session != nil {
 			patterns, pErr := k.patternDetector.Detect(ctx, sessionID, session.Messages)
@@ -148,7 +148,7 @@ func (k *AgentKernel) doReflection(ctx context.Context, sessionID, query, respon
 	}
 
 	// 自动知识抽取：质量门控通过后存入知识库（仅当 LLM 判定值得存）
-	if k.cachedAnalysis != nil && k.cachedAnalysis.HasPostProcess("knowledge") {
+	if analysis != nil && analysis.HasPostProcess("knowledge") {
 		k.autoSaveKnowledge(ctx, sessionID, query, response, toolCalls, toolErrors)
 	}
 }

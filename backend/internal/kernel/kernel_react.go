@@ -214,7 +214,7 @@ func (k *AgentKernel) getToolDefinitions(ctx context.Context, queryContent strin
 
 // finalizeResponse performs all post-ReAct work shared by sync and stream paths:
 // save memory, update session, generate title, run reflection.
-func (k *AgentKernel) finalizeResponse(ctx context.Context, session *Session, query *Query, response string, toolCalls, toolErrors int) {
+func (k *AgentKernel) finalizeResponse(ctx context.Context, session *Session, query *Query, response string, toolCalls, toolErrors int, analysis *QueryAnalysis) {
 	RunSaga([]SagaStep{
 		{
 			Name: "save-memory",
@@ -236,11 +236,11 @@ func (k *AgentKernel) finalizeResponse(ctx context.Context, session *Session, qu
 	})
 
 	go k.generateSessionTitle(session.ID, query.Content)
-	if k.reflection != nil && k.cachedAnalysis != nil && k.cachedAnalysis.HasPostProcess("reflect") {
-		go k.doReflection(ctx, session.ID, query.Content, response, toolCalls, toolErrors)
+	if k.reflection != nil && analysis != nil && analysis.HasPostProcess("reflect") {
+		go k.doReflection(ctx, session.ID, query.Content, response, toolCalls, toolErrors, analysis)
 	}
 	go k.compressMemory(ctx, session.ID)
-	if k.skillActor != nil && k.cachedAnalysis != nil && k.cachedAnalysis.HasPostProcess("distill") { go k.skillActor.DecayUnused() }
+	if k.skillActor != nil && analysis != nil && analysis.HasPostProcess("distill") { go k.skillActor.DecayUnused() }
 }
 
 // buildFinalMessage constructs the assistant message with optional reasoning and tool calls.
@@ -330,9 +330,9 @@ func (k *AgentKernel) injectMemoryContext(ctx context.Context, messages []Messag
 
 // determineMaxRounds calculates the ReAct loop limit (adaptive or config-based).
 // Uses cached result from unified query analysis when available.
-func (k *AgentKernel) determineMaxRounds(ctx context.Context, queryContent string, historyLen int) int {
-	if k.cachedAnalysis != nil && k.cachedAnalysis.Complexity > 0 {
-		return k.cachedAnalysis.Complexity
+func (k *AgentKernel) determineMaxRounds(ctx context.Context, queryContent string, historyLen int, analysis *QueryAnalysis) int {
+	if analysis != nil && analysis.Complexity > 0 {
+		return analysis.Complexity
 	}
 	if k.adaptiveRounds != nil {
 		return k.adaptiveRounds.Calculate(ctx, queryContent, historyLen)

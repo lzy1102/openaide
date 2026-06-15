@@ -37,9 +37,6 @@ type AgentKernel struct {
 	approver         Approver
 	adaptiveRounds   *AdaptiveRounds
 
-	// 统一查询分析（单次 LLM 替代 3-4 次碎片化判断）
-	cachedAnalysis *QueryAnalysis
-
 	// 跟踪系统
 	tracer  Tracer
 

@@ -639,11 +639,7 @@ func (k *AgentKernel) promptL3(ctx context.Context, query string) string {
 }
 
 // detectTaskType classifies the query via LLM into one of five task types.
-// Uses cached result from unified query analysis when available.
 func (k *AgentKernel) detectTaskType(ctx context.Context, query string) string {
-	if k.cachedAnalysis != nil && k.cachedAnalysis.TaskType != "" {
-		return k.cachedAnalysis.TaskType
-	}
 	prompt := `Classify this user query into exactly one category: coding, review, think, general.
 
 Definitions:

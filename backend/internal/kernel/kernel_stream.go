@@ -27,11 +27,10 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 	}
 
 	// Unified query analysis — one LLM call replaces detectTaskType + DetectSkill + estimateComplexity
-	k.cachedAnalysis = k.analyzeQuery(ctx, query.Content)
-	if k.skillActor != nil && k.cachedAnalysis != nil {
-		k.skillActor.UsePreMatch(k.cachedAnalysis.SkillID) // "" = no match -> skip
+	analysis := k.analyzeQuery(ctx, query.Content)
+	if k.skillActor != nil && analysis != nil {
+		k.skillActor.UsePreMatch(analysis.SkillID) // "" = no match -> skip
 	}
-	defer func() { k.cachedAnalysis = nil }()
 
 	messages := k.buildMessages(ctx, session, query)
 
@@ -58,8 +57,8 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 		}
 
 		maxRounds := k.maxRounds
-		if k.cachedAnalysis != nil && k.cachedAnalysis.Complexity > 0 {
-			maxRounds = k.cachedAnalysis.Complexity
+		if analysis != nil && analysis.Complexity > 0 {
+			maxRounds = analysis.Complexity
 		} else if k.adaptiveRounds != nil {
 			maxRounds = k.adaptiveRounds.Calculate(ctx, query.Content, len(session.Messages))
 		}
@@ -177,7 +176,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 			// 无工具调用 -> 返回结果
 			if len(lastToolCalls) == 0 {
 				session.Messages = messages
-				k.finalizeResponse(context.WithoutCancel(ctx), session, query, fullContent.String(), totalToolCalls, toolErrors)
+				k.finalizeResponse(context.WithoutCancel(ctx), session, query, fullContent.String(), totalToolCalls, toolErrors, analysis)
 
 				slog.Debug("ReAct stream complete", "rounds", round+1, "tokens", totalTokens, "tools", totalToolCalls, "model", k.llmProvider.GetModelID(), "duration", time.Since(startTime))
 				k.setState(StateIdle)
@@ -271,7 +270,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 		// 追加合成结果到消息历史
 		messages = append(messages, buildFinalMessage(resp.Content, "", nil))
 		session.Messages = messages
-		k.finalizeResponse(context.WithoutCancel(ctx), session, query, resp.Content, totalToolCalls, toolErrors)
+		k.finalizeResponse(context.WithoutCancel(ctx), session, query, resp.Content, totalToolCalls, toolErrors, analysis)
 
 		k.setState(StateIdle)
 		resultChan <- StreamChunk{

@@ -46,6 +46,9 @@ func NewSessionActor(path string) (*SessionActor, error) {
 // ── SessionStore interface ──────────────────────────────────
 
 func (a *SessionActor) Create(ctx context.Context, projectID, userID string) (*Session, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("context cancelled: %w", err)
+	}
 	var session *Session
 	var createErr error
 	a.super.Send(func() {
@@ -84,6 +87,9 @@ func (a *SessionActor) Create(ctx context.Context, projectID, userID string) (*S
 }
 
 func (a *SessionActor) Get(ctx context.Context, sessionID string) (*Session, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("context cancelled: %w", err)
+	}
 	var session *Session
 	a.super.Send(func() {
 		session = a.scanOne(ctx, sessionID)
@@ -95,6 +101,9 @@ func (a *SessionActor) Get(ctx context.Context, sessionID string) (*Session, err
 }
 
 func (a *SessionActor) Update(ctx context.Context, session *Session) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("context cancelled: %w", err)
+	}
 	var updateErr error
 	a.super.Send(func() {
 		session.UpdatedAt = time.Now()
@@ -123,6 +132,9 @@ func (a *SessionActor) Update(ctx context.Context, session *Session) error {
 }
 
 func (a *SessionActor) List(ctx context.Context, projectID, userID string, limit, offset int) ([]*Session, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("context cancelled: %w", err)
+	}
 	if limit <= 0 {
 		limit = 50
 	}
@@ -157,6 +169,9 @@ func (a *SessionActor) Delete(ctx context.Context, sessionID string) error {
 // ── Extra methods ──────────────────────────────────────────
 
 func (a *SessionActor) CleanupOldSessions(ctx context.Context, maxAge time.Duration) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, fmt.Errorf("context cancelled: %w", err)
+	}
 	var removed int
 	a.super.Send(func() {
 		cutoff := time.Now().Add(-maxAge).Format(time.RFC3339)
@@ -174,6 +189,9 @@ func (a *SessionActor) CleanupOldSessions(ctx context.Context, maxAge time.Durat
 
 // Search finds sessions by content query.
 func (a *SessionActor) Search(ctx context.Context, projectID, query string, limit int) ([]*Session, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("context cancelled: %w", err)
+	}
 	if limit <= 0 {
 		limit = 20
 	}

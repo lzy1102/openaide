@@ -1,9 +1,15 @@
 package actor
 
 import (
-	"fmt"
+	"errors"
 	"sync"
 	"time"
+)
+
+var (
+	ErrActorBusy    = errors.New("actor busy: command channel full")
+	ErrActorTimeout = errors.New("actor timeout: command submitted but execution timed out")
+	ErrActorStopped = errors.New("actor stopped")
 )
 
 // Actor is a CSP-style autonomous goroutine that owns its data.
@@ -48,6 +54,7 @@ func (a *Actor) Send(fn func()) {
 
 // SendTimeout tries to send a command within the given timeout.
 // Returns ErrActorBusy if the channel is full and timeout expires.
+// Returns ErrActorTimeout if the command was submitted but execution timed out.
 // Use for non-critical operations where blocking is unacceptable.
 func (a *Actor) SendTimeout(fn func(), timeout time.Duration) error {
 	reply := make(chan struct{}, 1)
@@ -57,12 +64,12 @@ func (a *Actor) SendTimeout(fn func(), timeout time.Duration) error {
 		case <-reply:
 			return nil
 		case <-time.After(timeout):
-			return fmt.Errorf("actor timeout after %v", timeout)
+			return ErrActorTimeout
 		}
 	case <-time.After(timeout):
-		return fmt.Errorf("actor busy after %v", timeout)
+		return ErrActorBusy
 	case <-a.stop:
-		return fmt.Errorf("actor stopped")
+		return ErrActorStopped
 	}
 }
 
