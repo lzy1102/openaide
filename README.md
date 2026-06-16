@@ -68,7 +68,7 @@ install.bat
 
 ```
 ┌──────────────────────────────────────────────┐
-│  cmd/server (REST+SSE)  cmd/cli (REPL)       │
+│  openaide server (REST+SSE)  openaide (REPL) │
 ├──────────────────────────────────────────────┤
 │  infra/Application — DI container            │
 ├──────────────────────────────────────────────┤
@@ -168,16 +168,18 @@ storage:
 ## Commands
 
 ```bash
-openaide          # Interactive REPL
-openaide "prompt"      # One-shot query
-openaide -c         # Resume last session
-openaide -y         # Auto-approve all tools
+openaide              # Interactive REPL
+openaide "prompt"     # One-shot query
+openaide -c           # Resume last session
+openaide -y           # Auto-approve all tools
 openaide --model <name>   # Override model
-openaide --verbose      # Debug logging
-openaide setup       # Interactive setup wizard
-openaide sessions      # List sessions
+openaide --verbose    # Debug logging
+openaide setup        # Interactive setup wizard
+openaide sessions     # List sessions
 openaide plugins      # List plugins
 openaide update       # Self-update
+openaide server       # Start API server (web mode)
+openaide server --config /path/to/config.yaml  # Server with custom config
 ```
 
 ---

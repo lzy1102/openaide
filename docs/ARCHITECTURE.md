@@ -15,7 +15,7 @@
 ## 分层架构
 
 ```
-cmd/server (API 服务器)   cmd/cli (交互式 REPL)   cmd/desktop (桌面应用)
+openaide server (API 服务器)   openaide (交互式 REPL)   cmd/desktop (桌面应用)
          \___________________________|___________________________/
                      |
               infra/Application    ← DI 容器

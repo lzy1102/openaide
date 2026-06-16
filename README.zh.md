@@ -56,16 +56,22 @@ openaide setup
 ## 架构
 
 ```
-cmd/server (API)    cmd/cli (REPL)
-     \____________________/
-         |
-    infra/Application     ← DI 容器
-    /  |  |   \
-  api/ orchestration/ channel/
-      |
-  kernel/AgentKernel       ← ReAct 循环
-  /  |  |   \
- llm/ tools/ memory/ knowledge/
+┌──────────────────────────────────────────────┐
+│  openaide server (API)    openaide (REPL)     │
+├──────────────────────────────────────────────┤
+│  infra/Application — DI 容器                  │
+├──────────────────────────────────────────────┤
+│  orchestration/    api/       channel/       │
+│  Plan→Execute      REST API   Feishu/Telegram│
+├──────────────────────────────────────────────┤
+│  kernel/AgentKernel — ReAct 循环             │
+│  ├─ kernel/actor/  (CSP Actor, SafeMap)      │
+│  ├─ kernel/trace/  (Tracer, Checkpointer)    │
+│  └─ kernel/graph/  (DAG topo sort)           │
+├──────────────────────────────────────────────┤
+│  llm/      tools/     memory/   knowledge/   │
+│  Gateway   40+ tools  SQLite    Vector ANN   │
+└──────────────────────────────────────────────┘
 ```
 
 ### 技术栈
@@ -135,16 +141,18 @@ storage:
 ## 命令行
 
 ```bash
-openaide          # 交互式 REPL
+openaide              # 交互式 REPL
 openaide "问题"       # 一次性问答
-openaide -c         # 恢复上次会话
-openaide -y         # 自动审批所有工具
+openaide -c           # 恢复上次会话
+openaide -y           # 自动审批所有工具
 openaide --model <名称>   # 覆盖模型
-openaide --verbose      # 调试日志
-openaide setup       # 交互式配置向导
-openaide sessions      # 列出会话
+openaide --verbose    # 调试日志
+openaide setup        # 交互式配置向导
+openaide sessions     # 列出会话
 openaide plugins      # 列出插件
 openaide update       # 更新
+openaide server       # 启动 API 服务（Web 模式）
+openaide server --config /path/to/config.yaml  # 使用自定义配置启动服务
 ```
 
 ---

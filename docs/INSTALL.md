@@ -27,8 +27,7 @@ cd openaide && make install
 ```
 
 编译产物:
-- `~/.openaide/bin/openaide` — CLI 交互式 REPL
-- `~/.openaide/bin/openaide-server` — HTTP API 服务器
+- `~/.openaide/bin/openaide` — 统一二进制 (CLI + 服务器)
 
 ## 方法三: 本地编译
 
@@ -36,7 +35,6 @@ cd openaide && make install
 ```bash
 cd openaide/backend
 CGO_ENABLED=0 go build -o ~/.openaide/bin/openaide ./cmd/cli
-CGO_ENABLED=0 go build -o ~/.openaide/bin/openaide-server ./cmd/server
 ```
 
 ## 初始化配置

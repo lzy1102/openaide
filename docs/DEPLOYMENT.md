@@ -24,8 +24,7 @@ OpenAIDE 安装在用户目录 `~/.openaide`，每个用户完全独立：
 
 | 路径 | 说明 |
 |------|------|
-| `~/.openaide/bin/openaide-server` | API 服务器 |
-| `~/.openaide/bin/openaide` | 命令行客户端 |
+| `~/.openaide/bin/openaide` | 统一二进制 (CLI + 服务器) |
 | `~/.openaide/config.yaml` | 用户配置文件 (YAML 格式，支持注释) |
 | `~/.openaide/data/` | 用户数据（会话、记忆、知识库） |
 | `~/.openaide/logs/` | 用户日志 |
@@ -160,7 +159,7 @@ openaide
 
 ```bash
 # 检查配置文件格式
-~/.openaide/bin/openaide-server -config ~/.openaide/config.yaml
+~/.openaide/bin/openaide server --config ~/.openaide/config.yaml
 
 # 查看日志
 cat ~/.openaide/logs/server.log

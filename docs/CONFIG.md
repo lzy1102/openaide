@@ -19,7 +19,7 @@ llm:
 ## 完整配置
 
 ```yaml
-# 服务器配置 (openaide-server)
+# 服务器配置 (openaide server)
 server:
   host: "0.0.0.0"
   port: 8080

@@ -57,7 +57,7 @@ ingress:
 
 ```bash
 # 启动 OpenAIDE
-openaide-server
+openaide server
 
 # 另一个终端启动隧道
 cloudflared tunnel run openaide
@@ -73,7 +73,7 @@ sudo cloudflared service install
 
 # 或 tmux/screen
 tmux new -s openaide
-openaide-server
+openaide server
 # Ctrl+B D 分离
 ```
 
@@ -145,7 +145,7 @@ vi ~/.openaide/config.yaml
 # 填入你的 API Key
 
 # 启动
-openaide-server
+openaide server
 ```
 
 ### 3. 配置 HTTPS（可选）
@@ -177,7 +177,7 @@ After=network.target
 [Service]
 Type=simple
 User=$USER
-ExecStart=$HOME/.openaide/bin/openaide-server
+ExecStart=$HOME/.openaide/bin/openaide server
 Restart=on-failure
 
 [Install]
@@ -205,7 +205,7 @@ tailscale up
 
 ```bash
 # 启动 OpenAIDE
-openaide-server
+openaide server
 
 # 手机/平板打开 Tailscale，访问
 # http://<电脑的Tailscale IP>:8080
@@ -263,6 +263,6 @@ curl -X POST https://ai.yourdomain.com/api/v1/auth/register \
 | 问题 | 解决 |
 |------|------|
 | 无法访问 | 检查防火墙：`sudo ufw allow 8080` |
-| 连接超时 | 检查 `openaide-server` 是否在运行 |
+| 连接超时 | 检查 `openaide server` 是否在运行 |
 | HTTPS 证书错误 | `cloudflared tunnel cleanup` 然后重连 |
 | 飞书机器人无响应 | 检查 `feishu.webhook_url` 配置 |

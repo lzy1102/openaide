@@ -5,7 +5,7 @@
 ```bash
 cd backend
 make build
-# 输出: bin/openaide-server, bin/openaide
+# 输出: bin/openaide server, bin/openaide
 ```
 
 ## 2. 配置

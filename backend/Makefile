@@ -24,8 +24,7 @@ LDFLAGS = -s -w -X main.Version=$(VERSION) -X main.BuildTime=$(shell date -u +%Y
 
 build:
 	@echo "Building..."
-	@cp -r ../frontend/* cmd/server/frontend/ 2>/dev/null || true
-	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/openaide-server ./cmd/server
+	@cp -r ../frontend/* cmd/cli/frontend/ 2>/dev/null || true
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/openaide ./cmd/cli
 
 # Desktop app: bare binary (go build, no packaging)
@@ -53,7 +52,6 @@ package-desktop-windows:
 install: build
 	@mkdir -p ~/.openaide/bin
 	@cp $(BIN_DIR)/openaide ~/.openaide/bin/openaide
-	@cp $(BIN_DIR)/openaide-server ~/.openaide/bin/openaide-server
 	@# Auto-add to shell config if not already there
 	@for rc in ~/.bashrc ~/.zshrc ~/.bash_profile; do \
 		if [ -f "$$rc" ] && ! grep -q ".openaide/bin" "$$rc" 2>/dev/null; then \
@@ -64,28 +62,23 @@ install: build
 	@echo "Installed to ~/.openaide/bin/ — restart your shell or run: source ~/.bashrc"
 
 build-all:
-	@cp -r ../frontend/* cmd/server/frontend/ 2>/dev/null || true
+	@cp -r ../frontend/* cmd/cli/frontend/ 2>/dev/null || true
 	$(MAKE) build-linux-amd64 build-linux-arm64 build-windows-amd64 build-darwin-amd64 build-darwin-arm64
 
 build-linux-amd64:
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/openaide-linux-amd64 ./cmd/cli
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/openaide-server-linux-amd64 ./cmd/server
 
 build-linux-arm64:
 	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/openaide-linux-arm64 ./cmd/cli
-	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/openaide-server-linux-arm64 ./cmd/server
 
 build-windows-amd64:
 	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/openaide-windows-amd64.exe ./cmd/cli
-	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/openaide-server-windows-amd64.exe ./cmd/server
 
 build-darwin-amd64:
 	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/openaide-darwin-amd64 ./cmd/cli
-	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/openaide-server-darwin-amd64 ./cmd/server
 
 build-darwin-arm64:
 	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/openaide-darwin-arm64 ./cmd/cli
-	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/openaide-server-darwin-arm64 ./cmd/server
 
 # ── Dev ──────────────────────────────────────────
 

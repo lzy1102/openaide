@@ -3,11 +3,15 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"openaide/backend/internal/config"
@@ -104,10 +108,13 @@ func parseFlags(args []string) cliFlags {
 		case a == "plugins":
 			cmdPlugins(args[i+1:])
 			os.Exit(0)
-		case a == "setup":
-			cmdSetup()
-			os.Exit(0)
-		case !strings.HasPrefix(a, "-"):
+	case a == "setup":
+		cmdSetup()
+		os.Exit(0)
+	case a == "server":
+		cmdServer(args[i+1:])
+		os.Exit(0)
+	case !strings.HasPrefix(a, "-"):
 			positional = append(positional, a)
 		}
 	}
@@ -266,6 +273,7 @@ func printHelp() {
 	fmt.Println(lang.T("cli.sessions"))
 	fmt.Println(lang.T("cli.update"))
 	fmt.Println(lang.T("cli.setup"))
+	fmt.Println("  server            Start API server (web mode)")
 	fmt.Println()
 	fmt.Println(lang.T("cli.examples"))
 	fmt.Println(lang.T("cli.ex_oneshot"))
@@ -381,6 +389,61 @@ func truncate(s string, n int) string {
 		return string(runes)
 	}
 	return string(runes[:n]) + "…"
+}
+
+func cmdServer(args []string) {
+	var configPath string
+	fs := flag.NewFlagSet("server", flag.ExitOnError)
+	fs.StringVar(&configPath, "config", defaultConfigPath(), "Path to config file")
+	fs.Parse(args)
+
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		slog.Warn("Failed to load config, using default", "error", err)
+		cfg = config.DefaultConfig()
+	}
+
+	infra.InitLogger(cfg.Log.Level, cfg.Log.Format)
+
+	app, err := infra.NewApplication(cfg)
+	if err != nil {
+		slog.Error("Failed to create application", "error", err)
+		os.Exit(1)
+	}
+
+	// 嵌入前端
+	if h := FrontendHandler(); h != nil {
+		app.APIServer.SetFrontendHandler(h)
+		slog.Info("Frontend embedded in binary")
+	}
+
+	// 配置文件热加载
+	reloader := infra.NewConfigReloader(configPath, app)
+	if err := reloader.Start(); err != nil {
+		slog.Warn("Config hot-reload unavailable", "error", err)
+	}
+	defer reloader.Stop()
+
+	go func() {
+		if err := app.Start(); err != nil {
+			slog.Error("Application error", "error", err)
+			os.Exit(1)
+		}
+	}()
+
+	// 等待中断信号
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	<-sigChan
+
+	slog.Info("Shutting down...")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := app.Stop(ctx); err != nil {
+		slog.Error("Shutdown error", "error", err)
+	}
+
+	slog.Info("Goodbye!")
 }
 
 func cmdPlugins(args []string) {

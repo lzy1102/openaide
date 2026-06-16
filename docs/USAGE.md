@@ -122,7 +122,7 @@ go run ./cmd/eval -output results.json
 ## Server 模式
 
 ```bash
-openaide-server --config ~/.openaide/config.yaml
+openaide server --config ~/.openaide/config.yaml
 ```
 
 ### API 端点
