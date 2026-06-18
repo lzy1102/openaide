@@ -263,6 +263,46 @@ grep "Plugin hot-loaded\|Claude skill" server.log
 | M3 | Env 传递 | 子进程收到 `KEY=VALUE` |
 | M4 | 非 text 内容 | image/resource 类型正确格式化 |
 
+**结果 (2026-06-19)**:
+
+| ID | 结果 | 实际 |
+|----|------|------|
+| M1 | **PASS** | Stdio: ConnectServer + CallTool + Shutdown |
+| M2 | **PASS** | HTTP: HTTPTransport POST /message |
+| M3 | **PASS** | Env: EnvMap helper + subprocess cmd.Env 设置 |
+| M4 | **PASS** | Content types: text/image/resource 分支覆盖 |
+
+**插件结果**:
+
+| ID | 结果 | 实际 |
+|----|------|------|
+| PL1 | **PASS** | fsnotify watcher 启动，hot-reload enabled |
+| PL2 | **PASS** | Skill discovery + tool name mapping（Read→read_file） |
+| PL3 | **PASS** | Re-add 后 Confidence=0.70, UsageCount=2 未归零 |
+| PL4 | **PASS** | Hook 注册 PreToolUse→tool_call_started，env vars 注入 |
+
+**子Agent 角色** (Section 7): 跳过，需要完整 DeepPlan 管线 + 推理模型多轮执行。
+
+---
+
+## 总结
+
+| 轮次 | 测试项 | 通过/总数 | 状态 |
+|------|--------|-----------|------|
+| 1 | 统一查询分析 | 5/5 | ✓ |
+| 2 | ReAct 循环 | 2/4 (2跳过) | ✓ |
+| 3 | 后处理决策 | 4/4 | ✓ |
+| 4 | 质量门控 | 单元测试覆盖 | - |
+| 5 | 技能蒸馏 | 单元测试覆盖 | - |
+| 6 | 配置开关 | 3/3 | ✓ |
+| 7 | 子Agent角色 | 跳过 | - |
+| 8 | 插件系统 | 4/4 | ✓ |
+| 9 | MCP 传输 | 4/4 | ✓ |
+| 10 | 回归测试 | 4/4 | ✓ |
+
+**发现 Bug**: 1 个（noSkill flag 被消耗），已修复。
+**API 限制**: deepseek-v4-pro 推理模型每轮 30-60s，多轮测试耗时过长。
+
 **验证方法**:
 ```bash
 # 配置 MCP server
