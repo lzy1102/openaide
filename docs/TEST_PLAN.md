@@ -71,10 +71,11 @@ grep "Query analyzed" server.log
 | R1 | **PASS** | 1 轮完成: 1 content + 1 done + 32 thinking。tools=0 正确退出 |
 | R2b | **PASS** | 2 轮完成: 368 content + 1 done + 52 thinking + 1 tool_call + 1 tool_done |
 | R2 | **TIMEOUT** | deepseek-v4-pro 3 轮工具调用需 >90s。流水线正确（3 tool_call + 2 tool_done），但 API 太慢 |
-| R3 | SKIP | 同上原因，多工具调用需要推理模型多轮执行 |
+| R2 | **PASS** (长超时) | 5轮5工具，~110s。search_files×4 + read_file×1。418 content。完整答案送达 |
+| R3 | **PASS** (长超时) | 2轮2工具，~12s。list_directory + read_file。960 content + 1 done |
 | R4 | SKIP | 需 10+ 轮触发预算注入，单次耗时过长 |
 
-**注意**: ReAct 管线结构验证充分——tool_call → tool_done → next round → content → done 顺序正确。延迟来自推理模型。
+**注意**: R2 done 事件在 180s 边界被 context cancel 丢弃（内容已送达）。ReAct 管线: tool_call → tool_done → next round → content → done 顺序正确。延迟来自推理模型 (deepseek-v4-pro 每轮 20-30s)。
 
 **验证方法**:
 ```bash
