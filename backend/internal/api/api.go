@@ -56,7 +56,9 @@ func NewServer(orch *orchestration.Orchestrator, addr string, authSvc *auth.Serv
 	mux.HandleFunc("/api/v1/metrics", s.handleMetrics)
 	mux.HandleFunc("/metrics", s.handlePrometheus) // Prometheus standard endpoint
 	mux.HandleFunc("/api/v1/channels", s.handleChannels)
-	mux.HandleFunc("/api/v1/auth/", authSvc.AuthHandler)
+	if authSvc != nil {
+		mux.HandleFunc("/api/v1/auth/", authSvc.AuthHandler)
+	}
 	mux.HandleFunc("/api/v1/config", s.handleConfig)
 	mux.HandleFunc("/api/v1/projects", s.handleProjects)
 	mux.HandleFunc("/api/v1/projects/", s.handleProjectDetail)
