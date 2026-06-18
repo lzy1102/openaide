@@ -122,7 +122,9 @@ func (a *SkillActor) SetAutoDetect(on bool) {
 //   - with a skill ID: returns that skill directly, no LLM call
 //   - with "": returns nil immediately, no LLM call (already analyzed, no match)
 func (a *SkillActor) DetectSkill(ctx context.Context, query string) *Skill {
-	// Check for pre-match or no-match signal from unified query analysis
+	// Check for pre-match or no-match signal from unified query analysis.
+	// Flags are NOT consumed here — they persist for the entire request
+	// (InjectPrompt + GetTools both call DetectSkill).
 	var preMatch *Skill
 	var noMatch bool
 	a.super.Send(func() {
@@ -131,12 +133,9 @@ func (a *SkillActor) DetectSkill(ctx context.Context, query string) *Skill {
 			if s, ok := a.skills[a.lastUsed]; ok {
 				preMatch = s
 			}
-			a.lastUsed = ""
 		}
-		a.noSkill = false // consume once
 	})
 	if preMatch != nil {
-		slog.Debug("Skill pre-matched (no LLM call)", "skill", preMatch.ID)
 		return preMatch
 	}
 	if noMatch {
