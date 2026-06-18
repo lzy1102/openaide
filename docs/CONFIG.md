@@ -76,9 +76,11 @@ kernel:
   max_rounds_cap: 30       # 自适应轮次上限
   unsafe_mode: true        # 跳过工具审批 (本地开发用)
 
-  # 模式检测 (蒸馏阈值)
-  pattern_min_cluster_size: 8       # 多少相似 query 触发蒸馏
-  pattern_similarity_threshold: 0.80 # 聚类余弦相似度
+  # 自动学习
+  distill_enabled: true       # 启用自动技能提取
+  knowledge_enabled: true     # 启用自动知识入库
+  distill_min_queries: 5      # 触发蒸馏的最小查询数
+  distill_similarity: 0.80    # 聚类余弦相似度阈值
 
 # 存储
 storage:

@@ -31,17 +31,18 @@ openaide server (API 服务器)   openaide (交互式 REPL)   cmd/desktop (桌�
 
 | 模块 | 文件数 | 功能 |
 |------|--------|------|
-| kernel | 22 | Agent 核心、ReAct、流式、反思、学习、Skill、会话存储、提示词 |
+| kernel | 26 | Agent 核心、统一查询分析、ReAct、流式、反思、自动学习、CSP Actor、提示词 |
 | llm | 7 | 网关、OpenAI 兼容、Anthropic 原生、Embedding、缓存 |
-| tools | 10 | 22 个工具 (文件/命令/Git/知识库/符号/浏览器/多模态) |
-| memory | 3 | 3 级记忆、TF-IDF 语义搜索 |
-| orchestration | 3 | 编排器、DeepPlan (研究→方案→计划)、Team 多 Agent |
+| tools | 10 | 42 个工具 (文件/命令/Git/知识库/符号/浏览器/多模态/桌面) |
+| memory | 4 | SQLite + 向量缓存、批量嵌入、跨会话记忆 |
+| orchestration | 6 | 编排器、DeepPlan、LLM动态角色生成、隔离子Agent、ToT探索 |
 | api | 3 | REST、SSE、WebSocket、JWT 中间件 |
-| infra | 4 | DI 容器、LLM 工厂、Kernel 工厂、Channel 工厂 |
-| plugin | 2 | Claude Code 插件格式兼容 (skills/MCP/hooks) |
+| infra | 5 | DI 容器、LLM 工厂、Kernel 工厂、插件热加载、配置热重载 |
+| plugin | 2 | Claude Code 插件格式兼容 (skills/MCP/hooks)、fsnotify热重载 |
 | config | 2 | YAML/JSON 配置 |
 | auth | 1 | JWT 签发/验证/中间件 |
-| knowledge | 1 | 文档 CRUD、搜索、提示词注入 |
+| knowledge | 2 | 知识库精炼管道、向量索引ANN、RAG注入 |
+| feedback | 2 | LLM-first 质量门控 |
 | compress | 2 | LLM 语义压缩 + 简单压缩降级 |
 | channel | 5 | 外部渠道 (Webhook/飞书/Telegram) |
 | mcp | 2 | MCP 协议 (stdio, 30s 超时) |
@@ -61,9 +62,9 @@ openaide server (API 服务器)   openaide (交互式 REPL)   cmd/desktop (桌�
 | **Architect/Editor 路由** | analyst/reviewer → reasoning (pro)，coder/executor → execution (flash) |
 | **DeepPlan 深度规划** | Research → Propose → Select → Plan → Execute → Review |
 | **Team 多 Agent** | /analyst /coder /reviewer /executor /team，独立会话 + 模型路由 |
-| **LLM 决策引擎** | 所有决策由 LLM 判断：4 分类任务识别、风险评估、技能检测、LLM-as-Judge 评测。零硬编码关键字匹配 |
+| **LLM 决策引擎** | 全链路 LLM 判断（统一查询分析、技能匹配、后处理决策、角色生成、质量门控）。4 分类任务识别。零硬编码规则、零 keyword 匹配 |
 | **无限 ReAct** | 无轮次上限，LLM 自己决定何时停止。仅 token 预算兜底，不强制合成 |
-| **技能蒸馏** | embedding 聚类 + LLM 聚类双路径。单一 LLM 调用完成质量评估+精炼。零硬编码阈值，全提供商兼容 |
+| **自动学习** | embedding/LLM 聚类双路径。evaluateAndDistill 单次 LLM。LLM 动态 post_process（reflect/knowledge/distill）。config 开关 + LLM 逐请求判断双重控制。跨会话累积 |
 | **编码工作流** | 4 阶段工程师思维模型：评估影响→规划方案→小步执行→自检审查 |
 | **多语言** | 自动检测 21 种语言项目规范，注入语言特定约定 |
 | **34 个内置工具** | 文件/Git/命令/搜索/知识库/浏览器/桌面/多模态 |

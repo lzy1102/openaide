@@ -111,13 +111,16 @@ install.bat
 - **Architect/Editor Routing**: Reasoning model for analysis, execution model for coding
 - **Budget Injection**: LLM aware of remaining rounds, self-converges
 
-### Knowledge System — Gets Smarter Every Task
-- **Process Supervision**: Per-step evaluation identifies which decisions were good/bad
-- **Implicit Feedback**: LLM infers user satisfaction from conversation flow — no prompts needed
-- **Knowledge Refinement**: Dedup (cosine > 0.85) → LLM extract → composite scored retrieval
-- **Skill Extraction**: Semantic embedding clustering → LLM knowledge distillation → auto-persist skills
-- **ProjectMind**: Cross-session CodeMap, RiskMap, Conventions, Strategy stats (auto-save)
-- **Layered Prompts**: L0 (identity) + L1 (project) + L2 (skill) + L3 (task adapter) + L5 (reflection) + L6 (RAG)
+### Self-Learning — Gets Smarter Every Task
+- **Unified Query Analysis**: One LLM call classifies task + matches skill + estimates complexity + plans post-processing
+- **LLM-Decided Learning**: LLM itself judges what's worth remembering — no fixed thresholds
+- **Process Supervision**: Per-step evaluation identifies best and weakest decisions
+- **Quality Gate (LLM-first)**: LLM reflection score → direct LLM ask → formula fallback
+- **Knowledge Refinement**: Dedup (cosine > 0.85) → LLM structured extract → composite scored retrieval (relevance+importance+recency)
+- **Skill Distillation**: Semantic/LLM clustering → evaluateAndDistill (single LLM) → auto-persist slash commands
+- **ProjectMind**: Cross-session CodeMap, RiskMap, Conventions, Strategy stats
+- **Config Toggles**: `distill_enabled` + `knowledge_enabled` — hot-reload without restart
+- **Layered Prompts**: L0 (identity+learning) + L1 (project) + L2 (skill) + L3 (task) + L5 (reflection) + L6 (RAG)
 
 ### Developer Tools
 - **40 Built-in Tools**: Filesystem, Git, Web, Knowledge, Browser, Desktop, LSP
