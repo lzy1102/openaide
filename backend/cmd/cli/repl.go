@@ -932,7 +932,7 @@ case "/analyst", "/coder", "/reviewer", "/executor":
 		fmt.Printf("  %s⚙%s %s running…\n", cYellow, cReset, role)
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		result, err := app.Orchestrator.RunSubAgent(ctx, "cli-user", "default", role, task, nil)
+		result, err := app.Orchestrator.RunSubAgent(ctx, "cli-user", "default", role, task, nil, nil)
 		if err != nil { PrintError(fmt.Sprintf("%v", err)); return }
 		if result != "" { fmt.Println(); fmt.Println(RenderMarkdown(result)) }
 		PrintSuccess(role + " done")
@@ -946,7 +946,7 @@ case "/analyst", "/coder", "/reviewer", "/executor":
 		prevResults := []string{}
 		for _, role := range []string{"analyst", "coder", "reviewer"} {
 			fmt.Printf("    %s…%s", role, cReset)
-			result, err := app.Orchestrator.RunSubAgent(ctx, "cli-user", "default", role, task, prevResults)
+			result, err := app.Orchestrator.RunSubAgent(ctx, "cli-user", "default", role, task, prevResults, nil)
 			if err != nil { PrintError(fmt.Sprintf("%v", err)); return }
 			prevResults = append(prevResults, result)
 			fmt.Print("\r\033[K")

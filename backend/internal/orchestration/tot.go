@@ -62,7 +62,7 @@ func (o *Orchestrator) ExploreAlternatives(ctx context.Context, userID, projectI
 			}
 			// Build the exploration prompt
 			guidance := fmt.Sprintf("## Task\n%s\n\n## Your Approach\n%s\n\nExplore this approach: read relevant files, analyze trade-offs, and report your findings. Keep it under 300 words.", task, a.Prompt)
-			res, err := o.RunSubAgent(ctx, userID, projectID, "analyst", guidance, nil)
+			res, err := o.RunSubAgent(ctx, userID, projectID, "analyst", guidance, nil, nil)
 			if err != nil {
 				ch <- idxResult{idx: idx, err: err}
 				return

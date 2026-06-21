@@ -66,7 +66,7 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 					}
 				}
 				task := fmt.Sprintf("Goal: %s\nStep: %s\nDetails: %s", plan.Goal, st.Title, st.Description)
-				r, err := o.RunSubAgent(gCtx, userID, projectID, roleName, task, deps)
+				r, err := o.RunSubAgent(gCtx, userID, projectID, roleName, task, deps, nil)
 				if err != nil {
 					return fmt.Errorf("subtask %d (%s): %w", st.ID, roleName, err)
 				}
@@ -89,7 +89,7 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 	// Phase 2: Verify — executor runs tests/lint
 	execResult, err := o.RunSubAgent(ctx, userID, projectID, o.firstRoleName(),
 		"Verify all subtask results work together. Run tests and linters. Report failures.",
-		results)
+		results, nil)
 	if err != nil {
 		slog.Warn("Verification failed", "error", err)
 	} else {
@@ -100,7 +100,7 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 	// Phase 3: Review — reviewer checks overall quality
 	reviewResult, err := o.RunSubAgent(ctx, userID, projectID, o.firstRoleName(),
 		"Review the complete execution. Check correctness, style, and edge cases. Summarize final status.",
-		results)
+		results, nil)
 	if err != nil {
 		slog.Warn("Review failed", "error", err)
 	} else {
@@ -110,12 +110,12 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 			if strings.Contains(reviewUpper, "NEEDS_FIX") || strings.Contains(reviewUpper, "NEEDS FIX") || strings.Contains(reviewResult, "[需要返工]") {
 				fixResult, ferr := o.RunSubAgent(ctx, userID, projectID, o.firstRoleName(),
 					"Fix the issues found by the reviewer. Do NOT add features — only fix the issues listed:\n"+reviewResult,
-					results)
+					results, nil)
 				if ferr == nil {
 					results = append(results, fixResult)
 					reviewResult, _ = o.RunSubAgent(ctx, userID, projectID, o.firstRoleName(),
 						"Re-review after the fix. Is it acceptable now?",
-						results)
+						results, nil)
 				}
 			} else {
 				break
@@ -192,7 +192,7 @@ func (o *Orchestrator) executeBranch(ctx context.Context, userID, projectID, tri
 	branch := Branch{Trigger: trigger, Parent: "main"}
 	slog.Info("Branch triggered", "trigger", trigger[:min(80, len(trigger))])
 	analyzeResult, err := o.RunSubAgent(ctx, userID, projectID, o.firstRoleName(),
-		"Analyze this discovery and propose how to handle it:\n"+trigger, mainResults)
+		"Analyze this discovery and propose how to handle it:\n"+trigger, mainResults, nil)
 	if err != nil {
 		return branch
 	}
@@ -266,8 +266,8 @@ func (o *Orchestrator) lintRepairLoop(ctx context.Context, userID, projectID str
 		}
 		prevErrors = append(prevErrors, output)
 		slog.Info("Lint repair attempt", "attempt", i+1)
-		o.RunSubAgent(ctx, userID, projectID, "coder",
-			"Fix these lint errors. Only fix the lint issues — do NOT add features:\n"+output, nil)
+		o.RunSubAgent(ctx, userID, projectID, o.firstRoleName(),
+			"Fix these lint errors. Only fix the lint issues — do NOT add features:\n"+output, nil, nil)
 	}
 }
 

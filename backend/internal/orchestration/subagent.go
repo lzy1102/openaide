@@ -23,10 +23,14 @@ const subAgentCoreRules = `## Core Rules — ALWAYS Follow
 - Tool failed? Try an alternative approach. One failure is not a dead end.
 - Never leave TODO or FIXME comments. Either do it or don't mention it.`
 
+// SubAgentProgress is a callback for reporting sub-agent execution progress.
+// roleName: which role is executing; round: current round; status: "thinking"/"executing"/"done"/"error".
+type SubAgentProgress func(roleName string, round int, status string)
+
 // RunSubAgent creates an isolated session and runs a single role with a mini ReAct loop.
 // The sub-agent gets the role's allowed tools and can actually execute them.
 // Only the final result summary is returned — intermediate tool calls stay in the sub-session.
-func (o *Orchestrator) RunSubAgent(ctx context.Context, userID, projectID, roleName, task string, previousResults []string) (string, error) {
+func (o *Orchestrator) RunSubAgent(ctx context.Context, userID, projectID, roleName, task string, previousResults []string, onProgress SubAgentProgress) (string, error) {
 	role := o.getTeamRole(roleName)
 	if role == nil {
 		// Fallback: use first available role from Team
@@ -67,6 +71,11 @@ func (o *Orchestrator) RunSubAgent(ctx context.Context, userID, projectID, roleN
 	// Mini ReAct loop — sub-agents can think and act
 	const maxRounds = 10
 	for round := 0; round < maxRounds; round++ {
+		// Progress: thinking
+		if onProgress != nil {
+			onProgress(roleName, round, "thinking")
+		}
+
 		// Budget injection
 		if round >= maxRounds/2 && round < maxRounds-1 {
 			messages = append(messages, kernel.Message{
@@ -100,6 +109,9 @@ func (o *Orchestrator) RunSubAgent(ctx context.Context, userID, projectID, roleN
 
 		// No tool calls → return result
 		if len(resp.ToolCalls) == 0 {
+			if onProgress != nil {
+				onProgress(roleName, round, "done")
+			}
 			return resp.Content, nil
 		}
 
@@ -107,6 +119,9 @@ func (o *Orchestrator) RunSubAgent(ctx context.Context, userID, projectID, roleN
 		for _, tc := range resp.ToolCalls {
 			if tc.Function.Name == "" {
 				continue
+			}
+			if onProgress != nil {
+				onProgress(roleName, round, "executing:"+tc.Function.Name)
 			}
 			result, err := o.toolExec.Execute(ctx, tc, session.ID)
 			content := fmt.Sprintf("%v", result.Content)

@@ -255,7 +255,7 @@ func (t *Team) executeGraph(ctx context.Context, query string, opts kernel.Query
 			roleName = name
 		}
 
-		content, err := t.orchestrator.RunSubAgent(ctx, "", "", roleName, query, previousResults)
+		content, err := t.orchestrator.RunSubAgent(ctx, "", "", roleName, query, previousResults, nil)
 		if err != nil {
 			return nil, fmt.Errorf("role %s failed: %w", name, err)
 		}
