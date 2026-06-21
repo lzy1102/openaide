@@ -29,7 +29,11 @@ const subAgentCoreRules = `## Core Rules — ALWAYS Follow
 func (o *Orchestrator) RunSubAgent(ctx context.Context, userID, projectID, roleName, task string, previousResults []string) (string, error) {
 	role := o.getTeamRole(roleName)
 	if role == nil {
-		return "", fmt.Errorf("unknown role: %s", roleName)
+		// Fallback: use first available role from Team
+		role = o.firstTeamRole()
+		if role == nil {
+			return "", fmt.Errorf("no roles available")
+		}
 	}
 
 	// Build system prompt with role + core rules + project context
@@ -186,4 +190,13 @@ func groupByDependency(subtasks []SubTask) [][]SubTask {
 		}
 	}
 	return groups
+}
+
+
+// firstTeamRole returns the first available team role as fallback.
+func (o *Orchestrator) firstTeamRole() *TeamRole {
+	if o.team != nil {
+		return o.team.FirstRole()
+	}
+	return nil
 }

@@ -273,3 +273,27 @@ func (t *Team) roleNames() string {
 	}
 	return strings.Join(names, ", ")
 }
+
+// FirstRole returns the first available role (for fallback).
+func (t *Team) FirstRole() *TeamRole {
+	if t == nil {
+		return nil
+	}
+	for _, r := range t.roles {
+		return r
+	}
+	return nil
+}
+
+// RoleNames returns all role names for LLM routing prompts.
+func (t *Team) RoleNames() string {
+	if t == nil {
+		return "coder"
+	}
+	var names []string
+	for id, r := range t.roles {
+		names = append(names, fmt.Sprintf("%s(%s)", id, r.Description))
+	}
+	return strings.Join(names, ", ")
+}
+

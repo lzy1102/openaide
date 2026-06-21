@@ -56,7 +56,7 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 				}
 				roleName := roleMap[idx]
 				if roleName == "" {
-					roleName = "coder"
+					roleName = o.firstRoleName()
 				}
 				var deps []string
 				for _, depID := range st.DependsOn {
@@ -87,7 +87,7 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 	}
 
 	// Phase 2: Verify — executor runs tests/lint
-	execResult, err := o.RunSubAgent(ctx, userID, projectID, "executor",
+	execResult, err := o.RunSubAgent(ctx, userID, projectID, o.firstRoleName(),
 		"Verify all subtask results work together. Run tests and linters. Report failures.",
 		results)
 	if err != nil {
@@ -98,7 +98,7 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 	}
 
 	// Phase 3: Review — reviewer checks overall quality
-	reviewResult, err := o.RunSubAgent(ctx, userID, projectID, "reviewer",
+	reviewResult, err := o.RunSubAgent(ctx, userID, projectID, o.firstRoleName(),
 		"Review the complete execution. Check correctness, style, and edge cases. Summarize final status.",
 		results)
 	if err != nil {
@@ -108,12 +108,12 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 		for retry := 0; retry < 2; retry++ {
 			reviewUpper := strings.ToUpper(reviewResult)
 			if strings.Contains(reviewUpper, "NEEDS_FIX") || strings.Contains(reviewUpper, "NEEDS FIX") || strings.Contains(reviewResult, "[需要返工]") {
-				fixResult, ferr := o.RunSubAgent(ctx, userID, projectID, "coder",
+				fixResult, ferr := o.RunSubAgent(ctx, userID, projectID, o.firstRoleName(),
 					"Fix the issues found by the reviewer. Do NOT add features — only fix the issues listed:\n"+reviewResult,
 					results)
 				if ferr == nil {
 					results = append(results, fixResult)
-					reviewResult, _ = o.RunSubAgent(ctx, userID, projectID, "reviewer",
+					reviewResult, _ = o.RunSubAgent(ctx, userID, projectID, o.firstRoleName(),
 						"Re-review after the fix. Is it acceptable now?",
 						results)
 				}
@@ -143,12 +143,15 @@ func (o *Orchestrator) routePipeline(ctx context.Context, plan *Plan) map[int]st
 		return result
 	}
 	if len(plan.Subtasks) == 1 {
-		result[0] = "coder"
+		result[0] = o.firstRoleName()
 		return result
 	}
 
 	var prompt strings.Builder
-	prompt.WriteString("Assign each subtask to the best role. Roles: analyst, coder, reviewer, executor.\n\n")
+	prompt.WriteString("Assign each subtask to the best role.\n\n")
+	if o.team != nil {
+		prompt.WriteString(fmt.Sprintf("Available roles: %s\n\n", o.team.RoleNames()))
+	}
 	prompt.WriteString(fmt.Sprintf("Goal: %s\n\n", plan.Goal))
 	prompt.WriteString("Subtasks:\n")
 	for _, st := range plan.Subtasks {
@@ -165,7 +168,7 @@ func (o *Orchestrator) routePipeline(ctx context.Context, plan *Plan) map[int]st
 	})
 	if err != nil {
 		for i := range plan.Subtasks {
-			result[i] = "coder"
+			result[i] = o.firstRoleName()
 		}
 		return result
 	}
@@ -188,7 +191,7 @@ func (o *Orchestrator) routePipeline(ctx context.Context, plan *Plan) map[int]st
 func (o *Orchestrator) executeBranch(ctx context.Context, userID, projectID, trigger string, mainResults []string, branches *[]Branch) Branch {
 	branch := Branch{Trigger: trigger, Parent: "main"}
 	slog.Info("Branch triggered", "trigger", trigger[:min(80, len(trigger))])
-	analyzeResult, err := o.RunSubAgent(ctx, userID, projectID, "analyst",
+	analyzeResult, err := o.RunSubAgent(ctx, userID, projectID, o.firstRoleName(),
 		"Analyze this discovery and propose how to handle it:\n"+trigger, mainResults)
 	if err != nil {
 		return branch
@@ -299,4 +302,15 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+
+// firstRoleName returns the first available role name, or "coder" as last resort.
+func (o *Orchestrator) firstRoleName() string {
+	if o.team != nil {
+		if role := o.team.FirstRole(); role != nil {
+			return role.Name
+		}
+	}
+	return "coder"
 }
