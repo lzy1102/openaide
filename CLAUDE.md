@@ -189,10 +189,11 @@ analyzeQuery(query, available_skills):
 
 **Before**: `detectTaskType()` + `SkillActor.DetectSkill()` + `AdaptiveRounds.estimateWithLLM()` — three independent 30-token calls, each blind to the others' context.
 
-**After**: One structured call sees the full picture (query + all skills + their tools) and makes a coherent decision. Results are cached on `AgentKernel.cachedAnalysis` and consumed by:
-- `detectTaskType()` → uses cache, skips LLM
-- `SkillActor.InjectPrompt()` / `GetTools()` → `UsePreMatch(skillID)` → `DetectSkill` returns pre-matched skill without LLM
-- `determineMaxRounds()` → uses `cachedAnalysis.Complexity`
+**After**: One structured call sees the full picture (query + all skills + their tools) and makes a coherent decision. The result (`*QueryAnalysis`) is stored as a local variable in `ProcessStream` and passed explicitly through the call chain:
+- `detectTaskType()` → always calls LLM (lightweight classification, ~30 tokens)
+- `SkillActor.UsePreMatch(skillID)` → `DetectSkill` returns pre-matched skill without LLM
+- `determineMaxRounds()` → receives `analysis.Complexity` as parameter
+- `doReflection()` → receives `analysis` as parameter for post-processing decisions
 - Falls back gracefully to individual LLM calls when analysis fails.
 
 ### LLM-driven decision making (zero hardcoded rules)

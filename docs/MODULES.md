@@ -35,7 +35,7 @@
 
 ```
 cmd/cli (REPL)          ──→ infra ──→ kernel ──→ llm / tools / memory
-cmd/server                 ──→ infra ──→ api ──→ orchestration ──→ kernel
+openaide server            ──→ infra ──→ api ──→ orchestration ──→ kernel
                                           ├── auth / knowledge / feedback
                                           ├── channel (Webhook/飞书/Telegram)
                                           └── plugin (Claude Code 格式)

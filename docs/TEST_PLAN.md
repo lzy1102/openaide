@@ -11,8 +11,8 @@
 
 ```bash
 # 启动命令
-cd backend && go build -o /tmp/openaide-server ./cmd/server/
-/tmp/openaide-server -config ~/.openaide/config.yaml
+cd backend && go build -o /tmp/openaide ./cmd/cli/
+/tmp/openaide server -config ~/.openaide/config.yaml
 ```
 
 ---
@@ -195,7 +195,7 @@ grep "distillable\|Skill distilled\|evaluateAndDistill" server.log
 | C2 | **PASS** | distill_enabled=false → 恢复后 distill=true |
 | C3 | **PASS** | 配置修改后 3 秒日志出现 "Config reloaded" + "Kernel config applied" |
 | RG1 | **PASS** | `go test ./...` 26/27 通过（CLI 已有失败） |
-| RG2 | **PASS** | `go build ./cmd/server` 成功 |
+| RG2 | **PASS** | `go build ./cmd/cli` 成功 |
 | RG3 | **PASS** | API 返回 SSE 流（404 on /health — 端点不存在，非 bug） |
 | RG4 | **PASS** | SSE 顺序: thinking → tool_call → tool_done → content → done |
 
@@ -328,7 +328,7 @@ grep "MCP tool registered" server.log
 | ID | 用例 | 预期 |
 |----|------|------|
 | RG1 | `go test ./...` | 全通过 |
-| RG2 | `go build ./cmd/server` | 成功 |
+| RG2 | `go build ./cmd/cli` | 成功 |
 | RG3 | API health | 返回 200 |
 | RG4 | SSE 流完整性 | content → tool_call → tool_done → done 顺序正确 |
 
