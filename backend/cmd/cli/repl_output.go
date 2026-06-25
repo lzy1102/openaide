@@ -97,41 +97,32 @@ func AddToolResult(name, summary, errStr string) {
 
 func EndToolSection() {
 	if len(currentToolSection.names) == 0 { return }
-	total := len(currentToolSection.names)
 	errors := 0
 	for _, e := range currentToolSection.errors {
 		if e != "" { errors++ }
 	}
 
-	if errors == 0 && total > 1 {
-		seen := make(map[string]bool)
-		var names []string
-		for _, n := range currentToolSection.names {
-			if !seen[n] { seen[n] = true; names = append(names, n) }
-		}
-		pterm.Info.Printfln("📁 %d tools (%s)", total, strings.Join(names, ", "))
-		return
+	// Compact: always show one-line summary
+	seen := make(map[string]bool)
+	var names []string
+	for _, n := range currentToolSection.names {
+		if !seen[n] { seen[n] = true; names = append(names, n) }
 	}
-
-	for i, name := range currentToolSection.names {
-		marker := cToolOK + "✓" + cReset
-		if currentToolSection.errors[i] != "" {
-			marker = cToolErr + "✗" + cReset
-		}
-		info := ""
-		if currentToolSection.results[i] != "" {
-			info = " " + pterm.Gray(currentToolSection.results[i])
-		}
-		fmt.Printf("  %s %s%s%s\n", marker, pterm.Cyan(name), info, cReset)
-	}
-	fmt.Println()
+	icon := "📁"
+	if errors > 0 { icon = "⚠️" }
+	fmt.Printf("  %s %s%s%s\n", icon, pterm.Cyan(strings.Join(names, ", ")), cReset, cReset)
 }
 
 // ── Thinking ──────────────────────────────────────────────
 
+var lastThink string
+
 func PrintThinking(text string) {
 	firstLine := strings.SplitN(text, "\n", 2)[0]
-	if len(firstLine) > 100 { firstLine = firstLine[:97] + "..." }
+	if len(firstLine) > 80 { firstLine = firstLine[:77] + "..." }
+	// Dedup: skip identical consecutive think lines
+	if firstLine == lastThink { return }
+	lastThink = firstLine
 	fmt.Printf("\r\033[K  %s[think]%s %s%s%s\n", cThink, cReset, cDim, firstLine, cReset)
 }
 
@@ -175,20 +166,13 @@ func PrintStatusBar(tokens, tools int, elapsed time.Duration, model string, cach
 		parts = append(parts, pterm.Gray(model))
 	}
 	if tokens > 0 {
-		parts = append(parts, fmt.Sprintf("%s⚡ %dk tokens%s", cInfo, tokens/1000, cReset))
-	}
-	if cacheHit > 0 {
-		pct := cacheHit * 100 / (cacheHit + cacheMiss)
-		parts = append(parts, fmt.Sprintf("%s💾 cache %d%%%s", cInfo, pct, cReset))
-	}
-	if sessionTokens > 0 && sessionTokens != tokens {
-		parts = append(parts, fmt.Sprintf("%s累计 %dk%s", cInfo, sessionTokens/1000, cReset))
+		parts = append(parts, fmt.Sprintf("%s⚡ %dk%s", cInfo, tokens/1000, cReset))
 	}
 	if tools > 0 {
-		parts = append(parts, fmt.Sprintf("%s🔧 %d tools%s", cInfo, tools, cReset))
+		parts = append(parts, fmt.Sprintf("%s🔧 %d%s", cInfo, tools, cReset))
 	}
 	parts = append(parts, fmt.Sprintf("%s⏱ %v%s", cInfo, elapsed.Round(100*time.Millisecond), cReset))
-	fmt.Printf("\n  %s\n\n", strings.Join(parts, "  │  "))
+	fmt.Printf("  %s  %s\n", pterm.Gray("│"), strings.Join(parts, "  │  "))
 }
 
 // ── Message Helpers ───────────────────────────────────────
