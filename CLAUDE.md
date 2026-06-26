@@ -84,8 +84,9 @@ OpenAIDE is an AI Agent kernel platform in Go. Strictly layered, CSP actor concu
 │    kernel/graph/  — DAG topological sort                 │
 ├──────────────────────────────────────────────────────────┤
 │  llm/          tools/         memory/      knowledge/    │
-│  Multi-provider 40+ tools    Session mem  Vector ANN     │
+│  Multi-provider 43 tools     Session mem  Vector ANN     │
 │  Gateway+Rtr   Filesystem     Embed cache   RAG + Refine │
+│               Browser/Desktop/LSP/MCP                    │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -106,7 +107,7 @@ OpenAIDE is an AI Agent kernel platform in Go. Strictly layered, CSP actor concu
 
 ### Layered design
 
-1. **`backend/internal/infra/`** (4 files) — Application container, split by concern:
+1. **`backend/internal/infra/`** (7 files) — Application container, split by concern:
    - `app.go` — `Application` struct, `NewApplication` (~150 lines), `Start`, `Stop`. MCP wiring from both `config.yaml` and Claude `.mcp.json` plugins.
    - `app_llm.go` — `createLLMGateway()` — provider registration, router, prompt cache
    - `app_kernel.go` — `createKernel()` — kernel + all enhancements. Claude skills injection (`DiscoverClaudeSkills()` → `AddClaudeSkill()`). Claude hooks wiring (`DiscoverClaudeHooks()` → `agentKernel.Subscribe()` with shell execution).
@@ -142,7 +143,7 @@ OpenAIDE is an AI Agent kernel platform in Go. Strictly layered, CSP actor concu
    - `memory_actor.go` — MemoryActor (working memory + archival storage + core facts). Agent-driven memory management: archive conversations, retrieve from archive, store core facts that survive all sessions.
    - `memory.go` — Legacy file-based memory (not default)
 
-3. **`backend/internal/tools/`** (9 files) — Tool definitions and handlers split by domain:
+3. **`backend/internal/tools/`** (18 files) — Tool definitions and handlers split by domain:
    - `registry.go` — `Registry` framework, `BuiltinTools()` concatenates domain-specific defs, `BuiltinHandlers()`, `RegisterBuiltins()`, `safeAbsPath()`, `formatBytes()`
    - `tools_filesystem.go` — read_file (with offset/limit), write_file, execute_command, list_directory, search_files
    - `tools_knowledge.go` — search_knowledge, add_knowledge, `KnowledgeAccessor` interface, `WithKnowledge()`
@@ -168,7 +169,7 @@ OpenAIDE is an AI Agent kernel platform in Go. Strictly layered, CSP actor concu
 
 7. **`backend/internal/api/`** — HTTP REST API + WebSocket. Routes: `POST /api/v1/chat`, `POST /api/v1/chat/stream` (SSE), `GET /api/v1/sessions`, etc. WebSocket heartbeat uses `done` channel for clean shutdown.
 
-8. **`backend/internal/orchestration/`** (3 files + subagent.go) — Full task lifecycle management:
+8. **`backend/internal/orchestration/`** (7 files) — Full task lifecycle management:
    - `orchestrator.go` — `ProcessQuery` → LLM planning → DeepPlan pipeline. `executePlan` with **self-correcting loop**: test→review→analyst(root cause)→coder(fix)→retry (until pass or BLOCKED). **Branch-converge model**: sub-agent signals `[DISCOVERY:]` → branch(analyze+fix) → converge back to main line → update remaining steps. `CleanupOldSessions` for sub-agent session GC.
    - `planner.go` — `Planner`: Research (multi-round hypothesis→verify→report, read-only tools), Propose (2-3 alternatives with reasoning/pros/cons/risk/effort), PlanWithApproach (detailed plan from chosen approach).
    - `team.go` — Team with LLM-defined dynamic roles. `GenerateRoles`: LLM analyzes the task and outputs custom roles (name, description, prompt, tools) as JSON. Falls back to 4 default roles (analyst/coder/reviewer/executor). `routePipeline`: LLM assigns all subtask roles at once.
@@ -177,7 +178,7 @@ OpenAIDE is an AI Agent kernel platform in Go. Strictly layered, CSP actor concu
 
 ### Unified Query Analysis (single-pass pre-execution)
 
-Before the ReAct loop, `kernel_analyze.go:analyzeQuery()` makes ONE holistic LLM call that replaces what was previously 3-4 fragmented micro-judgments:
+Before the ReAct loop, `analyzeQuery()` (in `kernel_prompt.go`) makes ONE holistic LLM call that replaces what was previously 3-4 fragmented micro-judgments:
 
 ```
 analyzeQuery(query, available_skills):
@@ -549,7 +550,7 @@ Skill distillation works with ALL providers. If `embedding_model` is set (OpenAI
 - `cmd/cli/repl_output.go` — pterm/ANSI styling, glamour renderer, output helpers
 - `cmd/cli/setup.go` — interactive setup wizard (language→provider→API key→model)
 
-### Unbounded ReAct loop (Claude Code style)
+### Adaptive ReAct loop (Claude Code style)
 
 No artificial round limits. The LLM decides when to stop. Budget hints at rounds 10, 20, 50 — gentle reminders, not hard limits. 200-round safety net. Sync path (`Process`) is a thin wrapper over `ProcessStream` — both share one canonical ReAct implementation in `kernel_stream.go`. `finalizeResponse` unifies post-loop work (save memory, update session, generate title, reflection).
 
@@ -659,7 +660,7 @@ Response → doReflection (LLMReflection) → quality score 1-10
 - All inter-module communication uses interfaces defined in `kernel/interfaces.go`
 - LLM Gateway implements `kernel.LLMProvider` — passed directly to kernel, planner, skill manager
 - File session store default (crash-recoverable); `SessionStoreAdapter` is fallback
-- All 22 tool handlers implemented across 9 source files; no stubs
+- All 43 tool handlers implemented across 18 source files; no stubs
 - DeepSeek behavior gated by `isDeepSeek()` checking base URL + provider name
 - Prompt: file-based with bilingual fallback; `SetSystemPrompt()` hot-reloads without restart
 - First-run onboarding: template → LLM interview → TUI
