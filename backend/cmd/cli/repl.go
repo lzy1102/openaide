@@ -91,7 +91,6 @@ func runREPL(app *infra.Application, continueSess, autoYes bool) {
 	}
 	fmt.Printf("  %s%s%s", cInfo, "  ◆  "+filepath.Base(cwd), cReset)
 	fmt.Println()
-	fmt.Println()
 	fmt.Printf("  %s ", Version)
 	fmt.Printf("  %s/h%s help  %s|%s  %s/q%s quit  %s|%s  @file  Ctrl+C interrupt\n", cYellow, cReset, cInfo, cReset, cYellow, cReset, cInfo, cReset)
 	fmt.Println()
@@ -152,6 +151,8 @@ func runREPL(app *infra.Application, continueSess, autoYes bool) {
 	rl.SetPrompt(PromptStyle(sessionID, modelName, false, sessionTitle))
 	rl.HistoryAutoWrite = true
 	rl.History = newFileHistory(os.Getenv("HOME") + "/.openaide/history")
+	// Note: paste multi-line protection — lmorg/readline doesn't expose bracketed paste.
+	// Use Alt+Enter (GetMultiLine) for multi-line input instead.
 
 
 	commands := []string{"/help", "/clear", "/model", "/lang", "/log", "/sessions", "/session",
@@ -260,7 +261,6 @@ var history []string // 会话内查询历史（Ctrl+R 搜索）
 		}
 
 		// ── Smart routing: PreviewPlan → direct or team execution ──
-		fmt.Println()
 		spinner, _ := pterm.DefaultSpinner.WithShowTimer(false).Start(lang.T("repl.analyzing"))
 		planCtx, planCancel := context.WithTimeout(context.Background(), app.Orchestrator.PreviewTimeout)
 		plan, planErr := app.Orchestrator.PreviewPlan(planCtx, query)
