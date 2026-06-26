@@ -7,7 +7,9 @@ import (
 	"log/slog"
 	"os"
 	osexec "os/exec"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 	"regexp"
 	"strings"
 	"time"
@@ -55,6 +57,10 @@ func (h *fileHistory) GetLine(i int) (string, error) {
 
 func (h *fileHistory) Len() int     { return len(h.items) }
 func (h *fileHistory) Dump() interface{} { return h.items }
+
+// activeRequest holds the cancel function for the current request.
+// Pressing Ctrl+C calls this to cancel the active operation instead of exiting.
+var activeCancel context.CancelFunc
 
 // ── REPL ──────────────────────────────────────────────────
 
@@ -235,6 +241,25 @@ var history []string // 会话内查询历史（Ctrl+R 搜索）
 		return nil
 	}
 
+	// Ctrl+C handler: first press cancels current request, second exits
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT)
+	go func() {
+		presses := 0
+		for range sigCh {
+			presses++
+			if activeCancel != nil {
+				activeCancel()
+				activeCancel = nil
+				fmt.Printf("\r\033[K  %s⚠ Interrupted — press Ctrl+C again to exit%s\n", cYellow, cReset)
+				presses = 0
+			} else if presses >= 2 {
+				fmt.Println("\n  " + lang.T("repl.goodbye"))
+				os.Exit(0)
+			}
+		}
+	}()
+
 	for {
 		line, err := rl.Readline()
 		if err != nil {
@@ -369,6 +394,8 @@ func execCmd(name string, args ...string) (string, error) {
 
 func executeStreamQuery(app *infra.Application, query string, sessionID *string, autoYes bool) {
 	ctx, cancel := context.WithCancel(context.Background())
+	activeCancel = cancel
+	defer func() { activeCancel = nil; cancel() }()
 	opts := kernel.QueryOptions{
 		OnApproval: func(tool, path, args string) bool {
 			if autoYes { return true }
@@ -928,7 +955,8 @@ case "/analyst", "/coder", "/reviewer", "/executor":
 		if task == "" { PrintWarning("usage: " + parts[0] + " <task>"); return }
 		fmt.Printf("  %s⚙%s %s running…\n", cYellow, cReset, role)
 		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		activeCancel = cancel
+		defer func() { activeCancel = nil; cancel() }()
 		result, err := app.Orchestrator.RunSubAgent(ctx, "cli-user", "default", role, task, nil, nil)
 		if err != nil { PrintError(fmt.Sprintf("%v", err)); return }
 		if result != "" { fmt.Print(RenderMarkdown(result)) }
@@ -939,7 +967,8 @@ case "/analyst", "/coder", "/reviewer", "/executor":
 		if task == "" { PrintWarning("usage: /team <task>"); return }
 		fmt.Printf("  %s⚙%s team: analyst → coder → reviewer\n", cYellow, cReset)
 		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		activeCancel = cancel
+		defer func() { activeCancel = nil; cancel() }()
 		prevResults := []string{}
 		for _, role := range []string{"analyst", "coder", "reviewer"} {
 			fmt.Printf("    %s…%s", role, cReset)
