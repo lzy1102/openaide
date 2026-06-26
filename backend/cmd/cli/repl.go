@@ -157,8 +157,16 @@ func runREPL(app *infra.Application, continueSess, autoYes bool) {
 	rl.SetPrompt(PromptStyle(sessionID, modelName, false, sessionTitle))
 	rl.HistoryAutoWrite = true
 	rl.History = newFileHistory(os.Getenv("HOME") + "/.openaide/history")
-	// Note: paste multi-line protection — lmorg/readline doesn't expose bracketed paste.
-	// Use Alt+Enter (GetMultiLine) for multi-line input instead.
+	// ESC handler: cancel active request, or pass through for readline defaults
+	rl.AddEvent("\x1b", func(eventId int, state *readline.EventState) *readline.EventReturn {
+		if activeCancel != nil {
+			activeCancel()
+			activeCancel = nil
+			fmt.Printf("\r\033[K  %s⚠ Cancelled%s\n", cYellow, cReset)
+			return &readline.EventReturn{Continue: true}
+		}
+		return &readline.EventReturn{Continue: true} // pass through to readline default
+	})
 
 
 	commands := []string{"/help", "/clear", "/model", "/lang", "/log", "/sessions", "/session",
