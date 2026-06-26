@@ -931,7 +931,7 @@ case "/analyst", "/coder", "/reviewer", "/executor":
 		defer cancel()
 		result, err := app.Orchestrator.RunSubAgent(ctx, "cli-user", "default", role, task, nil, nil)
 		if err != nil { PrintError(fmt.Sprintf("%v", err)); return }
-		if result != "" { fmt.Println(); fmt.Println(RenderMarkdown(result)) }
+		if result != "" { fmt.Print(RenderMarkdown(result)) }
 		PrintSuccess(role + " done")
 
 	case "/team":
@@ -948,9 +948,8 @@ case "/analyst", "/coder", "/reviewer", "/executor":
 			prevResults = append(prevResults, result)
 			fmt.Print("\r\033[K")
 		}
-		fmt.Println()
 		final := prevResults[len(prevResults)-1]
-		fmt.Println(RenderMarkdown(final))
+		fmt.Print(RenderMarkdown(final))
 		PrintSuccess("team done")
 
 
