@@ -38,7 +38,7 @@ var reflectionTool = ToolDefinition{
 				},
 				"suggestions": map[string]interface{}{
 					"type":        "array",
-					"description": "Actionable suggestions for improvement",
+					"description": "Behavioral rules for the next round: 'When X, always Y' format",
 					"items":       map[string]interface{}{"type": "string"},
 				},
 				"learned": map[string]interface{}{
@@ -91,7 +91,9 @@ func (r *LLMReflection) Reflect(ctx context.Context, sessionID string, execution
 1. Rate overall quality (1-10)
 2. Rate each step: was the tool choice correct? Was the right file read? Was the edit precise?
 3. Identify the BEST decision in this execution (what to reinforce)
-4. Identify the WEAKEST decision (what to fix next time)
+4. Identify the WEAKEST decision and output a SPECIFIC BEHAVIORAL RULE for the next round.
+   Format: 'When [situation], always [action].' Example: 'When editing a file after running a
+   command, always re-read the file first.' Not: 'better file handling needed.'
 6. Infer user verdict from conversation: [good]/[bad]/[neutral]`,
 		execution.Query, execution.Response, trace.String(),
 		execution.Success, execution.Error,
