@@ -828,6 +828,9 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 		sess, _ := app.Orchestrator.CreateSession(context.Background(), "default", "cli-user")
 		*sessionID = sess.ID
 
+	case "/undo":
+		handleUndo(app, *sessionID)
+
 	case "/model":
 		if len(parts) >= 2 {
 			app.SetModel(parts[1]); *modelName = parts[1]
