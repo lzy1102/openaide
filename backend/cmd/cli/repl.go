@@ -503,13 +503,12 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string,
 	if fullResponse.Len() > 0 {
 		// 渲染最终回答
 		rendered := RenderMarkdown(fullResponse.String())
-		fmt.Println(rendered)
+		fmt.Print(rendered)
 	}
 	PrintStatusBar(totalTokens, totalTools, elapsed, "deepseek-v4-pro", cacheHit, cacheMiss)
 
-	fmt.Printf("\n%s▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸%s\n\n", cDim, cReset)
+	fmt.Printf("%s──%s\n", cDim, cReset)
 	if qs := app.ToolRegistry.GetPendingQuestions(); len(qs) > 0 {
-		fmt.Println()
 		for _, q := range qs {
 			fmt.Printf("  %s❓ %s%s\n", pterm.Yellow(""), q, cReset)
 		}
@@ -570,12 +569,10 @@ func executePlanQuery(app *infra.Application, query string, plan *orchestration.
 
 	totalTools := resp.ToolCalls
 	if resp.Content != "" {
-		fmt.Println()
-		fmt.Println(RenderMarkdown(resp.Content))
+		fmt.Print(RenderMarkdown(resp.Content))
 	}
 	PrintStatusBar(resp.TokensUsed, totalTools, elapsed, "deepseek-v4-pro", resp.CacheHit, resp.CacheMiss)
 	if qs := app.ToolRegistry.GetPendingQuestions(); len(qs) > 0 {
-		fmt.Println()
 		for _, q := range qs {
 			fmt.Printf("  %s❓ %s%s\n", pterm.Yellow(""), q, cReset)
 		}
