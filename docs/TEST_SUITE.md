@@ -8,7 +8,7 @@
 
 ```bash
 # 确保二进制是最新的
-make build && cp bin/openaide ~/.local/bin/
+make build && cp bin/openaide ~/.openaide/bin/
 
 # 清理测试数据（可选，全新测试体验）
 rm -rf ~/.openaide/data/
