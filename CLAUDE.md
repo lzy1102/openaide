@@ -116,7 +116,7 @@ OpenAIDE is an AI Agent kernel platform in Go. Strictly layered, CSP actor concu
 2. **`backend/internal/kernel/`** — Core agent kernel with CSP actor architecture:
    - `kernel.go` — `AgentKernel` struct, Config, constructor, state management, event system.
    - `kernel_process.go` — `Process()` sync path + `doReflection()` + `autoSaveKnowledge()` + `extractSkillsFromPatterns()`
-   - `kernel_stream.go` — `ProcessStream()` streaming path. Tool partitioning with parallel-safe batching.
+    - `kernel_stream.go` — `ProcessStream()` streaming path. Tool partitioning with parallel-safe batching. **Auto-verification**: after coding, detects project test command (go test/npm test/make test) and runs it; failures injected as user messages back into ReAct loop.
    - `kernel_prompt.go` — Layered prompt system (L0-L5), LLM task classification, file overrides, L3 dynamic tail.
    - `kernel_react.go` — Shared ReAct helpers: prepareReActRound, partitionToolCalls, executeToolBatch
    - `semantic_pattern.go` — SemanticPatternDetector (embedding clustering) + DistillCluster (LLM knowledge extraction)
@@ -362,10 +362,12 @@ All tools return structured, agent-friendly output:
 
 ### Prompt system
 
-- **Layered architecture**: Stable prefix (L0 Identity + L1 Project + L2 Skill) cached in system message. Dynamic tail (L3 Task Adapter + L5 Reflection + L6 Knowledge RAG) appended per-query.
-- **L0**: Core rules — Hard Blocks + Grounding Protocol + Certainty Labels + Coding Workflow + Review Mode + Debugging Mode + Interaction + Learning (~30 rules, ~600 tokens).
+- **Layered architecture**: Stable prefix (L0 Identity + L1 Project + L2 Skill) cached in system message. Dynamic tail (L3 Mode Signal + L5 Reflection + L6 Knowledge RAG) appended per-query.
+- **L0**: Core rules — Hard Blocks + Grounding Protocol + Certainty Labels + Coding Workflow + Engineering Checklist + Review Mode + Debugging Mode + Interaction + Learning (~30 rules, ~600 tokens).
 - **L1**: Project context — working directory, git branch, CLAUDE.md / OPENAIDE.md loading, RepoMap. Auto-detects 21 languages (go/java/python/rust/c/c++/c#/swift/kotlin/node/php/ruby/scala/dart/elixir/haskell/erlang/ocaml/r/lua/julia/perl) and injects language-specific conventions.
 - **L3**: Mode activation signal injected per-query (dynamic tail). `detectTaskType()` uses LLM to classify into 5 categories: coding/review/think/debugging/general. Each mode is a 2-3 line activation signal — all real rules live in L0. No duplication between layers.
+- **Engineering Checklist** (L0): When modifying code, agent proactively checks test runnability, config strictness, CI/CD, data backward compatibility, and test coverage gaps.
+- **Auto-verification** (kernel): After coding and before "done", kernel auto-detects project test command (go.mod → `go test ./...`, package.json → `npm test`, etc.), runs it, and injects failures back into the ReAct loop for automatic fixing (max 3 retry rounds).
 - **User customization**: Add `.md` files to `~/.openaide/data/prompts/user/` — auto-appended after system layers. Never overwritten on upgrade. Onboarding creates commented templates.
 - **System prompts**: Always built-in (compiled Go code). Upgrades apply immediately — no disk files to conflict.
 - **Default prompt**: Bilingual (Chinese/English), auto-detected from `LANG` env var.
@@ -552,7 +554,7 @@ Skill distillation works with ALL providers. If `embedding_model` is set (OpenAI
 
 ### Adaptive ReAct loop (Claude Code style)
 
-No artificial round limits. The LLM decides when to stop. Budget hints at rounds 10, 20, 50 — gentle reminders, not hard limits. 200-round safety net. Sync path (`Process`) is a thin wrapper over `ProcessStream` — both share one canonical ReAct implementation in `kernel_stream.go`. `finalizeResponse` unifies post-loop work (save memory, update session, generate title, reflection).
+No artificial round limits. The LLM decides when to stop. Budget hints at rounds 10, 20, 50 — gentle reminders, not hard limits. 200-round safety net. Sync path (`Process`) is a thin wrapper over `ProcessStream` — both share one canonical ReAct implementation in `kernel_stream.go`. `finalizeResponse` unifies post-loop work (save memory, update session, generate title, reflection). **Auto-verification** runs before `finalizeResponse`: kernel auto-detects project test command, executes it, and injects failures back into the ReAct loop (max 3 rounds).
 
 ### User Experience
 
