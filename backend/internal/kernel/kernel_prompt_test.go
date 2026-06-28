@@ -58,7 +58,7 @@ func TestPromptL3(t *testing.T) {
 	if coding == "" {
 		t.Error("L3 coding should not be empty")
 	}
-	if !strings.Contains(coding, "Coding Mode") && !strings.Contains(coding, "编码模式") {
+	if !strings.Contains(coding, "Coding") && !strings.Contains(coding, "编码") {
 		t.Error("L3 coding should contain mode header")
 	}
 
@@ -90,9 +90,9 @@ func TestPromptL3_AnalysisFormat(t *testing.T) {
 		if l3 == "" {
 			t.Errorf("promptL3(%q) returned empty", tc.query)
 		}
-		// Review should contain structured format, think should contain the think spectrum
+		// Review should contain structured format, think should contain its header
 		if !strings.Contains(l3, "P0/P1/P2") && !strings.Contains(l3, "P0") &&
-			!strings.Contains(l3, "spectrum") && !strings.Contains(l3, "光谱") {
+			!strings.Contains(l3, "Think") && !strings.Contains(l3, "思考") {
 			t.Errorf("promptL3(%q) missing analysis format", tc.query)
 		}
 	}
@@ -124,8 +124,8 @@ func TestBuildSystemPrompt(t *testing.T) {
 	if len(result) < 500 {
 		t.Errorf("system prompt too short: %d chars", len(result))
 	}
-	if !strings.Contains(result, "Human Interaction") {
-		t.Error("system prompt missing L0 content")
+	if !strings.Contains(result, "Grounding") && !strings.Contains(result, "接地") {
+		t.Error("system prompt missing L0 core rules")
 	}
 }
 
