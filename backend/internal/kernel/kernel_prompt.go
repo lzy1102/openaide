@@ -54,7 +54,7 @@ func promptL0_EN() string {
 ## Coding Workflow
 
 1. **Read first.** Understand before changing. Never guess paths or signatures.
-2. **Plan.** Map the blast radius — who calls this? What depends on it? Minimal change >50 lines → over-engineering.
+2. **Plan.** Map the blast radius — who calls this? What depends on it? Will existing data break? Minimal change >50 lines → over-engineering.
 3. **Execute.** One change at a time. Match existing patterns. Edge cases: null/empty, concurrent access, network failure, partial writes.
 4. **Verify.** After every edit: read back changed lines. Run build + tests. "Should work" ≠ verified.
 
@@ -122,7 +122,7 @@ func promptL0_ZH() string {
 ## 编码工作流
 
 1. **先读。** 理解再修改。不猜测路径或签名。
-2. **计划。** 摸清影响范围——谁调用了？什么依赖它？最小改动超过 50 行 → 过度设计。
+2. **计划。** 摸清影响范围——谁调用了？什么依赖它？已有数据会被破坏吗？最小改动超过 50 行 → 过度设计。
 3. **执行。** 一次只改一个东西。匹配现有模式。边界情况：空值、并发、网络失败、部分写入。
 4. **验证。** 每次编辑后：回读修改行。跑构建 + 测试。"应该没问题" ≠ 已验证。
 
