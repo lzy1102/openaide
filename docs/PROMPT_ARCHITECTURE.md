@@ -1,61 +1,83 @@
 # Prompt Architecture
 
-> 版本: v3.2.0 | 更新: 2026-06-26
+> 版本: v3.3.0 | 更新: 2026-06-28
 
 ## 设计原则
 
-**指令预算有限**。研究表明 thinking 模型在 ~150-200 条指令后遵守率开始均匀衰减——加一条新规则，已有规则的遵守率也下降。非 thinking 模型衰减更快（Claude Code internal research, 2025）。
+**指令预算有限**。研究表明 thinking 模型在 ~150-200 条指令后遵守率开始均匀衰减。非 thinking 模型衰减更快。
 
-因此设计目标：**L0 ≤ 30 条核心原则，L3 只补充不重复**。
+**解决**：L0 包含所有核心规则（~30 条），L3 只发模式信号（2-3 行）。无层间重复。
 
 ## 分层模型
 
 ```
-L0: 宪法      (~400 tokens, always loaded, cached)
-  只有"违反就无法正常工作"的原则
-  - 接地协议（Grounding Protocol）
-  - 工具安全红线
-  - 确定性标注规则
-  - 核心交互约定
+L0: 核心规则   (~600 tokens, always loaded, cached)
+  ├── Hard Blocks（8 条绝对禁止）
+  ├── Grounding Protocol（4 条接地规则）
+  ├── Certainty Labels（3 级确定性标注）
+  ├── Coding Workflow（Read→Plan→Execute→Verify）
+  ├── Review Mode（审查标签 + 防误报 + 输出格式）
+  ├── Debugging Mode（复现→假说→锁定→验证）
+  ├── Interaction（5 条交互约定）
+  └── Learning & Memory（4 条学习机制）
 
 L1: 项目上下文 (~200 tokens, auto-generated)
-  - 工作目录、Git 分支
-  - CLAUDE.md 等规则文件
-  - RepoMap 符号地图
-  - 语言特定约定
+  - 工作目录、Git 分支、CLAUDE.md、RepoMap、语言约定
 
 L2: 技能注入  (~100-500 tokens, SkillActor 动态注入)
-  - 匹配到的技能的 prompt
 
-L3: 任务适配  (~300-500 tokens, per-query dynamic)
-  - coding: 4 阶段工作流（只讲差异化步骤）
-  - review: 防误报规则 + 输出格式
-  - think: 探索深度自适应
-  - general: 空（L0+L1 足够）
+L3: 模式信号 (~50 tokens, per-query dynamic)
+  - coding: "Follow Coding Workflow. After changes: read back, build, test."
+  - review: "Follow Review Mode. Output in [P0/P1/P2] format."
+  - think: "Use certainty labels. Be specific."
+  - debugging: "Follow Debugging Mode: reproduce, hypothesize, lock, verify."
+  - general: 空（L0 足够）
 
 L4: 知识注入  (~50-200 tokens, RAG)
-  - 知识库检索到的相关文档
 
 L5: 上次反思  (~100 tokens, LLMReflection result)
-  - 质量评分 + 改进建议
 ```
 
-## 层间协议
+## 关键设计决策
 
-1. **L0 是唯一真理源**。所有通用规则（读后写、不猜测、验证）只在 L0 出现
-2. **L3 只加差异化内容**。不能重复 L0 的规则，不能引入新标签体系
-3. **确定性标注全局统一**。只用 `[verified] [inferred] [assumed]`，L3 不再定义自己的标签
-4. **每条指令有且仅有一处定义**。宁可少说，不说两遍
+### L3 从完整规则降为模式信号
+
+**之前**：L3 包含完整的工作流描述（coding 3210 chars, review 2500 chars），与 L0 有大量重复。
+
+**现在**：L3 每个模式 2-3 行，只发"激活信号"。所有真实规则在 L0。
+
+**原因**：
+1. LLM 不"组合"层——L3 的指令会覆盖 L0，而非补充
+2. 任务分类不可靠——"why is auth broken?" 可能分到 think 或 coding
+3. 层间重复浪费 20% token 预算
+4. 研究显示负面约束（Hard Blocks）比正面指引遵守率高 2-3 倍
+
+### Hard Blocks vs 正面指引
+
+**负面约束**（Hard Blocks）产生 70%+ 遵守率：
+- "Never claim facts about unread code"
+- "Never truncate code with '...'"
+
+**正面指引**（Soft Guidelines）产生 30-40% 遵守率：
+- "Be concise"
+- "Match existing patterns"
+
+因此 L0 优先使用负面约束格式——提升整体遵守率。
+
+### 所有模式规则在 L0 中
+
+Coding、Review、Debugging 的规则在 L0 独立章节——不依赖任务分类。LLM 看到全部规则，自行根据上下文选择合适的规则集。
 
 ## 参考文献
 
 - Anthropic. "Architecture and Production Patterns of Autonomous Coding Agents." ZenML LLMOps Database, 2025.
+- arXiv:2604.11088. "Negative constraints more effective than positive directives." 2026.
 - Arize AI. "CLAUDE.md: Best Practices Learned from Optimizing Claude Code with Prompt Learning." 2025.
 - Aider. "Separating code reasoning and editing." aider.chat, 2024.
-- Cline. System prompt source. github.com/cline/cline, 2025.
 
 ## 变更记录
 
 | 日期 | 变更 |
 |------|------|
-| 2026-06-26 | 初始版本：L0 剪枝至 30 条，L3 去重，标签统一 |
+| 2026-06-28 | v3.3.0: L3 降为模式信号。L0 扩至 ~30 条，合并 review/debugging 规则。新增 Hard Blocks 层级。 |
+| 2026-06-26 | v3.2.0: 初始版本。L0 剪枝至 22 条，L3 去重，标签统一。 |

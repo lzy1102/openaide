@@ -182,7 +182,7 @@ Before the ReAct loop, `analyzeQuery()` (in `kernel_prompt.go`) makes ONE holist
 
 ```
 analyzeQuery(query, available_skills):
-  → TaskType (coding/review/think/general)
+  → TaskType (coding/review/think/debugging/general)
   → SkillID (matched skill, or empty)
   → Complexity (estimated rounds)
   → Strategy (one-sentence approach hint)
@@ -363,9 +363,9 @@ All tools return structured, agent-friendly output:
 ### Prompt system
 
 - **Layered architecture**: Stable prefix (L0 Identity + L1 Project + L2 Skill) cached in system message. Dynamic tail (L3 Task Adapter + L5 Reflection + L6 Knowledge RAG) appended per-query.
-- **L0**: Core rules — Grounding Protocol + Certainty Labels + Coding Workflow + Red Lines + Interaction + Learning (~400 tokens, ~22 rules).
+- **L0**: Core rules — Hard Blocks + Grounding Protocol + Certainty Labels + Coding Workflow + Review Mode + Debugging Mode + Interaction + Learning (~30 rules, ~600 tokens).
 - **L1**: Project context — working directory, git branch, CLAUDE.md / OPENAIDE.md loading, RepoMap. Auto-detects 21 languages (go/java/python/rust/c/c++/c#/swift/kotlin/node/php/ruby/scala/dart/elixir/haskell/erlang/ocaml/r/lua/julia/perl) and injects language-specific conventions.
-- **L3**: Task adapter injected per-query (dynamic tail). `detectTaskType()` uses LLM (flash model) to classify query into 4 categories: coding/review/think/general. Coding uses 4-phase senior engineer workflow (Assess→Plan→Execute→Self-Review). Review has anti-false-positive rules + [RISK] label. Think covers the full spectrum from explanation to architecture analysis to greenfield design.
+- **L3**: Mode activation signal injected per-query (dynamic tail). `detectTaskType()` uses LLM to classify into 5 categories: coding/review/think/debugging/general. Each mode is a 2-3 line activation signal — all real rules live in L0. No duplication between layers.
 - **User customization**: Add `.md` files to `~/.openaide/data/prompts/user/` — auto-appended after system layers. Never overwritten on upgrade. Onboarding creates commented templates.
 - **System prompts**: Always built-in (compiled Go code). Upgrades apply immediately — no disk files to conflict.
 - **Default prompt**: Bilingual (Chinese/English), auto-detected from `LANG` env var.
