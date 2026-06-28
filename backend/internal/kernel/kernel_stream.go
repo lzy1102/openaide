@@ -2,8 +2,11 @@ package kernel
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
+	"os/exec"
 	"strings"
 	"time"
 )
@@ -67,6 +70,8 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 		totalToolCalls := 0
 		toolErrors := 0
 		startTime := time.Now()
+		filesModified := make(map[string]bool)
+		verifyAttempts := 0
 
 		slog.Info("ReAct stream: entering loop", "query", query.Content[:min(80, len(query.Content))], "max_rounds", maxRounds, "tools", len(tools), "history_msgs", len(messages))
 		for round := 0; ; round++ {
@@ -175,6 +180,16 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 
 			// 无工具调用 -> 返回结果
 			if len(lastToolCalls) == 0 {
+				if len(filesModified) > 0 && verifyAttempts < 3 {
+					verifyAttempts++
+					verifyMsg := runAutoVerify(context.Background(), ".")
+					if verifyMsg != "" {
+						messages = append(messages, Message{Role: "user", Content: verifyMsg})
+						lastToolCalls = []ToolCall{}
+						continue
+					}
+				}
+
 				session.Messages = messages
 				k.finalizeResponse(context.WithoutCancel(ctx), session, query, fullContent.String(), totalToolCalls, toolErrors, analysis)
 
@@ -215,6 +230,14 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 			execResults, batchErrors := k.executeToolBatch(ctx, lastToolCalls, session.ID, round, &query.Options)
 			toolErrors += batchErrors
 			totalToolCalls += len(execResults)
+
+			for _, tc := range lastToolCalls {
+				if tc.Function.Name == "write_file" || tc.Function.Name == "diff_edit" {
+					if path := extractFilePath(tc.Function.Arguments); path != "" {
+						filesModified[path] = true
+					}
+				}
+			}
 
 			// Send tool_done events + append results
 			for _, r := range execResults {
@@ -282,4 +305,66 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 	}()
 
 	return resultChan, nil
+}
+
+func detectTestCommand(dir string) string {
+	checks := []struct {
+		file string
+		cmd  string
+	}{
+		{"go.mod", "go test ./..."},
+		{"package.json", "npm test"},
+		{"Makefile", "make test"},
+		{"pyproject.toml", "pytest"},
+		{"Cargo.toml", "cargo test"},
+		{"pom.xml", "mvn test"},
+		{"build.gradle", "gradle test"},
+	}
+	for _, c := range checks {
+		if _, err := os.Stat(dir + "/" + c.file); err == nil {
+			return c.cmd
+		}
+	}
+	return ""
+}
+
+func runAutoVerify(ctx context.Context, dir string) string {
+	if dir == "" {
+		dir = "."
+	}
+	testCmd := detectTestCommand(dir)
+	if testCmd == "" {
+		return ""
+	}
+	cmdParts := strings.Fields(testCmd)
+	if len(cmdParts) == 0 {
+		return ""
+	}
+	slog.Debug("Auto-verifying", "cmd", testCmd)
+	var c *exec.Cmd
+	if len(cmdParts) == 1 {
+		c = exec.CommandContext(ctx, cmdParts[0])
+	} else {
+		c = exec.CommandContext(ctx, cmdParts[0], cmdParts[1:]...)
+	}
+	c.Dir = dir
+	out, err := c.CombinedOutput()
+	if err != nil {
+		output := string(out)
+		if len(output) > 2000 {
+			output = output[len(output)-2000:]
+		}
+		return fmt.Sprintf("[Auto-Verification] Command '%s' FAILED:\n%s\n\nFix the issue and try again.", testCmd, output)
+	}
+	return ""
+}
+
+func extractFilePath(argsJSON string) string {
+	var args struct {
+		Path string `json:"path"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return ""
+	}
+	return args.Path
 }
