@@ -8,8 +8,10 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"openaide/backend/internal/config"
@@ -400,6 +402,7 @@ func cmdServer(args []string) {
 		slog.Warn("Failed to load config, using default", "error", err)
 		cfg = config.DefaultConfig()
 	}
+	cfg.Server.Mode = "server"
 
 	infra.InitLogger(cfg.Log.Level, cfg.Log.Format)
 
@@ -429,9 +432,10 @@ func cmdServer(args []string) {
 		}
 	}()
 
-	// REPL mode handles its own SIGINT (cancel request on first press, exit on second)
-	// Server mode exits on SIGINT/SIGTERM.
-	// The REPL's runREPL() blocks until the user quits, then returns here.
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	<-sigChan
+
 	slog.Info("Shutting down...")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
