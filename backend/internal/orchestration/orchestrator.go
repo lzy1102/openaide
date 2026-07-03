@@ -22,7 +22,6 @@ type Orchestrator struct {
 	sessions    kernel.SessionStore
 	compressor  kernel.ContextCompressor
 	permission  kernel.PermissionChecker
-	knowledge   kernel.KnowledgeCollector
 	approver    PlanApprover // 规划审批回调（nil = 自动批准）
 	team        *Team        // 多 Agent 团队（可选）
 
@@ -79,11 +78,6 @@ func (o *Orchestrator) SetContextCompressor(c kernel.ContextCompressor) {
 // SetPermissionChecker 设置权限检查器
 func (o *Orchestrator) SetPermissionChecker(p kernel.PermissionChecker) {
 	o.permission = p
-}
-
-// SetKnowledgeCollector 设置知识收集器
-func (o *Orchestrator) SetKnowledgeCollector(kc kernel.KnowledgeCollector) {
-	o.knowledge = kc
 }
 
 // SetPlanApprover 设置规划审批回调（用于交互式确认）
@@ -263,11 +257,6 @@ func (o *Orchestrator) processSingle(ctx context.Context, userID, projectID, con
 		}
 	}
 
-	// 注入知识库到 context（供工具 handler 使用）
-	if o.knowledge != nil {
-		ctx = kernel.WithKnowledge(ctx, o.knowledge)
-	}
-
 	// 注入 ProjectMind 项目知识
 	if o.mind != nil {
 		query.Options.ProjectContext = o.mind.FactsForPrompt() + "\n" + o.mind.GenerateLearnedRules()
@@ -304,11 +293,6 @@ func (o *Orchestrator) ProcessQueryStream(ctx context.Context, userID, projectID
 		UserID:    userID,
 		ProjectID: projectID,
 		Options:   opts,
-	}
-
-	// 注入知识库到 context
-	if o.knowledge != nil {
-		ctx = kernel.WithKnowledge(ctx, o.knowledge)
 	}
 
 	// 注入 ProjectMind 项目知识
@@ -400,6 +384,14 @@ func (o *Orchestrator) GetSession(ctx context.Context, sessionID string) (*kerne
 		return nil, fmt.Errorf("session store not configured")
 	}
 	return o.sessions.Get(ctx, sessionID)
+}
+
+// UpdateSession 保存会话修改（ESC undo 等场景）
+func (o *Orchestrator) UpdateSession(ctx context.Context, session *kernel.Session) error {
+	if o.sessions == nil {
+		return fmt.Errorf("session store not configured")
+	}
+	return o.sessions.Update(ctx, session)
 }
 
 // GetStats 获取系统统计

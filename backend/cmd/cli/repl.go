@@ -157,7 +157,7 @@ func runREPL(app *infra.Application, continueSess, autoYes bool) {
 	rl.SetPrompt(PromptStyle(sessionID, modelName, false, sessionTitle))
 	rl.HistoryAutoWrite = true
 	rl.History = newFileHistory(os.Getenv("HOME") + "/.openaide/history")
-	// ESC handler: cancel active request, or pass through for readline defaults
+	// ESC handler: cancel active request, or undo last message pair
 	rl.AddEvent("\x1b", func(eventId int, state *readline.EventState) *readline.EventReturn {
 		if activeCancel != nil {
 			activeCancel()
@@ -165,7 +165,9 @@ func runREPL(app *infra.Application, continueSess, autoYes bool) {
 			fmt.Printf("\r\033[K  %s⚠ Cancelled%s\n", cYellow, cReset)
 			return &readline.EventReturn{Continue: true}
 		}
-		return &readline.EventReturn{Continue: true} // pass through to readline default
+		// No active request — undo last user+assistant message pair
+		undoLastMessage(app, sessionID)
+		return &readline.EventReturn{Continue: true}
 	})
 
 
@@ -828,6 +830,33 @@ func handleUndo(app *infra.Application, sessionID string) {
 		// Clear screen to show fresh context
 		fmt.Print("[2J[H")
 	}
+}
+
+func undoLastMessage(app *infra.Application, sessionID string) {
+	ctx := context.Background()
+	session, err := app.Orchestrator.GetSession(ctx, sessionID)
+	if err != nil || len(session.Messages) == 0 {
+		return
+	}
+
+	lastUserIdx := -1
+	for i := len(session.Messages) - 1; i >= 0; i-- {
+		if session.Messages[i].Role == "user" {
+			lastUserIdx = i
+			break
+		}
+	}
+	if lastUserIdx < 0 {
+		return
+	}
+
+	removed := len(session.Messages) - lastUserIdx
+	session.Messages = session.Messages[:lastUserIdx]
+
+	if err := app.Orchestrator.UpdateSession(ctx, session); err != nil {
+		return
+	}
+	fmt.Printf("\r\033[K  %s↩ Undone (%d messages removed)%s\n", cYellow, removed, cReset)
 }
 
 func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, modelName *string, autoYes *bool) {
