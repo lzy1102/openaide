@@ -30,9 +30,6 @@ type AgentKernel struct {
 
 	// 增强能力（可选）
 	reflection       Reflection
-	patternDetector  PatternDetector
-	knowledgeCollector KnowledgeCollector
-	qualityGate      QualityGate
 	skillActor *SkillActor // CSP actor, zero-lock
 	approver         Approver
 	adaptiveRounds   *AdaptiveRounds
@@ -42,6 +39,9 @@ type AgentKernel struct {
 
 	// 检查点系统
 	checkpointer Checkpointer
+
+	// 指标系统
+	metrics *MetricsStore
 
 	// 事件系统
 	handlerSeq    atomic.Uint64       // monotonic ID counter for tracked handlers
@@ -54,8 +54,6 @@ type AgentKernel struct {
 	// 配置
 	maxRounds      int
 	maxTokens      int
-	distillEnabled   bool
-	knowledgeEnabled bool
 }
 
 // Config 内核配置
@@ -63,24 +61,14 @@ type Config struct {
 	MaxRounds    int
 	MaxTokens    int
 	SystemPrompt string
-
-
-	DistillEnabled     bool    // 启用自动技能提取（默认true）
-	KnowledgeEnabled   bool    // 启用自动知识入库（默认true）
-	DistillMinQueries int     // 几个相似查询触发技能提取（默认5）
-	DistillSimilarity float64 // 余弦相似度阈值（默认0.80）
 }
 
 // DefaultConfig 默认配置
 func DefaultConfig() *Config {
 	return &Config{
-		MaxRounds:                  10,
-		MaxTokens:                  4000,
-		SystemPrompt:               defaultSystemPrompt(),
-		DistillEnabled:     true,
-		KnowledgeEnabled:   true,
-		DistillMinQueries: 5,
-		DistillSimilarity: 0.80,
+		MaxRounds:    10,
+		MaxTokens:    4000,
+		SystemPrompt: defaultSystemPrompt(),
 	}
 }
 
@@ -103,8 +91,6 @@ func NewAgentKernel(
 		sessionStore:  sessions,
 		maxRounds:       config.MaxRounds,
 		maxTokens:       config.MaxTokens,
-		distillEnabled:   config.DistillEnabled,
-		knowledgeEnabled: config.KnowledgeEnabled,
 	}
 
 
@@ -133,24 +119,9 @@ func (k *AgentKernel) SetReflection(r Reflection) {
 	k.reflection = r
 }
 
-// SetPatternDetector 设置模式检测器
-func (k *AgentKernel) SetPatternDetector(pd PatternDetector) {
-	k.patternDetector = pd
-}
-
-// SetKnowledgeCollector 设置知识收集器
-func (k *AgentKernel) SetKnowledgeCollector(kc KnowledgeCollector) {
-	k.knowledgeCollector = kc
-}
-
-// SetQualityGate 设置质量门控
-// QualityGate 质量门控接口
-type QualityGate interface {
-	Pass(query, response string, toolSuccesses, toolFailures int, reflection *ReflectionResult) bool
-}
-
 func (k *AgentKernel) SetApprover(a Approver) { k.approver = a }
 func (k *AgentKernel) SetAdaptiveRounds(ar *AdaptiveRounds) { k.adaptiveRounds = ar }
+func (k *AgentKernel) SetMetrics(ms *MetricsStore) { k.metrics = ms }
 func (k *AgentKernel) SetMaxRounds(n int) {
 	if n > 0 { k.maxRounds = n; slog.Info("Kernel max_rounds updated", "value", n) }
 }
@@ -161,12 +132,10 @@ func (k *AgentKernel) SetMaxTokens(n int) {
 
 // ApplyConfig hot-reloads mutable kernel settings from config.
 // Only updates values that are safe to change mid-session.
-func (k *AgentKernel) ApplyConfig(distillEnabled, knowledgeEnabled bool, maxRounds, maxTokens, minRounds, maxRoundsCap int) {
+func (k *AgentKernel) ApplyConfig(maxRounds, maxTokens, minRounds, maxRoundsCap int) {
 	if maxRounds > 0 { k.maxRounds = maxRounds }
 	if maxTokens > 0 { k.maxTokens = maxTokens }
-	k.distillEnabled = distillEnabled
-	k.knowledgeEnabled = knowledgeEnabled
-	slog.Info("Kernel config applied", "distill", distillEnabled, "knowledge", knowledgeEnabled, "max_rounds", k.maxRounds, "max_tokens", k.maxTokens)
+	slog.Info("Kernel config applied", "max_rounds", k.maxRounds, "max_tokens", k.maxTokens)
 }
 
 func (k *AgentKernel) SetTracer(t Tracer) {
@@ -232,10 +201,7 @@ func (k *AgentKernel) SetUserVerdict(ctx context.Context, sessionID, verdict str
 	k.sessionStore.Update(ctx, session)
 	slog.Info("User verdict recorded", "session", sessionID[:min(8, len(sessionID))], "verdict", verdict)
 }
-func (k *AgentKernel) GetSkillActor() *SkillActor      { return k.skillActor }
-func (k *AgentKernel) SetQualityGate(gate QualityGate) {
-	k.qualityGate = gate
-}
+func (k *AgentKernel) GetSkillActor() *SkillActor { return k.skillActor }
 
 // SetSystemPrompt 热更新系统提示词（线程安全）
 func (k *AgentKernel) SetSystemPrompt(prompt string) {
@@ -335,21 +301,6 @@ func (k *AgentKernel) buildMessages(ctx context.Context, session *Session, query
 	// L4: Cross-session learner insights + ProjectMind conventions (dynamic tail)
 	if query.Options.ProjectContext != "" {
 		messages = append(messages, Message{Role: "system", Content: "[ProjectKnowledge]\n" + query.Options.ProjectContext})
-	}
-
-	// L6: Knowledge base RAG
-	if k.knowledgeCollector != nil {
-		kbCtx, docIDs, _ := k.knowledgeCollector.InjectContext(ctx, query.Content, 500)
-		if kbCtx != "" {
-			messages = append(messages, Message{Role: "system", Content: "[Knowledge] " + kbCtx})
-			// Save doc IDs for quality feedback in doReflection
-			if len(docIDs) > 0 {
-				if session.Metadata == nil {
-					session.Metadata = make(map[string]interface{})
-				}
-				session.Metadata["knowledge_doc_ids"] = docIDs
-			}
-		}
 	}
 
 	slog.Info("buildMessages complete", "msgs", len(messages))
@@ -465,7 +416,6 @@ var parallelSafeTools = map[string]bool{
 	"web_search":      true,
 	"web_fetch":       true,
 	"read_image":      true,
-	"search_knowledge": true,
 	"git_status":      true,
 	"git_diff":        true,
 	"git_log":         true,
@@ -476,8 +426,6 @@ var parallelSafeTools = map[string]bool{
 // DangerousTools are tools that require human approval before execution.
 var DangerousTools = map[string]string{
 	"execute_command": "执行任意系统命令",
-	"write_file":      "写入文件可能覆盖重要内容",
-	"diff_edit":       "搜索替换可能错误匹配",
 }
 
 func isParallelSafe(name string) bool {
@@ -529,10 +477,6 @@ func (k *AgentKernel) executeTool(ctx context.Context, tc ToolCall, sessionID st
 		}
 	}
 
-	// Inject knowledge accessor so tools like search_knowledge/add_knowledge can access the KB
-	if k.knowledgeCollector != nil {
-		ctx = WithKnowledge(ctx, k.knowledgeCollector)
-	}
 	result, err := k.toolExecutor.Execute(ctx, tc, sessionID)
 	if err != nil {
 		return &ToolResult{Error: err.Error()}
