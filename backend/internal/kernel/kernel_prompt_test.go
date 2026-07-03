@@ -108,10 +108,6 @@ func TestPromptL3_AnalysisFormat(t *testing.T) {
 	}
 }
 
-func TestIsZhEnv(t *testing.T) {
-	_ = isZhEnv()
-}
-
 func TestNeedsStrategyAdvice(t *testing.T) {
 	// needsStrategyAdvice was deleted with learner — verify it's gone
 }
@@ -124,7 +120,7 @@ func TestBuildSystemPrompt(t *testing.T) {
 	if len(result) < 500 {
 		t.Errorf("system prompt too short: %d chars", len(result))
 	}
-	if !strings.Contains(result, "Grounding") && !strings.Contains(result, "接地") {
+	if !strings.Contains(result, "Grounding") {
 		t.Error("system prompt missing L0 core rules")
 	}
 }

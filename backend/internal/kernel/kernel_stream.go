@@ -71,6 +71,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 		toolErrors := 0
 		startTime := time.Now()
 		filesModified := make(map[string]bool)
+		uniqueTools := make(map[string]bool)
 		verifyAttempts := 0
 
 		slog.Info("ReAct stream: entering loop", "query", query.Content[:min(80, len(query.Content))], "max_rounds", maxRounds, "tools", len(tools), "history_msgs", len(messages))
@@ -182,7 +183,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 			if len(lastToolCalls) == 0 {
 				if len(filesModified) > 0 && verifyAttempts < 3 {
 					verifyAttempts++
-					verifyMsg := runAutoVerify(context.Background(), ".")
+					verifyMsg := runAutoVerify(ctx, ".")
 					if verifyMsg != "" {
 						messages = append(messages, Message{Role: "user", Content: verifyMsg})
 						lastToolCalls = []ToolCall{}
@@ -190,8 +191,25 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 					}
 				}
 
-				session.Messages = messages
-				k.finalizeResponse(context.WithoutCancel(ctx), session, query, fullContent.String(), totalToolCalls, toolErrors, analysis)
+			session.Messages = messages
+			k.RecordTaskMetrics(TaskMetrics{
+				SessionID:        session.ID,
+				StartedAt:        startTime,
+				EndedAt:          time.Now(),
+				Duration:         float64(time.Since(startTime).Milliseconds()),
+				TaskType:         queryTaskType(analysis),
+				Complexity:       queryComplexity(analysis),
+				Rounds:           round + 1,
+				PromptTokens:     promptTokens,
+				CompletionTokens: totalTokens - promptTokens,
+				TotalTokens:      totalTokens,
+				Model:            k.llmProvider.GetModelID(),
+				ToolCalls:        totalToolCalls,
+				ToolErrors:       toolErrors,
+				UniqueTools:      len(uniqueTools),
+				Success:          toolErrors == 0,
+			})
+			k.finalizeResponse(context.WithoutCancel(ctx), session, query, fullContent.String(), totalToolCalls, toolErrors, analysis)
 
 				slog.Debug("ReAct stream complete", "rounds", round+1, "tokens", totalTokens, "tools", totalToolCalls, "model", k.llmProvider.GetModelID(), "duration", time.Since(startTime))
 				k.setState(StateIdle)
@@ -237,6 +255,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 						filesModified[path] = true
 					}
 				}
+				uniqueTools[tc.Function.Name] = true
 			}
 
 			// Send tool_done events + append results
@@ -293,6 +312,23 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 		// 追加合成结果到消息历史
 		messages = append(messages, buildFinalMessage(resp.Content, "", nil))
 		session.Messages = messages
+		k.RecordTaskMetrics(TaskMetrics{
+			SessionID:        session.ID,
+			StartedAt:        startTime,
+			EndedAt:          time.Now(),
+			Duration:         float64(time.Since(startTime).Milliseconds()),
+			TaskType:         queryTaskType(analysis),
+			Complexity:       queryComplexity(analysis),
+			Rounds:           maxRounds,
+			PromptTokens:     promptTokens,
+			CompletionTokens: totalTokens - promptTokens,
+			TotalTokens:      totalTokens,
+			Model:            k.llmProvider.GetModelID(),
+			ToolCalls:        totalToolCalls,
+			ToolErrors:       toolErrors,
+			UniqueTools:      len(uniqueTools),
+			Success:          toolErrors == 0,
+		})
 		k.finalizeResponse(context.WithoutCancel(ctx), session, query, resp.Content, totalToolCalls, toolErrors, analysis)
 
 		k.setState(StateIdle)
@@ -367,4 +403,25 @@ func extractFilePath(argsJSON string) string {
 		return ""
 	}
 	return args.Path
+}
+
+func queryTaskType(a *QueryAnalysis) string {
+	if a == nil {
+		return "general"
+	}
+	return a.TaskType
+}
+
+func queryComplexity(a *QueryAnalysis) string {
+	if a == nil {
+		return "medium"
+	}
+	switch {
+	case a.Complexity <= 3:
+		return "low"
+	case a.Complexity <= 8:
+		return "medium"
+	default:
+		return "high"
+	}
 }
