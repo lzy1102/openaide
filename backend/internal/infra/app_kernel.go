@@ -3,7 +3,6 @@ package infra
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -14,11 +13,9 @@ import (
 	"openaide/backend/internal/compress"
 	"openaide/backend/internal/config"
 	"openaide/backend/internal/event"
-	"openaide/backend/internal/feedback"
 	"openaide/backend/internal/identity"
 	"openaide/backend/internal/kernel"
 	"openaide/backend/internal/kernel/trace"
-	"openaide/backend/internal/knowledge"
 	"openaide/backend/internal/llm"
 	"openaide/backend/internal/plugin"
 )
@@ -26,10 +23,9 @@ import (
 func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedder, toolRegistry kernel.ToolExecutor, memManager kernel.Memory, sessionStore kernel.SessionStore) (*kernel.AgentKernel, *plugin.Manager, error) {
 	systemPrompt := cfg.Kernel.SystemPrompt
 	kernelConfig := &kernel.Config{
-		MaxRounds:      cfg.Kernel.MaxRounds,
-		MaxTokens:      cfg.Kernel.MaxTokens,
-		SystemPrompt:   systemPrompt,
-		DistillEnabled: cfg.Kernel.DistillEnabled,
+		MaxRounds:    cfg.Kernel.MaxRounds,
+		MaxTokens:    cfg.Kernel.MaxTokens,
+		SystemPrompt: systemPrompt,
 	}
 	if kernelConfig.MaxRounds == 0 {
 		kernelConfig.MaxRounds = 10
@@ -40,8 +36,12 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 
 	agentKernel := kernel.NewAgentKernel(gateway, toolRegistry, memManager, sessionStore, kernelConfig)
 
-	// 接入增强能力 — LLM Reflection（降级到 SimpleReflection）
-	agentKernel.SetReflection(kernel.NewLLMReflection(gateway))
+	if cfg.Kernel.ReflectionEnabled != nil && !*cfg.Kernel.ReflectionEnabled {
+		agentKernel.SetReflection(&kernel.NoReflection{})
+		slog.Info("Reflection disabled by config")
+	} else {
+		agentKernel.SetReflection(kernel.NewLLMReflection(gateway))
+	}
 
 	// Skill actor (CSP, zero-lock)
 	skillActor := kernel.NewSkillActor(gateway)
@@ -72,20 +72,12 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 	}
 	agentKernel.SetSkillActor(skillActor)
 
-	minQueries := cfg.Kernel.DistillMinQueries
-	if minQueries <= 0 { minQueries = 5 }
-	similarity := cfg.Kernel.DistillSimilarity
-	if similarity <= 0 { similarity = 0.80 }
-	pd := kernel.NewSemanticPatternDetector(embedder, minQueries, similarity)
-	pd.SetLLM(gateway) // enables LLM-based clustering when no embedding API available
-	pd.SeedFromHistory(context.Background(), sessionStore, 20) // pre-load from recent sessions
-	agentKernel.SetPatternDetector(pd)
 	approver := kernel.NewAutoApprover()
 	approver.SetLLM(gateway)
 	if cfg.Kernel.UnsafeMode != nil {
 		approver.UnsafeMode = *cfg.Kernel.UnsafeMode
 	} else {
-		approver.UnsafeMode = true // 默认本地信任模式
+		approver.UnsafeMode = false // LLM 评估风险，安全的自动放行
 	}
 	agentKernel.SetApprover(approver)
 	minR := cfg.Kernel.MinRounds
@@ -125,18 +117,6 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 		kernelConfig.SystemPrompt += "\n\n" + pluginPrompt
 	}
 
-	// 接入知识库（CSP actor）+ 质量门控 + 语义搜索
-	kAct, kerr := knowledge.NewActor(cfg.Storage.DataDir + "/knowledge.db")
-	if kerr != nil {
-		return nil, nil, fmt.Errorf("knowledge actor: %w", kerr)
-	}
-	kAct.SetEmbedder(embedder)
-	kAct.SetLLM(gateway)
-	agentKernel.SetKnowledgeCollector(kAct)
-	gate := feedback.NewGate()
-	gate.SetLLM(gateway)
-	agentKernel.SetQualityGate(gate)
-
 	// 接入身份检测 + 事件总线 + 高级压缩器
 	if projIdentity, err := identity.NewDetector().Detect(context.Background(), "."); err == nil && projIdentity != nil {
 		slog.Info("Project identity detected", "type", projIdentity.ProjectType)
@@ -148,6 +128,11 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 		slog.Info("Persistence disabled in config")
 	}
 	agentKernel.SetContextCompressor(compress.NewLLMCompressor(gateway, compress.NewNovelCompressor()))
+
+	// Metrics: task-level observability (JSONL persistence + in-memory ring buffer)
+	metrics := kernel.NewMetricsStore(cfg.Storage.DataDir)
+	agentKernel.SetMetrics(metrics)
+	slog.Info("Task metrics enabled", "file", cfg.Storage.DataDir+"/metrics.jsonl")
 
 	agentKernel.Subscribe(kernel.EventHandlerFunc(func(evt kernel.Event) {
 		pluginMgr.RunEventHooks(context.Background(), evt)
