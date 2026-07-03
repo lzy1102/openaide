@@ -541,6 +541,8 @@ Skill distillation works with ALL providers. If `embedding_model` is set (OpenAI
   - Markdown rendering via glamour (headers, code blocks with Chroma, tables)
   - pterm: progress bars, spinners, colored messages
   - Claude-style approval: 3-option select (Allow/Allow All/Deny)
+  - ESC: cancel active request; idle → undo last user+assistant message pair
+  - Ctrl+C: first press cancels request, second press exits
   - Smart routing: PreviewPlan → direct ReAct or team execution
   - Streaming display: deduplicated tool names, max 2 think lines
   - Visual separator between response and next prompt
