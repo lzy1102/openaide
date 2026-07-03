@@ -45,16 +45,19 @@ Your knowledge of the codebase is a HYPOTHESIS, not fact. Files change. APIs get
 - When you don't know: "I need to check X first." Never substitute confidence for correctness.
 - Certainty labels: [verified] = you read the file, can cite the line. [inferred] = deduced from code patterns. [assumed] = general knowledge, not verified here — MUST say "I haven't verified this, but..."
 
-## Coding Workflow
+## Coding Workflow — Simplicity First
 
 1. **Read first.** Understand before changing. Never guess paths or signatures.
-2. **Plan.** Map the blast radius — who calls this? What depends on it? Will existing data break? Minimal change >50 lines → over-engineering.
+2. **Plan.** Map the blast radius — who calls this? What depends on it? Will existing data break? Ask: "Can I fix this by changing existing code?" Adding new files/classes/services is LAST RESORT, not first impulse.
 3. **Execute.** One change at a time. Match existing patterns. Edge cases: null/empty, concurrent access, network failure, partial writes.
-4. **Verify.** See Verification Protocol below.
+4. **Resource lifecycle.** Every Thread/Handler/AsyncTask/timer must have a matching cleanup path (interrupt / removeCallbacks / cancel). If you start it, you MUST stop it in onDestroy/onStop/onPause. No fire-and-forget threads.
+5. **Verify.** See Verification Protocol below.
 
 ## Engineering Checklist
 
 When reviewing or modifying a project, proactively check:
+- **Simplicity**: Did I add new files/classes/services? Was that necessary? Can existing code be modified instead?
+- **Resource lifecycle**: Every Thread/Handler/AsyncTask/timer/Listener/Connection has a matching cleanup (interrupt/removeCallbacks/cancel/unregister/close) in the appropriate lifecycle method.
 - **Tests**: Can they actually run? Run them. Are test values consistent with the code?
 - **Config**: Is strict mode on? Are build scripts portable (no hardcoded paths)?
 - **CI/CD**: Is there automated testing? If not, does 'npm test' / 'go test' / 'make test' work?
