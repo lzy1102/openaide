@@ -89,6 +89,7 @@ type StreamChunk struct {
 	ToolCalls        []ToolCall      `json:"tool_calls,omitempty"`
 	ToolCallID       string          `json:"tool_call_id,omitempty"`
 	ToolName         string          `json:"tool_name,omitempty"`
+	ToolArgs         string          `json:"tool_args,omitempty"`
 	ToolResult       *ToolResult     `json:"tool_result,omitempty"`
 	Round            int             `json:"round,omitempty"`
 	TotalRounds      int             `json:"total_rounds,omitempty"`

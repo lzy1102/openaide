@@ -526,7 +526,11 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string,
 			toolNames = append(toolNames, chunk.ToolName)
 			totalTools++
 			icon := toolIcon(chunk.ToolName)
-			fmt.Printf("\r\033[K  %s%s %s%s\n", cYellow, icon, chunk.ToolName, cReset)
+			argsPreview := toolArgsPreview(chunk.ToolName, chunk.ToolArgs)
+			fmt.Printf("\r\033[K  %s%s %s%s%s\n", cYellow, icon, chunk.ToolName, cReset, argsPreview)
+		}
+		if chunk.Type == kernel.ChunkTypeToolDone && chunk.ToolName != "" {
+			fmt.Printf("\r\033[K  %s✓ %s%s\n", cToolOK, chunk.ToolName, cReset)
 		}
 	}
 	elapsed := time.Since(startTime)
@@ -630,6 +634,48 @@ func toolIcon(name string) string {
 	default:
 		return "🔧"
 	}
+}
+
+func toolArgsPreview(name, argsJSON string) string {
+	if argsJSON == "" {
+		return ""
+	}
+	var args map[string]string
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return ""
+	}
+	var preview string
+	switch name {
+	case "execute_command":
+		preview = args["command"]
+	case "read_file", "write_file", "diff_edit":
+		preview = args["path"]
+	case "search_files":
+		preview = args["query"]
+		if dir := args["directory"]; dir != "" {
+			preview += " in " + dir
+		}
+	case "list_directory":
+		preview = args["path"]
+	case "web_search", "ai_search":
+		preview = args["query"]
+	case "web_fetch":
+		preview = args["url"]
+	default:
+		for _, v := range args {
+			if v != "" {
+				preview = v
+				break
+			}
+		}
+	}
+	if preview == "" {
+		return ""
+	}
+	if len(preview) > 80 {
+		preview = preview[:77] + "..."
+	}
+	return fmt.Sprintf(" %s%s%s", cDim, preview, cReset)
 }
 
 // showFileTree prints a directory tree using pterm

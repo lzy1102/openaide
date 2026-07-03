@@ -239,7 +239,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 			for _, tc := range lastToolCalls {
 				if tc.Function.Name == "" { continue }
 				select {
-				case resultChan <- StreamChunk{Type: ChunkTypeToolCall, ToolCallID: tc.ID, ToolName: tc.Function.Name}:
+				case resultChan <- StreamChunk{Type: ChunkTypeToolCall, ToolCallID: tc.ID, ToolName: tc.Function.Name, ToolArgs: truncateToolArgs(tc.Function.Arguments)}:
 				case <-ctx.Done(): return
 				}
 			}
@@ -393,6 +393,13 @@ func runAutoVerify(ctx context.Context, dir string) string {
 		return fmt.Sprintf("[Auto-Verification] Command '%s' FAILED:\n%s\n\nFix the issue and try again.", testCmd, output)
 	}
 	return ""
+}
+
+func truncateToolArgs(args string) string {
+	if len(args) <= 120 {
+		return args
+	}
+	return args[:117] + "..."
 }
 
 func extractFilePath(argsJSON string) string {
