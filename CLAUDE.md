@@ -558,6 +558,7 @@ No artificial round limits. The LLM decides when to stop. Budget hints at rounds
 
 ### User Experience
 
+- **LLM auto-approval**: Dangerous tools (e.g., `execute_command`) trigger LLM risk assessment. `AutoApprover.assessWithLLM()` evaluates the command — safe commands (ls, pwd, cat) auto-approved, risky commands (rm, format) prompt user, dangerous commands blocked. No more tedious manual approval for safe operations.
 - **Error messages**: `humanizeError` wraps API errors with human-readable tips (429→quota, 401→bad key, timeout→network, deadline→slow model).
 - **Tool visibility**: One-shot streaming mode shows tool calls on stderr as they execute.
 - **Session continuity**: `getOrCreateSession` auto-resumes the most recent session. Use `-c` flag for explicit continuation.
