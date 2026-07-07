@@ -73,11 +73,10 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 	agentKernel.SetSkillActor(skillActor)
 
 	approver := kernel.NewAutoApprover()
-	approver.SetLLM(gateway)
 	if cfg.Kernel.UnsafeMode != nil {
 		approver.UnsafeMode = *cfg.Kernel.UnsafeMode
 	} else {
-		approver.UnsafeMode = false // LLM 评估风险，安全的自动放行
+		approver.UnsafeMode = false
 	}
 	agentKernel.SetApprover(approver)
 	minR := cfg.Kernel.MinRounds

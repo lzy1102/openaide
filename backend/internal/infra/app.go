@@ -373,7 +373,6 @@ func (a *Application) SetAutoApprove(on bool) {
 	if k, ok := a.Kernel.(*kernel.AgentKernel); ok {
 		approver := kernel.NewAutoApprover()
 		approver.UnsafeMode = on
-		approver.SetLLM(a.LLMGateway)
 		k.SetApprover(approver)
 	}
 }

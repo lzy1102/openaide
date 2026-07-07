@@ -2,49 +2,52 @@ package kernel
 
 import (
 	"context"
-	"fmt"
 	"strings"
 )
 
-// ApprovalRequest 审批请求
 type ApprovalRequest struct {
-	ID       string `json:"id"`
-	Tool     string `json:"tool"`
-	Args     string `json:"args"`
-	Reason   string `json:"reason"`
-	Risk     string `json:"risk"` // low, medium, high
+	ID     string `json:"id"`
+	Tool   string `json:"tool"`
+	Args   string `json:"args"`
+	Reason string `json:"reason"`
+	Risk   string `json:"risk"`
 }
 
-// ApprovalResult 审批结果
 type ApprovalResult struct {
 	Approved bool   `json:"approved"`
 	Reason   string `json:"reason,omitempty"`
 }
 
-// Approver 审批接口
 type Approver interface {
 	RequestApproval(ctx context.Context, req *ApprovalRequest) *ApprovalResult
 }
 
-// SafeCommandPrefixes — execute_command 匹配这些前缀时自动放行（免 LLM 评估）
 var SafeCommandPrefixes = []string{
 	"git log", "git diff", "git status", "git blame", "git show",
-	"ls", "pwd", "cat", "head", "tail", "wc", "file",
-	"go test", "go build", "go vet", "go fmt",
-	"npm test", "npm run", "npx",
-	"make", "cargo test", "cargo build",
-	"python", "python3", "pip",
+	"git branch", "git remote", "git tag",
+	"ls", "pwd", "cat", "head", "tail", "wc", "file", "which",
+	"go test", "go build", "go vet", "go fmt", "go version",
+	"npm test", "npm run", "npm list", "npm root",
+	"make", "cargo test", "cargo build", "cargo check",
+	"python", "python3", "pip list", "pip show",
+	"docker ps", "docker images", "docker logs",
 }
 
-//   UnsafeMode=true:  放行所有工具
-//   UnsafeMode=false: LLM 评估风险 + 白名单快速通道
+var DangerousCommandPrefixes = []string{
+	"rm -rf", "rm -r /", "rm -f /",
+	"rmdir /", "mkfs", "format",
+	"sudo rm", "sudo mkfs", "sudo format",
+	"DROP TABLE", "DROP DATABASE", "DELETE FROM",
+	"dd if=", "> /dev/sd",
+	"shutdown", "reboot", "halt", "init 0",
+	"chmod -R 777 /", "chown -R",
+}
+
 type AutoApprover struct {
 	ApprovedTools map[string]bool
 	UnsafeMode    bool
-	llm           LLMProvider // 可选：LLM 评估工具调用风险
 }
 
-// NewAutoApprover 创建自动审批器（默认安全模式）
 func NewAutoApprover() *AutoApprover {
 	return &AutoApprover{
 		UnsafeMode: false,
@@ -62,7 +65,16 @@ func NewAutoApprover() *AutoApprover {
 	}
 }
 
-// isSafeCommand — execute_command 命令前缀匹配
+func isDangerousCommand(args string) bool {
+	args = strings.TrimSpace(strings.ToLower(args))
+	for _, prefix := range DangerousCommandPrefixes {
+		if strings.HasPrefix(args, strings.ToLower(prefix)) {
+			return true
+		}
+	}
+	return false
+}
+
 func isSafeCommand(args string) bool {
 	args = strings.TrimSpace(args)
 	for _, prefix := range SafeCommandPrefixes {
@@ -73,10 +85,7 @@ func isSafeCommand(args string) bool {
 	return false
 }
 
-// SetLLM 注入 LLM 用于智能风险评估
-func (a *AutoApprover) SetLLM(llm LLMProvider) { a.llm = llm }
-
-func (a *AutoApprover) RequestApproval(ctx context.Context, req *ApprovalRequest) *ApprovalResult {
+func (a *AutoApprover) RequestApproval(_ context.Context, req *ApprovalRequest) *ApprovalResult {
 	if a.UnsafeMode {
 		return &ApprovalResult{Approved: true, Reason: "auto-approved (unsafe mode)"}
 	}
@@ -85,41 +94,15 @@ func (a *AutoApprover) RequestApproval(ctx context.Context, req *ApprovalRequest
 		return &ApprovalResult{Approved: true, Reason: "auto-approved"}
 	}
 
-	if req.Tool == "execute_command" && isSafeCommand(req.Args) {
-		return &ApprovalResult{Approved: true, Reason: "safe command prefix"}
+	if req.Tool == "execute_command" {
+		if isDangerousCommand(req.Args) {
+			return &ApprovalResult{Approved: false, Reason: "dangerous command"}
+		}
+		if isSafeCommand(req.Args) {
+			return &ApprovalResult{Approved: true, Reason: "safe command"}
+		}
+		return &ApprovalResult{Approved: true, Reason: "auto-approved"}
 	}
 
-	return a.assessWithLLM(ctx, req)
+	return &ApprovalResult{Approved: true, Reason: "auto-approved"}
 }
-
-func (a *AutoApprover) assessWithLLM(ctx context.Context, req *ApprovalRequest) *ApprovalResult {
-	prompt := fmt.Sprintf(`Assess the risk of this tool call. Consider the tool name AND its arguments.
-
-Tool: %s
-Arguments: %s
-
-Risk levels:
-- safe: read-only operations, harmless commands (ls, pwd, cat), legitimate code edits
-- caution: file writes, package installs, git operations
-- dangerous: destructive commands (rm, drop, format), suspicious URLs, privilege escalation
-
-Reply with ONE word: safe, caution, or dangerous.`, req.Tool, req.Args)
-
-	resp, err := a.llm.Chat(ctx, []Message{
-		{Role: "user", Content: prompt},
-	}, nil, map[string]interface{}{"max_tokens": 10, "temperature": 0})
-	if err != nil {
-		return &ApprovalResult{Approved: false, Reason: "risk assessment unavailable"}
-	}
-
-	risk := strings.TrimSpace(strings.ToLower(resp.Content))
-	switch {
-	case risk == "safe":
-		return &ApprovalResult{Approved: true, Reason: "LLM assessed as safe"}
-	case risk == "caution":
-		return &ApprovalResult{Approved: false, Reason: fmt.Sprintf("LLM assessed as caution: check args '%s'", req.Args)}
-	default:
-		return &ApprovalResult{Approved: false, Reason: fmt.Sprintf("LLM assessed as dangerous: %s", risk)}
-	}
-}
-
