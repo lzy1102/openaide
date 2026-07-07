@@ -1,0 +1,17 @@
+{
+  "name": "openaide",
+  "version": "0.2.0",
+  "description": "AI Agent kernel platform — Go CLI + server with self-learning capabilities",
+  "bin": {
+    "openaide": "bin/openaide"
+  },
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "keywords": ["ai", "coding-agent", "llm", "cli", "go"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lzy1102/openaide"
+  }
+}
