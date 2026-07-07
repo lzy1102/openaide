@@ -96,7 +96,7 @@ func (a *AutoApprover) RequestApproval(_ context.Context, req *ApprovalRequest) 
 
 	if req.Tool == "execute_command" {
 		if isDangerousCommand(req.Args) {
-			return &ApprovalResult{Approved: false, Reason: "dangerous command"}
+			return &ApprovalResult{Approved: false, Reason: "dangerous command — needs approval"}
 		}
 		if isSafeCommand(req.Args) {
 			return &ApprovalResult{Approved: true, Reason: "safe command"}
