@@ -57,7 +57,9 @@ func RenderMarkdown(text string) string {
 	if mdRenderer == nil { return text }
 	out, err := mdRenderer.Render(text)
 	if err != nil { return text }
-	return out
+	out = strings.TrimLeft(out, "\n")
+	out = strings.TrimRight(out, "\n")
+	return out + "\n"
 }
 
 // ── Prompt ────────────────────────────────────────────────

@@ -92,25 +92,22 @@ func runREPL(app *infra.Application, continueSess, autoYes bool) {
 		fmt.Printf("  %s⚠ No API key configured%s\n", pterm.Yellow(""), cReset)
 		fmt.Printf("  %s→ Edit ~/.openaide/config.yaml and add your API key%s\n", cInfo, cReset)
 	}
+	branchLine := ""
 	if gitBranch != "" {
-		fmt.Printf("  %s%s%s", cInfo, "  ◆  "+gitBranch, cReset)
+		branchLine = "  ◆  " + gitBranch
 	}
-	fmt.Printf("  %s%s%s", cInfo, "  ◆  "+filepath.Base(cwd), cReset)
-	fmt.Println()
-	fmt.Printf("  %s ", Version)
+	fmt.Printf("  %s%s%s  %s%s%s", cInfo, branchLine, cReset, cInfo, "  ◆  "+filepath.Base(cwd), cReset)
+	fmt.Printf("    %s ", Version)
 	fmt.Printf("  %s/h%s help  %s|%s  %s/q%s quit  %s|%s  @file  Ctrl+C interrupt\n", cYellow, cReset, cInfo, cReset, cYellow, cReset, cInfo, cReset)
-	fmt.Println()
 	// Project context: OPENAIDE.md status
 	if _, err := os.Stat(filepath.Join(cwd, "OPENAIDE.md")); err == nil {
-		fmt.Printf("  %s📋 OPENAIDE.md loaded%s\n", cGreen, cReset)
+		fmt.Printf("  %s📋 OPENAIDE.md loaded%s", cGreen, cReset)
 	}
-
 	// Provider status
 	if len(info) > 0 {
-		fmt.Printf("  %s✓ %d provider(s) ready%s\n", cGreen, len(info), cReset)
+		fmt.Printf("  %s✓ %d provider(s) ready%s", cGreen, len(info), cReset)
 	} else {
-		fmt.Printf("  %s⚠ No provider configured%s\n", pterm.Yellow(""), cReset)
-		fmt.Printf("  %s→ Edit ~/.openaide/config.yaml to add your API key, then restart%s\n", cInfo, cReset)
+		fmt.Printf("  %s⚠ No provider configured%s", pterm.Yellow(""), cReset)
 	}
 	fmt.Println()
 
