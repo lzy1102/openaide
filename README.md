@@ -64,6 +64,7 @@ openaide server (REST+SSE)  openaide (REPL)
 - **MemGPT Memory**: Agent manages its own memory — archive, retrieve, core facts
 - **Claude Plugin Compatible**: Drop-in skills, MCP servers, hooks from Claude Code ecosystem
 - **40+ Built-in Tools**: Filesystem, Git, Web, Browser, LSP, Desktop control
+- **Smart Approval**: Safe commands auto-approve, dangerous commands blocked, no LLM overhead
 
 ## Configuration
 
