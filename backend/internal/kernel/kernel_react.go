@@ -236,11 +236,10 @@ func (k *AgentKernel) finalizeResponse(ctx context.Context, session *Session, qu
 	})
 
 	go k.generateSessionTitle(session.ID, query.Content)
-	if k.reflection != nil && analysis != nil && analysis.HasPostProcess("reflect") {
+	if k.reflection != nil {
 		go k.doReflection(ctx, session.ID, query.Content, response, toolCalls, toolErrors, analysis)
 	}
 	go k.compressMemory(ctx, session.ID)
-	if k.skillActor != nil && analysis != nil && analysis.HasPostProcess("distill") { go k.skillActor.DecayUnused() }
 }
 
 // buildFinalMessage constructs the assistant message with optional reasoning and tool calls.
@@ -308,22 +307,6 @@ func (k *AgentKernel) injectMemoryContext(ctx context.Context, messages []Messag
 	}
 
 	// Cross-session learning
-
-	// Knowledge base context
-	if k.knowledgeCollector != nil {
-		kbCtx, docIDs, err := k.knowledgeCollector.InjectContext(ctx, query.Content, 500)
-		if err == nil && kbCtx != "" {
-			messages = append(messages, Message{
-				Role: "system", Content: "[Knowledge] " + kbCtx,
-			})
-			if len(docIDs) > 0 {
-				if session.Metadata == nil {
-					session.Metadata = make(map[string]interface{})
-				}
-				session.Metadata["knowledge_doc_ids"] = docIDs
-			}
-		}
-	}
 
 	return messages
 }
