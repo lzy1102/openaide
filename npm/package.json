@@ -1,5 +1,5 @@
 {
-  "name": "openaide",
+  "name": "@lzy1102/openaide",
   "version": "0.2.0",
   "description": "AI Agent kernel platform — Go CLI + server with self-learning capabilities",
   "bin": {
