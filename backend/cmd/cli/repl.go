@@ -116,8 +116,9 @@ func runREPL(app *infra.Application, continueSess, autoYes bool) {
 
 	// Session: resume or create
 	var sessionID string
+	projectID := filepath.Base(cwd)
 	if continueSess {
-		sessions, _ := app.Orchestrator.ListSessions(context.Background(), "default", "cli-user", 10, 0)
+		sessions, _ := app.Orchestrator.ListSessions(context.Background(), projectID, "cli-user", 10, 0)
 		for _, s := range sessions {
 			if len(s.Messages) > 0 { // 跳过空会话
 				sessionID = s.ID
@@ -148,7 +149,7 @@ func runREPL(app *infra.Application, continueSess, autoYes bool) {
 			fmt.Printf("  %sNo previous sessions — starting a new one%s\n", cInfo, cReset)
 			fmt.Println()
 		}
-		sess, _ := app.Orchestrator.CreateSession(context.Background(), "default", "cli-user")
+		sess, _ := app.Orchestrator.CreateSession(context.Background(), projectID, "cli-user")
 		sessionID = sess.ID
 	}
 	sessionTitle := ""
