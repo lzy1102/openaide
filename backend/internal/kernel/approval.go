@@ -26,6 +26,16 @@ type Approver interface {
 	RequestApproval(ctx context.Context, req *ApprovalRequest) *ApprovalResult
 }
 
+// SafeCommandPrefixes — execute_command 匹配这些前缀时自动放行（免 LLM 评估）
+var SafeCommandPrefixes = []string{
+	"git log", "git diff", "git status", "git blame", "git show",
+	"ls", "pwd", "cat", "head", "tail", "wc", "file",
+	"go test", "go build", "go vet", "go fmt",
+	"npm test", "npm run", "npx",
+	"make", "cargo test", "cargo build",
+	"python", "python3", "pip",
+}
+
 //   UnsafeMode=true:  放行所有工具
 //   UnsafeMode=false: LLM 评估风险 + 白名单快速通道
 type AutoApprover struct {
@@ -52,6 +62,17 @@ func NewAutoApprover() *AutoApprover {
 	}
 }
 
+// isSafeCommand — execute_command 命令前缀匹配
+func isSafeCommand(args string) bool {
+	args = strings.TrimSpace(args)
+	for _, prefix := range SafeCommandPrefixes {
+		if strings.HasPrefix(args, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // SetLLM 注入 LLM 用于智能风险评估
 func (a *AutoApprover) SetLLM(llm LLMProvider) { a.llm = llm }
 
@@ -60,12 +81,14 @@ func (a *AutoApprover) RequestApproval(ctx context.Context, req *ApprovalRequest
 		return &ApprovalResult{Approved: true, Reason: "auto-approved (unsafe mode)"}
 	}
 
-	// Read-only tools always safe — no LLM call needed
 	if approved, ok := a.ApprovedTools[req.Tool]; ok && approved {
 		return &ApprovalResult{Approved: true, Reason: "auto-approved"}
 	}
 
-	// LLM assesses risk based on specific arguments
+	if req.Tool == "execute_command" && isSafeCommand(req.Args) {
+		return &ApprovalResult{Approved: true, Reason: "safe command prefix"}
+	}
+
 	return a.assessWithLLM(ctx, req)
 }
 
