@@ -102,8 +102,6 @@ func (r *ConfigReloader) doReload() {
 		// Kernel settings (hot-reloadable via concrete type)
 		if ak, ok := r.app.Kernel.(*kernel.AgentKernel); ok {
 			ak.ApplyConfig(
-				cfg.Kernel.DistillEnabled,
-				cfg.Kernel.KnowledgeEnabled,
 				cfg.Kernel.MaxRounds,
 				cfg.Kernel.MaxTokens,
 				cfg.Kernel.MinRounds,

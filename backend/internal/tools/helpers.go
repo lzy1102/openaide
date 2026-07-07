@@ -37,7 +37,6 @@ func formatBytes(n int64) string {
 func BuiltinTools() []kernel.ToolDefinition {
 	var tools []kernel.ToolDefinition
 	tools = append(tools, fileSystemToolDefs()...)
-	tools = append(tools, knowledgeToolDefs()...)
 	tools = append(tools, symbolToolDefs()...)
 	tools = append(tools, fileEditToolDefs()...)
 	tools = append(tools, gitToolDefs()...)
@@ -63,8 +62,6 @@ func (r *Registry) BuiltinHandlers() map[string]kernel.ToolHandler {
 		"list_directory":     handleListDirectory,
 		"search_files":       handleSearchFiles,
 		"git_status":         handleGitStatus,
-		"search_knowledge":   handleSearchKnowledge,
-		"add_knowledge":      handleAddKnowledge,
 		"search_symbols":     handleSearchSymbols,
 		"read_image":         handleReadImage,
 		"diff_edit":          handleDiffEdit,

@@ -43,12 +43,10 @@ func NewAutoApprover() *AutoApprover {
 			"list_directory":   true,
 			"search_files":     true,
 			"search_symbols":   true,
-			"search_knowledge": true,
 			"git_status":       true,
 			"git_diff":         true,
 			"git_log":          true,
 			"git_blame":        true,
-			"add_knowledge":    true,
 			"read_image":       true,
 		},
 	}

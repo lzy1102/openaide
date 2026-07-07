@@ -22,18 +22,8 @@ type QueryAnalysis struct {
 	SkillID      string   `json:"skill_id"`      // matched skill ID, "" if none
 	Complexity   int      `json:"complexity"`    // estimated max rounds
 	Strategy     string   `json:"strategy"`      // ReAct strategy hint
-	PostProcess  []string `json:"post_process"`  // LLM-decided: "reflect","knowledge","distill"
 	AllowedTools []string `json:"allowed_tools"` // tools to keep, nil = all
 	SkillPrompt  string   `json:"-"`             // resolved from matched skill (not in JSON)
-}
-
-// HasPostProcess checks if a post-processing step was requested by the LLM.
-func (a *QueryAnalysis) HasPostProcess(step string) bool {
-	if a == nil { return true } // nil = fallback, run everything
-	for _, s := range a.PostProcess {
-		if s == step { return true }
-	}
-	return false
 }
 
 const analyzeQueryPrompt = `You are a query analyzer for an AI coding agent. Analyze this query holistically.
@@ -50,25 +40,12 @@ Return a JSON object with these fields:
 - skill_id: matched skill ID from the list, or "" if none match
 - complexity: estimated ReAct rounds needed (integer, 5-50)
 - strategy: a ONE-SENTENCE strategy hint for the agent
-- post_process: array of steps to run after the task. Choose from:
-    "reflect" — worth reviewing what worked/didn't (complex or novel tasks)
-    "knowledge" — worth saving facts to knowledge base (new discoveries,
-      file purposes, project conventions, gotchas)
-    "distill" — worth extracting as a reusable skill (recurring task pattern
-      with consistent tools, files, and approach). Skills become slash commands
-      with auto-generated prompts. Only flag when you've seen the SAME pattern
-      multiple times — not one-off tasks.
 
 ## Rules
 - Coding/bugfix: match relevant skill, complexity 10-30
 - Review/audit: use review skill if present, complexity 10-25
 - Think/explain/analyze: no skill needed, complexity 5-15
-- General/chitchat/greetings: no skill, complexity 5, post_process: []
-- Only include post_process steps that are GENUINELY valuable:
-  * "hello"/"what is 2+2" → post_process: []
-  * "fix the auth bug" → post_process: ["reflect"]
-  * "review this PR" → post_process: ["reflect", "knowledge"]
-  * recurring pattern you have seen → add "distill"
+- General/chitchat/greetings: no skill, complexity 5
 - Be conservative with skill_id: only match if genuinely relevant
 
 Reply with ONLY the JSON object, no other text.`
@@ -154,7 +131,7 @@ func (k *AgentKernel) analyzeQuery(ctx context.Context, query string) *QueryAnal
 
 	slog.Debug("Query analyzed",
 		"task", a.TaskType, "skill", a.SkillID,
-		"complexity", a.Complexity, "post_process", a.PostProcess,
+		"complexity", a.Complexity,
 		"duration", time.Since(start))
 	return &a
 }

@@ -24,6 +24,9 @@ type Kernel interface {
 
 	// GetSlashCommands 获取所有可用的斜杠命令（/name → skillID）
 	GetSlashCommands() map[string]string
+
+	TaskMetricsSummary() map[string]interface{}
+	RecentTasks(n int) []TaskMetrics
 }
 
 // EventHandler 事件处理器
@@ -176,60 +179,4 @@ type ReflectionResult struct {
 	Learned    string   `json:"learned"`     // 学到的经验
 }
 
-// PatternDetector 模式检测接口（增强能力）
-type PatternDetector interface {
-	// Detect 检测模式
-	Detect(ctx context.Context, sessionID string, messages []Message) ([]Pattern, error)
-}
 
-// Pattern 检测到的模式
-type Pattern struct {
-	Type        string  `json:"type"`
-	Description string  `json:"description"`
-	Confidence  float64 `json:"confidence"`
-	Frequency   int     `json:"frequency"`
-}
-
-// KnowledgeCollector 知识收集接口 — 质量门控后的知识积累
-type KnowledgeCollector interface {
-	// AddKnowledge 添加知识条目（标题、内容、来源、标签）
-	AddKnowledge(ctx context.Context, title, content, source string, tags []string) (string, error)
-
-	// SearchKnowledge 搜索知识库
-	SearchKnowledge(ctx context.Context, query string, limit int) ([]KnowledgeItem, error)
-
-	// InjectContext 将相关知识注入为提示词片段，返回 (contextText, docIDs, error)
-	InjectContext(ctx context.Context, query string, maxTokens int) (string, []string, error)
-
-	// RecordKnowledgeUsage 记录知识被使用后的质量反馈
-	RecordKnowledgeUsage(ctx context.Context, docIDs []string, qualityScore float64)
-}
-
-// KnowledgeItem 知识条目
-type KnowledgeItem struct {
-	ID      string   `json:"id"`
-	Title   string   `json:"title"`
-	Content string   `json:"content"`
-	Tags    []string `json:"tags"`
-}
-
-// KnowledgeAccessor is a minimal interface for knowledge tool access (avoids circular imports).
-type KnowledgeAccessor interface {
-	AddKnowledge(ctx context.Context, title, content, source string, tags []string) (string, error)
-	SearchKnowledge(ctx context.Context, query string, limit int) ([]KnowledgeItem, error)
-}
-
-type ctxKey string
-
-const knowledgeCtxKey ctxKey = "knowledge"
-
-// WithKnowledge injects a KnowledgeAccessor into the context for tool use.
-func WithKnowledge(ctx context.Context, kb KnowledgeAccessor) context.Context {
-	return context.WithValue(ctx, knowledgeCtxKey, kb)
-}
-
-// GetKnowledge retrieves a KnowledgeAccessor from the context.
-func GetKnowledge(ctx context.Context) (KnowledgeAccessor, bool) {
-	kb, ok := ctx.Value(knowledgeCtxKey).(KnowledgeAccessor)
-	return kb, ok
-}

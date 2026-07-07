@@ -50,7 +50,7 @@ func TestIntegration_FullPipeline(t *testing.T) {
 
 	// 3. Verify SQLite files exist
 	time.Sleep(100 * time.Millisecond) // wait for async init
-	for _, f := range []string{"sessions.db", "knowledge.db", "memory.db"} {
+	for _, f := range []string{"sessions.db", "memory.db"} {
 		path := filepath.Join(dir, f)
 		if _, err := os.Stat(path); os.IsNotExist(err) {
 			t.Errorf("expected %s to exist", f)
@@ -125,7 +125,7 @@ func TestIntegration_ConcurrentSessions(t *testing.T) {
 	}
 }
 
-// TestIntegration_KnowledgeStore verifies the knowledge actor pipeline.
+// TestIntegration_KnowledgeStore verifies the application starts without errors (knowledge base removed).
 func TestIntegration_KnowledgeStore(t *testing.T) {
 	dir := t.TempDir()
 	cfg := config.DefaultConfig()
@@ -138,14 +138,8 @@ func TestIntegration_KnowledgeStore(t *testing.T) {
 	}
 	defer app.Stop(context.Background())
 
-	// Verify knowledge.db was created
 	time.Sleep(100 * time.Millisecond)
-	path := filepath.Join(dir, "knowledge.db")
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		t.Error("knowledge.db not created")
-	} else {
-		t.Logf("✓ knowledge.db exists")
-	}
+	t.Log("✓ application started successfully without knowledge base")
 }
 
 // TestIntegration_APIEndpoints verifies all API endpoints.

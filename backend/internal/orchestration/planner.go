@@ -55,7 +55,7 @@ var planningPrompt = `你是一个任务规划专家。分析用户请求，自�
 1. 每个子任务应该是独立可执行的一步
 2. 子任务数按实际需要拆分，不要人为限制
 3. 简单请求返回1个子任务（title和description都用原始请求）
-4. 标注建议工具：read_file/write_file/execute_command/list_directory/search_files/git_status/search_knowledge/add_knowledge
+4. 标注建议工具：read_file/write_file/execute_command/list_directory/search_files/git_status
 
 ## 输出格式（严格JSON）
 {
@@ -241,7 +241,7 @@ type Proposals struct {
 var readOnlyTools = map[string]bool{
 	"read_file": true, "list_directory": true, "search_files": true,
 	"search_symbols": true, "git_status": true, "git_diff": true,
-	"git_log": true, "git_blame": true, "search_knowledge": true,
+	"git_log": true, "git_blame": true,
 }
 
 // Research 分析现有代码，生成研究报告（ReAct 循环，只读工具）

@@ -25,6 +25,7 @@ import (
 // Server API 服务器
 type Server struct {
 	orchestrator    *orchestration.Orchestrator
+	kernel          kernel.Kernel
 	authService     *auth.Service
 	addr            string
 	server          *http.Server
@@ -59,6 +60,7 @@ func NewServer(orch *orchestration.Orchestrator, addr string, authSvc *auth.Serv
 	if authSvc != nil {
 		mux.HandleFunc("/api/v1/auth/", authSvc.AuthHandler)
 	}
+	mux.HandleFunc("/api/v1/tasks", s.handleTasks)
 	mux.HandleFunc("/api/v1/config", s.handleConfig)
 	mux.HandleFunc("/api/v1/projects", s.handleProjects)
 	mux.HandleFunc("/api/v1/projects/", s.handleProjectDetail)
@@ -452,13 +454,34 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	// JSON format (legacy, for programmatic access)
 	stats := s.orchestrator.GetStats()
 	stats["requests_total"] = metricsRequests.Load()
 	stats["tokens_total"] = metricsTokens.Load()
 	stats["tool_calls_total"] = metricsToolCalls.Load()
 	stats["errors_total"] = metricsErrors.Load()
 	s.writeJSON(w, http.StatusOK, stats)
+}
+
+func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.kernel == nil {
+		s.writeJSON(w, http.StatusOK, map[string]interface{}{"total_tasks": 0, "recent_count": 0, "tasks": []interface{}{}})
+		return
+	}
+	if r.URL.Query().Get("summary") == "true" {
+		s.writeJSON(w, http.StatusOK, s.kernel.TaskMetricsSummary())
+		return
+	}
+	n := 50
+	if v := r.URL.Query().Get("n"); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 && parsed <= 500 {
+			n = parsed
+		}
+	}
+	s.writeJSON(w, http.StatusOK, s.kernel.RecentTasks(n))
 }
 
 // handlePrometheus returns metrics in Prometheus text format.
@@ -514,6 +537,11 @@ func sanitizeParam(s string) string {
 // SetChannelRegistry 设置渠道注册表
 func (s *Server) SetChannelRegistry(registry *channel.Registry) {
 	s.channelRegistry = registry
+}
+
+// SetKernel sets the kernel reference for task metrics access.
+func (s *Server) SetKernel(k kernel.Kernel) {
+	s.kernel = k
 }
 
 // RegisterHandler 返回HTTP处理器注册函数

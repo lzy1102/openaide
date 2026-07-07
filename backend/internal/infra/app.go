@@ -191,6 +191,7 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 		authSvc = auth.NewService(os.Getenv("OPENAIDE_JWT_SECRET"))
 	}
 	app.APIServer = api.NewServer(orch, addr, authSvc)
+	app.APIServer.SetKernel(agentKernel)
 
 	// 9. 渠道层（外部消息接入）
 	if err := setupChannels(app, cfg, orch, pluginMgr); err != nil {

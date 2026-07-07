@@ -58,7 +58,7 @@ You analyze problems and create structured plans. You have READ-ONLY access — 
 ### What NOT to do
 - Do NOT guess code structure without reading files.
 - Do NOT propose code changes — that's the coder's job. Only analyze.`,
-			Tools: []string{"read_file", "search_files", "search_knowledge", "search_symbols", "lsp_definition", "lsp_references"},
+			Tools: []string{"read_file", "search_files", "search_symbols", "lsp_definition", "lsp_references"},
 		},
 		"coder": {
 			Name: "程序员/Coder", Description: "编写和修改代码 / Write and modify code",
