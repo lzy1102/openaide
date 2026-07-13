@@ -367,23 +367,8 @@ var history []string // 会话内查询历史（Ctrl+R 搜索）
 				taskOpts = append(taskOpts, label)
 				taskMap[label] = i
 			}
-			selected, _ := pterm.DefaultInteractiveMultiselect.
-				WithOptions(taskOpts).
-				WithDefaultText(lang.T("repl.select_subtasks", len(plan.Subtasks))).
-				WithMaxHeight(12).
-				Show()
-			if len(selected) > 0 {
-				var filtered []orchestration.SubTask
-				for _, label := range selected {
-					if idx, ok := taskMap[label]; ok {
-						filtered = append(filtered, plan.Subtasks[idx])
-					}
-				}
-				plan.Subtasks = filtered
-				executePlanQuery(app, query, plan)
-			} else {
-				executeStreamQuery(app, query, &sessionID, autoYes)
-			}
+			// 默认全选，直接执行
+			executePlanQuery(app, query, plan)
 
 		}
 		rl.SetPrompt(PromptStyle(sessionID, modelName, false, sessionTitle))
