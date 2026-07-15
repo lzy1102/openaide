@@ -471,6 +471,7 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string,
 
 	// 等待第一个chunk时显示思考中指示器
 	thinkingSpinner, _ := pterm.DefaultSpinner.WithShowTimer(false).WithText(pterm.Cyan("Thinking...")).Start()
+	fmt.Print("\033[?25l") // hide cursor
 
 	for chunk := range stream {
 		if firstChunk {
@@ -510,16 +511,21 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string,
 		if chunk.Type == kernel.ChunkTypeToolCall && chunk.ToolName != "" {
 			toolNames = append(toolNames, chunk.ToolName)
 			totalTools++
-			icon := toolIcon(chunk.ToolName)
-			argsPreview := toolArgsPreview(chunk.ToolName, chunk.ToolArgs)
-			fmt.Printf("\r\033[K  %s%s %s%s%s\n", cYellow, icon, chunk.ToolName, cReset, argsPreview)
+			// 压缩显示：只更新工具列表，不逐个打印
+			seen := make(map[string]bool)
+			var unique []string
+			for _, n := range toolNames {
+				if !seen[n] { seen[n] = true; unique = append(unique, n) }
+			}
+			fmt.Printf("\r\033[K  %s⏳ %s%s\n", cYellow, strings.Join(unique, ", "), cReset)
 		}
 		if chunk.Type == kernel.ChunkTypeToolDone && chunk.ToolName != "" {
-			fmt.Printf("\r\033[K  %s✓ %s%s\n", cToolOK, chunk.ToolName, cReset)
+			// 工具完成时不单独打印，等全部完成后统一显示
 		}
 	}
 	elapsed := time.Since(startTime)
 	cancel()
+	fmt.Print("\033[?25h") // show cursor
 
 	// 清除工具状态行
 	fmt.Print("\r\033[K")
