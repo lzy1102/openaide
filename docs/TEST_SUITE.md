@@ -147,15 +147,7 @@ rm -rf ~/.openaide/data/
 | A18 | 并行工具 | `openaide "同时读取 README.md 和 CLAUDE.md"` | 并行调用 read_file，更快完成 | ☐ |
 | A19 | 危险工具 | `openaide "执行 rm -rf /"` | 弹出审批，需要确认 | ☐ |
 
-### 4.3 知识库 (Knowledge)
-
-| # | 测试场景 | 命令 | 预期结果 | 通过 |
-|---|---------|------|---------|------|
-| A20 | 知识检索 | `openaide "我们之前讨论过哪些优化？"` | 检索知识库中的历史记录 | ☐ |
-| A21 | 知识积累 | 连续问 3 个相关的问题，第 4 个问 "总结我们讨论过的内容" | 知识积累后能回忆之前的讨论 | ☐ |
-| A22 | 知识搜索 | 在 REPL 中，AI 使用 search_knowledge 工具 | 返回知识库匹配结果 | ☐ |
-
-### 4.4 记忆管理 (MemGPT)
+### 4.3 记忆管理 (MemGPT)
 
 | # | 测试场景 | 命令 | 预期结果 | 通过 |
 |---|---------|------|---------|------|
@@ -166,16 +158,15 @@ rm -rf ~/.openaide/data/
 | A27 | 核心记忆 | AI 使用 `manage_memory(action='remember')` 存储事实 | 核心事实持久化 | ☐ |
 | A28 | 上下文压缩 | 超过 4000 token 的大对话 | 自动压缩旧消息为摘要 | ☐ |
 
-### 4.5 反思与学习 (Reflection)
+### 4.4 反思与学习 (Reflection)
 
 | # | 测试场景 | 命令 | 预期结果 | 通过 |
 |---|---------|------|---------|------|
 | A29 | 任务反思 | `openaide "重构 CLAUDE.md，让它更简洁"` | 完成后自动反思，记录质量评分 | ☐ |
-| A30 | 技能提取 | 连续 5 次问类似的问题（如 "解释 Go 的接口" → "Go 接口示例" → ...） | distill 触发，自动创建技能 | ☐ |
-| A31 | 用户反馈 | 在 REPL 中对回答表示满意 ("good") | 知识权重提升 | ☐ |
-| A32 | 用户反馈 (差) | 在 REPL 中对回答表示不满 ("bad") | 知识权重降低 | ☐ |
+| A31 | 用户反馈 | 在 REPL 中对回答表示满意 ("good") | 技能置信度提升 | ☐ |
+| A32 | 用户反馈 (差) | 在 REPL 中对回答表示不满 ("bad") | 技能置信度降低 | ☐ |
 
-### 4.6 审查功能
+### 4.5 审查功能
 
 | # | 测试场景 | 命令 | 预期结果 | 通过 |
 |---|---------|------|---------|------|
@@ -279,12 +270,11 @@ rm -rf ~/.openaide/data/
 | # | 测试场景 | 操作 | 预期结果 | 通过 |
 |---|---------|------|---------|------|
 | D1 | SQLite 会话 | 检查 `~/.openaide/data/sessions.db` | 包含会话数据 | ☐ |
-| D2 | SQLite 知识 | 检查 `~/.openaide/data/knowledge.db` | 包含知识条目 | ☐ |
-| D3 | SQLite 记忆 | 检查 `~/.openaide/data/memory.db` | 包含记忆数据 | ☐ |
-| D4 | 技能文件 | 检查 `~/.openaide/data/skills/auto_skills.json` | distill 后包含自动技能 | ☐ |
-| D5 | 检查点 | 检查 `~/.openaide/data/checkpoints/` | 含检查点 JSON 文件 | ☐ |
-| D6 | 追踪日志 | 检查 `~/.openaide/data/traces.jsonl` | 包含执行追踪记录 | ☐ |
-| D7 | 自定义 Prompt | 创建 `~/.openaide/data/prompts/user/custom.md` | REPL 中自动加载自定义 prompt | ☐ |
+| D2 | SQLite 记忆 | 检查 `~/.openaide/data/memory.db` | 包含记忆数据 | ☐ |
+| D3 | 技能文件 | 检查 `~/.openaide/data/skills/auto_skills.json` | 包含自动技能 | ☐ |
+| D4 | 检查点 | 检查 `~/.openaide/data/checkpoints/` | 含检查点 JSON 文件 | ☐ |
+| D5 | 追踪日志 | 检查 `~/.openaide/data/traces.jsonl` | 包含执行追踪记录 | ☐ |
+| D6 | 自定义 Prompt | 创建 `~/.openaide/data/prompts/user/custom.md` | REPL 中自动加载自定义 prompt | ☐ |
 
 ---
 
@@ -337,18 +327,18 @@ rm -rf ~/.openaide/data/
 | 一、基础功能 | 11 | | | |
 | 二、CLI 模式 | 20 | | | |
 | 三、Server 模式 | 17 | | | |
-| 四、核心 Agent | 35 | | | |
+| 四、核心 Agent | 31 | | | |
 | 五、Team 模式 | 9 | | | |
 | 六、插件系统 | 8 | | | |
 | 七、会话管理 | 7 | | | |
 | 八、自我更新 | 3 | | | |
 | 九、错误处理 | 8 | | | |
 | 十、并发与性能 | 5 | | | |
-| 十一、数据持久化 | 7 | | | |
+| 十一、数据持久化 | 6 | | | |
 | 十二、ProjectMind | 4 | | | |
 | 十三、前端组件 | 9 | | | |
 | 十四、兼容性 | 8 | | | |
-| **合计** | **151** | | | |
+| **合计** | **146** | | | |
 
 ---
 

@@ -9,7 +9,7 @@
 
 **Go-based AI agent kernel that learns from every task.** SQLite · Vector ANN · 40 tools · 24-language LSP
 
-> Reflection → Knowledge Refinement → Skill Extraction — gets smarter with every use.
+> Reflection → Skill Feedback → MemGPT Memory — gets smarter with every use.
 
 ---
 
@@ -52,13 +52,13 @@ openaide server (REST+SSE)  openaide (REPL)
     orchestration/          agent/kernel/
     Plan → Execute          ReAct loop
          ↓                        ↓
-    llm/   tools/   memory/   knowledge/
-    40+ tools · Vector ANN · SQLite
+    llm/   tools/   memory/
+    40+ tools · Vector memory · SQLite
 ```
 
 ## Key Features
 
-- **Self-Learning**: Reflects on each task, extracts skills, accumulates knowledge — gets smarter over time
+- **Self-Learning**: Reflects on each task, adjusts skill confidence, accumulates project memory — gets smarter over time
 - **Multi-Agent Team**: Analyst → Coder → Reviewer → Executor with isolated sessions
 - **DeepPlan**: Research → Propose → Select → Plan → Execute — multi-round deep thinking
 - **MemGPT Memory**: Agent manages its own memory — archive, retrieve, core facts

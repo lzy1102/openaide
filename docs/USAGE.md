@@ -168,29 +168,6 @@ curl -X POST http://localhost:8080/api/v1/chat/stream \
 └── system.en.md    # 自定义英文提示词
 ```
 
-## 技能自动提取（蒸馏）
-
-OpenAIDE 会自动从你的使用模式中学习。当它检测到多个相似查询时，自动提取可复用技能。
-
-```yaml
-kernel:
-  distill_min_queries: 5      # 几个相似查询触发（默认5）
-  distill_similarity: 0.80    # 余弦相似度阈值（默认0.80）
-```
-
-**两种工作模式：**
-- 有 embedding 模型：余弦相似聚类，精确实时
-- 无 embedding 模型：LLM 直接聚类，无需 embedding API
-
-支持 embedding 的提供商：OpenAI `text-embedding-3-small`、智谱 `embedding-3`、通义 `text-embedding-v3`。配置方式：
-
-```yaml
-providers:
-  - name: glm
-    default_model: glm-4.5-flash
-    embedding_model: embedding-3   # 加这行
-```
-
 ## 多语言支持
 
 自动检测 21 种语言的项目规范：Go, Java, Kotlin, C/C++, C#, Swift, Python, Rust, Node/JS/TS, PHP, Ruby, Scala, Dart, Elixir, Haskell, Erlang, OCaml, R, Lua, Julia, Perl。
@@ -204,7 +181,6 @@ providers:
 ```
 ~/.openaide/data/
 ├── sessions.db          # 会话 (SQLite)
-├── knowledge.db         # 知识库 (SQLite + 向量)
 ├── memory.db            # 记忆 (SQLite)
 ├── skills/auto_skills.json  # 自动提取的技能
 ├── plugins/             # Claude 兼容插件
@@ -218,6 +194,6 @@ providers:
 
 **Q: 如何切换模型?** `/model` 查看，`/model <name>` 切换
 
-**Q: 如何让 Agent 更聪明?** 创建 `CLAUDE.md` 描述项目，用 `/team` 处理复杂任务，多跑类似任务让蒸馏系统学习
+**Q: 如何让 Agent 更聪明?** 创建 `CLAUDE.md` 描述项目，用 `/team` 处理复杂任务
 
 **Q: 数据在哪?** 默认 `~/.openaide/data/`，`storage.data_dir` 配置

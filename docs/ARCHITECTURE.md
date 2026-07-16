@@ -46,8 +46,6 @@
 │  │                                              │ │
 │  │  After each loop:                           │ │
 │  │    LLM-doReflection → QualityGate           │ │
-│  │    → autoSaveKnowledge → DistillCluster     │ │
-│  │    SemanticPatternDetector → DistillCluster │ │
 │  └────────────────────────────────────────────┘ │
 │                                                  │
 │  Sub-packages:                                   │
@@ -55,9 +53,9 @@
 │    kernel/trace/  — FileTracer, Checkpointer     │
 │    kernel/graph/  — DAG topological sort         │
 ├──────────────────────────────────────────────────┤
-│  llm/      tools/       memory/     knowledge/   │
-│  多提供商   43内置工具   会话记忆  向量ANN+       │
-│  网关+路由  文件/Git/    嵌入缓存   RAG+精炼      │
+│  llm/      tools/       memory/                  │
+│  多提供商   43内置工具   会话记忆                  │
+│  网关+路由  文件/Git/    嵌入缓存                  │
 │  双模型     命令/搜索/                           │
 │             浏览器/桌面/                          │
 │             LSP/MCP/审批                          │
@@ -66,7 +64,7 @@
 
 ## 设计原则
 
-- **LLM is the brain.** 不做规则降级。技能匹配、风险评估、轮次预估、反思、蒸馏——全部 LLM-native。LLM 不可用 = Agent 停摆。
+- **LLM is the brain.** 不做规则降级。技能匹配、风险评估、轮次预估、反思——全部 LLM-native。LLM 不可用 = Agent 停摆。
 - **CSP Actors.** 有状态模块单 goroutine 持有数据，外部通过 channel 通信。核心数据路径零锁。
 - **Prompt is layered.** 稳定前缀 (L0+L1+L2) 缓存。动态尾部 (L3+L5+L6) 按查询生成。分析格式仅审查/研究模式注入。
 
@@ -81,7 +79,6 @@
 | `internal/orchestration/` | 7+2T | 多Agent编排 |
 | `internal/api/` | 3+2T | HTTP API |
 | `internal/infra/` | 7+1T | DI容器 + 装配 |
-| `internal/knowledge/` | 1+2T | 向量知识库 |
 | `internal/plugin/` | 2+2T | Claude格式插件 |
 | `internal/mcp/` | 2+1T | MCP协议 |
 | `internal/channel/` | 5+1T | 外部渠道 |
@@ -95,15 +92,13 @@
 | 能力 | 说明 |
 |------|------|
 | **LLM 原生决策** | 全自动化：任务分析、技能匹配、风险判断、轮次预估、反射评估、后处理决策——全部 LLM 执行 |
-| **43 个内置工具** | 文件系统/Git/命令/Web搜索/浏览器/桌面操作/多模态/LSP/MCP/审批/验证/知识库/记忆管理 |
+| **43 个内置工具** | 文件系统/Git/命令/Web搜索/浏览器/桌面操作/多模态/LSP/MCP/审批/验证/记忆管理 |
 | **CSP Actor 并发** | 有状态模块单 goroutine + channel 通信，无锁化核心路径 |
 | **双模型路由** | 成本感知：reasoning 模型处理分析/审查/反思，execution 模型处理代码/命令/分类 |
 | **分层提示词 L0-L5** | L0(角色)+L1(规则)+L2(语言)+L3(动态)+L5(辅助)，L0按场景特殊化(server/repl/subagent) |
 | **自适应 ReAct** | 5-50 轮动态收敛，上下文窗口驱动而非固定上限，round≥10 时注入预算提示 |
-| **LLM 动态后处理** | 根据查询复杂度决定是否执行反思/知识/蒸馏，跳过简单查询以避免不必要开销 |
+| **LLM 动态后处理** | 根据查询复杂度决定是否执行反思，跳过简单查询以避免不必要开销 |
 | **质量门控** | LLM-first 评判（不再使用固定公式），自动评估输出质量并决定补交或交付 |
-| **知识库** | 向量索引 (ANN) + RAG 注入 + 知识点去重 + 自动入库 |
-| **技能蒸馏** | SemanticPatternDetector 聚类相似查询 → LLM 提取可复用技能模板 |
 | **自动语言注入** | 自动检测 21 种语言项目规范，注入语言特定约定 |
 | **多Agent编排** | LLM动态生成Team角色（非硬编码）、隔离子Agent（独立会话+进度回调）、Branch并行分解、ToT多路径探索投票 |
 | **插件系统** | Claude Code 官方格式兼容 (skills/MCP/hooks)，fsnotify热加载，支持命令定义钩子 |

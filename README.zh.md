@@ -7,9 +7,9 @@
 
 [English](README.md) | [中文](#)
 
-**Go 实现的 AI Agent 内核——知识积累、自主进化、每次任务都在变聪明。** SQLite · 向量 ANN · 40 工具 · 24 语言 LSP
+**Go 实现的 AI Agent 内核——反思进化、记忆积累、每次任务都在变聪明。** SQLite · 向量记忆 · 40 工具 · 24 语言 LSP
 
-> 反思 → 知识精炼 → 技能提取 —— 越用越聪明。
+> 反思 → 技能反馈 → MemGPT 记忆 —— 越用越聪明。
 
 ---
 
@@ -52,13 +52,13 @@ openaide server (API)    openaide (REPL)
     orchestration/         agent/kernel/
     Plan → Execute         ReAct 循环
          ↓                     ↓
-    llm/   tools/   memory/   knowledge/
-    40+ 工具 · 向量 ANN · SQLite
+    llm/   tools/   memory/
+    40+ 工具 · 向量记忆 · SQLite
 ```
 
 ## 核心能力
 
-- **自主学习**: 每次任务后反思、提取技能、积累知识——越用越聪明
+- **自主学习**: 每次任务后反思、调整技能置信度、积累项目记忆——越用越聪明
 - **多 Agent 协作**: 分析师 → 编码 → 审查 → 执行，会话隔离
 - **深度规划**: 研究 → 提案 → 选择 → 计划 → 执行——多轮深度思考
 - **MemGPT 记忆**: Agent 主动管理记忆——归档、检索、核心事实

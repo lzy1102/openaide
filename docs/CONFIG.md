@@ -38,7 +38,7 @@ llm:
   #     reasoning_effort: max          # 推理深度: min/low/medium/high/max
   #     json_mode: false               # JSON 模式
   #     strict_tools: true             # 严格工具调用
-  #     embedding_model: text-embedding-3-small  # 嵌入模型（知识库/记忆用）
+  #     embedding_model: text-embedding-3-small  # 嵌入模型（记忆用）
   #     headers:                       # 自定义 HTTP 头
   #       X-Custom: value
   #     enabled: true
@@ -60,10 +60,6 @@ kernel:
   max_tokens: 200000    # 最大上下文窗口
   min_rounds: 8         # 自适应轮次下限
   max_rounds_cap: 50    # 自适应轮次上限
-  distill_enabled: true        # 启用自动技能提取
-  knowledge_enabled: true      # 启用自动知识入库
-  distill_min_queries: 5       # 触发技能提取的最小相似查询数
-  distill_similarity: 0.80     # 余弦相似度阈值
   system_prompt: ""            # 自定义系统提示词（覆盖文件）
   unsafe_mode: true            # 安全模式: true=跳过审批
 
@@ -155,8 +151,6 @@ log:
 | `max_rounds` | 50 | 硬上限，触发预算耗尽回调 |
 | `min_rounds` | 8 | 自适应下限 |
 | `max_rounds_cap` | 50 | 自适应上限 |
-| `distill_enabled` | true | 是否自动从相似查询中提取技能 |
-| `knowledge_enabled` | true | 是否自动保存知识点 |
 | `unsafe_mode` | true | 跳过工具审批（生产环境建议 false） |
 
 ### MCP 协议

@@ -7,16 +7,15 @@
 
 | 模块 | 路径 | 文件数 | 核心职责 |
 |------|------|--------|----------|
-| **内核** | `internal/kernel/` | 22+14T | Agent核心：LLM统一查询分析、自适应ReAct循环（5-50轮）、CSP Actor模型、LLM动态后处理（反思/知识/蒸馏）、分层提示词(L0-L5)、语义模式检测、技能蒸馏、会话管理 |
+| **内核** | `internal/kernel/` | 22+14T | Agent核心：LLM统一查询分析、自适应ReAct循环（5-50轮）、CSP Actor模型、LLM动态后处理（反思）、分层提示词(L0-L5)、会话管理 |
 | **LLM** | `internal/llm/` | 6+2T | 多提供商网关（OpenAI兼容+Anthropic原生）、成本感知路由（reasoning/execution双模型）、Prompt缓存、Embedding、Router |
-| **工具** | `internal/tools/` | 18+6T | 43个内置工具：文件系统/Git/命令/搜索/知识库/浏览器/桌面/多模态/审批/验证/LSP/记忆管理 |
+| **工具** | `internal/tools/` | 18+6T | 43个内置工具：文件系统/Git/命令/搜索/浏览器/桌面/多模态/审批/验证/LSP/记忆管理 |
 | **记忆** | `internal/memory/` | 2+3T | SQLite WAL存储 + 批量嵌入 + 向量缓存 + 跨会话记忆 |
 | **编排** | `internal/orchestration/` | 7+2T | DeepPlan管线、LLM动态Team角色生成、隔离子Agent+进度回调、Branch并行分解、ToT探索、DAG拓扑排序 |
 | **API** | `internal/api/` | 3+2T | REST + SSE + WebSocket + Prometheus /metrics + JWT鉴权中间件 + 限流 |
 | **基础设施** | `internal/infra/` | 7+1T | DI容器(Application)、LLM工厂、Kernel工厂+增强(技能注入/Claude hooks)、渠道装配、配置热重载(hotreload)、插件热加载(plugin_watcher)、追踪 |
 | **配置** | `internal/config/` | 1+1T | JSON/YAML双格式、扁平展开、自动Provider识别、模型名→上下文推断 |
 | **认证** | `internal/auth/` | 1+1T | JWT签发/验证/中间件 |
-| **知识库** | `internal/knowledge/` | 1+2T | 知识精炼管道、向量索引ANN(RandomProjection分桶)、RAG注入、去重 |
 | **插件** | `internal/plugin/` | 2+2T | 插件管理 + Claude Code格式解析(skills/MCP/hooks) + fsnotify热重载 |
 | **MCP** | `internal/mcp/` | 2+1T | MCP协议：stdio+SSE传输、完整生命周期、内容类型处理、Server管理 |
 | **渠道** | `internal/channel/` | 5+1T | 外部消息接入：Webhook、飞书、Telegram、任务队列 |
@@ -39,7 +38,7 @@
 cmd/cli (REPL)          ──→ infra ──→ kernel ──→ llm / tools / memory
 openaide server            ──→ infra ──→ api ──→ orchestration ──→ kernel
 cmd/desktop (Wails)        ──→ infra ──→ kernel (direct, no HTTP)
-                              ├── auth / knowledge / feedback
+                              ├── auth / feedback
                               ├── channel (Webhook/飞书/Telegram)
                               ├── plugin (Claude Code 格式兼容)
                               └── mcp (外部工具生态)
@@ -68,23 +67,18 @@ mcp    ←── infra/app      (MCP server 连接 + tool 注册)
                         ▼                     ▼                     ▼
                     buildMessages          LLM.Chat           executeTool
                     (L0-L5分层提示词        (网关路由:          (审批+权限+
-                     记忆+知识库注入)        reasoning/execution) 工具执行)
+                     记忆注入)               reasoning/execution) 工具执行)
                         │                     │                     │
                         └─────────────────────┴─────────────────────┘
                                               │
-                              ┌───────────────┼───────────────┐
-                              ▼               ▼               ▼
-                      finalizeResponse   doReflection    autoSaveKnowledge
+                              ┌───────────────┴───────────────┐
+                              ▼                               ▼
+                      finalizeResponse                  doReflection
                            (LLM判断是否执行后处理)
-                              │               │               │
-                              └───────────────┴───────────────┘
+                              │                               │
+                              └───────────────────────────────┘
                                               │
-                              extractSkillsFromPatterns
-                              (SemanticPatternDetector → DistillCluster)
-                                              │
-                                    ┌─────────┴─────────┐
-                                    ▼                   ▼
-                             Response → 用户     知识库/技能库持久化
+                                      Response → 用户
 
 ── 高级编排路径 ──
 

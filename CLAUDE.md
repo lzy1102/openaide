@@ -74,8 +74,6 @@ OpenAIDE is an AI Agent kernel platform in Go. Strictly layered, CSP actor concu
 │  │                                                      │ │
 │  │  After each loop:                                  │ │
 │  │    doReflection (LLM post_process) → QualityGate   │ │
-│  │    → autoSaveKnowledge → DistillCluster            │ │
-│  │    SemanticPatternDetector → DistillCluster        │ │
 │  └────────────────────────────────────────────────────┘ │
 │                                                          │
 │  Sub-packages:                                           │
@@ -83,16 +81,16 @@ OpenAIDE is an AI Agent kernel platform in Go. Strictly layered, CSP actor concu
 │    kernel/trace/  — FileTracer, FileCheckpointer         │
 │    kernel/graph/  — DAG topological sort                 │
 ├──────────────────────────────────────────────────────────┤
-│  llm/          tools/         memory/      knowledge/    │
-│  Multi-provider 43 tools     Session mem  Vector ANN     │
-│  Gateway+Rtr   Filesystem     Embed cache   RAG + Refine │
+│  llm/          tools/         memory/                     │
+│  Multi-provider 43 tools     Session mem (MemGPT-style)   │
+│  Gateway+Rtr   Filesystem     Embed cache                 │
 │               Browser/Desktop/LSP/MCP                    │
 └──────────────────────────────────────────────────────────┘
 ```
 
 ### Design Principles
 
-- **LLM is the brain.** No rule-based fallbacks. Skill matching, risk assessment, round estimation, reflection, distillation — all LLM-native. LLM unavailable = agent dead. No degradation.
+- **LLM is the brain.** No rule-based fallbacks. Skill matching, risk assessment, round estimation, reflection — all LLM-native. LLM unavailable = agent dead. No degradation.
 - **CSP Actors.** Stateful modules own their data in one goroutine. External access via channels. Zero locks for core data paths. Per-request state passed as parameters — never stored on shared structs.
 - **Goroutines are cheap.** No artificial semaphores. Direct goroutine dispatch for event handlers. `context.WithoutCancel` for async tasks.
 - **Prompt is layered.** Stable prefix (L0+L1+L2) cached. Dynamic tail (L3+L5+L6) per-query. Analysis format only in review/research modes.
@@ -115,11 +113,10 @@ OpenAIDE is an AI Agent kernel platform in Go. Strictly layered, CSP actor concu
 
 2. **`backend/internal/kernel/`** — Core agent kernel with CSP actor architecture:
    - `kernel.go` — `AgentKernel` struct, Config, constructor, state management, event system.
-   - `kernel_process.go` — `Process()` sync path + `doReflection()` + `autoSaveKnowledge()` + `extractSkillsFromPatterns()`
+   - `kernel_process.go` — `Process()` sync path + `doReflection()` (async reflection after ReAct loop)
     - `kernel_stream.go` — `ProcessStream()` streaming path. Tool partitioning with parallel-safe batching. **Auto-verification**: after coding, detects project test command (go test/npm test/make test) and runs it; failures injected as user messages back into ReAct loop.
    - `kernel_prompt.go` — Layered prompt system (L0-L5), LLM task classification, file overrides, L3 dynamic tail.
    - `kernel_react.go` — Shared ReAct helpers: prepareReActRound, partitionToolCalls, executeToolBatch
-   - `semantic_pattern.go` — SemanticPatternDetector (embedding clustering) + DistillCluster (LLM knowledge extraction)
    - **Sub-packages:**
      - `kernel/actor/` — Generic Actor, ActorStore[K,V], SafeMap[K,V] (zero kernel deps, used by 12+ packages)
      - `kernel/trace/` — FileTracer (JSONL buffered), FileCheckpointer (disk crash recovery)
@@ -135,18 +132,13 @@ OpenAIDE is an AI Agent kernel platform in Go. Strictly layered, CSP actor concu
    - Other files: `compress.go`, `checkpoint.go`, `approval.go`, `adaptive.go`, `tracer.go`
    - Legacy (not default): `session_store.go`
 
-3. **`backend/internal/knowledge/`** — Knowledge base:
-   - `knowledge_actor.go` — KnowledgeActor (SQLite + in-memory vector index + random projection bucketing)
-   - `knowledge.go` — Legacy file-based knowledge (not default)
-
-4. **`backend/internal/memory/`** — MemGPT-style memory store:
+3. **`backend/internal/memory/`** — MemGPT-style memory store:
    - `memory_actor.go` — MemoryActor (working memory + archival storage + core facts). Agent-driven memory management: archive conversations, retrieve from archive, store core facts that survive all sessions.
    - `memory.go` — Legacy file-based memory (not default)
 
 3. **`backend/internal/tools/`** (18 files) — Tool definitions and handlers split by domain:
    - `registry.go` — `Registry` framework, `BuiltinTools()` concatenates domain-specific defs, `BuiltinHandlers()`, `RegisterBuiltins()`, `safeAbsPath()`, `formatBytes()`
    - `tools_filesystem.go` — read_file (with offset/limit), write_file, execute_command, list_directory, search_files
-   - `tools_knowledge.go` — search_knowledge, add_knowledge, `KnowledgeAccessor` interface, `WithKnowledge()`
    - `tools_symbol.go` — search_symbols
    - `diff_edit.go` — diff_edit (ACI-verified: before/after comparison + write verification), diff_edit_lines
    - `tools_memory.go` — manage_memory (MemGPT: archive, retrieve, remember, recall actions)
@@ -270,38 +262,7 @@ OpenAIDE accumulates project knowledge across sessions via `internal/projectmind
 - **Execution History**: records every task (success, errors, fixes, time, model). Keeps last 50. Feeds `RecentFailures()` into prompts so agents learn from past mistakes.
 - **Strategy Effectiveness**: tracks which approaches succeed for which task types. Propose phase receives historical success rates — LLM makes data-informed choices ("方案C在重构场景成功率100%, 方案B在类似任务失败过").
 - **Discovery signals**: sub-agent output containing `[DISCOVERY: ...]` or `[REPLAN: ...]` automatically captured and persisted.
-- **KnowledgeBase sync**: `SyncToKnowledgeBase()` converts structured facts to searchable KB documents (tagged `projectmind`) — unified RAG injection via `buildMessages`.
 - **Model routing**: `llm.model_routing.reasoning` / `execution` in config.yaml. Analyst/reviewer → reasoning model (pro, deep thinking). Coder/executor/classifier → execution model (flash, fast). Synthesis and small classification calls also use execution model for cost efficiency.
-
-### Skill extraction & distillation (gets smarter every task)
-
-After each ReAct loop, the kernel's learning pipeline extracts reusable skills:
-
-1. **SemanticPatternDetector**: Two clustering paths — embedding-based (cosine > `distill_similarity`) when an embedding model is available, or LLM-based clustering (no embedding API required) as fallback. Accumulates query+response pairs and emits `distillable_cluster` patterns.
-2. **evaluateAndDistill (single LLM call)**: Quality evaluation + distillation combined. LLM judges whether the cluster is worth extracting, then either returns `SKIP` or produces a distilled skill card with key files, tool strategy, gotchas, and best approach. Takes `[]clusterExample` directly (not `[][]clusterExample` + index).
-3. **GetExamplesByTheme**: Looks up cluster examples by theme text. Searches embedding-based clusters first, then falls back to LLM-grouped examples (`llmGroups`). Used by `extractSkillsFromPatterns` to feed correct examples to distillation.
-4. **LLM-based clustering**: `clusterWithLLM` now parses query indices from LLM output to populate `llmGroups` (theme→examples mapping). Previously examples were discarded.
-5. **Dedup in Detect**: `seenCount` per session tracks processed message count — only new pairs are added to clusters. Prevents 2-3x cluster inflation from re-processing the same messages every ReAct round.
-6. **Auto-persist**: Skills write to `~/.openaide/data/skills/auto_skills.json` on every mutation. Reloaded on restart. Distilled knowledge also stored in KnowledgeActor for RAG retrieval.
-7. **Implicit feedback**: LLMReflection infers user satisfaction from conversation flow. `RecordKnowledgeUsage` adjusts weights accordingly.
-8. **Configurable**: `distill_min_queries` (default 5) sets buffer threshold and `collectPatterns` minimum size. `distill_similarity` (default 0.80) sets cosine threshold for embedding mode. `distill_enabled` (default true) disables entire pipeline.
-
-Works with ALL LLM providers — no embedding API required.
-
-### Knowledge Retrieval (Generative Agents-inspired)
-
-Knowledge base retrieval uses composite scoring inspired by the Generative Agents (2023) paper:
-
-```
-compositeScore = cosine*0.5 + weight*0.3 + 0.2
-                 ↑ relevance   ↑ importance   ↑ recency
-```
-
-- **Relevance** (50%): embedding cosine similarity
-- **Importance** (30%): document weight adjusted by `RecordKnowledgeUsage` feedback
-- **Recency** (20%): base score — all documents have recency floor; `weight` increases with positive feedback
-
-Documents with `weight > 1.0` (positively reinforced) rank higher than equally-relevant documents with `weight = 1.0`.
 
 ### Process Supervision (Let's Verify Step by Step, 2023)
 
@@ -371,7 +332,7 @@ All tools return structured, agent-friendly output:
 - **User customization**: Add `.md` files to `~/.openaide/data/prompts/user/` — auto-appended after system layers. Never overwritten on upgrade. Onboarding creates commented templates.
 - **System prompts**: Always built-in (compiled Go code). Upgrades apply immediately — no disk files to conflict.
 - **Default prompt**: Bilingual (Chinese/English), auto-detected from `LANG` env var.
-- **Runtime hot-reload**: `AgentKernel.SetSystemPrompt()` allows prompt changes without kernel restart. `ConfigReloader` hot-reloads all settings including `distillEnabled`, `MaxRounds`, `MaxTokens`, `MinRounds`, `MaxRoundsCap` without restart.
+- **Runtime hot-reload**: `AgentKernel.SetSystemPrompt()` allows prompt changes without kernel restart. `ConfigReloader` hot-reloads all settings including `MaxRounds`, `MaxTokens`, `MinRounds`, `MaxRoundsCap` without restart.
 - **Skill prompts**: LLM semantic skill detection per-query via `skillActor.DetectSkill()`, then injected via `skillActor.InjectPrompt()`.
 
 ### Plugin system (Claude Code compatible)
@@ -475,14 +436,13 @@ openaide --verbose 2>&1 | grep -i "claude\|plugin\|hook"
 ~/.openaide/config.yaml       ← global config (LLM providers, keys, server port)
 ~/.openaide/data/              ← global data (default ~/.openaide/data)
 ├── sessions.db                ← SessionActor (SQLite, WAL mode)
-├── knowledge.db               ← KnowledgeActor (SQLite + vector index)
 ├── memory.db                  ← MemoryActor (SQLite + vector cache)
 ├── prompts/
 │   └── user/                  ← user custom prompts (template on first install)
 ├── plugins/                   ← Claude-format plugins (hot-reload via fsnotify, preserves stats)
 ├── skills/
 ├── project_mind.json          ← cross-session facts (CodeMap, RiskMap, Conventions)
-│   └── auto_skills.json       ← auto-extracted + distilled skills
+│   └── auto_skills.json       ← persisted skills (Claude skills + manual)
 ├── checkpoints/               ← session checkpoints (JSON files)
 ├── traces.jsonl               ← execution traces (append-only)
 ├── events/                    ← persisted events (optional)
@@ -495,7 +455,7 @@ providers:
   - name: deepseek             # Architect — deep reasoning
     default_model: deepseek-v4-pro
     timeout: 300
-    # embedding_model: text-embedding-3-small  # optional: for skill distillation
+    # embedding_model: text-embedding-3-small  # optional: for memory semantic search
   - name: deepseek-flash       # Editor — fast execution
     default_model: deepseek-v4-flash
     timeout: 120
@@ -518,20 +478,15 @@ mcp:
       type: sse
       url: https://mcp.tavily.com/sse
 
-# Kernel: ReAct loop + skill distillation + knowledge accumulation
+# Kernel: ReAct loop + reflection + skill management
 kernel:
-  distill_enabled: true        # auto-extract skills from patterns (default true)
-  knowledge_enabled: true      # auto-save knowledge to base (default true)
-  distill_min_queries: 5       # queries to trigger skill extraction (default 5)
-  distill_similarity: 0.80     # cosine threshold for embedding clustering (default 0.80)
+  reflection_enabled: true     # LLM post-execution reflection (default true)
 
 # Storage: default is SQLite
 storage:
   data_dir: ~/.openaide/data
   session_store: sqlite        # "sqlite" (default), "file", "memory"
 ```
-
-Skill distillation works with ALL providers. If `embedding_model` is set (OpenAI, GLM, Qwen), uses cosine similarity. If not (DeepSeek, Kimi, Anthropic), uses LLM-based clustering — no embedding API required.
 
 ### CLI (REPL)
 
@@ -584,7 +539,6 @@ All stateful modules use Go's CSP model: each module owns its data in a single g
 | Sessions | `SessionActor` | SQLite (`sessions.db`) | WAL mode, search, pagination |
 | Skills | `SkillActor` | In-memory | LLM detection outside actor |
 | Memory | `MemoryActor` | SQLite (`memory.db`) | Batch embedding, vector cache |
-| Knowledge | `Actor` | SQLite (`knowledge.db`) | Vector index, bucketed ANN search |
 | Checkpoint | `FileCheckpointer` | File JSONL | Actor serializes file access |
 | Tracer | `FileTracer` | File JSONL | Actor serializes file access |
 | Rate Limit | `RateLimiter` | In-memory | Token bucket via channel |
@@ -595,40 +549,17 @@ All stateful modules use Go's CSP model: each module owns its data in a single g
 
 **atomic.Value**: Used for read-heavy single-value state (systemPrompt, kernel state, language, tool registry).
 
-### Knowledge Accumulation Pipeline
-
-After each ReAct loop (async, via `context.WithoutCancel`):
-
-```
-Response → doReflection (LLMReflection) → quality score 1-10
-  │
-  ├─→ autoSaveKnowledge (gated by post_process + knowledge_enabled config)
-  │     → QualityGate (LLM-first: reflection.Quality >= 5 or direct LLM ask)
-  │     → KnowledgeActor.Refine()
-  │       → Dedup (cosine > 0.85 → merge)
-  │       → LLM extract (title + facts + files + errors + decisions)
-  │       → Store in knowledge.db (with weight, adjusted by RecordKnowledgeUsage)
-  │
-  └─→ SemanticPatternDetector → embedding clustering (cosine > 0.80)
-        or LLM clustering (no embedder) → llmGroups (theme→examples)
-        → collectPatterns (n ≥ minSize) → extractSkillsFromPatterns()
-          → GetExamplesByTheme → evaluateAndDistill (LLM quality gate)
-          → AddDistilledSkill → onSave (auto_skills.json)
-          → KnowledgeActor (RAG-searchable)
-```
-
 ### Storage Layout
 
 ```
 ~/.openaide/data/
 ├── sessions.db        ← SessionActor (SQLite, default)
-├── knowledge.db       ← KnowledgeActor (SQLite)
 ├── memory.db          ← MemoryActor (SQLite)
 ├── prompts/user/      ← user custom prompts (editable templates)
 ├── plugins/           ← Claude-format plugins (hot-reload via fsnotify, preserves stats)
 ├── skills/
 ├── project_mind.json          ← cross-session facts (CodeMap, RiskMap, Conventions)
-│   └── auto_skills.json       ← auto-extracted + distilled skills
+│   └── auto_skills.json       ← persisted skills (Claude skills + manual)
 ├── skills/            ← custom skills
 ├── project_mind.json          ← cross-session facts (CodeMap, RiskMap, Conventions)
 ├── traces.jsonl       ← execution traces
