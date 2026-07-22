@@ -2,6 +2,7 @@ package kernel
 
 import (
 	"context"
+	"fmt"
 	"strings"
 )
 
@@ -46,6 +47,7 @@ var DangerousCommandPrefixes = []string{
 type AutoApprover struct {
 	ApprovedTools map[string]bool
 	UnsafeMode    bool
+	llm           LLMProvider
 }
 
 func NewAutoApprover() *AutoApprover {
@@ -63,6 +65,13 @@ func NewAutoApprover() *AutoApprover {
 			"read_image":       true,
 		},
 	}
+}
+
+// SetLLM 注入 LLM 用于 execute_command 的风险二次评估。
+// 配置后,execute_command 会先走 LLM 判断 safe/dangerous,
+// 再回退到静态规则(危险命令黑名单 / 安全命令白名单)。
+func (a *AutoApprover) SetLLM(llm LLMProvider) {
+	a.llm = llm
 }
 
 func isDangerousCommand(args string) bool {
@@ -85,7 +94,7 @@ func isSafeCommand(args string) bool {
 	return false
 }
 
-func (a *AutoApprover) RequestApproval(_ context.Context, req *ApprovalRequest) *ApprovalResult {
+func (a *AutoApprover) RequestApproval(ctx context.Context, req *ApprovalRequest) *ApprovalResult {
 	if a.UnsafeMode {
 		return &ApprovalResult{Approved: true, Reason: "auto-approved (unsafe mode)"}
 	}
@@ -95,6 +104,22 @@ func (a *AutoApprover) RequestApproval(_ context.Context, req *ApprovalRequest) 
 	}
 
 	if req.Tool == "execute_command" {
+		// LLM 风险评估优先于静态规则
+		if a.llm != nil {
+			prompt := fmt.Sprintf(
+				"Assess the risk of executing this command. Reply with exactly one word: safe or dangerous.\nCommand: %s",
+				req.Args,
+			)
+			if resp, err := a.llm.Chat(ctx, []Message{{Role: "user", Content: prompt}}, nil, nil); err == nil && resp != nil {
+				assessment := strings.ToLower(strings.TrimSpace(resp.Content))
+				if strings.Contains(assessment, "dangerous") {
+					return &ApprovalResult{Approved: false, Reason: "LLM assessed as dangerous"}
+				}
+				if strings.Contains(assessment, "safe") {
+					return &ApprovalResult{Approved: true, Reason: "LLM assessed as safe"}
+				}
+			}
+		}
 		if isDangerousCommand(req.Args) {
 			return &ApprovalResult{Approved: false, Reason: "dangerous command — needs approval"}
 		}

@@ -43,6 +43,9 @@ type AgentKernel struct {
 	// 指标系统
 	metrics *MetricsStore
 
+	// 代码索引(prompt 阶段注入相关代码,可选)
+	codeIndexer CodeIndexer
+
 	// 事件系统
 	handlerSeq    atomic.Uint64       // monotonic ID counter for tracked handlers
 	eventHandlers atomic.Value        // []trackedHandler — lock-free reads
@@ -122,6 +125,10 @@ func (k *AgentKernel) SetReflection(r Reflection) {
 func (k *AgentKernel) SetApprover(a Approver) { k.approver = a }
 func (k *AgentKernel) SetAdaptiveRounds(ar *AdaptiveRounds) { k.adaptiveRounds = ar }
 func (k *AgentKernel) SetMetrics(ms *MetricsStore) { k.metrics = ms }
+
+// SetCodeIndexer 设置代码索引器(可选)。
+// 设置后,coding/debugging 任务会在 prompt 中注入与 query 语义相关的代码 chunk。
+func (k *AgentKernel) SetCodeIndexer(ci CodeIndexer) { k.codeIndexer = ci }
 func (k *AgentKernel) SetMaxRounds(n int) {
 	if n > 0 { k.maxRounds = n; slog.Info("Kernel max_rounds updated", "value", n) }
 }

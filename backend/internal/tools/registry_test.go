@@ -63,7 +63,7 @@ func TestHandleReadFile(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "test.txt")
 	os.WriteFile(file, []byte("line1\nline2\nline3"), 0644)
-	result, _ := handleReadFile(context.Background(), `{"path":"`+file+`"}`)
+	result, _ := handleReadFile(context.Background(), `{"path":"`+jsonPath(file)+`"}`)
 	if result.Error != "" {
 		t.Fatal(result.Error)
 	}
@@ -72,7 +72,7 @@ func TestHandleReadFile(t *testing.T) {
 func TestHandleWriteFile(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "out.txt")
-	result, _ := handleWriteFile(context.Background(), `{"path":"`+file+`","content":"hello world"}`)
+	result, _ := handleWriteFile(context.Background(), `{"path":"`+jsonPath(file)+`","content":"hello world"}`)
 	if result.Error != "" {
 		t.Fatal(result.Error)
 	}
@@ -85,7 +85,7 @@ func TestHandleWriteFile(t *testing.T) {
 func TestHandleListDirectory(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a"), 0644)
-	result, _ := handleListDirectory(context.Background(), `{"path":"`+dir+`"}`)
+	result, _ := handleListDirectory(context.Background(), `{"path":"`+jsonPath(dir)+`"}`)
 	if result.Error != "" {
 		t.Fatal(result.Error)
 	}
@@ -94,7 +94,7 @@ func TestHandleListDirectory(t *testing.T) {
 func TestHandleSearchFiles(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "code.go"), []byte("package main\nfunc main(){}"), 0644)
-	result, _ := handleSearchFiles(context.Background(), `{"pattern":"func main","path":"`+dir+`"}`)
+	result, _ := handleSearchFiles(context.Background(), `{"pattern":"func main","path":"`+jsonPath(dir)+`"}`)
 	if result.Error != "" {
 		t.Fatal(result.Error)
 	}
@@ -111,7 +111,7 @@ func TestHandleDiffEdit(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "test.go")
 	os.WriteFile(file, []byte("old code here"), 0644)
-	result, _ := handleDiffEdit(context.Background(), `{"path":"`+file+`","search_text":"old code here","replace_text":"new code here"}`)
+	result, _ := handleDiffEdit(context.Background(), `{"path":"`+jsonPath(file)+`","search_text":"old code here","replace_text":"new code here"}`)
 	if result.Error != "" {
 		t.Fatal(result.Error)
 	}
@@ -125,7 +125,7 @@ func TestHandleDiffEdit_Duplicate(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "dup.go")
 	os.WriteFile(file, []byte("same\nsame"), 0644)
-	result, _ := handleDiffEdit(context.Background(), `{"path":"`+file+`","search_text":"same","replace_text":"diff"}`)
+	result, _ := handleDiffEdit(context.Background(), `{"path":"`+jsonPath(file)+`","search_text":"same","replace_text":"diff"}`)
 	if result.Error == "" {
 		t.Error("should reject duplicate match")
 	}

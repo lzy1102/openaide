@@ -391,8 +391,53 @@ func (k *AgentKernel) promptL3(ctx context.Context, query string) string {
 		if rm := GenerateRepoMap(cwd); rm != "" {
 			l3 += "\n\n[RepoMap]\n" + rm
 		}
+		// 注入与 query 语义相关的代码 chunk(类似 Cursor @codebase)
+		// 严格控制 token 预算:只列路径+行号+符号+一行摘要
+		if k.codeIndexer != nil {
+			if rc := k.injectRelevantCode(ctx, query); rc != "" {
+				l3 += "\n\n" + rc
+			}
+		}
 	}
 	return l3
+}
+
+// injectRelevantCode 调用 CodeIndexer 检索相关代码,格式化为 prompt 段落。
+// 输出格式(≤300 tokens):
+//
+//	[RelevantCode]
+//	- path/to/file.go:42-87  func handleDiffEdit — 精确搜索替换...
+//	- path/to/other.py:10-30 class MemoryActor — CSP-style memory store...
+//
+// 注意:只列摘要,不内联完整代码。LLM 需要时通过 read_file 获取。
+func (k *AgentKernel) injectRelevantCode(ctx context.Context, query string) string {
+	if k.codeIndexer == nil {
+		return ""
+	}
+	chunks, err := k.codeIndexer.Search(ctx, query, 5)
+	if err != nil || len(chunks) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString("[RelevantCode]\n")
+	for _, c := range chunks {
+		// 取 content 第一行作为摘要(通常是声明行)
+		summary := firstLine(c.Content)
+		if len(summary) > 80 {
+			summary = summary[:77] + "..."
+		}
+		sb.WriteString(fmt.Sprintf("- %s:%d-%d  %s — %s\n",
+			c.Path, c.StartLine, c.EndLine, c.Symbol, summary))
+	}
+	return sb.String()
+}
+
+// firstLine 返回文本的第一行(去除前后空白)。
+func firstLine(s string) string {
+	if idx := strings.IndexByte(s, '\n'); idx >= 0 {
+		s = s[:idx]
+	}
+	return strings.TrimSpace(s)
 }
 
 // detectTaskType classifies the query via LLM into one of five task types.

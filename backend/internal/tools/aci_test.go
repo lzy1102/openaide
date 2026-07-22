@@ -11,7 +11,7 @@ import (
 func TestHandleWriteFile_ACIVerification(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "test.txt")
-	result, err := handleWriteFile(context.Background(), `{"path":"`+file+`","content":"line1\nline2\nline3"}`)
+	result, err := handleWriteFile(context.Background(), `{"path":"`+jsonPath(file)+`","content":"line1\nline2\nline3"}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +40,7 @@ func TestHandleWriteFile_LargeContent(t *testing.T) {
 	for i := 0; i < 200; i++ {
 		largeContent += "this is a line of text that repeats many times\n"
 	}
-	result, _ := handleWriteFile(context.Background(), `{"path":"`+file+`","content":"`+strings.ReplaceAll(largeContent, "\n", "\\n")+`"}`)
+	result, _ := handleWriteFile(context.Background(), `{"path":"`+jsonPath(file)+`","content":"`+strings.ReplaceAll(largeContent, "\n", "\\n")+`"}`)
 	if result.Error != "" {
 		t.Fatal(result.Error)
 	}
@@ -55,7 +55,7 @@ func TestHandleDiffEdit_ACIVerification(t *testing.T) {
 	file := filepath.Join(dir, "edit.go")
 	os.WriteFile(file, []byte("old code here\nmore old code"), 0644)
 
-	result, _ := handleDiffEdit(context.Background(), `{"path":"`+file+`","search_text":"old code here","replace_text":"new code here"}`)
+	result, _ := handleDiffEdit(context.Background(), `{"path":"`+jsonPath(file)+`","search_text":"old code here","replace_text":"new code here"}`)
 	if result.Error != "" {
 		t.Fatal(result.Error)
 	}
@@ -83,7 +83,7 @@ func TestHandleReadFile_LineNumbers(t *testing.T) {
 	file := filepath.Join(dir, "read.txt")
 	os.WriteFile(file, []byte("line one\nline two\nline three"), 0644)
 
-	result, _ := handleReadFile(context.Background(), `{"path":"`+file+`"}`)
+	result, _ := handleReadFile(context.Background(), `{"path":"`+jsonPath(file)+`"}`)
 	if result.Error != "" {
 		t.Fatal(result.Error)
 	}
@@ -101,7 +101,7 @@ func TestHandleReadFile_OffsetLimit(t *testing.T) {
 	file := filepath.Join(dir, "range.txt")
 	os.WriteFile(file, []byte("line1\nline2\nline3\nline4\nline5"), 0644)
 
-	result, _ := handleReadFile(context.Background(), `{"path":"`+file+`","offset":1,"limit":2}`)
+	result, _ := handleReadFile(context.Background(), `{"path":"`+jsonPath(file)+`","offset":1,"limit":2}`)
 	if result.Error != "" {
 		t.Fatal(result.Error)
 	}
