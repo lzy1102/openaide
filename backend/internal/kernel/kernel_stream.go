@@ -37,6 +37,16 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 
 	messages := k.buildMessages(ctx, session, query)
 
+	// 复杂任务分解:complexity >= 阈值时,生成子任务计划注入消息
+	// 引导 agent 按步骤执行 + 每步自我验证
+	if shouldPlan(analysis) && k.planner != nil {
+		if plan := k.planner.Plan(ctx, query.Content); plan != nil {
+			if planMsg := plan.ToSystemMessage(); planMsg.Content != "" {
+				messages = append(messages, planMsg)
+			}
+		}
+	}
+
 	tools := k.getToolDefinitions(ctx, query.Content, query.Options)
 
 	resultChan := make(chan StreamChunk, 100)
@@ -73,6 +83,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 		filesModified := make(map[string]bool)
 		uniqueTools := make(map[string]bool)
 		verifyAttempts := 0
+		stuckDetector := NewStuckDetector()
 
 		slog.Info("ReAct stream: entering loop", "query", query.Content[:min(80, len(query.Content))], "max_rounds", maxRounds, "tools", len(tools), "history_msgs", len(messages))
 		for round := 0; ; round++ {
@@ -258,6 +269,11 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 			}
 
 			// Send tool_done events + append results
+			// 同时记录到 StuckDetector 用于自我纠错检测
+			argsByID := make(map[string]string, len(lastToolCalls))
+			for _, tc := range lastToolCalls {
+				argsByID[tc.ID] = tc.Function.Arguments
+			}
 			for _, r := range execResults {
 				if r.ID == "" {
 					r.ID = fmt.Sprintf("result_auto_%d", totalToolCalls)
@@ -273,6 +289,17 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 					Content:    truncateToolResult(r.Content),
 					ToolCallID: r.ID,
 				})
+				// 记录到 StuckDetector:工具名 + 参数 + 错误(空=成功)
+				stuckDetector.RecordResult(r.Name, argsByID[r.ID], r.Error, round)
+			}
+
+			// 自我纠错:检测到停滞时注入 pivot 消息,强制换策略
+			if stuck, reason := stuckDetector.IsStuck(round); stuck {
+				pivotMsg := stuckDetector.PivotMessage(reason)
+				messages = append(messages, Message{Role: "system", Content: pivotMsg})
+				slog.Info("Stuck detected, injecting pivot",
+					"round", round, "reason", reason,
+					"pivot_count", stuckDetector.PivotCount())
 			}
 
 			// 每轮结束后保存检查点

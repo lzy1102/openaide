@@ -42,10 +42,20 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 	var branchMu sync.Mutex
 	totalTools := 0
 
+	// progress 把子 agent 的状态转成 OnProgress 调用,
+	// 让外层(repl 进度条)能看到每个子任务的实时进展。
+	// 之前传 nil 导致进度条永远停在 0%,用户以为"失联"。
+	makeProgress := func(subtaskTitle string) SubAgentProgress {
+		return func(roleName string, round int, status string) {
+			o.reportProgress("execute", fmt.Sprintf("[%s] %s: %s (round %d)", roleName, subtaskTitle, status, round))
+		}
+	}
+
 	// Phase 1: Execute subtasks in dependency order
 	groups := groupByDependency(plan.Subtasks)
 	results = make([]string, len(plan.Subtasks))
-	for _, group := range groups {
+	for gi, group := range groups {
+		o.reportProgress("execute", fmt.Sprintf("Phase 1: group %d/%d (%d tasks)", gi+1, len(groups), len(group)))
 		g, gCtx := errgroup.WithContext(ctx)
 		for _, st := range group {
 			st := st // capture
@@ -66,11 +76,12 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 					}
 				}
 				task := fmt.Sprintf("Goal: %s\nStep: %s\nDetails: %s", plan.Goal, st.Title, st.Description)
-				r, err := o.RunSubAgent(gCtx, userID, projectID, roleName, task, deps, nil)
+				r, err := o.RunSubAgent(gCtx, userID, projectID, roleName, task, deps, makeProgress(st.Title))
 				if err != nil {
 					return fmt.Errorf("subtask %d (%s): %w", st.ID, roleName, err)
 				}
 				results[idx] = r
+				o.reportProgress("execute", fmt.Sprintf("✓ subtask %d done (%s)", st.ID, st.Title))
 				// Check for branch trigger
 				if triggered, signal := detectBranchSignal(r); triggered {
 					branch := o.executeBranch(gCtx, userID, projectID, signal, results, &branches)
@@ -87,20 +98,23 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 	}
 
 	// Phase 2: Verify — executor runs tests/lint
+	o.reportProgress("verify", "Phase 2: verifying results (tests/lint)")
 	execResult, err := o.RunSubAgent(ctx, userID, projectID, o.firstRoleName(),
 		"Verify all subtask results work together. Run tests and linters. Report failures.",
-		results, nil)
+		results, makeProgress("verify"))
 	if err != nil {
 		slog.Warn("Verification failed", "error", err)
 	} else {
 		results = append(results, execResult)
 		totalTools++
 	}
+	o.reportProgress("verify", "Phase 2 complete")
 
 	// Phase 3: Review — reviewer checks overall quality
+	o.reportProgress("review", "Phase 3: reviewing quality")
 	reviewResult, err := o.RunSubAgent(ctx, userID, projectID, o.firstRoleName(),
 		"Review the complete execution. Check correctness, style, and edge cases. Summarize final status.",
-		results, nil)
+		results, makeProgress("review"))
 	if err != nil {
 		slog.Warn("Review failed", "error", err)
 	} else {
@@ -108,20 +122,26 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 		for retry := 0; retry < 2; retry++ {
 			reviewUpper := strings.ToUpper(reviewResult)
 			if strings.Contains(reviewUpper, "NEEDS_FIX") || strings.Contains(reviewUpper, "NEEDS FIX") || strings.Contains(reviewResult, "[需要返工]") {
+				o.reportProgress("review", fmt.Sprintf("Phase 3: fixing issues (attempt %d)", retry+1))
 				fixResult, ferr := o.RunSubAgent(ctx, userID, projectID, o.firstRoleName(),
 					"Fix the issues found by the reviewer. Do NOT add features — only fix the issues listed:\n"+reviewResult,
-					results, nil)
+					results, makeProgress("fix"))
 				if ferr == nil {
 					results = append(results, fixResult)
 					reviewResult, _ = o.RunSubAgent(ctx, userID, projectID, o.firstRoleName(),
 						"Re-review after the fix. Is it acceptable now?",
-						results, nil)
+						results, makeProgress("re-review"))
+				} else {
+					// 修复失败时 break,避免对同一 reviewResult 反复尝试(浪费时间)
+					slog.Warn("Fix attempt failed, stopping retry loop", "attempt", retry+1, "error", ferr)
+					break
 				}
 			} else {
 				break
 			}
 		}
 	}
+	o.reportProgress("review", "Phase 3 complete")
 
 	// Build final response
 	summary := "Execution complete.\n\n"
@@ -313,4 +333,13 @@ func (o *Orchestrator) firstRoleName() string {
 		}
 	}
 	return "coder"
+}
+
+// reportProgress 安全地调用 OnProgress 回调(如果已设置)。
+// 这是子任务执行状态外泄的唯一通道 —— 之前完全缺失,
+// 导致 repl 的进度条永远停在 0%,用户看不到任何进展,以为"失联"。
+func (o *Orchestrator) reportProgress(phase, detail string) {
+	if o.OnProgress != nil {
+		o.OnProgress(phase, detail)
+	}
 }

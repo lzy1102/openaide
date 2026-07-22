@@ -33,6 +33,7 @@ type AgentKernel struct {
 	skillActor *SkillActor // CSP actor, zero-lock
 	approver         Approver
 	adaptiveRounds   *AdaptiveRounds
+	planner          *Planner // 复杂任务分解(可选,仅 complexity >= 阈值时触发)
 
 	// 跟踪系统
 	tracer  Tracer
@@ -125,6 +126,11 @@ func (k *AgentKernel) SetReflection(r Reflection) {
 func (k *AgentKernel) SetApprover(a Approver) { k.approver = a }
 func (k *AgentKernel) SetAdaptiveRounds(ar *AdaptiveRounds) { k.adaptiveRounds = ar }
 func (k *AgentKernel) SetMetrics(ms *MetricsStore) { k.metrics = ms }
+
+// SetPlanner 设置任务规划器(可选)。
+// 设置后,复杂查询(complexity >= 15)会在 ReAct 循环前生成子任务计划,
+// 作为系统消息注入,引导 agent 按步骤执行。
+func (k *AgentKernel) SetPlanner(p *Planner) { k.planner = p }
 
 // SetCodeIndexer 设置代码索引器(可选)。
 // 设置后,coding/debugging 任务会在 prompt 中注入与 query 语义相关的代码 chunk。

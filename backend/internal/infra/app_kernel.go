@@ -88,6 +88,9 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 	ar.SetLLM(gateway)
 	agentKernel.SetAdaptiveRounds(ar)
 
+	// 任务规划器:复杂查询(complexity >= 15)在 ReAct 前分解为子任务
+	agentKernel.SetPlanner(kernel.NewPlanner(gateway))
+
 	if cp, err := trace.NewFileCheckpointer(trace.FileCheckpointerConfig{
 		Dir: cfg.Storage.DataDir + "/checkpoints",
 	}); err == nil {

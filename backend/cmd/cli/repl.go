@@ -288,7 +288,7 @@ var history []string // 会话内查询历史（Ctrl+R 搜索）
 		}
 
 		if strings.HasPrefix(query, "/") {
-			handleREPLCommand(app, query, &sessionID, &modelName, &autoYes)
+			handleREPLCommand(app, query, &sessionID, projectID, &modelName, &autoYes)
 			rl.SetPrompt(PromptStyle(sessionID, modelName, false, sessionTitle))
 			continue
 		}
@@ -302,7 +302,7 @@ var history []string // 会话内查询历史（Ctrl+R 搜索）
 		fmt.Print("\r\033[K")
 
 		if planErr != nil || plan == nil || len(plan.Subtasks) <= 3 {
-			executeStreamQuery(app, query, &sessionID, autoYes)
+			executeStreamQuery(app, query, &sessionID, projectID, autoYes)
 		} else if len(plan.Subtasks) >= 6 {
 			// DeepPlan: 深度研究 + 方案对比
 			pterm.Info.Println(lang.T("repl.deep_analysis"))
@@ -312,7 +312,7 @@ var history []string // 会话内查询历史（Ctrl+R 搜索）
 
 			if deepErr != nil || deepResult == nil || len(deepResult.Proposals.Options) == 0 {
 				PrintWarning(lang.T("repl.deep_failed"))
-				executePlanQuery(app, query, plan)
+				executePlanQuery(app, query, plan, projectID)
 			} else {
 				// 交互式方案选择
 				var options []string
@@ -332,16 +332,16 @@ var history []string // 会话内查询历史（Ctrl+R 搜索）
 								context.Background(), query, deepResult, i)
 							if planErr != nil || selectedPlan == nil {
 								PrintWarning(lang.T("repl.plan_failed"))
-								executePlanQuery(app, query, plan)
+								executePlanQuery(app, query, plan, projectID)
 							} else {
 								fmt.Println("  "+lang.T("repl.selected", deepResult.Proposals.Options[i].Name))
-								executePlanQuery(app, query, selectedPlan)
+								executePlanQuery(app, query, selectedPlan, projectID)
 							}
 							break
 						}
 					}
 				} else {
-					executeStreamQuery(app, query, &sessionID, autoYes)
+					executeStreamQuery(app, query, &sessionID, projectID, autoYes)
 				}
 			}
 		} else {
@@ -368,7 +368,7 @@ var history []string // 会话内查询历史（Ctrl+R 搜索）
 				taskMap[label] = i
 			}
 			// 默认全选，直接执行
-			executePlanQuery(app, query, plan)
+			executePlanQuery(app, query, plan, projectID)
 
 		}
 		rl.SetPrompt(PromptStyle(sessionID, modelName, false, sessionTitle))
@@ -385,7 +385,7 @@ func execCmd(name string, args ...string) (string, error) {
 
 // ── Simple Query (direct ReAct stream) ────────────────────
 
-func executeStreamQuery(app *infra.Application, query string, sessionID *string, autoYes bool) {
+func executeStreamQuery(app *infra.Application, query string, sessionID *string, projectID string, autoYes bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	activeCancel = cancel
 	defer func() { activeCancel = nil; cancel() }()
@@ -440,7 +440,7 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string,
 			return result
 		},
 	}
-	stream, err := app.Orchestrator.ProcessQueryStream(ctx, "cli-user", "default", query, opts)
+	stream, err := app.Orchestrator.ProcessQueryStream(ctx, "cli-user", projectID, query, opts)
 	if err != nil {
 		errMsg := err.Error()
 		switch {
@@ -547,7 +547,7 @@ func executeStreamQuery(app *infra.Application, query string, sessionID *string,
 
 // ── Complex Query (sub-agent team execution) ──────────────
 
-func executePlanQuery(app *infra.Application, query string, plan *orchestration.Plan) {
+func executePlanQuery(app *infra.Application, query string, plan *orchestration.Plan, projectID string) {
 	startTime := time.Now()
 
 	// pterm 进度条
@@ -584,10 +584,18 @@ func executePlanQuery(app *infra.Application, query string, plan *orchestration.
 		}
 	}()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	resp, err := app.Orchestrator.ExecuteWithPlan(ctx, "cli-user", "default", query, plan, kernel.QueryOptions{})
-	cancel()
-	close(done)
+	// ctx 带超时(10 分钟)防止子任务无限执行导致"失联";
+	// 设置 activeCancel 让 Ctrl+C 能中断(之前缺失,导致用户无法停止 plan 执行)。
+	// defer 保证 panic 时也能清理 cancel 和 done,避免 goroutine 泄漏。
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	activeCancel = cancel
+	defer func() {
+		activeCancel = nil
+		cancel()
+		close(done)
+	}()
+
+	resp, err := app.Orchestrator.ExecuteWithPlan(ctx, "cli-user", projectID, query, plan, kernel.QueryOptions{})
 
 	elapsed := time.Since(startTime)
 	fmt.Print("\r\033[K") // clear progress line
@@ -751,7 +759,7 @@ func handleInit(app *infra.Application) {
 			"4. Conventions observed from file types\n\n"+
 			"%s\n\nWrite ONLY the OPENAIDE.md content, no preamble. Use Markdown format. Keep it concise.",
 		ctx.String())
-	resp, err := app.Orchestrator.ProcessQuery(context.Background(), "cli-user", "default", queryContent, kernel.QueryOptions{MaxTokens: 2000})
+	resp, err := app.Orchestrator.ProcessQuery(context.Background(), "cli-user", projectName, queryContent, kernel.QueryOptions{MaxTokens: 2000})
 	spinner.Stop()
 	fmt.Print("\r\033[K")
 
@@ -848,7 +856,7 @@ func undoLastMessage(app *infra.Application, sessionID string) {
 	fmt.Printf("\r\033[K  %s↩ Undone (%d messages removed)%s\n", cYellow, removed, cReset)
 }
 
-func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, modelName *string, autoYes *bool) {
+func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, projectID string, modelName *string, autoYes *bool) {
 	parts := strings.Fields(cmd)
 	switch parts[0] {
 	case "/exit", "/quit", "/q":
@@ -889,7 +897,7 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 	case "/clear":
 		fmt.Print("\033[2J\033[H")
 		app.Orchestrator.DeleteSession(context.Background(), *sessionID)
-		sess, _ := app.Orchestrator.CreateSession(context.Background(), "default", "cli-user")
+		sess, _ := app.Orchestrator.CreateSession(context.Background(), projectID, "cli-user")
 		*sessionID = sess.ID
 
 	case "/undo":
@@ -953,7 +961,7 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 		for i := start; i < len(lines); i++ { fmt.Printf("  %s%s%s\n", cInfo, lines[i], cReset) }
 
 		case "/sessions":
-		sessions, _ := app.Orchestrator.ListSessions(context.Background(), "default", "cli-user", 10, 0)
+		sessions, _ := app.Orchestrator.ListSessions(context.Background(), projectID, "cli-user", 10, 0)
 		if len(sessions) == 0 { PrintInfo(lang.T("repl.no_sessions")); return }
 
 		var options []string
@@ -1005,7 +1013,7 @@ func handleREPLCommand(app *infra.Application, cmd string, sessionID *string, mo
 
 	case "/session":
 		if len(parts) >= 2 {
-			sessions, _ := app.Orchestrator.ListSessions(context.Background(), "default", "cli-user", 10, 0)
+			sessions, _ := app.Orchestrator.ListSessions(context.Background(), projectID, "cli-user", 10, 0)
 			idx := 0
 			fmt.Sscanf(parts[1], "%d", &idx)
 			if idx > 0 && idx <= len(sessions) {
@@ -1032,7 +1040,7 @@ case "/analyst", "/coder", "/reviewer", "/executor":
 		ctx, cancel := context.WithCancel(context.Background())
 		activeCancel = cancel
 		defer func() { activeCancel = nil; cancel() }()
-		result, err := app.Orchestrator.RunSubAgent(ctx, "cli-user", "default", role, task, nil, nil)
+		result, err := app.Orchestrator.RunSubAgent(ctx, "cli-user", projectID, role, task, nil, nil)
 		if err != nil { PrintError(fmt.Sprintf("%v", err)); return }
 		if result != "" { fmt.Print(RenderMarkdown(result)) }
 		PrintSuccess(role + " done")
@@ -1047,7 +1055,7 @@ case "/analyst", "/coder", "/reviewer", "/executor":
 		prevResults := []string{}
 		for _, role := range []string{"analyst", "coder", "reviewer"} {
 			fmt.Printf("    %s…%s", role, cReset)
-			result, err := app.Orchestrator.RunSubAgent(ctx, "cli-user", "default", role, task, prevResults, nil)
+			result, err := app.Orchestrator.RunSubAgent(ctx, "cli-user", projectID, role, task, prevResults, nil)
 			if err != nil { PrintError(fmt.Sprintf("%v", err)); return }
 			prevResults = append(prevResults, result)
 			fmt.Print("\r\033[K")
