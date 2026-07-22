@@ -170,7 +170,7 @@ func handleReadFile(ctx context.Context, arguments string) (*kernel.ToolResult, 
 	return &kernel.ToolResult{Content: out.String()}, nil
 }
 
-// handleWriteFile 写入文件
+// handleWriteFile 写入文件(原子写 + 文件锁)
 func handleWriteFile(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
 	var args struct {
 		Path    string `json:"path"`
@@ -188,12 +188,12 @@ func handleWriteFile(ctx context.Context, arguments string) (*kernel.ToolResult,
 		return &kernel.ToolResult{Error: err.Error(), ErrorCode: "INVALID_PATH", IsRetryable: false}, nil
 	}
 
-	dir := filepath.Dir(absPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return &kernel.ToolResult{Error: fmt.Sprintf("mkdir failed: %v", err)}, nil
-	}
+	// 文件锁:防止并发写同一文件丢更新
+	unlock := lockFile(absPath)
+	defer unlock()
 
-	if err := os.WriteFile(absPath, []byte(args.Content), 0644); err != nil {
+	// 原子写:先写临时文件,再 rename,防止写到一半崩溃
+	if err := atomicWriteFile(absPath, []byte(args.Content), 0644); err != nil {
 		return &kernel.ToolResult{Error: fmt.Sprintf("write failed: %v", err)}, nil
 	}
 
@@ -221,6 +221,34 @@ func handleWriteFile(ctx context.Context, arguments string) (*kernel.ToolResult,
 	return &kernel.ToolResult{Content: out.String()}, nil
 }
 
+// dangerousCmdPatterns 是 handler 层的危险命令黑名单。
+// 这是 approval 层(approval.go DangerousCommandPrefixes)之后的二次防线:
+// 如果 approval 通过了(unsafe mode 或 LLM 误判 safe),这里仍会拦截。
+// 注意:用精确前缀匹配而非 Contains,避免 "rm -rf ." 误匹配 "rm -rf ./build"。
+var dangerousCmdPatterns = []string{
+	"rm -rf /", "rm -rf ~", "rm -rf *",
+	"rm -r /", "rm -f /",
+	"rmdir /", "mkfs", "format ",
+	"sudo rm", "sudo mkfs", "sudo format",
+	"dd if=", "> /dev/sd",
+	"shutdown", "reboot", "halt", "init 0",
+	"chmod -R 777 /", "chown -R",
+	"DROP TABLE", "DROP DATABASE", "DELETE FROM",
+	":(){:|:&};:", // fork bomb
+	"| sh", "| bash", "| zsh", // 管道执行远程脚本
+}
+
+// isDangerousCommand 检查命令是否匹配危险模式(大小写不敏感)。
+func isDangerousCommand(cmd string) bool {
+	lower := strings.ToLower(strings.TrimSpace(cmd))
+	for _, pattern := range dangerousCmdPatterns {
+		if strings.Contains(lower, strings.ToLower(pattern)) {
+			return true
+		}
+	}
+	return false
+}
+
 // handleExecuteCommand 执行系统命令
 func handleExecuteCommand(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
 	var args struct {
@@ -234,9 +262,25 @@ func handleExecuteCommand(ctx context.Context, arguments string) (*kernel.ToolRe
 		return &kernel.ToolResult{Error: "command is required"}, nil
 	}
 
+	// 二次安全检查:approval 层之后的防线
+	// 防止 unsafe mode 或 LLM 误判时执行破坏性命令
+	if isDangerousCommand(args.Command) {
+		return &kernel.ToolResult{
+			Error:     fmt.Sprintf("blocked by safety check: command matches dangerous pattern. If this is a false positive, modify the command (e.g. use 'rm -rf ./build' instead of 'rm -rf *')"),
+			ErrorCode: "DANGEROUS_COMMAND",
+		}, nil
+	}
+
+	// 超时:默认 30s,有 ctx deadline 时用 deadline-1s,但不低于 5s
 	timeout := 30 * time.Second
 	if deadline, ok := ctx.Deadline(); ok {
-		timeout = time.Until(deadline) - time.Second
+		remaining := time.Until(deadline) - time.Second
+		if remaining > 0 {
+			timeout = remaining
+		}
+	}
+	if timeout < 5*time.Second {
+		timeout = 5 * time.Second
 	}
 	execCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -257,7 +301,11 @@ func handleExecuteCommand(ctx context.Context, arguments string) (*kernel.ToolRe
 		cmd.Dir, _ = os.Getwd()
 	}
 
-	var stdout, stderr strings.Builder
+	// 分别限制 stdout 和 stderr,防止单条管道把上下文吃爆
+	const maxStreamBytes = 50 * 1024 // 50KB per stream
+	var stdout, stderr limitedBuffer
+	stdout.max = maxStreamBytes
+	stderr.max = maxStreamBytes
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
@@ -267,7 +315,12 @@ func handleExecuteCommand(ctx context.Context, arguments string) (*kernel.ToolRe
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			exitCode = exitErr.ExitCode()
 		} else {
-			return &kernel.ToolResult{Error: fmt.Sprintf("exec failed: %v", err), ErrorCode: "EXEC_FAILED", IsRetryable: true}, nil
+			// 超时或启动失败
+			errMsg := fmt.Sprintf("exec failed: %v", err)
+			if execCtx.Err() == context.DeadlineExceeded {
+				errMsg = fmt.Sprintf("command timed out after %v", timeout)
+			}
+			return &kernel.ToolResult{Error: errMsg, ErrorCode: "EXEC_FAILED", IsRetryable: true}, nil
 		}
 	}
 
@@ -275,10 +328,46 @@ func handleExecuteCommand(ctx context.Context, arguments string) (*kernel.ToolRe
 	if stderr.Len() > 0 {
 		out += "\n[stderr]\n" + stderr.String()
 	}
-	if len(out) > 100*1024 {
-		out = out[:100*1024] + "\n... (truncated)"
+	if stdout.truncated || stderr.truncated {
+		out += "\n... (output truncated)"
 	}
 	return &kernel.ToolResult{Content: fmt.Sprintf("[exit=%d]\n%s", exitCode, out)}, nil
+}
+
+// limitedBuffer 是有大小限制的 bytes.Buffer,超限时停止写入并标记 truncated。
+type limitedBuffer struct {
+	buf       []byte
+	max       int
+	truncated bool
+}
+
+// errBufferFull 是 limitedBuffer 超限时返回的错误,让 io.Copy 停止拷贝。
+var errBufferFull = fmt.Errorf("buffer limit reached")
+
+func (b *limitedBuffer) Write(p []byte) (int, error) {
+	if b.truncated {
+		return 0, errBufferFull
+	}
+	remaining := b.max - len(b.buf)
+	if remaining <= 0 {
+		b.truncated = true
+		return 0, errBufferFull
+	}
+	if len(p) > remaining {
+		b.buf = append(b.buf, p[:remaining]...)
+		b.truncated = true
+		return remaining, nil // 部分写入成功,下次 Write 返回 errBufferFull
+	}
+	b.buf = append(b.buf, p...)
+	return len(p), nil
+}
+
+func (b *limitedBuffer) String() string {
+	return string(b.buf)
+}
+
+func (b *limitedBuffer) Len() int {
+	return len(b.buf)
 }
 
 // handleListDirectory 列出目录内容

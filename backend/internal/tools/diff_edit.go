@@ -65,6 +65,10 @@ func handleDiffEdit(ctx context.Context, arguments string) (*kernel.ToolResult, 
 		return &kernel.ToolResult{Error: err.Error()}, nil
 	}
 
+	// 文件锁:防止并发写丢更新(read-modify-write TOCTOU)
+	unlock := lockFile(absPath)
+	defer unlock()
+
 	data, err := os.ReadFile(absPath)
 	if err != nil {
 		return &kernel.ToolResult{Error: fmt.Sprintf("read failed: %v", err)}, nil
@@ -81,7 +85,7 @@ func handleDiffEdit(ctx context.Context, arguments string) (*kernel.ToolResult, 
 	}
 
 	newContent := strings.Replace(content, args.SearchText, args.ReplaceText, 1)
-	if err := os.WriteFile(absPath, []byte(newContent), 0644); err != nil {
+	if err := atomicWriteFile(absPath, []byte(newContent), 0644); err != nil {
 		return &kernel.ToolResult{Error: err.Error()}, nil
 	}
 
