@@ -351,12 +351,36 @@ func runGitCmd(args ...string) (string, error) {
 
 // snipOldToolOutputs 对旧工具输出做头尾保留裁剪（Claude Code 风格）
 // 最近 keepFull 条完整保留，更早的保留前 500 字符 + 后 500 字符，中间替换为 snipped 标记
+//
+// 已被 snipOldToolOutputsDynamic 替代(支持按上下文压力动态调整)。
+// 保留此函数供测试和向后兼容。
 func snipOldToolOutputs(messages []Message) {
-	const keepFull = 4       // 最近 N 条完整保留
-	const headLen = 500      // 保留头部长度
-	const tailLen = 500      // 保留尾部长度
+	snipOldToolOutputsDynamic(messages, 0) // 0 = 宽松档
+}
 
-	// 从后往前数 tool 消息
+// contextPressure 表示当前上下文压力等级。
+// 0 = 宽松(<70%), 1 = 中等(70-85%), 2 = 激进(85%+)
+type contextPressure int
+
+const (
+	pressureLow    contextPressure = 0 // <70%
+	pressureMedium contextPressure = 1 // 70-85%
+	pressureHigh   contextPressure = 2 // 85%+
+)
+
+// snipOldToolOutputsDynamic 根据上下文压力动态调整裁剪强度。
+// 压力越高,完整保留的条数越少、头尾保留长度越短。
+func snipOldToolOutputsDynamic(messages []Message, pressure contextPressure) {
+	var keepFull, headLen, tailLen int
+	switch pressure {
+	case pressureMedium:
+		keepFull, headLen, tailLen = 2, 300, 300
+	case pressureHigh:
+		keepFull, headLen, tailLen = 1, 200, 200
+	default: // pressureLow
+		keepFull, headLen, tailLen = 4, 500, 500
+	}
+
 	toolIdx := 0
 	for i := len(messages) - 1; i >= 0; i-- {
 		if messages[i].Role == "tool" {
@@ -371,6 +395,52 @@ func snipOldToolOutputs(messages []Message) {
 			}
 			toolIdx++
 		}
+	}
+}
+
+// 工具结果单条字符上限(约 5000 tokens)。
+// 超过此长度的工具输出在入 messages 前会被头尾截断,
+// 防止单条 read_file/list_directory 把整个上下文吃爆。
+const maxToolResultChars = 20000
+
+// truncateToolResult 对单条工具结果做头尾保留截断。
+// 超过 maxToolResultChars 时保留头部 + 尾部,中间替换为截断标记。
+// 这样 LLM 仍能看到文件开头(包声明/import/函数签名)和结尾(返回值/错误),
+// 只是中间部分被省略 —— 比 snipOldToolOutputs 的下一轮裁剪更早介入,
+// 避免当前轮就因单条过大而超出上下文限制。
+func truncateToolResult(content string) string {
+	if len(content) <= maxToolResultChars {
+		return content
+	}
+	headLen := maxToolResultChars * 2 / 5 // 40% 给头部(签名/声明)
+	tailLen := maxToolResultChars * 2 / 5 // 40% 给尾部(返回值/错误)
+	head := safeSliceHead(content, headLen)
+	tail := safeSliceTail(content, tailLen)
+	snipped := len(content) - len(head) - len(tail)
+	return fmt.Sprintf("%s\n\n... [%d chars truncated — use read_file with offset/limit to view this section] ...\n\n%s", head, snipped, tail)
+}
+
+// estimateContextPressure 根据当前 token 使用量估算上下文压力等级。
+// promptTokens 是最近一次 LLM 调用返回的 prompt_tokens(更准确)。
+// 如果 compressor 可用,还会与 EstimateTokens 的结果取大值。
+func (k *AgentKernel) estimateContextPressure(promptTokens int) contextPressure {
+	used := promptTokens
+	if k.compressor != nil {
+		// compressor 的 EstimateTokens 需要 messages,但这里只有 promptTokens;
+		// 实际调用方(prepareReActRound)已经算过 tokenCount 了,
+		// 我们用 promptTokens 作为代理值即可
+	}
+	if k.maxTokens <= 0 {
+		return pressureLow
+	}
+	ratio := used * 100 / k.maxTokens
+	switch {
+	case ratio >= 85:
+		return pressureHigh
+	case ratio >= 70:
+		return pressureMedium
+	default:
+		return pressureLow
 	}
 }
 

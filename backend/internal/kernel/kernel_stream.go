@@ -77,7 +77,6 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 		slog.Info("ReAct stream: entering loop", "query", query.Content[:min(80, len(query.Content))], "max_rounds", maxRounds, "tools", len(tools), "history_msgs", len(messages))
 		for round := 0; ; round++ {
 			slog.Debug("ReAct stream round", "round", round, "msg_count", len(messages))
-			snipOldToolOutputs(messages)
 			// Safety net + self-aware budget injection (shared with sync path)
 		if round >= 200 {
 			slog.Error("ReAct stream safety limit reached", "round", round)
@@ -267,9 +266,11 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 				case resultChan <- StreamChunk{Type: ChunkTypeToolDone, ToolCallID: r.ID, ToolName: r.Name}:
 				case <-ctx.Done(): return
 				}
+				// 工具结果入 messages 前截断:防止单条大输出(read_file 整个文件)
+				// 把上下文吃爆。截断后 LLM 仍能看到头尾,中间可用 read_file offset/limit 补读。
 				messages = append(messages, Message{
 					Role:       "tool",
-					Content:    r.Content,
+					Content:    truncateToolResult(r.Content),
 					ToolCallID: r.ID,
 				})
 			}

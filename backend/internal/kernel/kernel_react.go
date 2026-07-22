@@ -38,7 +38,11 @@ func (k *AgentKernel) prepareReActRound(ctx context.Context, messages []Message,
 		}
 	}
 
-	snipOldToolOutputs(messages)
+	// 动态裁剪旧工具输出:根据上下文压力调整裁剪强度
+	// 70% 以下:宽松(keepFull=4, head/tail=500)
+	// 70-85%:中等(keepFull=2, head/tail=300)
+	// 85%+:激进(keepFull=1, head/tail=200)
+	snipOldToolOutputsDynamic(messages, k.estimateContextPressure(promptTokens))
 
 	// Budget injection — show the LLM its own tool usage pattern so it can self-regulate
 	if round >= 10 {
