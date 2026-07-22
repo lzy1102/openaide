@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"openaide/backend/internal/codeindex"
 	"openaide/backend/internal/compress"
 	"openaide/backend/internal/config"
 	"openaide/backend/internal/event"
@@ -20,7 +21,7 @@ import (
 	"openaide/backend/internal/plugin"
 )
 
-func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedder, toolRegistry kernel.ToolExecutor, memManager kernel.Memory, sessionStore kernel.SessionStore) (*kernel.AgentKernel, *plugin.Manager, error) {
+func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedder, toolRegistry kernel.ToolExecutor, memManager kernel.Memory, sessionStore kernel.SessionStore) (*kernel.AgentKernel, *plugin.Manager, *codeindex.Indexer, error) {
 	systemPrompt := cfg.Kernel.SystemPrompt
 	kernelConfig := &kernel.Config{
 		MaxRounds:    cfg.Kernel.MaxRounds,
@@ -128,6 +129,29 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 	}
 	agentKernel.SetContextCompressor(compress.NewLLMCompressor(gateway, compress.NewNovelCompressor()))
 
+	// 代码索引:启动时异步全量索引 CWD,prompt 阶段注入相关代码 chunk。
+	// embedder 已配置走语义检索,否则自动降级为 TF-IDF 关键词检索。
+	// 通过 cfg.CodeIndex.Enabled = false 可关闭。
+	var codeIdx *codeindex.Indexer
+	if cfg.CodeIndex.EnabledOrDefault() {
+		idxCfg := codeindex.Config{
+			DBPath:    cfg.Storage.DataDir + "/codeindex.db",
+			ChunkSize: cfg.CodeIndex.ChunkSize,
+			MaxChunks: cfg.CodeIndex.MaxChunks,
+		}
+		if idx, err := codeindex.NewIndexer(idxCfg, embedder); err == nil {
+			agentKernel.SetCodeIndexer(idx)
+			codeIdx = idx
+			slog.Info("CodeIndexer enabled",
+				"db", idxCfg.DBPath,
+				"semantic", embedder != nil)
+		} else {
+			slog.Warn("CodeIndexer init failed, code injection disabled", "error", err)
+		}
+	} else {
+		slog.Info("CodeIndexer disabled by config")
+	}
+
 	// Metrics: task-level observability (JSONL persistence + in-memory ring buffer)
 	metrics := kernel.NewMetricsStore(cfg.Storage.DataDir)
 	agentKernel.SetMetrics(metrics)
@@ -176,7 +200,7 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 		slog.Info("Claude hook registered", "event", hook.Event, "openaide_event", oevt)
 	}
 
-	return agentKernel, pluginMgr, nil
+	return agentKernel, pluginMgr, codeIdx, nil
 }
 
 func contains(slice []string, s string) bool {

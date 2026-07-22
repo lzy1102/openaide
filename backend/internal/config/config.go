@@ -39,6 +39,9 @@ type Config struct {
 	// 内核配置
 	Kernel KernelConfig `json:"kernel" yaml:"kernel"`
 
+	// 代码索引配置(prompt 阶段注入相关代码)
+	CodeIndex CodeIndexConfig `json:"codeindex" yaml:"codeindex"`
+
 	// 规划配置
 	Planning PlanningConfig `json:"planning" yaml:"planning"`
 
@@ -130,6 +133,21 @@ type KernelConfig struct {
 	SystemPrompt     string `json:"system_prompt" yaml:"system_prompt"`
 	UnsafeMode       *bool  `json:"unsafe_mode" yaml:"unsafe_mode"`
 	ReflectionEnabled *bool `json:"reflection_enabled" yaml:"reflection_enabled"` // toggle reflection on/off (default true)
+}
+
+// CodeIndexConfig 代码索引配置。
+// enabled 为 true(默认)时,启动时异步全量索引 CWD 项目,
+// 并在 coding/debugging 任务的 prompt 阶段注入 top-K 相关代码 chunk。
+// embedder 已配置则走语义检索,否则自动降级为 TF-IDF 关键词检索。
+type CodeIndexConfig struct {
+	Enabled   *bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`       // 默认 true(nil = true)
+	ChunkSize int   `json:"chunk_size,omitempty" yaml:"chunk_size,omitempty"` // 0 = 默认 1500
+	MaxChunks int   `json:"max_chunks,omitempty" yaml:"max_chunks,omitempty"` // 0 = 默认 100
+}
+
+// EnabledOrDefault 判断是否启用代码索引,默认 true
+func (c CodeIndexConfig) EnabledOrDefault() bool {
+	return c.Enabled == nil || *c.Enabled
 }
 
 // PlanningConfig 任务规划配置

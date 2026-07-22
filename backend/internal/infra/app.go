@@ -12,6 +12,7 @@ import (
 	"openaide/backend/internal/api"
 	"openaide/backend/internal/auth"
 	"openaide/backend/internal/channel"
+	"openaide/backend/internal/codeindex"
 	"openaide/backend/internal/config"
 	"openaide/backend/internal/kernel"
 	"openaide/backend/internal/llm"
@@ -38,6 +39,7 @@ type Application struct {
 	MCPManager    *mcp.Manager
 	sessionActor  *kernel.SessionActor // CSP actor, owns all session state
 	pluginWatcher *PluginWatcher       // hot-reload
+	codeIndexer   *codeindex.Indexer   // 代码索引(prompt 阶段注入相关代码)
 }
 
 // NewApplication 创建应用容器
@@ -133,12 +135,23 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 	app.sessionActor = sessionStore
 
 	// 6. 内核 + 所有增强能力
-	agentKernel, pluginMgr, err := createKernel(cfg, gateway, embedder, toolRegistry, memManager, sessionStore)
+	agentKernel, pluginMgr, codeIdx, err := createKernel(cfg, gateway, embedder, toolRegistry, memManager, sessionStore)
 	if err != nil {
 		return nil, fmt.Errorf("create kernel: %w", err)
 	}
 	app.Kernel = agentKernel
 	app.PluginManager = pluginMgr
+	app.codeIndexer = codeIdx
+
+	// 代码索引:启动时异步全量索引 CWD 项目(不阻塞应用启动)。
+	// 索引完成后,kernel_prompt.go 会在 coding/debugging 任务中
+	// 自动检索 top-K 相关代码 chunk 注入 prompt。
+	if codeIdx != nil {
+		if cwd, err := os.Getwd(); err == nil {
+			codeIdx.IndexProject(cwd)
+			slog.Info("CodeIndexer: background full index started", "root", cwd)
+		}
+	}
 
 	// Plugin hot-reload — reloads manager metadata + skills in one shot
 	pluginDir := cfg.Storage.DataDir + "/plugins"
@@ -238,6 +251,10 @@ func (app *Application) Stop(ctx context.Context) error {
 	app.Orchestrator.CleanupOldSessions(ctx)
 	if app.pluginWatcher != nil {
 		app.pluginWatcher.Stop()
+	}
+	// 代码索引先停:确保 actor 中的 pending 写入落盘后再关 SQLite
+	if app.codeIndexer != nil {
+		app.codeIndexer.Stop()
 	}
 	if app.sessionActor != nil {
 		if err := app.sessionActor.Stop(); err != nil {
