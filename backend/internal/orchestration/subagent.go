@@ -92,7 +92,9 @@ func (o *Orchestrator) RunSubAgent(ctx context.Context, userID, projectID, roleN
 			callTools = tools
 		}
 
-		resp, err := o.llmGateway.Chat(ctx, messages, callTools, map[string]interface{}{
+		// 流式调用:让 onProgress 回调能收到每轮的增量输出,
+		// 替代之前同步 Chat() 的黑盒等待。
+		stream, err := o.llmGateway.ChatStream(ctx, messages, callTools, map[string]interface{}{
 			"route":       modelRoute,
 			"max_tokens":  4000,
 			"temperature": 0.3,
@@ -101,22 +103,40 @@ func (o *Orchestrator) RunSubAgent(ctx context.Context, userID, projectID, roleN
 			return "", fmt.Errorf("sub-agent %s: %w", roleName, err)
 		}
 
+		// 消费流式 chunks,累积 content 和 tool_calls
+		// OpenAI provider 在每个 chunk 中通过 ToolCalls 字段发送当前累积的完整 tool_calls 列表,
+		// 我们只需要取最后一个非空的 ToolCalls 即可。
+		var contentBuf strings.Builder
+		var toolCalls []kernel.ToolCall
+		for chunk := range stream {
+			if chunk.Content != "" {
+				contentBuf.WriteString(chunk.Content)
+			}
+			if len(chunk.ToolCalls) > 0 {
+				toolCalls = make([]kernel.ToolCall, len(chunk.ToolCalls))
+				copy(toolCalls, chunk.ToolCalls)
+			}
+			if chunk.Done {
+				break
+			}
+		}
+
 		messages = append(messages, kernel.Message{
 			Role:      "assistant",
-			Content:   resp.Content,
-			ToolCalls: resp.ToolCalls,
+			Content:   contentBuf.String(),
+			ToolCalls: toolCalls,
 		})
 
 		// No tool calls → return result
-		if len(resp.ToolCalls) == 0 {
+		if len(toolCalls) == 0 {
 			if onProgress != nil {
 				onProgress(roleName, round, "done")
 			}
-			return resp.Content, nil
+			return contentBuf.String(), nil
 		}
 
 		// Execute tools and feed results back
-		for _, tc := range resp.ToolCalls {
+		for _, tc := range toolCalls {
 			if tc.Function.Name == "" {
 				continue
 			}
