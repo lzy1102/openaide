@@ -175,7 +175,22 @@ func (k *AgentKernel) executeToolBatch(ctx context.Context, toolCalls []ToolCall
 						results[idx] = toolExecResult{ID: call.ID, Name: call.Function.Name, Content: fmt.Sprintf("Error: panic: %v", r), Error: fmt.Sprintf("panic: %v", r)}
 					}
 				}()
-				r := k.executeTool(ctx, call, sessionID, opts)
+
+				// 自动重试:IsRetryable=true 的工具临时失败时重试,
+				// 避免可恢复的临时错误(文件锁冲突、网络抖动)浪费一轮 ReAct 往返。
+				const maxRetries = 2
+				var r *ToolResult
+				for attempt := 0; attempt <= maxRetries; attempt++ {
+					r = k.executeTool(ctx, call, sessionID, opts)
+					if r.Error == "" || !r.IsRetryable || attempt == maxRetries {
+						break
+					}
+					slog.Debug("Tool retryable error, retrying",
+						"tool", call.Function.Name, "attempt", attempt+1,
+						"error", r.Error, "error_code", r.ErrorCode)
+					time.Sleep(time.Duration(attempt+1) * 200 * time.Millisecond)
+				}
+
 				content := fmt.Sprintf("%v", r.Content)
 				errStr := ""
 				if r.Error != "" {
