@@ -241,7 +241,7 @@ func DefaultConfig() *Config {
 	if home == "" { home = "." }
 	return &Config{
 		Server: ServerConfig{
-			Host: "0.0.0.0",
+			Host: "127.0.0.1", // 默认仅本机访问;局域网共享需显式改为 0.0.0.0
 			Port: 8080,
 			Mode: "direct",
 		},

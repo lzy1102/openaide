@@ -192,6 +192,9 @@ func handleWriteFile(ctx context.Context, arguments string) (*kernel.ToolResult,
 	unlock := lockFile(absPath)
 	defer unlock()
 
+	// Undo 检查点:写之前备份当前内容,支持 undo_edit 回滚
+	saveFileCheckpoint(absPath, "write_file")
+
 	// 原子写:先写临时文件,再 rename,防止写到一半崩溃
 	if err := atomicWriteFile(absPath, []byte(args.Content), 0644); err != nil {
 		return &kernel.ToolResult{Error: fmt.Sprintf("write failed: %v", err)}, nil
@@ -221,34 +224,6 @@ func handleWriteFile(ctx context.Context, arguments string) (*kernel.ToolResult,
 	return &kernel.ToolResult{Content: out.String()}, nil
 }
 
-// dangerousCmdPatterns 是 handler 层的危险命令黑名单。
-// 这是 approval 层(approval.go DangerousCommandPrefixes)之后的二次防线:
-// 如果 approval 通过了(unsafe mode 或 LLM 误判 safe),这里仍会拦截。
-// 注意:用精确前缀匹配而非 Contains,避免 "rm -rf ." 误匹配 "rm -rf ./build"。
-var dangerousCmdPatterns = []string{
-	"rm -rf /", "rm -rf ~", "rm -rf *",
-	"rm -r /", "rm -f /",
-	"rmdir /", "mkfs", "format ",
-	"sudo rm", "sudo mkfs", "sudo format",
-	"dd if=", "> /dev/sd",
-	"shutdown", "reboot", "halt", "init 0",
-	"chmod -R 777 /", "chown -R",
-	"DROP TABLE", "DROP DATABASE", "DELETE FROM",
-	":(){:|:&};:", // fork bomb
-	"| sh", "| bash", "| zsh", // 管道执行远程脚本
-}
-
-// isDangerousCommand 检查命令是否匹配危险模式(大小写不敏感)。
-func isDangerousCommand(cmd string) bool {
-	lower := strings.ToLower(strings.TrimSpace(cmd))
-	for _, pattern := range dangerousCmdPatterns {
-		if strings.Contains(lower, strings.ToLower(pattern)) {
-			return true
-		}
-	}
-	return false
-}
-
 // handleExecuteCommand 执行系统命令
 func handleExecuteCommand(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
 	var args struct {
@@ -263,8 +238,9 @@ func handleExecuteCommand(ctx context.Context, arguments string) (*kernel.ToolRe
 	}
 
 	// 二次安全检查:approval 层之后的防线
-	// 防止 unsafe mode 或 LLM 误判时执行破坏性命令
-	if isDangerousCommand(args.Command) {
+	// 防止 unsafe mode 或 LLM 误判时执行破坏性命令。
+	// 使用 kernel 包的共享 token 级检测,与审批层规则一致。
+	if kernel.IsDangerousCommand(args.Command) {
 		return &kernel.ToolResult{
 			Error:     fmt.Sprintf("blocked by safety check: command matches dangerous pattern. If this is a false positive, modify the command (e.g. use 'rm -rf ./build' instead of 'rm -rf *')"),
 			ErrorCode: "DANGEROUS_COMMAND",

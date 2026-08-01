@@ -34,16 +34,6 @@ var SafeCommandPrefixes = []string{
 	"docker ps", "docker images", "docker logs",
 }
 
-var DangerousCommandPrefixes = []string{
-	"rm -rf", "rm -r /", "rm -f /",
-	"rmdir /", "mkfs", "format",
-	"sudo rm", "sudo mkfs", "sudo format",
-	"DROP TABLE", "DROP DATABASE", "DELETE FROM",
-	"dd if=", "> /dev/sd",
-	"shutdown", "reboot", "halt", "init 0",
-	"chmod -R 777 /", "chown -R",
-}
-
 type AutoApprover struct {
 	ApprovedTools map[string]bool
 	UnsafeMode    bool
@@ -54,15 +44,23 @@ func NewAutoApprover() *AutoApprover {
 	return &AutoApprover{
 		UnsafeMode: false,
 		ApprovedTools: map[string]bool{
-			"read_file":        true,
-			"list_directory":   true,
-			"search_files":     true,
-			"search_symbols":   true,
-			"git_status":       true,
-			"git_diff":         true,
-			"git_log":          true,
-			"git_blame":        true,
-			"read_image":       true,
+			"read_file":      true,
+			"list_directory": true,
+			"search_files":   true,
+			"search_symbols": true,
+			"git_status":     true,
+			"git_diff":       true,
+			"git_log":        true,
+			"git_blame":      true,
+			"read_image":     true,
+			// 写操作默认 auto-approve:非交互模式(subagent/API)直接放行;
+			// 交互模式(REPL)的 OnApproval 回调在 approver 之前执行,
+			// 用户有机会预览和拒绝。
+			"write_file":        true,
+			"diff_edit":         true,
+			"edit_files":        true,
+			"git_commit":        true,
+			"git_create_branch": true,
 		},
 	}
 }
@@ -74,14 +72,9 @@ func (a *AutoApprover) SetLLM(llm LLMProvider) {
 	a.llm = llm
 }
 
+// isDangerousCommand 委托给共享的 token 级检测,审批层与工具层使用同一实现,避免规则漂移导致绕过。
 func isDangerousCommand(args string) bool {
-	args = strings.TrimSpace(strings.ToLower(args))
-	for _, prefix := range DangerousCommandPrefixes {
-		if strings.HasPrefix(args, strings.ToLower(prefix)) {
-			return true
-		}
-	}
-	return false
+	return IsDangerousCommand(args)
 }
 
 func isSafeCommand(args string) bool {

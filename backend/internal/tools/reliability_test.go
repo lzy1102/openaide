@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"openaide/backend/internal/kernel"
 )
 
 func TestAtomicWriteFile_Basic(t *testing.T) {
@@ -162,9 +164,9 @@ func TestIsDangerousCommand(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got := isDangerousCommand(tt.cmd)
+		got := kernel.IsDangerousCommand(tt.cmd)
 		if got != tt.dangerous {
-			t.Errorf("isDangerousCommand(%q) = %v, want %v", tt.cmd, got, tt.dangerous)
+			t.Errorf("IsDangerousCommand(%q) = %v, want %v", tt.cmd, got, tt.dangerous)
 		}
 	}
 }
