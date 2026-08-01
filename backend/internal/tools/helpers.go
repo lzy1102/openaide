@@ -40,6 +40,7 @@ func BuiltinTools() []kernel.ToolDefinition {
 	tools = append(tools, symbolToolDefs()...)
 	tools = append(tools, fileEditToolDefs()...)
 	tools = append(tools, multiFileEditToolDefs()...)
+	tools = append(tools, undoToolDefs()...)
 	tools = append(tools, gitToolDefs()...)
 	tools = append(tools, webToolDefs()...)
 	tools = append(tools, todoToolDefs()...)
@@ -67,6 +68,8 @@ func (r *Registry) BuiltinHandlers() map[string]kernel.ToolHandler {
 		"read_image":         handleReadImage,
 		"diff_edit":          handleDiffEdit,
 		"edit_files":         handleEditFiles,
+		"undo_edit":          handleUndoEdit,
+		"list_undo_checkpoints": handleListUndoCheckpoints,
 		"apply_patch":        handleApplyPatch,
 		"git_diff":           handleGitDiff,
 		"git_log":            handleGitLog,

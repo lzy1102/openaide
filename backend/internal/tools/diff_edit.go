@@ -69,6 +69,9 @@ func handleDiffEdit(ctx context.Context, arguments string) (*kernel.ToolResult, 
 	unlock := lockFile(absPath)
 	defer unlock()
 
+	// Undo 检查点:写之前备份当前内容
+	saveFileCheckpoint(absPath, "diff_edit")
+
 	data, err := os.ReadFile(absPath)
 	if err != nil {
 		return &kernel.ToolResult{Error: fmt.Sprintf("read failed: %v", err)}, nil

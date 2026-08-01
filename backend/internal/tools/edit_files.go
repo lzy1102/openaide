@@ -157,6 +157,7 @@ func handleEditFiles(ctx context.Context, arguments string) (*kernel.ToolResult,
 
 	// 阶段 2:备份所有目标文件的原始内容
 	// 同一文件被多个 edit 引用时只备份一次
+	// 同时保存到 Undo 检查点栈(支持 undo_edit 跨工具回滚)
 	backups := make(map[string]string)
 	affectedPaths := make(map[string]bool)
 	for _, r := range precheckResults {
@@ -167,6 +168,8 @@ func handleEditFiles(ctx context.Context, arguments string) (*kernel.ToolResult,
 			}
 			backups[r.absPath] = string(data)
 			affectedPaths[r.absPath] = true
+			// Undo 检查点:每个受影响文件各存一份
+			saveFileCheckpoint(r.absPath, "edit_files")
 		}
 	}
 
