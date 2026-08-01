@@ -506,26 +506,47 @@ var parallelSafeTools = map[string]bool{
 }
 
 // isParallelSafe 判断工具是否可以和其他工具并行执行
-// DangerousTools are tools that require human approval before execution.
-var DangerousTools = map[string]string{
-	"execute_command": "执行任意系统命令",
-}
+// DangerousTools 是需要交互审批(OnApproval 回调)的工具。
+// 当前为空 —— 审批在"方案"层面(plan 执行前)进行,不在每条命令/工具层面。
+// 安全靠以下机制保障:
+//   - execute_command: handler 层有危险命令黑名单(tools_filesystem.go)
+//   - 写操作: 有 Undo 机制(undo_edit)+ 原子写 + 文件锁
+//   - approval.go: AutoApprover 仍有 LLM 风险评估,作为非交互路径的兜底
+var DangerousTools = map[string]string{}
 
 func isParallelSafe(name string) bool {
 	return parallelSafeTools[name]
+}
+
+// extractToolPath 从工具参数中提取文件路径,用于审批提示。
+// 支持单文件工具(write_file/diff_edit)和多文件工具(edit_files)。
+func extractToolPath(toolName, arguments string) string {
+	if toolName == "edit_files" {
+		var args struct {
+			Edits []struct {
+				Path string `json:"path"`
+			} `json:"edits"`
+		}
+		if json.Unmarshal([]byte(arguments), &args) == nil && len(args.Edits) > 0 {
+			if len(args.Edits) == 1 {
+				return args.Edits[0].Path
+			}
+			return fmt.Sprintf("%s (+%d more)", args.Edits[0].Path, len(args.Edits)-1)
+		}
+		return ""
+	}
+	var args struct {
+		Path string `json:"path"`
+	}
+	json.Unmarshal([]byte(arguments), &args)
+	return args.Path
 }
 
 func (k *AgentKernel) executeTool(ctx context.Context, tc ToolCall, sessionID string, opts *QueryOptions) *ToolResult {
 	// 交互审批（REPL pterm 回调）
 	if opts != nil && opts.OnApproval != nil {
 		if _, dangerous := DangerousTools[tc.Function.Name]; dangerous {
-			var path string
-			var args struct {
-				Path string `json:"path"`
-			}
-			if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err == nil {
-				path = args.Path
-			}
+			path := extractToolPath(tc.Function.Name, tc.Function.Arguments)
 			if !opts.OnApproval(tc.Function.Name, path, tc.Function.Arguments) {
 				return &ToolResult{Error: "user denied"}
 			}
