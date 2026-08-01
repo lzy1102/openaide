@@ -74,6 +74,8 @@ func (r *Registry) BuiltinHandlers() map[string]kernel.ToolHandler {
 		"git_diff":           handleGitDiff,
 		"git_log":            handleGitLog,
 		"git_blame":          handleGitBlame,
+		"git_commit":         handleGitCommit,
+		"git_create_branch":  handleGitCreateBranch,
 		"web_search":         handleWebSearch,
 		"web_fetch":          handleWebFetch,
 		"ai_search":          handleAISearch,

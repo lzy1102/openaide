@@ -70,6 +70,46 @@ func gitToolDefs() []kernel.ToolDefinition {
 				},
 			},
 		},
+		{
+			Type: "function",
+			Function: kernel.FunctionDef{
+				Name: "git_commit",
+				Description: "暂存并提交文件到 Git。自动先 git add 指定文件(或全部)再 commit。" +
+					"用于编辑完成后自动提交,闭环工作流。",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"message": map[string]interface{}{
+							"type": "string",
+							"description": "提交信息",
+						},
+						"paths": map[string]interface{}{
+							"type": "array",
+							"items": map[string]interface{}{"type": "string"},
+							"description": "要暂存的文件路径列表(可选,默认全部变更)",
+						},
+					},
+					"required": []string{"message"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: kernel.FunctionDef{
+				Name: "git_create_branch",
+				Description: "创建并切换到新分支。用于在修改前隔离工作。",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"name": map[string]interface{}{
+							"type": "string",
+							"description": "新分支名称",
+						},
+					},
+					"required": []string{"name"},
+				},
+			},
+		},
 	}
 }
 
@@ -267,4 +307,83 @@ func execCommand(ctx context.Context, dir, name string, args ...string) *exec.Cm
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
 	return cmd
+}
+
+// handleGitCommit 暂存并提交文件
+func handleGitCommit(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
+	var args struct {
+		Message string   `json:"message"`
+		Paths   []string `json:"paths,omitempty"`
+	}
+	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+		return &kernel.ToolResult{Error: err.Error()}, nil
+	}
+	if args.Message == "" {
+		return &kernel.ToolResult{Error: "message is required"}, nil
+	}
+
+	cwd, _ := safeAbsPath(".")
+	client := git.NewClient(cwd)
+	if !client.IsRepo() {
+		return &kernel.ToolResult{Error: "not a git repository"}, nil
+	}
+
+	// 暂存文件:有 paths 就 add 指定文件,否则 add 全部
+	if len(args.Paths) > 0 {
+		if err := client.Add(args.Paths...); err != nil {
+			return &kernel.ToolResult{Error: fmt.Sprintf("git add failed: %v", err)}, nil
+		}
+	} else {
+		if err := client.Add("."); err != nil {
+			return &kernel.ToolResult{Error: fmt.Sprintf("git add failed: %v", err)}, nil
+		}
+	}
+
+	// 提交
+	if err := client.Commit(args.Message); err != nil {
+		return &kernel.ToolResult{Error: fmt.Sprintf("git commit failed: %v", err)}, nil
+	}
+
+	// 读回最新 commit 确认
+	commits, _ := client.Log(1)
+	var hash, author string
+	if len(commits) > 0 {
+		hash = commits[0].Hash[:8]
+		author = commits[0].Author
+	}
+	return &kernel.ToolResult{
+		Content: fmt.Sprintf("✓ Committed: %s — %s\n  Author: %s\n  Message: %s",
+			hash, args.Message, author, args.Message),
+	}, nil
+}
+
+// handleGitCreateBranch 创建并切换到新分支
+func handleGitCreateBranch(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
+	var args struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+		return &kernel.ToolResult{Error: err.Error()}, nil
+	}
+	if args.Name == "" {
+		return &kernel.ToolResult{Error: "name is required"}, nil
+	}
+
+	cwd, _ := safeAbsPath(".")
+	client := git.NewClient(cwd)
+	if !client.IsRepo() {
+		return &kernel.ToolResult{Error: "not a git repository"}, nil
+	}
+
+	// 创建并切换:git checkout -b <name>
+	cmd := execCommand(ctx, cwd, "git", "checkout", "-b", args.Name)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return &kernel.ToolResult{
+			Error: fmt.Sprintf("git checkout -b failed: %v\n%s", err, strings.TrimSpace(string(output))),
+		}, nil
+	}
+
+	return &kernel.ToolResult{
+		Content: fmt.Sprintf("✓ Created and switched to branch: %s", args.Name),
+	}, nil
 }
