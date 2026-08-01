@@ -16,7 +16,9 @@ func (r *logRing) Write(p []byte) (int, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.buf = append(r.buf, strings.TrimSpace(string(p)))
-	if len(r.buf) > 50 { r.buf = r.buf[1:] }
+	if len(r.buf) > 50 {
+		r.buf = r.buf[1:]
+	}
 	return len(p), nil
 }
 
@@ -34,6 +36,8 @@ var tuiLogBuf = &logRing{buf: make([]string, 0, 50)}
 
 func trunc(s string, n int) string {
 	rs := []rune(s)
-	if len(rs) <= n { return s }
+	if len(rs) <= n {
+		return s
+	}
 	return string(rs[:n]) + "..."
 }

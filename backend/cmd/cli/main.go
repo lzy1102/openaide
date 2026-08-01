@@ -108,13 +108,13 @@ func parseFlags(args []string) cliFlags {
 		case a == "plugins":
 			cmdPlugins(args[i+1:])
 			os.Exit(0)
-	case a == "setup":
-		cmdSetup()
-		os.Exit(0)
-	case a == "server":
-		cmdServer(args[i+1:])
-		os.Exit(0)
-	case !strings.HasPrefix(a, "-"):
+		case a == "setup":
+			cmdSetup()
+			os.Exit(0)
+		case a == "server":
+			cmdServer(args[i+1:])
+			os.Exit(0)
+		case !strings.HasPrefix(a, "-"):
 			positional = append(positional, a)
 		}
 	}

@@ -1,33 +1,31 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"os"
-	"strings"
 
 	"openaide/backend/internal/config"
 )
 
 type onboardText struct {
 	welcome, profile, focus, gp, prog, write, research, teach, biz, custom string
-	choice123, respStyle, concise, detailed, balanced                       string
-	langQ, langZH, langEN, langFollow                                       string
-	saved, editHint                                                         string
+	choice123, respStyle, concise, detailed, balanced                      string
+	langQ, langZH, langEN, langFollow                                      string
+	saved, editHint                                                        string
 }
 
 var zhText = onboardText{
-	welcome:  "欢迎使用 OpenAIDE！",
-	profile:  "我是你的 AI 智能助手。第一次使用，先来配置一下吧。",
-	focus:    "1. 你希望我侧重于哪个领域？",
-	gp:       "   [1] 通用助手 —— 什么都能做",
-	prog:     "   [2] 编程与技术",
-	write:    "   [3] 写作与创作",
-	research: "   [4] 研究、分析与咨询",
-	teach:    "   [5] 教育与教学",
-	biz:      "   [6] 商业与管理",
-	custom:   "   [7] 自定义 —— 用你自己的话描述",
-	choice123: "   选择 (1-7): ",
+	welcome:    "欢迎使用 OpenAIDE！",
+	profile:    "我是你的 AI 智能助手。第一次使用，先来配置一下吧。",
+	focus:      "1. 你希望我侧重于哪个领域？",
+	gp:         "   [1] 通用助手 —— 什么都能做",
+	prog:       "   [2] 编程与技术",
+	write:      "   [3] 写作与创作",
+	research:   "   [4] 研究、分析与咨询",
+	teach:      "   [5] 教育与教学",
+	biz:        "   [6] 商业与管理",
+	custom:     "   [7] 自定义 —— 用你自己的话描述",
+	choice123:  "   选择 (1-7): ",
 	respStyle:  "2. 你希望我的回复风格是怎样的？",
 	concise:    "   [1] 简洁直接 —— 说重点",
 	detailed:   "   [2] 详实深入 —— 充分展开",
@@ -41,17 +39,17 @@ var zhText = onboardText{
 }
 
 var enText = onboardText{
-	welcome:  "Welcome to OpenAIDE!",
-	profile:  "I see this is your first time. Let's set up your profile.",
-	focus:    "1. What would you like me to focus on?",
-	gp:       "   [1] General-purpose — handle anything",
-	prog:     "   [2] Programming & technical work",
-	write:    "   [3] Writing & creative work",
-	research: "   [4] Research, analysis & consulting",
-	teach:    "   [5] Education & teaching",
-	biz:      "   [6] Business & management",
-	custom:   "   [7] Custom — describe in your own words",
-	choice123: "   Choice (1-7): ",
+	welcome:    "Welcome to OpenAIDE!",
+	profile:    "I see this is your first time. Let's set up your profile.",
+	focus:      "1. What would you like me to focus on?",
+	gp:         "   [1] General-purpose — handle anything",
+	prog:       "   [2] Programming & technical work",
+	write:      "   [3] Writing & creative work",
+	research:   "   [4] Research, analysis & consulting",
+	teach:      "   [5] Education & teaching",
+	biz:        "   [6] Business & management",
+	custom:     "   [7] Custom — describe in your own words",
+	choice123:  "   Choice (1-7): ",
 	respStyle:  "2. How would you like my responses?",
 	concise:    "   [1] Concise and direct — get to the point",
 	detailed:   "   [2] Detailed and thorough — explain everything",
@@ -65,87 +63,10 @@ var enText = onboardText{
 }
 
 func runOnboarding(cfg *config.Config, promptsDir string) {
-	// 全局语言偏好已设置 → 跳过引导
-	zh := cfg.Lang == "zh"
-	skipLang := cfg.Lang != ""
-
-	reader := bufio.NewReader(os.Stdin)
-
-	if !skipLang {
-		fmt.Println(strings.Repeat("─", 60))
-		fmt.Println("  Welcome to OpenAIDE! / 欢迎使用 OpenAIDE！")
-		fmt.Println(strings.Repeat("─", 60))
-		fmt.Println()
-
-		fmt.Println("Language / 语言")
-		fmt.Println("  [1] 中文")
-		fmt.Println("  [2] English")
-		fmt.Print("\n  Choice / 选择 (1-2): ")
-		langChoice := readLine(reader)
-		zh = langChoice == "1"
-		if zh { cfg.Lang = "zh" } else { cfg.Lang = "en" }
-		cfg.Save(defaultConfigPath())
-	}
-
-	t := &enText
-	if zh { t = &zhText }
-
-	fmt.Println("\n" + strings.Repeat("─", 60))
-	fmt.Println("  " + t.profile)
-	fmt.Println(strings.Repeat("─", 60))
-	fmt.Println()
-
-	// 2. 角色
-	fmt.Println(t.focus)
-	fmt.Println(t.gp)
-	fmt.Println(t.prog)
-	fmt.Println(t.write)
-	fmt.Println(t.research)
-	fmt.Println(t.teach)
-	fmt.Println(t.biz)
-	fmt.Println(t.custom)
-	fmt.Print("\n" + t.choice123)
-	choice := readLine(reader)
-
-	identity := buildIdentity(choice, reader, zh)
-
-	// 3. 回复风格
-	fmt.Println("\n" + t.respStyle)
-	fmt.Println(t.concise)
-	fmt.Println(t.detailed)
-	fmt.Println(t.balanced)
-	if zh {
-		fmt.Print("\n    选择 (1-3): ")
-	} else {
-		fmt.Print("\n    Choice (1-3): ")
-	}
-	styleChoice := readLine(reader)
-
-	styleMap := map[string]string{"1": "concise", "2": "detailed", "3": "balanced"}
-	style := styleMap[styleChoice]
-	if style == "" {
-		style = "balanced"
-	}
-
-	// 生成并写入
-	if err := writeUserTemplates(promptsDir+"/user", identity, style, zh); err != nil {
-		fmt.Printf("\n  ⚠ Failed to save: %v\n", err)
-		fmt.Printf("  Default profile will be used.\n\n")
-		return
-	}
-
-	fmt.Printf("\n  "+t.saved+"\n", promptsDir)
-	fmt.Println("  " + t.editHint)
-	fmt.Println(strings.Repeat("─", 60))
-	fmt.Println()
+	runOnboardingTUI(cfg, promptsDir)
 }
 
-func readLine(reader *bufio.Reader) string {
-	input, _ := reader.ReadString('\n')
-	return strings.TrimSpace(input)
-}
-
-func buildIdentity(choice string, reader *bufio.Reader, zh bool) string {
+func buildIdentity(choice, customText string, zh bool) string {
 	identitiesZH := map[string]string{
 		"1": `你没有固定的单一身份。根据用户的需求，你可以随时切换为任何角色：
 技术类：软件工程师、架构师、数据分析师、运维工程师、安全专家
@@ -235,19 +156,11 @@ Always think from a business perspective: ROI, feasibility, risk.`,
 	if id, ok := identities[choice]; ok {
 		return id
 	}
-	if choice == "7" {
+	if choice == "7" && customText != "" {
 		if zh {
-			fmt.Print("\n   用几句话描述你理想的助手：\n   > ")
-		} else {
-			fmt.Print("\n   Describe your ideal assistant in a few sentences:\n   > ")
+			return "你的身份是用户自定义的：" + customText + "。根据这个定义来调整你的行为和专业领域。"
 		}
-		custom := readLine(reader)
-		if custom != "" {
-			if zh {
-				return "你的身份是用户自定义的：" + custom + "。根据这个定义来调整你的行为和专业领域。"
-			}
-			return "Your identity is user-defined: " + custom + ". Adapt your behavior and expertise accordingly."
-		}
+		return "Your identity is user-defined: " + customText + ". Adapt your behavior and expertise accordingly."
 	}
 	return identities["1"]
 }
@@ -294,7 +207,6 @@ func buildTailoredPrompt(identity, style, lang string) string {
 		langStr = "根据用户使用的语言自然地切换回复语言。"
 	}
 
-	// Detect if identity is Chinese (for prompt template language)
 	zh := lang == "zh" || (lang == "follow" && len(identity) > 0 && identity[0] > 127)
 
 	if zh {

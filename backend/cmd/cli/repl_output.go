@@ -12,30 +12,30 @@ import (
 // ── ANSI Colors (minimal, for inline formatting) ──────────
 
 const (
-	cReset   = "\033[0m"
-	cBold    = "\033[1m"
-	cDim     = "\033[2m"
-	cItalic  = "\033[3m"
-	cRed     = "\033[31m"
-	cGreen   = "\033[32m"
-	cYellow  = "\033[33m"
-	cBlue    = "\033[34m"
-	cCyan    = "\033[36m"
-	cGray    = "\033[90m"
+	cReset  = "\033[0m"
+	cBold   = "\033[1m"
+	cDim    = "\033[2m"
+	cItalic = "\033[3m"
+	cRed    = "\033[31m"
+	cGreen  = "\033[32m"
+	cYellow = "\033[33m"
+	cBlue   = "\033[34m"
+	cCyan   = "\033[36m"
+	cGray   = "\033[90m"
 )
 
 var (
-	cLogo      = cCyan + cBold
-	cUser      = cBlue + cBold
-	cToolOK    = cGreen
-	cToolErr   = cRed + cBold
-	cThink     = cDim + cItalic
-	cPrompt    = cGreen + cBold
+	cLogo       = cCyan + cBold
+	cUser       = cBlue + cBold
+	cToolOK     = cGreen
+	cToolErr    = cRed + cBold
+	cThink      = cDim + cItalic
+	cPrompt     = cGreen + cBold
 	cPromptBusy = cYellow + cBold
-	cError     = cRed + cBold
-	cWarn      = cYellow
-	cSuccess   = cGreen
-	cInfo      = cGray
+	cError      = cRed + cBold
+	cWarn       = cYellow
+	cSuccess    = cGreen
+	cInfo       = cGray
 )
 
 // ── Markdown Renderer ─────────────────────────────────────
@@ -43,20 +43,30 @@ var (
 var mdRenderer *glamour.TermRenderer
 
 func initMarkdown() {
-	if mdRenderer != nil { return }
+	if mdRenderer != nil {
+		return
+	}
 	r, err := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
 		glamour.WithWordWrap(100),
 	)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 	mdRenderer = r
 }
 
 func RenderMarkdown(text string) string {
-	if mdRenderer == nil { initMarkdown() }
-	if mdRenderer == nil { return text }
+	if mdRenderer == nil {
+		initMarkdown()
+	}
+	if mdRenderer == nil {
+		return text
+	}
 	out, err := mdRenderer.Render(text)
-	if err != nil { return text }
+	if err != nil {
+		return text
+	}
 	out = strings.TrimLeft(out, "\n")
 	out = strings.TrimRight(out, "\n")
 	return out + "\n"
@@ -66,18 +76,24 @@ func RenderMarkdown(text string) string {
 
 func PromptStyle(sessionID, modelName string, busy bool, extra ...string) string {
 	dot := cGreen + "●" + cReset
-	if busy { dot = cYellow + "◉" + cReset }
+	if busy {
+		dot = cYellow + "◉" + cReset
+	}
 	// Session display: title > first msg > hash
 	sid := ""
 	if len(extra) > 0 && extra[0] != "" {
 		sid = trunc(extra[0], 24) // use session title or first query
 	} else {
 		sid = sessionID
-		if len(sid) > 8 { sid = sid[:8] }
+		if len(sid) > 8 {
+			sid = sid[:8]
+		}
 	}
 	// Git dirty indicator
 	suffix := ""
-	if len(extra) > 1 { suffix = extra[1] }
+	if len(extra) > 1 {
+		suffix = extra[1]
+	}
 	return fmt.Sprintf("%s %s%s %s❯%s %s", dot, cDim, sid, cPrompt, cReset, suffix)
 }
 
@@ -88,9 +104,10 @@ type toolSection struct {
 	results []string
 	errors  []string
 }
+
 var currentToolSection toolSection
 
-func BeginToolSection()  { currentToolSection = toolSection{} }
+func BeginToolSection()    { currentToolSection = toolSection{} }
 func AddToolCall(n string) { currentToolSection.names = append(currentToolSection.names, n) }
 func AddToolResult(name, summary, errStr string) {
 	currentToolSection.results = append(currentToolSection.results, summary)
@@ -98,20 +115,29 @@ func AddToolResult(name, summary, errStr string) {
 }
 
 func EndToolSection() {
-	if len(currentToolSection.names) == 0 { return }
+	if len(currentToolSection.names) == 0 {
+		return
+	}
 	errors := 0
 	for _, e := range currentToolSection.errors {
-		if e != "" { errors++ }
+		if e != "" {
+			errors++
+		}
 	}
 
 	// Compact: always show one-line summary
 	seen := make(map[string]bool)
 	var names []string
 	for _, n := range currentToolSection.names {
-		if !seen[n] { seen[n] = true; names = append(names, n) }
+		if !seen[n] {
+			seen[n] = true
+			names = append(names, n)
+		}
 	}
 	icon := "📁"
-	if errors > 0 { icon = "⚠️" }
+	if errors > 0 {
+		icon = "⚠️"
+	}
 	fmt.Printf("  %s %s%s%s\n", icon, pterm.Cyan(strings.Join(names, ", ")), cReset, cReset)
 }
 
@@ -121,9 +147,13 @@ var lastThink string
 
 func PrintThinking(text string) {
 	firstLine := strings.SplitN(text, "\n", 2)[0]
-	if len(firstLine) > 80 { firstLine = firstLine[:77] + "..." }
+	if len(firstLine) > 80 {
+		firstLine = firstLine[:77] + "..."
+	}
 	// Dedup: skip identical consecutive think lines
-	if firstLine == lastThink { return }
+	if firstLine == lastThink {
+		return
+	}
 	lastThink = firstLine
 	fmt.Printf("\r\033[K  %s[think]%s %s%s%s\n", cThink, cReset, cDim, firstLine, cReset)
 }
@@ -133,17 +163,24 @@ func PrintThinking(text string) {
 var currentSpinner *pterm.SpinnerPrinter
 
 func ShowSpinner(text string) {
-	if currentSpinner != nil { currentSpinner.Stop() }
+	if currentSpinner != nil {
+		currentSpinner.Stop()
+	}
 	s, _ := pterm.DefaultSpinner.WithRemoveWhenDone(true).Start(text)
 	currentSpinner = s
 }
 
 func UpdateSpinner(text string) {
-	if currentSpinner != nil { currentSpinner.UpdateText(text) }
+	if currentSpinner != nil {
+		currentSpinner.UpdateText(text)
+	}
 }
 
 func StopSpinner() {
-	if currentSpinner != nil { currentSpinner.Stop(); currentSpinner = nil }
+	if currentSpinner != nil {
+		currentSpinner.Stop()
+		currentSpinner = nil
+	}
 }
 
 func ShowProgress(total int, title string) *pterm.ProgressbarPrinter {
@@ -183,6 +220,7 @@ func PrintError(err string)   { pterm.Error.Println(err) }
 func PrintWarning(msg string) { pterm.Warning.Println(msg) }
 func PrintSuccess(msg string) { pterm.Success.Println(msg) }
 func PrintInfo(msg string)    { pterm.Info.Println(msg) }
+
 // ── Diff Highlighting ────────────────────────────────────
 
 // RenderDiff 渲染 diff 格式：绿 +、红 -
