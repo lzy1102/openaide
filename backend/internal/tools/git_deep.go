@@ -125,9 +125,9 @@ func handleGitStatus(ctx context.Context, arguments string) (*kernel.ToolResult,
 		args.Path = "."
 	}
 
-	absPath, err := safeAbsPath(args.Path)
+	absPath, err := validateAndResolve(args.Path)
 	if err != nil {
-		return &kernel.ToolResult{Error: err.Error()}, nil
+		return toolErrInvalidPath(err), nil
 	}
 
 	client := git.NewClient(absPath)
@@ -192,9 +192,9 @@ func handleGitDiff(ctx context.Context, arguments string) (*kernel.ToolResult, e
 	}
 	if args.Path == "" { args.Path = "." }
 
-	absPath, err := safeAbsPath(args.Path)
+	absPath, err := validateAndResolve(args.Path)
 	if err != nil {
-		return &kernel.ToolResult{Error: err.Error()}, nil
+		return toolErrInvalidPath(err), nil
 	}
 
 	client := git.NewClient(absPath)
@@ -234,9 +234,9 @@ func handleGitLog(ctx context.Context, arguments string) (*kernel.ToolResult, er
 	if args.Limit <= 0 { args.Limit = 10 }
 	if args.Path == "" { args.Path = "." }
 
-	absPath, err := safeAbsPath(args.Path)
+	absPath, err := validateAndResolve(args.Path)
 	if err != nil {
-		return &kernel.ToolResult{Error: err.Error()}, nil
+		return toolErrInvalidPath(err), nil
 	}
 
 	client := git.NewClient(absPath)
@@ -269,9 +269,9 @@ func handleGitBlame(ctx context.Context, arguments string) (*kernel.ToolResult, 
 		return &kernel.ToolResult{Error: "path is required"}, nil
 	}
 
-	absPath, err := safeAbsPath(args.Path)
+	absPath, err := validateAndResolve(args.Path)
 	if err != nil {
-		return &kernel.ToolResult{Error: err.Error()}, nil
+		return toolErrInvalidPath(err), nil
 	}
 
 	client := git.NewClient(absPath)
@@ -322,7 +322,7 @@ func handleGitCommit(ctx context.Context, arguments string) (*kernel.ToolResult,
 		return &kernel.ToolResult{Error: "message is required"}, nil
 	}
 
-	cwd, _ := safeAbsPath(".")
+	cwd, _ := validatePath(".")
 	client := git.NewClient(cwd)
 	if !client.IsRepo() {
 		return &kernel.ToolResult{Error: "not a git repository"}, nil
@@ -369,7 +369,7 @@ func handleGitCreateBranch(ctx context.Context, arguments string) (*kernel.ToolR
 		return &kernel.ToolResult{Error: "name is required"}, nil
 	}
 
-	cwd, _ := safeAbsPath(".")
+	cwd, _ := validatePath(".")
 	client := git.NewClient(cwd)
 	if !client.IsRepo() {
 		return &kernel.ToolResult{Error: "not a git repository"}, nil

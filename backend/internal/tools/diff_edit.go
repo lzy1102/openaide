@@ -60,9 +60,9 @@ func handleDiffEdit(ctx context.Context, arguments string) (*kernel.ToolResult, 
 		return &kernel.ToolResult{Error: "path and search_text are required"}, nil
 	}
 
-	absPath, err := safeAbsPath(args.Path)
+	absPath, err := validateAndResolve(args.Path)
 	if err != nil {
-		return &kernel.ToolResult{Error: err.Error()}, nil
+		return toolErrInvalidPath(err), nil
 	}
 
 	// 文件锁:防止并发写丢更新(read-modify-write TOCTOU)
@@ -143,9 +143,9 @@ func handleDiffEditLines(ctx context.Context, arguments string) (*kernel.ToolRes
 		return &kernel.ToolResult{Error: "path is required"}, nil
 	}
 
-	absPath, err := safeAbsPath(args.Path)
+	absPath, err := validateAndResolve(args.Path)
 	if err != nil {
-		return &kernel.ToolResult{Error: err.Error()}, nil
+		return toolErrInvalidPath(err), nil
 	}
 
 	data, err := os.ReadFile(absPath)
@@ -269,9 +269,9 @@ func handleApplyPatch(ctx context.Context, arguments string) (*kernel.ToolResult
 		return &kernel.ToolResult{Error: "path and content are required"}, nil
 	}
 
-	absPath, err := safeAbsPath(args.Path)
+	absPath, err := validateAndResolve(args.Path)
 	if err != nil {
-		return &kernel.ToolResult{Error: err.Error()}, nil
+		return toolErrInvalidPath(err), nil
 	}
 
 	result, err := applySearchReplacePatch(absPath, args.Content)

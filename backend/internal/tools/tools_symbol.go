@@ -52,9 +52,9 @@ func handleSearchSymbols(ctx context.Context, arguments string) (*kernel.ToolRes
 		args.Path = "."
 	}
 
-	absPath, err := safeAbsPath(args.Path)
+	absPath, err := validateAndResolve(args.Path)
 	if err != nil {
-		return &kernel.ToolResult{Error: err.Error()}, nil
+		return toolErrInvalidPath(err), nil
 	}
 
 	// 使用代码索引器

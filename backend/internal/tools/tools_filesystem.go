@@ -125,7 +125,7 @@ func fileSystemToolDefs() []kernel.ToolDefinition {
 	}
 }
 
-// handleReadFile 读取文件内容
+// handleReadFile reads file content with optional offset/limit pagination.
 func handleReadFile(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
 	var args struct {
 		Path   string `json:"path"`
@@ -133,20 +133,17 @@ func handleReadFile(ctx context.Context, arguments string) (*kernel.ToolResult, 
 		Limit  int    `json:"limit,omitempty"`
 	}
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
-		return &kernel.ToolResult{Error: err.Error(), ErrorCode: "INVALID_PATH", IsRetryable: false}, nil
-	}
-	if args.Path == "" {
-		return &kernel.ToolResult{Error: "path is required"}, nil
+		return toolErrInvalidPath(err), nil
 	}
 
-	absPath, err := safeAbsPath(args.Path)
+	absPath, err := validateAndResolve(args.Path)
 	if err != nil {
-		return &kernel.ToolResult{Error: err.Error(), ErrorCode: "INVALID_PATH", IsRetryable: false}, nil
+		return toolErrInvalidPath(err), nil
 	}
 
 	data, err := os.ReadFile(absPath)
 	if err != nil {
-		return &kernel.ToolResult{Error: fmt.Sprintf("read failed: %v", err)}, nil
+		return toolErrIO("read", err), nil
 	}
 
 	lines := strings.Split(string(data), "\n")
@@ -170,34 +167,31 @@ func handleReadFile(ctx context.Context, arguments string) (*kernel.ToolResult, 
 	return &kernel.ToolResult{Content: out.String()}, nil
 }
 
-// handleWriteFile 写入文件(原子写 + 文件锁)
+// handleWriteFile writes file with atomic write + file lock.
 func handleWriteFile(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
 	var args struct {
 		Path    string `json:"path"`
 		Content string `json:"content"`
 	}
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
-		return &kernel.ToolResult{Error: err.Error(), ErrorCode: "INVALID_PATH", IsRetryable: false}, nil
-	}
-	if args.Path == "" {
-		return &kernel.ToolResult{Error: "path is required"}, nil
+		return toolErrInvalidPath(err), nil
 	}
 
-	absPath, err := safeAbsPath(args.Path)
+	absPath, err := validateAndResolve(args.Path)
 	if err != nil {
-		return &kernel.ToolResult{Error: err.Error(), ErrorCode: "INVALID_PATH", IsRetryable: false}, nil
+		return toolErrInvalidPath(err), nil
 	}
 
-	// 文件锁:防止并发写同一文件丢更新
+	// File lock: prevent concurrent writes to the same file.
 	unlock := lockFile(absPath)
 	defer unlock()
 
-	// Undo 检查点:写之前备份当前内容,支持 undo_edit 回滚
+	// Undo checkpoint: backup current content before writing.
 	saveFileCheckpoint(absPath, "write_file")
 
-	// 原子写:先写临时文件,再 rename,防止写到一半崩溃
+	// Atomic write: write to temp file then rename to prevent corruption on crash.
 	if err := atomicWriteFile(absPath, []byte(args.Content), 0644); err != nil {
-		return &kernel.ToolResult{Error: fmt.Sprintf("write failed: %v", err)}, nil
+		return toolErrIO("write", err), nil
 	}
 
 	// ACI: show what was written with line numbers for verification
@@ -268,9 +262,9 @@ func handleExecuteCommand(ctx context.Context, arguments string) (*kernel.ToolRe
 			cmd = exec.CommandContext(execCtx, "sh", "-c", args.Command)
 		}
 	if args.WorkingDir != "" {
-		absDir, err := safeAbsPath(args.WorkingDir)
+		absDir, err := validateAndResolve(args.WorkingDir)
 		if err != nil {
-			return &kernel.ToolResult{Error: err.Error(), ErrorCode: "INVALID_PATH", IsRetryable: false}, nil
+			return toolErrInvalidPath(err), nil
 		}
 		cmd.Dir = absDir
 	} else {
@@ -365,7 +359,7 @@ func handleListDirectory(ctx context.Context, arguments string) (*kernel.ToolRes
 
 	entries, err := os.ReadDir(absPath)
 	if err != nil {
-		return &kernel.ToolResult{Error: fmt.Sprintf("readdir failed: %v", err), ErrorCode: "NOT_FOUND", IsRetryable: true}, nil
+		return toolErr("NOT_FOUND", "readdir failed: %v", err), nil
 	}
 
 	var out strings.Builder
@@ -410,14 +404,14 @@ func handleSearchFiles(ctx context.Context, arguments string) (*kernel.ToolResul
 		args.Path = "."
 	}
 
-	absPath, err := safeAbsPath(args.Path)
+	absPath, err := validateAndResolve(args.Path)
 	if err != nil {
-		return &kernel.ToolResult{Error: err.Error(), ErrorCode: "INVALID_PATH", IsRetryable: false}, nil
+		return toolErrInvalidPath(err), nil
 	}
 
 	re, err := regexp.Compile(args.Pattern)
 	if err != nil {
-		return &kernel.ToolResult{Error: fmt.Sprintf("invalid regex: %v", err)}, nil
+		return toolErr("INVALID_ARGS", "invalid regex: %v", err), nil
 	}
 
 	const maxResults = 200

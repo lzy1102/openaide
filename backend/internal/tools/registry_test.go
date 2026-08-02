@@ -131,13 +131,24 @@ func TestHandleDiffEdit_Duplicate(t *testing.T) {
 	}
 }
 
-func TestSafeAbsPath(t *testing.T) {
-	p, err := safeAbsPath(".")
+func TestValidatePath(t *testing.T) {
+	p, err := validatePath(".")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if p == "" || p == "." {
 		t.Error("expected absolute path")
+	}
+}
+
+func TestValidatePath_Empty(t *testing.T) {
+	_, err := validatePath("")
+	if err == nil {
+		t.Error("expected error for empty path")
+	}
+	_, err = validatePath("  ")
+	if err == nil {
+		t.Error("expected error for whitespace-only path")
 	}
 }
 

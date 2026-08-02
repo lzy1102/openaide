@@ -106,7 +106,7 @@ func handleEditFiles(ctx context.Context, arguments string) (*kernel.ToolResult,
 			defer func() { <-sem }()
 
 			r := editPrecheckResult{index: idx}
-			abs, err := safeAbsPath(edit.Path)
+			abs, err := validateAndResolve(edit.Path)
 			if err != nil {
 				r.reason = fmt.Sprintf("invalid path: %v", err)
 				precheckResults[idx] = r

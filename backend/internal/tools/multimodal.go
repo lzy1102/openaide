@@ -46,15 +46,15 @@ func handleReadImage(ctx context.Context, arguments string) (*kernel.ToolResult,
 		return &kernel.ToolResult{Error: "path is required"}, nil
 	}
 
-	absPath, err := safeAbsPath(args.Path)
+	absPath, err := validateAndResolve(args.Path)
 	if err != nil {
-		return &kernel.ToolResult{Error: err.Error()}, nil
+		return toolErrInvalidPath(err), nil
 	}
 
 	ext := strings.ToLower(filepath.Ext(absPath))
 	mt := map[string]string{".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp"}[ext]
 	if mt == "" {
-		return &kernel.ToolResult{Error: fmt.Sprintf("unsupported format: %s", ext)}, nil
+		return toolErr("UNSUPPORTED_FORMAT", "unsupported format: %s", ext), nil
 	}
 
 	data, err := os.ReadFile(absPath)
