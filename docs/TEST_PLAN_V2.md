@@ -34,7 +34,7 @@ mv ~/.openaide/data ~/.openaide/data.bak 2>/dev/null
 | # | 操作 | 命令 | 预期 | ✓ |
 |---|------|------|------|---|
 | C1 | 代码问题 | `openaide "用Go写一个hello world"` | 输出可运行代码 | ☐ |
-| C2 | 读文件 | `openaide CLAUDE.md "总结核心规则"` | 读取文件并总结 | ☐ |
+| C2 | 读文件 | `openaide OPENAIDE.md "总结核心规则"` | 读取文件并总结 | ☐ |
 | C3 | 指定模型 | `openaide --model deepseek-v4-flash "hi"` | 使用 flash 模型 | ☐ |
 | C4 | 超时保护 | `openaide "写10万行代码"` | 300s 超时退出，不卡死 | ☐ |
 | C5 | Ctrl+C | 执行大任务，按 Ctrl+C | 优雅退出 | ☐ |
@@ -47,7 +47,7 @@ mv ~/.openaide/data ~/.openaide/data.bak 2>/dev/null
 | R2 | 基本对话 | `hello` | 正常回复 | ☐ |
 | R3 | 多轮对话 | 连续问 3 个相关问题 | 上下文连贯 | ☐ |
 | R4 | 恢复会话 | `openaide -c` | 恢复上次对话 | ☐ |
-| R5 | 工具触发 | `读取 CLAUDE.md` | 显示 ⚙ read_file | ☐ |
+| R5 | 工具触发 | `读取 OPENAIDE.md` | 显示 ⚙ read_file | ☐ |
 | R6 | 审批弹窗 | `创建 /tmp/test.txt 写入 hello` | 弹出 Allow/Deny | ☐ |
 | R7 | 拒绝审批 | 选 Deny | 工具被拒绝 | ☐ |
 | R8 | 全部允许 | 选 Allow All | 后续不再弹窗 | ☐ |
@@ -89,7 +89,7 @@ mv ~/.openaide/data ~/.openaide/data.bak 2>/dev/null
 | # | 操作 | 命令 | 预期 | ✓ |
 |---|------|------|------|---|
 | M1 | coding | `openaide "fix: add comment to /tmp/hello.go"` | 编码模式，用工具修改 | ☐ |
-| M2 | review | `openaide "review CLAUDE.md for bugs"` | 审查模式，输出问题列表 | ☐ |
+| M2 | review | `openaide "review OPENAIDE.md for bugs"` | 审查模式，输出问题列表 | ☐ |
 | M3 | think | `openaide "解释 Go 的 CSP 模型"` | 思考模式，分析性回答 | ☐ |
 | M4 | debugging | `openaide "有个bug: /tmp/hello.go 的 main 函数不工作"` | 调试模式，先读文件再分析 | ☐ |
 
@@ -97,10 +97,10 @@ mv ~/.openaide/data ~/.openaide/data.bak 2>/dev/null
 
 | # | 操作 | 命令 | 预期 | ✓ |
 |---|------|------|------|---|
-| H1 | 不编造 | `openaide "CLAUDE.md 第500行是什么"` | 先读文件再回答，不猜测 | ☐ |
+| H1 | 不编造 | `openaide "OPENAIDE.md 第500行是什么"` | 先读文件再回答，不猜测 | ☐ |
 | H2 | 不截断 | `openaide "修改 README.md 的标题"` | 展示完整 diff，不用 "..." | ☐ |
 | H3 | 验证API | `openaide "用 encoding/xml 包解析"` | 先 grep 检查 go.mod → 发现不存在 → 说没有 | ☐ |
-| H4 | 编辑前重读 | `openaide "在 CLAUDE.md 第一行加注释"` | 编辑前先 read_file | ☐ |
+| H4 | 编辑前重读 | `openaide "在 OPENAIDE.md 第一行加注释"` | 编辑前先 read_file | ☐ |
 
 ---
 

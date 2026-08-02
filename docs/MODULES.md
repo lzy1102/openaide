@@ -106,4 +106,4 @@ mcp    ←── infra/app      (MCP server 连接 + tool 注册)
 
 ## 不再维护的旧文档
 
-以下内容已整合到 CLAUDE.md，本文件仅作模块清单参考。
+以下内容已整合到 OPENAIDE.md，本文件仅作模块清单参考。

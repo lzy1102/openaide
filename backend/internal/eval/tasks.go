@@ -59,8 +59,8 @@ func BuiltinTasks() []Task {
 		{
 			ID: "oa-read-file", Name: "Read OpenAIDE Config",
 			Category: "think", Difficulty: "easy",
-			Query:        "Read the file CLAUDE.md in the project root and tell me: what language is this project written in, and what is its main purpose?",
-			EvalCriteria: "States the project is written in Go. Identifies the main purpose as an AI agent kernel/platform. References specific details from CLAUDE.md (architecture, features, etc.).",
+			Query:        "Read the file OPENAIDE.md in the project root and tell me: what language is this project written in, and what is its main purpose?",
+			EvalCriteria: "States the project is written in Go. Identifies the main purpose as an AI agent kernel/platform. References specific details from OPENAIDE.md (architecture, features, etc.).",
 			MinToolCalls: 1,
 		},
 		{
@@ -283,7 +283,7 @@ func FullCapabilityTasks() []Task {
 
 		// ── Architecture Understanding ──
 		{ID: "arch-synthesis", Name: "Architecture Synthesis", Category: "think", Difficulty: "hard",
-			Query:        "Based on reading key files (CLAUDE.md, kernel/*.go), describe: (1) the layered architecture, (2) the CSP actor pattern, (3) the prompt system. Keep under 300 words.",
+			Query:        "Based on reading key files (OPENAIDE.md, kernel/*.go), describe: (1) the layered architecture, (2) the CSP actor pattern, (3) the prompt system. Keep under 300 words.",
 			EvalCriteria: "Describes all three topics with specific details from the codebase. References actual packages and design patterns. Under ~300 words.",
 			MinToolCalls: 2},
 	}

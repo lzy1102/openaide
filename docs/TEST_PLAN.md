@@ -60,7 +60,7 @@ grep "Query analyzed" server.log
 | ID | 用例 | 请求 | 预期 |
 |----|------|------|------|
 | R1 | 无工具调用 | `{"message":"what is 2+2"}` | 1轮完成，`chunkType=done` |
-| R2 | 有工具调用 | `{"message":"read CLAUDE.md and tell me the first line"}` | >=2轮，先 `tool_call` 再 `done` |
+| R2 | 有工具调用 | `{"message":"read OPENAIDE.md and tell me the first line"}` | >=2轮，先 `tool_call` 再 `done` |
 | R3 | 多工具调用 | `{"message":"list files then read the first .go file"}` | >=3轮，多个 tool_call |
 | R4 | 预算注入 | 制造需要大量工具调用的场景 | 日志出现 budget hint |
 
@@ -81,7 +81,7 @@ grep "Query analyzed" server.log
 ```bash
 curl -s -X POST localhost:8080/api/v1/chat/stream \
   -H "Content-Type: application/json" \
-  -d '{"message":"read CLAUDE.md and tell me the first line"}' | while read line; do
+  -d '{"message":"read OPENAIDE.md and tell me the first line"}' | while read line; do
     echo "$line" | jq -r '.type'
   done
 ```

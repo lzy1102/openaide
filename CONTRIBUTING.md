@@ -32,14 +32,14 @@ make build
 
 ## Architecture
 
-See [CLAUDE.md](./CLAUDE.md) for the full architecture document loaded by the AI agent.
+See [OPENAIDE.md](./OPENAIDE.md) for the full architecture document loaded by the AI agent.
 See [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) for the technical design.
 
 ## Code Style
 
 - Go: standard `gofmt`, error handling required
 - Prompts: in `internal/kernel/kernel_prompt.go` or `~/.openaide/data/prompts/`
-- See [CLAUDE.md](./CLAUDE.md) Output Quality Rules for commit message style
+- See [OPENAIDE.md](./OPENAIDE.md) Output Quality Rules for commit message style
 
 ## Questions?
 

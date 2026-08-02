@@ -194,6 +194,6 @@ curl -X POST http://localhost:8080/api/v1/chat/stream \
 
 **Q: 如何切换模型?** `/model` 查看，`/model <name>` 切换
 
-**Q: 如何让 Agent 更聪明?** 创建 `CLAUDE.md` 描述项目，用 `/team` 处理复杂任务
+**Q: 如何让 Agent 更聪明?** 创建 `OPENAIDE.md` 描述项目，用 `/team` 处理复杂任务
 
 **Q: 数据在哪?** 默认 `~/.openaide/data/`，`storage.data_dir` 配置

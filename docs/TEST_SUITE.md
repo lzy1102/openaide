@@ -76,7 +76,7 @@ rm -rf ~/.openaide/data/
 | C17 | 恢复会话 | `openaide -c` | 恢复上次未完成的会话 | ☐ |
 | C18 | 自动审批 | `openaide -y "创建 test.txt 写入 hello"` | 自动批准工具操作，不弹出审批 | ☐ |
 | C19 | Markdown 渲染 | 在 REPL 中问 "列出 Go 语言的特性" | 代码块带语法高亮，表格格式正确 | ☐ |
-| C20 | 工具可见性 | 在 REPL 中问 "读取 CLAUDE.md" | 终端显示 ⚙ read_file 工具调用状态 | ☐ |
+| C20 | 工具可见性 | 在 REPL 中问 "读取 OPENAIDE.md" | 终端显示 ⚙ read_file 工具调用状态 | ☐ |
 
 ---
 
@@ -122,8 +122,8 @@ rm -rf ~/.openaide/data/
 
 | # | 测试场景 | 命令 | 预期结果 | 通过 |
 |---|---------|------|---------|------|
-| A1 | Coding 模式 | `openaide "fix the typo in CLAUDE.md: 'openaide' should be 'openaide'"` | 进入编码模式，使用工具修复 | ☐ |
-| A2 | Review 模式 | `openaide "review CLAUDE.md for bugs"` | 进入审查模式，输出 P0/P1/P2 问题 | ☐ |
+| A1 | Coding 模式 | `openaide "fix the typo in OPENAIDE.md: 'openaide' should be 'openaide'"` | 进入编码模式，使用工具修复 | ☐ |
+| A2 | Review 模式 | `openaide "review OPENAIDE.md for bugs"` | 进入审查模式，输出 P0/P1/P2 问题 | ☐ |
 | A3 | Think 模式 | `openaide "explain how Go's CSP works"` | 进入思考模式，输出分析性回答 | ☐ |
 | A4 | General 模式 | `openaide "hello"` | 简短问候回复 | ☐ |
 
@@ -144,7 +144,7 @@ rm -rf ~/.openaide/data/
 | A15 | 执行命令 | `openaide "运行 ls -la"` | **弹出审批**，批准后执行成功 | ☐ |
 | A16 | 审批拒绝 | A15 中选择 "Deny" | 工具被拒绝，显示拒绝原因 | ☐ |
 | A17 | 审批全部允许 | A15 中选择 "Allow All" | 后续工具调用自动批准 | ☐ |
-| A18 | 并行工具 | `openaide "同时读取 README.md 和 CLAUDE.md"` | 并行调用 read_file，更快完成 | ☐ |
+| A18 | 并行工具 | `openaide "同时读取 README.md 和 OPENAIDE.md"` | 并行调用 read_file，更快完成 | ☐ |
 | A19 | 危险工具 | `openaide "执行 rm -rf /"` | 弹出审批，需要确认 | ☐ |
 
 ### 4.3 记忆管理 (MemGPT)
@@ -162,7 +162,7 @@ rm -rf ~/.openaide/data/
 
 | # | 测试场景 | 命令 | 预期结果 | 通过 |
 |---|---------|------|---------|------|
-| A29 | 任务反思 | `openaide "重构 CLAUDE.md，让它更简洁"` | 完成后自动反思，记录质量评分 | ☐ |
+| A29 | 任务反思 | `openaide "重构 OPENAIDE.md，让它更简洁"` | 完成后自动反思，记录质量评分 | ☐ |
 | A31 | 用户反馈 | 在 REPL 中对回答表示满意 ("good") | 技能置信度提升 | ☐ |
 | A32 | 用户反馈 (差) | 在 REPL 中对回答表示不满 ("bad") | 技能置信度降低 | ☐ |
 
@@ -309,7 +309,7 @@ rm -rf ~/.openaide/data/
 
 | # | 测试场景 | 操作 | 预期结果 | 通过 |
 |---|---------|------|---------|------|
-| I1 | CLAUDE.md 加载 | 在项目根目录放置 `CLAUDE.md`，运行 `openaide "项目规则是什么"` | 回答中包含 CLAUDE.md 内容 | ☐ |
+| I1 | OPENAIDE.md 加载 | 在项目根目录放置 `OPENAIDE.md`，运行 `openaide "项目规则是什么"` | 回答中包含 OPENAIDE.md 内容 | ☐ |
 | I2 | OPENAIDE.md | 同 I1，但用 `OPENAIDE.md` | 自动加载 | ☐ |
 | I3 | CODEBUDDY.md | 同 I1，但用 `CODEBUDDY.md` | 自动加载 | ☐ |
 | I4 | OpenCode 配置 | 项目根目录放置 `opencode.json`，启动 openaide | 自动发现并导入 MCP 服务器 | ☐ |
