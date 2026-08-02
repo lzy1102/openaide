@@ -275,7 +275,7 @@ func (k *AgentKernel) getOrCreateSession(ctx context.Context, query *Query) (*Se
 	return session, nil
 }
 
-func (k *AgentKernel) buildMessages(ctx context.Context, session *Session, query *Query) []Message {
+func (k *AgentKernel) buildMessages(ctx context.Context, session *Session, query *Query, analysis *QueryAnalysis) []Message {
 	// ── Stable Prefix: System Message (Layers 0-2,5; prompt cache friendly) ──
 	systemMsg := k.buildSystemLayer(ctx, query)
 	messages := make([]Message, 0)
@@ -294,10 +294,15 @@ func (k *AgentKernel) buildMessages(ctx context.Context, session *Session, query
 
 	// ── Dynamic Tail: Layers 3-6 (after user query, varies per query) ──
 
-		// L3: Task Adapter (coding/review/teaching/research) — per-query, not cached
-		if l3 := k.promptL3(ctx, query.Content); l3 != "" {
-			messages = append(messages, Message{Role: "system", Content: l3})
-		}
+	// L3: Task Adapter (coding/review/think/debugging) — per-query, not cached
+	// 复用统一查询分析的 TaskType，避免重复 LLM 分类调用
+	taskType := ""
+	if analysis != nil {
+		taskType = analysis.TaskType
+	}
+	if l3 := k.promptL3(ctx, query.Content, taskType); l3 != "" {
+		messages = append(messages, Message{Role: "system", Content: l3})
+	}
 
 	// L5: Previous-round reflection (dynamic tail)
 	if session.Metadata != nil {

@@ -35,7 +35,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 		k.skillActor.UsePreMatch(analysis.SkillID) // "" = no match -> skip
 	}
 
-	messages := k.buildMessages(ctx, session, query)
+	messages := k.buildMessages(ctx, session, query, analysis)
 
 	// 复杂任务分解:complexity >= 阈值时,生成子任务计划注入消息
 	// 引导 agent 按步骤执行 + 每步自我验证
@@ -88,23 +88,12 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 		slog.Info("ReAct stream: entering loop", "query", query.Content[:min(80, len(query.Content))], "max_rounds", maxRounds, "tools", len(tools), "history_msgs", len(messages))
 		for round := 0; ; round++ {
 			slog.Debug("ReAct stream round", "round", round, "msg_count", len(messages))
-			// Safety net + self-aware budget injection (shared with sync path)
-		if round >= 200 {
-			slog.Error("ReAct stream safety limit reached", "round", round)
-			break
-		}
-		messages = k.prepareReActRound(ctx, messages, round, promptTokens, &query.Options)
-			// 检查上下文长度，必要时压缩
-			if k.compressor != nil {
-				tokenCount := k.compressor.EstimateTokens(messages)
-				if tokenCount > k.maxTokens*9/10 {
-					compressed, saved, err := k.compressor.Compress(ctx, messages, k.maxTokens)
-					if err == nil {
-						messages = compressed
-						slog.Debug("Context compressed", "saved_tokens", saved)
-					}
-				}
+			// 绝对安全网：防 runaway 循环（90% 压缩/预算提示已由 prepareReActRound 完成）
+			if round >= maxRounds*2 {
+				slog.Error("ReAct stream safety limit reached", "round", round)
+				break
 			}
+			messages = k.prepareReActRound(ctx, messages, round, promptTokens, &query.Options)
 
 			// 发送 thinking 事件
 			k.setState(StateThinking)

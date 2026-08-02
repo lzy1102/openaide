@@ -480,8 +480,12 @@ func (k *AgentKernel) buildSystemPrompt(query *Query) string {
 	return sb.String()
 }
 // promptL3 returns the task adapter for the current query.
-func (k *AgentKernel) promptL3(ctx context.Context, query string) string {
-	task := k.detectTaskType(ctx, query)
+// taskType 来自统一查询分析(analysis.TaskType),为空时回退到独立检测。
+func (k *AgentKernel) promptL3(ctx context.Context, query string, taskType string) string {
+	task := taskType
+	if task == "" {
+		task = k.detectTaskType(ctx, query)
+	}
 	l3 := promptL3_task_EN(task)
 	// Inject RepoMap for coding/debugging only (saves tokens on think/general/review)
 	if task == "coding" || task == "debugging" {

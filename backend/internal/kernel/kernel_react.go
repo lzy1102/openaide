@@ -305,31 +305,6 @@ func partitionToolCalls(toolCalls []ToolCall) [][]ToolCall {
 	return batches
 }
 
-// injectMemoryContext appends reflection, learning insights, and knowledge
-// context after the user query (dynamic tail — doesn't break prompt cache prefix).
-func (k *AgentKernel) injectMemoryContext(ctx context.Context, messages []Message, session *Session, query *Query) []Message {
-	// Previous-round reflection
-	if session.Metadata != nil {
-		if ref, ok := session.Metadata["reflection"]; ok {
-			if r, ok := ref.(*ReflectionResult); ok && r != nil {
-				hint := fmt.Sprintf("[Previous reflection] Quality: %d/10", r.Quality)
-				if len(r.Issues) > 0 {
-					hint += fmt.Sprintf(" | Issues: %s", strings.Join(r.Issues, "; "))
-				}
-				if len(r.Suggestions) > 0 {
-					hint += fmt.Sprintf(" | Suggestions: %s", strings.Join(r.Suggestions, "; "))
-				}
-				messages = append(messages, Message{Role: "system", Content: hint})
-			}
-			delete(session.Metadata, "reflection")
-		}
-	}
-
-	// Cross-session learning
-
-	return messages
-}
-
 // determineMaxRounds calculates the ReAct loop limit (adaptive or config-based).
 // Uses cached result from unified query analysis when available.
 func (k *AgentKernel) determineMaxRounds(ctx context.Context, queryContent string, historyLen int, analysis *QueryAnalysis) int {

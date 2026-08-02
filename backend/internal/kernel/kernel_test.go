@@ -89,7 +89,6 @@ func TestAgentKernel_Process(t *testing.T) {
 	llm := &MockLLMProvider{
 		responses: []LLMResponse{
 			{Content: `{"task_type":"coding","skill_id":"","complexity":10}`}, // analyzeQuery
-			{Content: "coding"}, // task type classification (detectTaskType)
 			{Content: "需要工具", ToolCalls: []ToolCall{{ID: "1", Type: "function", Function: FunctionCall{Name: "test_tool", Arguments: "{}"}}}},
 			{Content: "最终答案"},
 		},

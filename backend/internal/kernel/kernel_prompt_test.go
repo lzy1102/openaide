@@ -54,7 +54,7 @@ func TestPromptL3(t *testing.T) {
 	}
 	k := NewAgentKernel(mock, &MockToolExecutor{}, &MockMemory{}, NewSessionStoreAdapter(), DefaultConfig())
 
-	coding := k.promptL3(context.Background(), "fix the login bug")
+	coding := k.promptL3(context.Background(), "fix the login bug", "")
 	if coding == "" {
 		t.Error("L3 coding should not be empty")
 	}
@@ -67,7 +67,7 @@ func TestPromptL3(t *testing.T) {
 		responses: []LLMResponse{{Content: "general"}},
 	}
 	k2 := NewAgentKernel(mock2, &MockToolExecutor{}, &MockMemory{}, NewSessionStoreAdapter(), DefaultConfig())
-	general := k2.promptL3(context.Background(), "hello")
+	general := k2.promptL3(context.Background(), "hello", "")
 	if general != "" {
 		t.Error("L3 general should be empty")
 	}
@@ -86,7 +86,7 @@ func TestPromptL3_AnalysisFormat(t *testing.T) {
 			responses: []LLMResponse{{Content: tc.response}},
 		}
 		k := NewAgentKernel(mock, &MockToolExecutor{}, &MockMemory{}, NewSessionStoreAdapter(), DefaultConfig())
-		l3 := k.promptL3(context.Background(), tc.query)
+		l3 := k.promptL3(context.Background(), tc.query, "")
 		if l3 == "" {
 			t.Errorf("promptL3(%q) returned empty", tc.query)
 		}
@@ -102,7 +102,7 @@ func TestPromptL3_AnalysisFormat(t *testing.T) {
 		responses: []LLMResponse{{Content: "coding"}},
 	}
 	k := NewAgentKernel(mock, &MockToolExecutor{}, &MockMemory{}, NewSessionStoreAdapter(), DefaultConfig())
-	l3 := k.promptL3(context.Background(), "fix the login bug")
+	l3 := k.promptL3(context.Background(), "fix the login bug", "")
 	if strings.Contains(l3, "P0/P1/P2") {
 		t.Error("L3 coding should not contain analysis format")
 	}
