@@ -72,7 +72,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		MaxRounds:    10,
 		MaxTokens:    4000,
-		SystemPrompt: defaultSystemPrompt(),
+		SystemPrompt: "",
 	}
 }
 
@@ -323,20 +323,17 @@ func (k *AgentKernel) buildMessages(ctx context.Context, session *Session, query
 // ── Layer Builders ──────────────────────────────────────────
 // Each layer has a clear activation condition and injection point.
 
-// buildSystemLayer assembles the prompt. Priority:
-// 1. Custom prompt from ~/.openaide/data/prompts/system.{lang}.md
-// 2. Layered prompts (L0+L1+L3) with file overrides per layer
+// buildSystemLayer assembles the prompt. L0 safety rules are always included;
+// custom prompts (config kernel.system_prompt / opencode instructions) are
+// appended as an additional layer — they never replace the built-in layers.
 func (k *AgentKernel) buildSystemLayer(ctx context.Context, query *Query) string {
-	// If user has a custom monolithic system prompt, use it
-	if sp := k.systemPrompt.Load().(string); sp != "" {
-		if k.skillActor != nil {
-			sp = k.skillActor.InjectPrompt(ctx, query.Content, sp)
-		}
-		return sp
-	}
-
-	// Build layered prompt (L0+L1+L3) — each layer file-overridable
+	// Layered build: L0 core rules + user prompts + L1 project context
 	sp := k.buildSystemPrompt(query)
+
+	// External instructions (SetSystemPrompt / opencode) append, never override
+	if custom := k.systemPrompt.Load().(string); custom != "" {
+		sp += "\n\n" + custom
+	}
 
 	if k.skillActor != nil {
 		sp = k.skillActor.InjectPrompt(ctx, query.Content, sp)
