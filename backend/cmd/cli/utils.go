@@ -41,3 +41,8 @@ func trunc(s string, n int) string {
 	}
 	return string(rs[:n]) + "..."
 }
+
+// oneLine 把多行文本折叠为单行（缩进对齐用，避免内嵌换行破坏前缀/缩进）
+func oneLine(s string) string {
+	return strings.Join(strings.Fields(s), " ")
+}

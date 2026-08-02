@@ -288,9 +288,9 @@ func (m *tuiModel) resumeSession(app *infra.Application) {
 				for _, msg := range history {
 					switch msg.Role {
 					case "user":
-						m.history.WriteString("    " + styleUser.Render("▸ "+trunc(msg.Content, 80)) + "\n")
+						m.history.WriteString("    " + styleUser.Render("▸ "+trunc(oneLine(msg.Content), 80)) + "\n")
 					case "assistant":
-						m.history.WriteString("    " + styleToolDone.Render("✓ "+trunc(msg.Content, 80)) + "\n")
+						m.history.WriteString("    " + styleToolDone.Render("✓ "+trunc(oneLine(msg.Content), 80)) + "\n")
 					}
 				}
 				m.history.WriteString("\n")
