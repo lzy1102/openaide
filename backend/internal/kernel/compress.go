@@ -1,65 +1,36 @@
 package kernel
 
 import (
-	"context"
 	"strings"
 )
 
-// SimpleCompressor 简单上下文压缩器
-// 基于消息数量的简单压缩，后续可替换为更智能的压缩策略
-type SimpleCompressor struct{}
-
-// Compress 压缩消息列表
-func (c *SimpleCompressor) Compress(ctx context.Context, messages []Message, maxTokens int) ([]Message, int, error) {
-	if len(messages) <= 2 {
-		return messages, 0, nil
-	}
-
-	// 保留 system 和最近的用户消息，压缩中间的历史
-	var result []Message
-	var history []Message
-
-	for _, msg := range messages {
-		if msg.Role == "system" {
-			result = append(result, msg)
-		} else {
-			history = append(history, msg)
+// trimHistoryToBudget 按 token 预算截断历史:从旧到新累积 token,
+// 超过预算时丢弃剩余旧消息。至少保留 2 条,保证对话上下文连贯。
+func trimHistoryToBudget(history []Message, budget int) []Message {
+	total := 0
+	keep := 0
+	for i, msg := range history {
+		total += estimateTextTokens(msg.Content) + 4
+		if total > budget && i >= 2 {
+			break
 		}
+		keep = i + 1
 	}
-
-	// 保留最近的 4 条消息（2 轮对话）
-	keepCount := 4
-	if len(history) > keepCount {
-		// 压缩旧消息为摘要
-		oldMessages := history[:len(history)-keepCount]
-		recentMessages := history[len(history)-keepCount:]
-
-		summary := c.summarize(oldMessages)
-		if summary != "" {
-			result = append(result, Message{
-				Role:    "system",
-				Content: "[历史对话摘要] " + summary,
-			})
-		}
-		result = append(result, recentMessages...)
-	} else {
-		result = append(result, history...)
+	if keep < len(history) {
+		return history[:keep]
 	}
-
-	saved := c.EstimateTokens(messages) - c.EstimateTokens(result)
-	return result, saved, nil
+	return history
 }
 
-// EstimateTokens 估算 Token 数（采样估算：长文本抽样，短文本精确）
-// 经验值：英文 ~4chars/token, 中文 ~2chars/token, 代码 ~3.5chars/token
-func (c *SimpleCompressor) EstimateTokens(messages []Message) int {
+// estimateMessagesTokens 统一的消息 token 估算(历史截断与压缩阈值共用)。
+// 避免与压缩器内部估算口径不一致导致的预算判断偏差。
+func estimateMessagesTokens(messages []Message) int {
 	total := 0
 	for _, msg := range messages {
-		total += estimateTextTokens(msg.Content)
-		total += 4 // message overhead
+		total += estimateTextTokens(msg.Content) + 4
 		if len(msg.ToolCalls) > 0 {
 			total += 20
-		} // tool call overhead
+		}
 		if msg.ReasoningContent != "" {
 			total += estimateTextTokens(msg.ReasoningContent)
 		}
@@ -103,31 +74,4 @@ func charBasedTokenEstimate(text string) int {
 	}
 	// ASCII ~4chars/token, CJK ~2chars/token
 	return ascii/4 + cjk/2 + 1
-}
-
-// summarize 生成消息摘要
-func (c *SimpleCompressor) summarize(messages []Message) string {
-	var parts []string
-	for _, msg := range messages {
-		prefix := ""
-		switch msg.Role {
-		case "user":
-			prefix = "用户"
-		case "assistant":
-			prefix = "助手"
-		case "tool":
-			prefix = "工具"
-		}
-		content := msg.Content
-		if len(content) > 50 {
-			content = content[:50] + "..."
-		}
-		parts = append(parts, prefix+": "+content)
-	}
-
-	result := strings.Join(parts, "; ")
-	if len(result) > 500 {
-		result = result[:500] + "..."
-	}
-	return result
 }

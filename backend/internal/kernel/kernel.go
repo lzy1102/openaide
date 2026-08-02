@@ -109,8 +109,7 @@ func NewAgentKernel(
 		stallTimeout: config.LLMStallTimeout,
 	}
 
-	// 默认使用简单压缩器
-	k.compressor = &SimpleCompressor{}
+	// 压缩器由调用方注入(infra 层用 LLMCompressor);默认 nil 表示不压缩
 	k.systemPrompt.Store(config.SystemPrompt)
 	k.state.Store(StateIdle)
 	k.eventHandlers.Store([]trackedHandler{})
@@ -304,23 +303,19 @@ func (k *AgentKernel) buildMessages(ctx context.Context, session *Session, query
 	}
 
 	// History (adjacent to system, stable)
-	// 按 token 预算动态截断:历史约占上下文的 1/4,每条约 200 tokens。
+	// 按 token 预算截断:历史约占上下文的 1/4,超过预算的旧消息丢弃。
 	// 无 MaxTokens 配置时回退到 20 条(原行为)。
 	if k.memory != nil && len(session.Messages) > 0 {
 		limit := 20
 		if k.maxTokens > 0 {
-			limit = k.maxTokens / 4 / 200
-			if limit < 2 {
-				limit = 2
-			}
-			if limit > 50 {
-				limit = 50
-			}
+			limit = 200
 		}
 		history, _ := k.memory.Load(ctx, session.ID, limit)
+		if k.maxTokens > 0 && len(history) > 2 {
+			history = trimHistoryToBudget(history, k.maxTokens/4)
+		}
 		messages = append(messages, history...)
 	}
-
 	// User query
 	messages = append(messages, Message{Role: "user", Content: query.Content})
 
@@ -464,14 +459,8 @@ func truncateToolResult(content string) string {
 
 // estimateContextPressure 根据当前 token 使用量估算上下文压力等级。
 // promptTokens 是最近一次 LLM 调用返回的 prompt_tokens(更准确)。
-// 如果 compressor 可用,还会与 EstimateTokens 的结果取大值。
 func (k *AgentKernel) estimateContextPressure(promptTokens int) contextPressure {
 	used := promptTokens
-	if k.compressor != nil {
-		// compressor 的 EstimateTokens 需要 messages,但这里只有 promptTokens;
-		// 实际调用方(prepareReActRound)已经算过 tokenCount 了,
-		// 我们用 promptTokens 作为代理值即可
-	}
 	if k.maxTokens <= 0 {
 		return pressureLow
 	}

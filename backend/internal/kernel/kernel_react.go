@@ -21,8 +21,8 @@ import (
 // 3. Injects budget reminder when approaching round limit
 func (k *AgentKernel) prepareReActRound(ctx context.Context, messages []Message, round int, promptTokens int, opts *QueryOptions) []Message {
 	// Compression: 90% threshold (Claude Code uses 92%)
-	if k.compressor != nil {
-		tokenCount := k.compressor.EstimateTokens(messages)
+	if k.compressor != nil && k.maxTokens > 0 {
+		tokenCount := estimateMessagesTokens(messages)
 		if promptTokens > tokenCount {
 			tokenCount = promptTokens
 		}

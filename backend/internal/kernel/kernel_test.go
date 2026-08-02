@@ -144,32 +144,6 @@ func TestAgentKernel_Event(t *testing.T) {
 	}
 }
 
-func TestSimpleCompressor(t *testing.T) {
-	compressor := &SimpleCompressor{}
-
-	messages := []Message{
-		{Role: "system", Content: "系统提示"},
-		{Role: "user", Content: "问题1"},
-		{Role: "assistant", Content: "回答1"},
-		{Role: "user", Content: "问题2"},
-		{Role: "assistant", Content: "回答2"},
-		{Role: "user", Content: "问题3"},
-		{Role: "assistant", Content: "回答3"},
-	}
-
-	compressed, saved, err := compressor.Compress(context.Background(), messages, 100)
-	if err != nil {
-		t.Fatalf("Compress failed: %v", err)
-	}
-
-	if len(compressed) >= len(messages) {
-		t.Error("Compression did not reduce message count")
-	}
-	// Token estimation is approximate — with very short messages the summary
-	// overhead may temporarily increase estimated tokens
-	_ = saved
-}
-
 func TestSessionStoreAdapter(t *testing.T) {
 	store := NewSessionStoreAdapter()
 	ctx := context.Background()

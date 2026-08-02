@@ -2,19 +2,17 @@ package llm
 
 import (
 	"context"
+	"sync"
 	"time"
-
-	"openaide/backend/internal/kernel/actor"
 )
 
 // RateLimiter global token bucket for LLM calls.
 // Unlike the HTTP-layer limiter (deny with 429), this one BLOCKS until a
 // token is available — agent-internal calls must not fail randomly,
-// they just queue. CSP actor serializes bucket access, no locks.
+// they just queue.
 type RateLimiter struct {
-	actor  *actor.Actor
-	bucket *tokenBucket
-	stopCh chan struct{}
+	mu     sync.Mutex
+	bucket tokenBucket
 }
 
 type tokenBucket struct {
@@ -32,22 +30,19 @@ func NewRateLimiter(rate, capacity int) *RateLimiter {
 	if capacity <= 0 {
 		capacity = 100
 	}
-	rl := &RateLimiter{
-		actor:  actor.NewActor(64),
-		bucket: &tokenBucket{tokens: float64(capacity), lastFill: time.Now(), rate: float64(rate), capacity: float64(capacity)},
-		stopCh: make(chan struct{}),
+	return &RateLimiter{
+		bucket: tokenBucket{tokens: float64(capacity), lastFill: time.Now(), rate: float64(rate), capacity: float64(capacity)},
 	}
-	return rl
 }
 
-func (rl *RateLimiter) Shutdown() { close(rl.stopCh) }
+// Shutdown is kept for API compatibility (previously stopped an actor).
+func (rl *RateLimiter) Shutdown() {}
 
 // Wait blocks until a token is available or ctx is canceled.
 // Refills the bucket by elapsed time on each call.
 func (rl *RateLimiter) Wait(ctx context.Context) error {
 	for {
-		ok := rl.tryTake()
-		if ok {
+		if rl.tryTake() {
 			return nil
 		}
 		select {
@@ -58,15 +53,10 @@ func (rl *RateLimiter) Wait(ctx context.Context) error {
 	}
 }
 
-// tryTake attempts to consume one token. Returns false if bucket empty.
 func (rl *RateLimiter) tryTake() bool {
-	ch := make(chan bool, 1)
-	rl.actor.Send(func() { ch <- rl.tryTakeLocked() })
-	return <-ch
-}
-
-func (rl *RateLimiter) tryTakeLocked() bool {
-	b := rl.bucket
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	b := &rl.bucket
 	elapsed := time.Since(b.lastFill).Seconds()
 	b.tokens += elapsed * b.rate
 	if b.tokens > b.capacity {
