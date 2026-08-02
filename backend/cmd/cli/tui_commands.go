@@ -309,41 +309,74 @@ func (m tuiModel) handleStatusCmd() (tea.Model, tea.Cmd) {
 func (m tuiModel) startSubAgent(role, task string) (tea.Model, tea.Cmd) {
 	m.subRole = role
 	m.mode = modeSubAgent
+	m.subStatus = ""
 	m.statusMsg = role + " running…"
 	m.textarea.Blur()
+	m.layoutViewport()
 	m.refreshViewport()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancel = cancel
-	return m, func() tea.Msg {
-		defer cancel()
-		result, err := m.app.Orchestrator.RunSubAgent(ctx, "cli-user", m.projectID, role, task, nil, nil)
-		return subAgentMsg{role: role, result: result, err: err}
+	m.subProgressCh = make(chan subProgressMsg, 32)
+	m.subResultCh = make(chan subAgentMsg, 1)
+
+	progress := func(r string, round int, status string) {
+		select {
+		case m.subProgressCh <- subProgressMsg{role: r, round: round, status: status}:
+		default:
+		}
 	}
+
+	return m, tea.Batch(
+		func() tea.Msg {
+			defer cancel()
+			result, err := m.app.Orchestrator.RunSubAgent(ctx, "cli-user", m.projectID, role, task, nil, progress)
+			m.subResultCh <- subAgentMsg{role: role, result: result, err: err}
+			return nil
+		},
+		waitForSubProgress(m.subProgressCh, m.subResultCh),
+	)
 }
 
 // startTeam /team 顺序流水线
 func (m tuiModel) startTeam(task string) (tea.Model, tea.Cmd) {
 	m.subRole = "team"
 	m.mode = modeSubAgent
+	m.subStatus = ""
 	m.statusMsg = "team: analyst → coder → reviewer"
 	m.textarea.Blur()
+	m.layoutViewport()
 	m.refreshViewport()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancel = cancel
-	return m, func() tea.Msg {
-		defer cancel()
-		prevResults := []string{}
-		for _, role := range []string{"analyst", "coder", "reviewer"} {
-			result, err := m.app.Orchestrator.RunSubAgent(ctx, "cli-user", m.projectID, role, task, prevResults, nil)
-			if err != nil {
-				return subAgentMsg{role: role, result: "", err: err}
-			}
-			prevResults = append(prevResults, result)
+	m.subProgressCh = make(chan subProgressMsg, 32)
+	m.subResultCh = make(chan subAgentMsg, 1)
+
+	progress := func(r string, round int, status string) {
+		select {
+		case m.subProgressCh <- subProgressMsg{role: r, round: round, status: status}:
+		default:
 		}
-		return subAgentMsg{role: "team", result: prevResults[len(prevResults)-1], err: nil}
 	}
+
+	return m, tea.Batch(
+		func() tea.Msg {
+			defer cancel()
+			prevResults := []string{}
+			for _, role := range []string{"analyst", "coder", "reviewer"} {
+				result, err := m.app.Orchestrator.RunSubAgent(ctx, "cli-user", m.projectID, role, task, prevResults, progress)
+				if err != nil {
+					m.subResultCh <- subAgentMsg{role: role, result: "", err: err}
+					return nil
+				}
+				prevResults = append(prevResults, result)
+			}
+			m.subResultCh <- subAgentMsg{role: "team", result: prevResults[len(prevResults)-1], err: nil}
+			return nil
+		},
+		waitForSubProgress(m.subProgressCh, m.subResultCh),
+	)
 }
 
 // handleTabComplete Tab 补全：/命令、@文件、工具名

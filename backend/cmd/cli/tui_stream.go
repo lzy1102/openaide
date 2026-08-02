@@ -39,3 +39,21 @@ func waitForProgress(progressCh chan progressMsg, resultCh chan planExecMsg) tea
 		}
 	}
 }
+
+// waitForSubProgress 子代理执行时同时监听实时状态与最终结果
+func waitForSubProgress(progressCh chan subProgressMsg, resultCh chan subAgentMsg) tea.Cmd {
+	return func() tea.Msg {
+		select {
+		case p, ok := <-progressCh:
+			if !ok {
+				return nil
+			}
+			return p
+		case r, ok := <-resultCh:
+			if !ok {
+				return nil
+			}
+			return r
+		}
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"os"
 	osexec "os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -111,9 +112,17 @@ type tuiModel struct {
 	planDetail   string
 	progressCh   chan progressMsg
 	planResultCh chan planExecMsg
+	tasks        []taskState // 计划子任务实时状态
 
 	// 子代理
-	subRole string
+	subRole       string
+	subStatus     string // 子代理当前活动状态（thinking/工具/轮次）
+	subProgressCh chan subProgressMsg
+	subResultCh   chan subAgentMsg
+
+	// 流式轮次
+	streamRound int
+	streamTotal int
 
 	// 选择模式
 	selectItems  []string
@@ -326,13 +335,9 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		vpHeight := msg.Height - 8
-		if vpHeight < 3 {
-			vpHeight = 3
-		}
 		m.viewport.Width = msg.Width
-		m.viewport.Height = vpHeight
 		m.textarea.SetWidth(msg.Width)
+		m.layoutViewport()
 		m.refreshViewport()
 
 	case spinner.TickMsg:
@@ -387,18 +392,33 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.planCurrent++
 		m.planDetail = msg.detail
+		m.applyProgress(msg.detail)
 		m.statusMsg = fmt.Sprintf("%d/%d %s", m.planCurrent, m.planTotal, msg.detail)
 		return m, waitForProgress(m.progressCh, m.planResultCh)
 
+	case subProgressMsg:
+		if m.mode != modeSubAgent {
+			return m, nil
+		}
+		m.applySubProgress(msg)
+		return m, waitForSubProgress(m.subProgressCh, m.subResultCh)
+
 	case subAgentMsg:
+		role := msg.role
+		if role == "" {
+			role = m.subRole
+		}
 		m.mode = modeIdle
 		m.cancel = nil
+		m.subRole = ""
+		m.subStatus = ""
 		if msg.err != nil {
 			m.appendHistory(styleError.Render("✗ "+msg.err.Error()) + "\n")
 		} else if msg.result != "" {
 			m.appendHistory(RenderMarkdown(msg.result))
 		}
-		m.appendHistory(styleSuccess.Render(m.subRole+" done") + "\n")
+		m.appendHistory(styleSuccess.Render(role+" done") + "\n")
+		m.layoutViewport()
 		m.textarea.Focus()
 		m.refreshViewport()
 		return m, nil
@@ -456,6 +476,8 @@ func (m tuiModel) handleMainKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cancel()
 			m.cancel = nil
 			m.mode = modeIdle
+			m.tasks = nil
+			m.layoutViewport()
 			m.appendHistory(styleWarn.Render("⚠ Interrupted") + "\n")
 			m.textarea.Focus()
 			m.refreshViewport()
@@ -471,6 +493,8 @@ func (m tuiModel) handleMainKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cancel()
 			m.cancel = nil
 			m.mode = modeIdle
+			m.tasks = nil
+			m.layoutViewport()
 			m.appendHistory(styleWarn.Render("⚠ Cancelled") + "\n")
 			m.textarea.Focus()
 			m.refreshViewport()
@@ -692,6 +716,8 @@ func (m tuiModel) startStream(query string) (tea.Model, tea.Cmd) {
 	m.totalTools = 0
 	m.askQuestions = nil
 	m.fullResponse = ""
+	m.streamRound = 0
+	m.streamTotal = 0
 	m.startTime = time.Now()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -756,6 +782,10 @@ func (m tuiModel) handleStreamChunk(msg streamMsg) (tea.Model, tea.Cmd) {
 			m.refreshViewport()
 		}
 	case kernel.ChunkTypeThinking:
+		if c.Round > 0 {
+			m.streamRound = c.Round
+			m.streamTotal = c.TotalRounds
+		}
 		if c.ReasoningContent != "" && m.thinkCount < 2 {
 			first := strings.SplitN(c.ReasoningContent, "\n", 2)[0]
 			if len(first) > 100 {
@@ -833,6 +863,11 @@ func (m tuiModel) startPlanExec(query string, plan *orchestration.Plan) (tuiMode
 	m.planCurrent = 0
 	m.planDetail = ""
 	m.startTime = time.Now()
+	m.tasks = make([]taskState, len(plan.Subtasks))
+	for i, st := range plan.Subtasks {
+		m.tasks[i] = taskState{id: st.ID, title: st.Title, status: taskPending}
+	}
+	m.layoutViewport()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	m.cancel = cancel
@@ -883,12 +918,165 @@ func (m tuiModel) handlePlanExec(msg planExecMsg) (tea.Model, tea.Cmd) {
 	}
 	m.mode = modeIdle
 	m.statusMsg = ""
+	m.tasks = nil
+	m.layoutViewport()
 	m.textarea.Focus()
 	m.refreshViewport()
 	return m, nil
 }
 
 // ── Viewport / 渲染辅助 ───────────────────────────────────
+
+// layoutViewport 根据当前模式动态计算 viewport 高度
+// （modePlanExec/modeSubAgent 时上方让出任务面板高度）
+func (m *tuiModel) layoutViewport() {
+	vpHeight := m.height - 8 - m.panelHeight()
+	if vpHeight < 3 {
+		vpHeight = 3
+	}
+	m.viewport.Height = vpHeight
+}
+
+// panelHeight 任务面板占用的行数（0 = 不显示面板）
+// 与 planPanel/subAgentPanel 的实际渲染行数保持一致：
+// styleBox 边框上下各 1 行。
+func (m tuiModel) panelHeight() int {
+	switch m.mode {
+	case modePlanExec:
+		return m.planPanelHeight()
+	case modeSubAgent:
+		return 4 // 标题 + 状态 + 边框 2 行
+	}
+	return 0
+}
+
+func (m tuiModel) planPanelHeight() int {
+	n := len(m.tasks)
+	if n == 0 {
+		return 0
+	}
+	rows := n
+	if rows > 6 {
+		rows = 7 // 6 个任务 + 1 行 "+N more"
+	}
+	return rows + 4 // 标题 + 任务行 + 活动行 + 边框 2 行
+}
+
+// taskPanel 渲染任务进度面板（任务列表 + 子代理活动状态）
+func (m tuiModel) taskPanel() string {
+	switch m.mode {
+	case modePlanExec:
+		return m.planPanel()
+	case modeSubAgent:
+		return m.subAgentPanel()
+	}
+	return ""
+}
+
+func (m tuiModel) planPanel() string {
+	if len(m.tasks) == 0 {
+		return ""
+	}
+	done := 0
+	for _, t := range m.tasks {
+		if t.status == taskDone {
+			done++
+		}
+	}
+	var sb strings.Builder
+	sb.WriteString(stylePrompt.Render(fmt.Sprintf("%s %d/%d", lang.T("repl.task_progress"), done, len(m.tasks))) + "\n")
+	shown := 0
+	for _, t := range m.tasks {
+		if shown >= 6 {
+			sb.WriteString(styleDim.Render(fmt.Sprintf("  … +%d", len(m.tasks)-shown)) + "\n")
+			break
+		}
+		shown++
+		switch t.status {
+		case taskDone:
+			sb.WriteString(styleSuccess.Render("  ✓ ") + styleDim.Render(t.title) + "\n")
+		case taskRunning:
+			role := t.role
+			if role == "" {
+				role = "…"
+			}
+			sb.WriteString(styleStreaming.Render("  ● ") + t.title + styleDim.Render("  ["+role+"]") + "\n")
+		default:
+			sb.WriteString(styleDim.Render("  ○ "+t.title) + "\n")
+		}
+	}
+	detail := m.planDetail
+	if detail == "" {
+		detail = "…"
+	}
+	sb.WriteString(styleInfo.Render("  ⏳ "+trunc(detail, 50)) + "\n")
+	return styleBox.Render(strings.TrimSuffix(sb.String(), "\n"))
+}
+
+func (m tuiModel) subAgentPanel() string {
+	if m.subRole == "" {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString(stylePrompt.Render(m.subRole) + "\n")
+	status := m.subStatus
+	if status == "" {
+		status = lang.T("repl.thinking")
+	}
+	sb.WriteString(styleStreaming.Render("  "+m.spinner.View()+" "+status) + "\n")
+	return styleBox.Render(strings.TrimSuffix(sb.String(), "\n"))
+}
+
+// applyProgress 解析 orchestration 的 OnProgress 字符串并更新任务状态。
+// 已知格式（execute.go）:
+//
+//	[role] title: status (round N)   → 标记运行中的子任务
+//	✓ subtask N done (title)         → 标记子任务完成
+//	Phase N: ...                     → 仅更新 planDetail，不改变任务状态
+func (m *tuiModel) applyProgress(detail string) {
+	if rest, ok := strings.CutPrefix(detail, "✓ subtask "); ok {
+		if end := strings.IndexByte(rest, ' '); end > 0 {
+			if id, err := strconv.Atoi(rest[:end]); err == nil {
+				for i := range m.tasks {
+					if m.tasks[i].id == id {
+						m.tasks[i].status = taskDone
+					}
+				}
+			}
+		}
+		return
+	}
+	if !strings.HasPrefix(detail, "[") {
+		return
+	}
+	if end := strings.IndexByte(detail, ']'); end > 1 {
+		role := detail[1:end]
+		rest := strings.TrimSpace(detail[end+1:])
+		title, _, ok := strings.Cut(rest, ":")
+		if ok {
+			for i := range m.tasks {
+				if m.tasks[i].title == title {
+					m.tasks[i].status = taskRunning
+					m.tasks[i].role = role
+				}
+			}
+		}
+	}
+}
+
+func (m *tuiModel) applySubProgress(msg subProgressMsg) {
+	switch {
+	case msg.status == "thinking":
+		m.subStatus = lang.T("repl.thinking")
+	case strings.HasPrefix(msg.status, "executing:"):
+		m.subStatus = "🔧 " + strings.TrimPrefix(msg.status, "executing:")
+	default:
+		m.subStatus = msg.status
+	}
+	if msg.round > 0 {
+		m.subStatus += fmt.Sprintf(" · round %d", msg.round)
+	}
+}
 
 func (m *tuiModel) appendHistory(s string) {
 	m.history.WriteString(s)
@@ -1144,6 +1332,29 @@ type progressMsg struct {
 	detail string
 }
 
+// taskStatus 子任务执行状态
+type taskStatus int
+
+const (
+	taskPending taskStatus = iota
+	taskRunning
+	taskDone
+)
+
+type taskState struct {
+	id     int
+	title  string
+	status taskStatus
+	role   string
+}
+
+// subProgressMsg 子代理执行中的实时状态（SubAgentProgress 回调）
+type subProgressMsg struct {
+	role   string
+	round  int
+	status string // thinking / executing:<tool> / done（来自 orchestration 的字符串格式）
+}
+
 type subAgentMsg struct {
 	role   string
 	result string
@@ -1208,6 +1419,7 @@ func (m tuiModel) View() string {
 
 	return lipgloss.JoinVertical(lipgloss.Left,
 		m.viewport.View(),
+		m.taskPanel(),
 		status,
 		bottom,
 	)
@@ -1227,6 +1439,9 @@ func (m tuiModel) statusView() string {
 			txt += "🔧 " + m.toolNames[len(m.toolNames)-1]
 		} else {
 			txt += lang.T("repl.working")
+		}
+		if m.streamTotal > 0 {
+			txt += fmt.Sprintf(" · round %d/%d", m.streamRound, m.streamTotal)
 		}
 		if m.statusMsg != "" {
 			txt += " · " + m.statusMsg
