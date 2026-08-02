@@ -411,7 +411,7 @@ func (m tuiModel) handleTabComplete() (tea.Model, tea.Cmd) {
 		}
 		if match != "" {
 			val = val[:lineStart] + match + " " + val[cursor:]
-			slog.Debug("tui textarea set from completion", "content", strconv.Quote(val))
+			slog.Info("tui textarea set from completion", "content", strconv.Quote(val))
 			m.textarea.SetValue(val)
 			m.textarea.CursorEnd()
 		}
@@ -424,7 +424,7 @@ func (m tuiModel) handleTabComplete() (tea.Model, tea.Cmd) {
 		matches, _ := filepath.Glob(pattern + "*")
 		if len(matches) > 0 {
 			val = val[:lineStart] + "@" + matches[0] + " " + val[cursor:]
-			slog.Debug("tui textarea set from completion", "content", strconv.Quote(val))
+			slog.Info("tui textarea set from completion", "content", strconv.Quote(val))
 			m.textarea.SetValue(val)
 			m.textarea.CursorEnd()
 		}

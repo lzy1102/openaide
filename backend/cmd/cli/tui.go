@@ -358,7 +358,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 诊断日志:记录粘贴/控制字符/特殊键,用于排查输入异常(如终端转义泄漏)
 		// 正常打字(单个可见字符)不记录,避免日志噪音
 		if isSuspiciousKey(msg) {
-			slog.Debug("tui input", "key", strconv.Quote(msg.String()), "paste", msg.Paste, "mode", m.mode)
+			slog.Info("tui input", "key", strconv.Quote(msg.String()), "paste", msg.Paste, "mode", m.mode)
 		}
 		// 按模式分发按键
 		switch m.mode {
@@ -453,7 +453,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if msg.content != "" {
-			slog.Debug("tui textarea set from editor", "content", strconv.Quote(msg.content))
+			slog.Info("tui textarea set from editor", "content", strconv.Quote(msg.content))
 			m.textarea.SetValue(msg.content)
 			m.textarea.CursorEnd()
 		}
@@ -570,7 +570,7 @@ func (m tuiModel) handleMainKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cmdHistIdx++
 			if m.cmdHistIdx <= len(m.cmdHistory) {
 				v := m.cmdHistory[len(m.cmdHistory)-m.cmdHistIdx]
-				slog.Debug("tui textarea set from history", "content", strconv.Quote(v))
+				slog.Info("tui textarea set from history", "content", strconv.Quote(v))
 				m.textarea.SetValue(v)
 				m.textarea.CursorEnd()
 			}
@@ -584,7 +584,7 @@ func (m tuiModel) handleMainKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.textarea.Reset()
 			} else {
 				v := m.cmdHistory[len(m.cmdHistory)-m.cmdHistIdx]
-				slog.Debug("tui textarea set from history", "content", strconv.Quote(v))
+				slog.Info("tui textarea set from history", "content", strconv.Quote(v))
 				m.textarea.SetValue(v)
 				m.textarea.CursorEnd()
 			}
@@ -1194,7 +1194,7 @@ func (m tuiModel) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		if len(m.searchResults) > 0 && m.searchIdx < len(m.searchResults) {
 			v := m.searchResults[m.searchIdx]
-			slog.Debug("tui textarea set from search", "content", strconv.Quote(v))
+			slog.Info("tui textarea set from search", "content", strconv.Quote(v))
 			m.textarea.SetValue(v)
 			m.textarea.CursorEnd()
 		}
