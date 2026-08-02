@@ -7,7 +7,7 @@
 
 [English](#) | [中文](README.zh.md)
 
-**Go-based AI agent kernel that learns from every task.** SQLite · Vector ANN · 40 tools · 24-language LSP
+**Go-based AI agent kernel that learns from every task.** SQLite · Vector ANN · 43 tools · 24-language LSP
 
 > Reflection → Skill Feedback → MemGPT Memory — gets smarter with every use.
 
@@ -53,7 +53,7 @@ openaide server (REST+SSE)  openaide (REPL)
     Plan → Execute          ReAct loop
          ↓                        ↓
     llm/   tools/   memory/
-    40+ tools · Vector memory · SQLite
+    43 tools · Vector memory · SQLite
 ```
 
 ## Key Features
@@ -63,7 +63,7 @@ openaide server (REST+SSE)  openaide (REPL)
 - **DeepPlan**: Research → Propose → Select → Plan → Execute — multi-round deep thinking
 - **MemGPT Memory**: Agent manages its own memory — archive, retrieve, core facts
 - **Claude Plugin Compatible**: Drop-in skills, MCP servers, hooks from Claude Code ecosystem
-- **40+ Built-in Tools**: Filesystem, Git, Web, Browser, LSP, Desktop control
+- **43 Built-in Tools**: Filesystem, Git, Web, Browser, LSP, Desktop control
 - **Smart Approval**: Safe commands auto-approve, dangerous commands blocked, no LLM overhead
 
 ## Configuration

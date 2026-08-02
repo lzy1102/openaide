@@ -7,7 +7,7 @@
 
 [English](README.md) | [中文](#)
 
-**Go 实现的 AI Agent 内核——反思进化、记忆积累、每次任务都在变聪明。** SQLite · 向量记忆 · 40 工具 · 24 语言 LSP
+**Go 实现的 AI Agent 内核——反思进化、记忆积累、每次任务都在变聪明。** SQLite · 向量记忆 · 43 工具 · 24 语言 LSP
 
 > 反思 → 技能反馈 → MemGPT 记忆 —— 越用越聪明。
 
@@ -53,7 +53,7 @@ openaide server (API)    openaide (REPL)
     Plan → Execute         ReAct 循环
          ↓                     ↓
     llm/   tools/   memory/
-    40+ 工具 · 向量记忆 · SQLite
+    43 工具 · 向量记忆 · SQLite
 ```
 
 ## 核心能力
@@ -63,7 +63,7 @@ openaide server (API)    openaide (REPL)
 - **深度规划**: 研究 → 提案 → 选择 → 计划 → 执行——多轮深度思考
 - **MemGPT 记忆**: Agent 主动管理记忆——归档、检索、核心事实
 - **Claude 插件兼容**: 直接使用 Claude Code 生态的 skills、MCP、hooks
-- **40+ 内置工具**: 文件、Git、Web、浏览器、LSP、桌面控制
+- **43 内置工具**: 文件、Git、Web、浏览器、LSP、桌面控制
 - **智能审批**: 安全命令自动放行，危险命令直接拒绝，零 LLM 开销
 
 ## 配置
