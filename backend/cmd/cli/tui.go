@@ -44,6 +44,17 @@ var (
 	styleDim       = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	styleSelected  = lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true)
 	styleBox       = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1)
+
+	// 驾驶舱样式（HUD / 仪表盘 / 侧翼）
+	styleHudBg    = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Background(lipgloss.Color("236")).Padding(0, 1)
+	styleHudModel = lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true)
+	styleHudSess  = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	styleHudGit   = lipgloss.NewStyle().Foreground(lipgloss.Color("33"))
+	styleHudGitD  = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
+	styleGaugeVal = lipgloss.NewStyle().Foreground(lipgloss.Color("34")).Bold(true)
+	styleGaugeLbl = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	styleSideBar  = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("240")).Padding(0, 1).Width(34)
+	styleSideTtl  = lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true)
 )
 
 // ── Modes ──────────────────────────────────────────────────
@@ -89,6 +100,7 @@ type tuiModel struct {
 	modelName    string
 	sessionTitle string
 	gitBranch    string
+	gitDirty     bool
 
 	// 流式状态
 	streamCh     <-chan kernel.StreamChunk
@@ -209,12 +221,19 @@ func runTUI(app *infra.Application, continueSess, autoYes bool) {
 	if out, err := execCmd("git", "rev-parse", "--abbrev-ref", "HEAD"); err == nil {
 		gitBranch = strings.TrimSpace(out)
 	}
+	gitDirty := false
+	if gitBranch != "" {
+		if out, err := execCmd("git", "status", "--porcelain"); err == nil && len(strings.TrimSpace(out)) > 0 {
+			gitDirty = true
+		}
+	}
 	projectID := filepath.Base(cwd)
 
 	m := initialTUI(app, autoYes)
 	m.modelName = modelName
 	m.projectID = projectID
 	m.gitBranch = gitBranch
+	m.gitDirty = gitDirty
 	m.history.WriteString(buildBanner(modelName, gitBranch, cwd, Version))
 
 	if continueSess {
@@ -956,53 +975,26 @@ func (m tuiModel) handlePlanExec(msg planExecMsg) (tea.Model, tea.Cmd) {
 
 // ── Viewport / 渲染辅助 ───────────────────────────────────
 
-// layoutViewport 根据当前模式动态计算 viewport 高度
-// （modePlanExec/modeSubAgent 时上方让出任务面板高度）
+// layoutViewport 根据当前模式动态计算 viewport 高度与宽度
+// 高度 = 总高 - HUD(1) - 仪表盘(1) - 状态(1) - 帮助(1) - 输入框(4)
+// 侧翼激活时宽度让出右侧面板
 func (m *tuiModel) layoutViewport() {
-	vpHeight := m.height - 8 - m.panelHeight()
+	vpHeight := m.height - 8
 	if vpHeight < 3 {
 		vpHeight = 3
 	}
 	m.viewport.Height = vpHeight
+	if m.sidePanel() != "" {
+		m.viewport.Width = m.width - 36
+		if m.viewport.Width < 40 {
+			m.viewport.Width = m.width
+		}
+	} else {
+		m.viewport.Width = m.width
+	}
 }
 
-// panelHeight 任务面板占用的行数（0 = 不显示面板）
-// 与 planPanel/subAgentPanel 的实际渲染行数保持一致：
-// styleBox 边框上下各 1 行。
-func (m tuiModel) panelHeight() int {
-	switch m.mode {
-	case modePlanExec:
-		return m.planPanelHeight()
-	case modeSubAgent:
-		return 4 // 标题 + 状态 + 边框 2 行
-	}
-	return 0
-}
-
-func (m tuiModel) planPanelHeight() int {
-	n := len(m.tasks)
-	if n == 0 {
-		return 0
-	}
-	rows := n
-	if rows > 6 {
-		rows = 7 // 6 个任务 + 1 行 "+N more"
-	}
-	return rows + 4 // 标题 + 任务行 + 活动行 + 边框 2 行
-}
-
-// taskPanel 渲染任务进度面板（任务列表 + 子代理活动状态）
-func (m tuiModel) taskPanel() string {
-	switch m.mode {
-	case modePlanExec:
-		return m.planPanel()
-	case modeSubAgent:
-		return m.subAgentPanel()
-	}
-	return ""
-}
-
-func (m tuiModel) planPanel() string {
+func (m tuiModel) planPanelContent() string {
 	if len(m.tasks) == 0 {
 		return ""
 	}
@@ -1038,11 +1030,11 @@ func (m tuiModel) planPanel() string {
 	if detail == "" {
 		detail = "…"
 	}
-	sb.WriteString(styleInfo.Render("  ⏳ "+trunc(detail, 50)) + "\n")
-	return styleBox.Render(strings.TrimSuffix(sb.String(), "\n"))
+	sb.WriteString(styleInfo.Render("  ⏳ "+trunc(detail, 40)) + "\n")
+	return strings.TrimSuffix(sb.String(), "\n")
 }
 
-func (m tuiModel) subAgentPanel() string {
+func (m tuiModel) subAgentPanelContent() string {
 	if m.subRole == "" {
 		return ""
 	}
@@ -1053,7 +1045,7 @@ func (m tuiModel) subAgentPanel() string {
 		status = lang.T("repl.thinking")
 	}
 	sb.WriteString(styleStreaming.Render("  "+m.spinner.View()+" "+status) + "\n")
-	return styleBox.Render(strings.TrimSuffix(sb.String(), "\n"))
+	return strings.TrimSuffix(sb.String(), "\n")
 }
 
 // applyProgress 解析 orchestration 的 OnProgress 字符串并更新任务状态。
@@ -1426,10 +1418,137 @@ func (m tuiModel) undoLastMessage() {
 
 // ── View ──────────────────────────────────────────────────
 
+// hudView 渲染 HUD 顶栏：模式指示 + 模型 + 会话 + git 分支
+func (m tuiModel) hudView() string {
+	dot := styleSuccess.Render("●")
+	switch m.mode {
+	case modeThinking, modeStreaming, modePlanExec, modeSubAgent:
+		dot = styleStreaming.Render("●")
+	case modeApproval:
+		dot = styleWarn.Render("●")
+	}
+	modeTxt := lang.T("repl.status_idle")
+	switch m.mode {
+	case modeThinking:
+		modeTxt = lang.T("repl.thinking")
+	case modeStreaming:
+		modeTxt = lang.T("repl.working")
+	case modePlanExec:
+		modeTxt = lang.T("repl.executing")
+	case modeSubAgent:
+		modeTxt = lang.T("repl.sub_agent")
+	case modeApproval:
+		modeTxt = lang.T("repl.status_approval")
+	case modeSelect:
+		modeTxt = lang.T("repl.selecting")
+	case modeSearch:
+		modeTxt = lang.T("repl.searching")
+	}
+
+	var parts []string
+	parts = append(parts, dot+" "+modeTxt)
+	if m.modelName != "" {
+		parts = append(parts, styleHudModel.Render("▍"+m.modelName))
+	}
+	if m.sessionTitle != "" {
+		parts = append(parts, styleHudSess.Render("▍"+trunc(m.sessionTitle, 24)))
+	} else if m.sessionID != "" {
+		parts = append(parts, styleHudSess.Render("▍"+trunc(m.sessionID, 12)))
+	}
+	if m.gitBranch != "" {
+		git := styleHudGit.Render("⎇ " + m.gitBranch)
+		if m.gitDirty {
+			git = styleHudGitD.Render("⎇ " + m.gitBranch + " ✚")
+		}
+		parts = append(parts, git)
+	}
+	return styleHudBg.Render(strings.Join(parts, "  "))
+}
+
+// gaugeView 渲染仪表盘行：token / 工具 / 轮次 / 耗时 / 缓存命中
+func (m tuiModel) gaugeView() string {
+	busy := m.mode == modeStreaming || m.mode == modePlanExec || m.mode == modeSubAgent || m.mode == modeThinking
+	var parts []string
+
+	if busy {
+		elapsed := time.Since(m.startTime)
+		parts = append(parts,
+			styleGaugeVal.Render(fmt.Sprintf("⚡ %s", formatTokens(m.totalTokens))),
+			styleGaugeLbl.Render("tok"),
+			"│",
+			styleGaugeVal.Render(fmt.Sprintf("🔧 %d", m.totalTools)),
+			styleGaugeLbl.Render("tools"),
+		)
+		if m.streamTotal > 0 {
+			parts = append(parts, "│",
+				styleGaugeVal.Render(fmt.Sprintf("🔁 %d/%d", m.streamRound, m.streamTotal)),
+				styleGaugeLbl.Render("round"))
+		}
+		parts = append(parts, "│",
+			styleGaugeVal.Render(elapsed.Round(time.Second).String()),
+			styleGaugeLbl.Render("elapsed"))
+		if m.cacheHit+m.cacheMiss > 0 {
+			pct := m.cacheHit * 100 / (m.cacheHit + m.cacheMiss)
+			parts = append(parts, "│",
+				styleGaugeVal.Render(fmt.Sprintf("💾 %d%%", pct)),
+				styleGaugeLbl.Render("cache"))
+		}
+		return styleStatusBar.Render(strings.Join(parts, " "))
+	}
+
+	return styleStatusBar.Render("⏸ standby")
+}
+
+// sidePanel 渲染侧翼仪表（任务/子代理状态），窄终端返回空
+func (m tuiModel) sidePanel() string {
+	if m.width < 100 {
+		return ""
+	}
+	content := m.taskPanelContent()
+	if content == "" {
+		return ""
+	}
+	return styleSideBar.Render(content)
+}
+
+// taskPanelContent 提取任务/子代理面板的纯内容（无边框），供侧翼复用
+func (m tuiModel) taskPanelContent() string {
+	switch m.mode {
+	case modePlanExec:
+		return m.planPanelContent()
+	case modeSubAgent:
+		return m.subAgentPanelContent()
+	case modeThinking, modeStreaming:
+		if len(m.toolNames) > 0 {
+			return m.toolHistoryPanel()
+		}
+	}
+	return ""
+}
+
+// toolHistoryPanel 流式执行中的工具调用历史（侧翼）
+func (m tuiModel) toolHistoryPanel() string {
+	var sb strings.Builder
+	sb.WriteString(styleSideTtl.Render(lang.T("repl.tools_running")) + "\n")
+	shown := 0
+	for i := len(m.toolNames) - 1; i >= 0 && shown < 6; i-- {
+		shown++
+		sb.WriteString(styleStreaming.Render("  ⚙ ") + styleDim.Render(trunc(m.toolNames[i], 26)) + "\n")
+	}
+	if len(m.toolNames) > 6 {
+		sb.WriteString(styleDim.Render(fmt.Sprintf("  … +%d", len(m.toolNames)-6)) + "\n")
+	}
+	return strings.TrimSuffix(sb.String(), "\n")
+}
+
 func (m tuiModel) View() string {
 	if m.width == 0 {
 		return "loading…"
 	}
+
+	// HUD 顶栏 + 仪表盘行（驾驶舱）
+	hud := m.hudView()
+	gauge := m.gaugeView()
 
 	// 状态行
 	status := m.statusView()
@@ -1448,9 +1567,18 @@ func (m tuiModel) View() string {
 		bottom = lipgloss.JoinVertical(lipgloss.Left, help, m.textarea.View())
 	}
 
+	// 中央主屏 + 侧翼仪表（窄终端自动降级为单列）
+	var main string
+	if side := m.sidePanel(); side != "" {
+		main = lipgloss.JoinHorizontal(lipgloss.Top, m.viewport.View(), side)
+	} else {
+		main = m.viewport.View()
+	}
+
 	return lipgloss.JoinVertical(lipgloss.Left,
-		m.viewport.View(),
-		m.taskPanel(),
+		hud,
+		gauge,
+		main,
 		status,
 		bottom,
 	)

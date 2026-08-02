@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 )
@@ -45,4 +46,12 @@ func trunc(s string, n int) string {
 // oneLine 把多行文本折叠为单行（缩进对齐用，避免内嵌换行破坏前缀/缩进）
 func oneLine(s string) string {
 	return strings.Join(strings.Fields(s), " ")
+}
+
+// formatTokens 格式化 token 数：≥1000 显示为 k
+func formatTokens(n int) string {
+	if n >= 1000 {
+		return fmt.Sprintf("%.1fk", float64(n)/1000)
+	}
+	return fmt.Sprintf("%d", n)
 }
