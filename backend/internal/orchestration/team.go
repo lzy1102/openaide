@@ -296,4 +296,3 @@ func (t *Team) RoleNames() string {
 	}
 	return strings.Join(names, ", ")
 }
-

@@ -51,13 +51,17 @@ func handleTodoWrite(ctx context.Context, arguments string) (*kernel.ToolResult,
 
 	sessionID := "default"
 	if v := ctx.Value("session_id"); v != nil {
-		if s, ok := v.(string); ok { sessionID = s }
+		if s, ok := v.(string); ok {
+			sessionID = s
+		}
 	}
 
 	var items []todoItem
 	for i, line := range strings.Split(args.Todos, "\n") {
 		line = strings.TrimSpace(line)
-		if line == "" { continue }
+		if line == "" {
+			continue
+		}
 		status := "pending"
 		if strings.HasPrefix(line, "[x]") || strings.HasPrefix(line, "[X]") {
 			status = "completed"
@@ -78,7 +82,9 @@ func handleTodoWrite(ctx context.Context, arguments string) (*kernel.ToolResult,
 	// Cleanup old entries (keep last 100 sessions)
 	if todoStore.Len() > 100 {
 		for _, k := range todoStore.Keys() {
-			if todoStore.Len() <= 100 { break }
+			if todoStore.Len() <= 100 {
+				break
+			}
 			todoStore.Delete(k)
 		}
 	}
@@ -88,8 +94,10 @@ func handleTodoWrite(ctx context.Context, arguments string) (*kernel.ToolResult,
 	for _, item := range items {
 		icon := " "
 		switch item.Status {
-		case "completed": icon = "x"
-		case "in_progress": icon = ">"
+		case "completed":
+			icon = "x"
+		case "in_progress":
+			icon = ">"
 		}
 		out.WriteString(fmt.Sprintf("  [%s] %d. %s\n", icon, item.ID, item.Content))
 	}
@@ -99,7 +107,9 @@ func handleTodoWrite(ctx context.Context, arguments string) (*kernel.ToolResult,
 func handleTodoRead(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
 	sessionID := "default"
 	if v := ctx.Value("session_id"); v != nil {
-		if s, ok := v.(string); ok { sessionID = s }
+		if s, ok := v.(string); ok {
+			sessionID = s
+		}
 	}
 
 	items, _ := todoStore.Get(sessionID)
@@ -112,8 +122,10 @@ func handleTodoRead(ctx context.Context, arguments string) (*kernel.ToolResult, 
 	for _, item := range items {
 		icon := " "
 		switch item.Status {
-		case "completed": icon = "x"
-		case "in_progress": icon = ">"
+		case "completed":
+			icon = "x"
+		case "in_progress":
+			icon = ">"
 		}
 		out.WriteString(fmt.Sprintf("  [%s] %d. %s\n", icon, item.ID, item.Content))
 	}

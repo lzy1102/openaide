@@ -17,10 +17,10 @@ import (
 
 // App is the Wails application backend.
 type App struct {
-	ctx     context.Context
-	app     *infra.Application
-	kernel  kernel.Kernel
-	cfg     *config.Config
+	ctx    context.Context
+	app    *infra.Application
+	kernel kernel.Kernel
+	cfg    *config.Config
 }
 
 // NewApp creates the desktop application backend.
@@ -148,9 +148,9 @@ func main() {
 	app := NewApp()
 
 	err := wails.Run(&options.App{
-		Title:  "OpenAIDE",
-		Width:  1200,
-		Height: 800,
+		Title:      "OpenAIDE",
+		Width:      1200,
+		Height:     800,
 		OnStartup:  app.startup,
 		OnShutdown: app.shutdown,
 		Bind: []interface{}{

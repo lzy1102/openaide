@@ -36,21 +36,21 @@ func multiFileEditToolDefs() []kernel.ToolDefinition {
 					"type": "object",
 					"properties": map[string]interface{}{
 						"edits": map[string]interface{}{
-							"type": "array",
+							"type":        "array",
 							"description": "编辑列表,每个 edit 修改一处",
 							"items": map[string]interface{}{
 								"type": "object",
 								"properties": map[string]interface{}{
 									"path": map[string]interface{}{
-										"type": "string",
+										"type":        "string",
 										"description": "文件路径(相对或绝对)",
 									},
 									"search_text": map[string]interface{}{
-										"type": "string",
+										"type":        "string",
 										"description": "要搜索的文本(在该文件中必须唯一)",
 									},
 									"replace_text": map[string]interface{}{
-										"type": "string",
+										"type":        "string",
 										"description": "替换后的文本",
 									},
 								},
@@ -75,10 +75,10 @@ type editEntry struct {
 
 // editPrecheckResult 是预检结果
 type editPrecheckResult struct {
-	index    int
-	absPath  string
-	ok       bool
-	reason   string // 失败原因
+	index   int
+	absPath string
+	ok      bool
+	reason  string // 失败原因
 }
 
 // handleEditFiles 是 edit_files 工具的 handler。

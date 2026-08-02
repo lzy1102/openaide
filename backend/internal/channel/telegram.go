@@ -25,17 +25,17 @@ import (
 //   - setWebhook: https://api.telegram.org/bot{token}/setWebhook
 //   - sendMessage: https://api.telegram.org/bot{token}/sendMessage
 type TelegramBot struct {
-	id          string
-	name        string
-	token       string
-	handler     MessageHandler
-	handlerMu   sync.RWMutex
-	started     bool
-	startedMu   sync.RWMutex
-	regFn       HTTPHandler
-	prefix      string
-	apiBaseURL  string
-	client      *http.Client
+	id         string
+	name       string
+	token      string
+	handler    MessageHandler
+	handlerMu  sync.RWMutex
+	started    bool
+	startedMu  sync.RWMutex
+	regFn      HTTPHandler
+	prefix     string
+	apiBaseURL string
+	client     *http.Client
 }
 
 // TelegramConfig Telegram机器人配置
@@ -75,8 +75,8 @@ func (t *TelegramBot) Type() ChannelType { return TypeTelegram }
 // Send 实现 Channel 接口 — 通过Telegram API发送消息
 func (t *TelegramBot) Send(ctx context.Context, targetID string, resp *Response) error {
 	body := map[string]interface{}{
-		"chat_id": targetID,
-		"text":    resp.Content,
+		"chat_id":    targetID,
+		"text":       resp.Content,
 		"parse_mode": "HTML",
 	}
 
@@ -280,5 +280,3 @@ func (t *TelegramBot) serveHTTP(rw http.ResponseWriter, r *http.Request) {
 
 	rw.WriteHeader(http.StatusOK)
 }
-
-

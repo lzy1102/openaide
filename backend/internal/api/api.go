@@ -761,7 +761,9 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		proj.ID = fmt.Sprintf("proj-%d", time.Now().UnixMilli())
-		if proj.Name == "" { proj.Name = filepath.Base(proj.Path) }
+		if proj.Name == "" {
+			proj.Name = filepath.Base(proj.Path)
+		}
 
 		projects := loadProjects()
 		projects = append(projects, proj)

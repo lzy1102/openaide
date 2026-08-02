@@ -12,7 +12,7 @@ import (
 func TestRegistry_Register(t *testing.T) {
 	r := NewRegistry()
 	def := kernel.ToolDefinition{
-		Type: "function",
+		Type:     "function",
 		Function: kernel.FunctionDef{Name: "test_tool", Description: "test"},
 	}
 	err := r.Register(def, func(ctx context.Context, args string) (*kernel.ToolResult, error) {
@@ -29,7 +29,7 @@ func TestRegistry_Register(t *testing.T) {
 func TestRegistry_Execute(t *testing.T) {
 	r := NewRegistry()
 	r.Register(kernel.ToolDefinition{
-		Type: "function",
+		Type:     "function",
 		Function: kernel.FunctionDef{Name: "echo"},
 	}, func(ctx context.Context, args string) (*kernel.ToolResult, error) {
 		return &kernel.ToolResult{Content: args}, nil

@@ -37,7 +37,7 @@ func gitToolDefs() []kernel.ToolDefinition {
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
-						"path": map[string]interface{}{"type": "string", "description": "文件路径（可选，默认所有文件）"},
+						"path":   map[string]interface{}{"type": "string", "description": "文件路径（可选，默认所有文件）"},
 						"staged": map[string]interface{}{"type": "boolean", "description": "是否只看暂存区"},
 					},
 				},
@@ -80,12 +80,12 @@ func gitToolDefs() []kernel.ToolDefinition {
 					"type": "object",
 					"properties": map[string]interface{}{
 						"message": map[string]interface{}{
-							"type": "string",
+							"type":        "string",
 							"description": "提交信息",
 						},
 						"paths": map[string]interface{}{
-							"type": "array",
-							"items": map[string]interface{}{"type": "string"},
+							"type":        "array",
+							"items":       map[string]interface{}{"type": "string"},
 							"description": "要暂存的文件路径列表(可选,默认全部变更)",
 						},
 					},
@@ -96,13 +96,13 @@ func gitToolDefs() []kernel.ToolDefinition {
 		{
 			Type: "function",
 			Function: kernel.FunctionDef{
-				Name: "git_create_branch",
+				Name:        "git_create_branch",
 				Description: "创建并切换到新分支。用于在修改前隔离工作。",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
 						"name": map[string]interface{}{
-							"type": "string",
+							"type":        "string",
 							"description": "新分支名称",
 						},
 					},
@@ -190,7 +190,9 @@ func handleGitDiff(ctx context.Context, arguments string) (*kernel.ToolResult, e
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
 		return &kernel.ToolResult{Error: err.Error()}, nil
 	}
-	if args.Path == "" { args.Path = "." }
+	if args.Path == "" {
+		args.Path = "."
+	}
 
 	absPath, err := validateAndResolve(args.Path)
 	if err != nil {
@@ -231,8 +233,12 @@ func handleGitLog(ctx context.Context, arguments string) (*kernel.ToolResult, er
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
 		return &kernel.ToolResult{Error: err.Error()}, nil
 	}
-	if args.Limit <= 0 { args.Limit = 10 }
-	if args.Path == "" { args.Path = "." }
+	if args.Limit <= 0 {
+		args.Limit = 10
+	}
+	if args.Path == "" {
+		args.Path = "."
+	}
 
 	absPath, err := validateAndResolve(args.Path)
 	if err != nil {

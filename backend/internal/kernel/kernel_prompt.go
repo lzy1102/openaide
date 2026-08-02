@@ -232,7 +232,7 @@ func promptL1() string {
 	for _, f := range ruleFiles {
 		if data, err := os.ReadFile(filepath.Join(cwd, f)); err == nil && len(data) > 0 {
 			content := string(data)
-		if len(content) > 8000 {
+			if len(content) > 8000 {
 				content = content[:8000]
 				if lastPeriod := strings.LastIndex(content, "."); lastPeriod > 6000 {
 					content = content[:lastPeriod+1]
@@ -288,7 +288,9 @@ func detectProjectLangs(dir string) []string {
 	var langs []string
 	seen := map[string]bool{}
 	for _, c := range checks {
-		if seen[c.lang] { continue }
+		if seen[c.lang] {
+			continue
+		}
 		if _, err := os.Stat(filepath.Join(dir, c.file)); err == nil {
 			langs = append(langs, c.lang)
 			seen[c.lang] = true
@@ -307,7 +309,9 @@ func detectProjectLangs(dir string) []string {
 		{"*.dart", "dart"},
 	}
 	for _, gc := range globChecks {
-		if seen[gc.lang] { continue }
+		if seen[gc.lang] {
+			continue
+		}
 		if matches, _ := filepath.Glob(filepath.Join(dir, gc.pattern)); len(matches) > 0 {
 			langs = append(langs, gc.lang)
 			seen[gc.lang] = true
@@ -479,6 +483,7 @@ func (k *AgentKernel) buildSystemPrompt(query *Query) string {
 
 	return sb.String()
 }
+
 // promptL3 returns the task adapter for the current query.
 // taskType 来自统一查询分析(analysis.TaskType),为空时回退到独立检测。
 func (k *AgentKernel) promptL3(ctx context.Context, query string, taskType string) string {
@@ -583,13 +588,19 @@ Answer with ONLY the category name (one word).`
 func loadUserPrompts(dir string) string {
 	userDir := filepath.Join(dir, "user")
 	entries, err := os.ReadDir(userDir)
-	if err != nil { return "" }
+	if err != nil {
+		return ""
+	}
 
 	var sb strings.Builder
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") { continue }
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+			continue
+		}
 		data, err := os.ReadFile(filepath.Join(userDir, e.Name()))
-		if err != nil || len(data) == 0 { continue }
+		if err != nil || len(data) == 0 {
+			continue
+		}
 		sb.WriteString(string(data))
 		sb.WriteString("\n")
 	}
@@ -597,4 +608,3 @@ func loadUserPrompts(dir string) string {
 }
 
 // ── Helpers ─────────────────────────────────────────────────
-

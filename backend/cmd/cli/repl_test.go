@@ -1,8 +1,8 @@
 package main
 
 import (
-	"path/filepath"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -224,7 +224,8 @@ func TestFileAutocompletePattern(t *testing.T) {
 	found := false
 	for _, m := range matches {
 		if strings.Contains(m, "repl") {
-			found = true; break
+			found = true
+			break
 		}
 	}
 	if !found {
@@ -246,7 +247,6 @@ func TestRenderDiff(t *testing.T) {
 		t.Error("diff should be transformed with colors")
 	}
 }
-
 
 func TestPrintTable(t *testing.T) {
 	PrintTable([]string{"Name", "Value"}, [][]string{{"foo", "1"}, {"bar", "2"}})
@@ -308,12 +308,16 @@ func TestExpandAtRefs_ValidFile(t *testing.T) {
 	f := dir + "/ref.txt"
 	os.WriteFile(f, []byte("content"), 0644)
 	got := expandAtRefs("@" + f + " explain")
-	if !strings.Contains(got, "content") { t.Error("missing file content") }
+	if !strings.Contains(got, "content") {
+		t.Error("missing file content")
+	}
 }
 
 func TestPromptStyle_WithTitle(t *testing.T) {
 	s := PromptStyle("abc12345", "m", false, "fix login bug")
-	if !strings.Contains(s, "fix login bug") { t.Error("no title in prompt") }
+	if !strings.Contains(s, "fix login bug") {
+		t.Error("no title in prompt")
+	}
 }
 
 func TestPromptStyle_Busy(t *testing.T) {

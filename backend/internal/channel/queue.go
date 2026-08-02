@@ -27,10 +27,10 @@ type Task struct {
 
 // TaskResult 任务执行结果
 type TaskResult struct {
-	TaskID    string `json:"task_id"`
-	Content   string `json:"content"`
-	Error     string `json:"error,omitempty"`
-	Completed bool   `json:"completed"`
+	TaskID    string        `json:"task_id"`
+	Content   string        `json:"content"`
+	Error     string        `json:"error,omitempty"`
+	Completed bool          `json:"completed"`
 	Duration  time.Duration `json:"duration"`
 }
 
@@ -57,9 +57,9 @@ type TaskQueue struct {
 	closeOnce   sync.Once
 
 	// 统计
-	enqueued   atomic.Int64
-	completed  atomic.Int64
-	failed     atomic.Int64
+	enqueued  atomic.Int64
+	completed atomic.Int64
+	failed    atomic.Int64
 }
 
 // QueueConfig 任务队列配置

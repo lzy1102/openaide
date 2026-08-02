@@ -13,7 +13,7 @@ func (m *mockApprovalLLM) Chat(ctx context.Context, msgs []Message, tools []Tool
 func (m *mockApprovalLLM) ChatStream(ctx context.Context, msgs []Message, tools []ToolDefinition, opts map[string]interface{}) (<-chan StreamChunk, error) {
 	return nil, nil
 }
-func (m *mockApprovalLLM) GetModelID() string { return "mock" }
+func (m *mockApprovalLLM) GetModelID() string    { return "mock" }
 func (m *mockApprovalLLM) SetModelID(mdl string) {}
 
 func TestAutoApprover_LowRisk(t *testing.T) {

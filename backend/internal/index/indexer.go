@@ -15,7 +15,7 @@ import (
 // Symbol 代码符号
 type Symbol struct {
 	Name       string `json:"name"`
-	Type       string `json:"type"`       // function, type, method, variable, constant
+	Type       string `json:"type"` // function, type, method, variable, constant
 	Package    string `json:"package"`
 	File       string `json:"file"`
 	Line       int    `json:"line"`
@@ -39,11 +39,11 @@ type FileIndex struct {
 
 // ProjectIndex 项目索引
 type ProjectIndex struct {
-	Root      string                 `json:"root"`
-	Files     map[string]*FileIndex  `json:"files"`      // path -> FileIndex
-	Symbols   map[string][]*Symbol   `json:"symbols"`    // name -> symbols
-	Packages  map[string][]string    `json:"packages"`   // package -> files
-	UpdatedAt time.Time              `json:"updated_at"`
+	Root      string                `json:"root"`
+	Files     map[string]*FileIndex `json:"files"`    // path -> FileIndex
+	Symbols   map[string][]*Symbol  `json:"symbols"`  // name -> symbols
+	Packages  map[string][]string   `json:"packages"` // package -> files
+	UpdatedAt time.Time             `json:"updated_at"`
 }
 
 // Indexer 代码索引器
@@ -208,10 +208,10 @@ func (i *Indexer) GetStats() map[string]interface{} {
 	defer i.mu.RUnlock()
 
 	return map[string]interface{}{
-		"total_files":   len(i.index.Files),
-		"total_symbols": len(i.index.Symbols),
+		"total_files":    len(i.index.Files),
+		"total_symbols":  len(i.index.Symbols),
 		"total_packages": len(i.index.Packages),
-		"updated_at":    i.index.UpdatedAt,
+		"updated_at":     i.index.UpdatedAt,
 	}
 }
 

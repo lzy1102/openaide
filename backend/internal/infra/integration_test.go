@@ -195,7 +195,12 @@ func TestIntegration_APIEndpoints(t *testing.T) {
 	}
 }
 
-func min(a, b int) int { if a < b { return a }; return b }
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
 
 // TestIntegration_DataSurvival verifies data survives server restart.
 func TestIntegration_DataSurvival(t *testing.T) {

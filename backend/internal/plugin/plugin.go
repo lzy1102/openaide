@@ -103,7 +103,9 @@ func (m *Manager) Uninstall(id string) error {
 // Enable 启用插件
 func (m *Manager) Enable(id string) error {
 	p, ok := m.plugins.Load(id)
-	if !ok { return fmt.Errorf("plugin not found: %s", id) }
+	if !ok {
+		return fmt.Errorf("plugin not found: %s", id)
+	}
 	p.Enabled = true
 	return m.save(id, p)
 }
@@ -111,7 +113,9 @@ func (m *Manager) Enable(id string) error {
 // Disable 禁用插件
 func (m *Manager) Disable(id string) error {
 	p, ok := m.plugins.Load(id)
-	if !ok { return fmt.Errorf("plugin not found: %s", id) }
+	if !ok {
+		return fmt.Errorf("plugin not found: %s", id)
+	}
 	p.Enabled = false
 	return m.save(id, p)
 }

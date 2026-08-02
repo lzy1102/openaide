@@ -58,8 +58,8 @@ type TextDocumentPositionParams struct {
 // ── Initialize ──────────────────────────────────────────────
 
 type InitializeParams struct {
-	ProcessID int    `json:"processId"`
-	RootURI   string `json:"rootUri"`
+	ProcessID    int                `json:"processId"`
+	RootURI      string             `json:"rootUri"`
 	Capabilities ClientCapabilities `json:"capabilities"`
 }
 
@@ -78,10 +78,10 @@ type InitializeResult struct {
 }
 
 type ServerCapabilities struct {
-	DefinitionProvider bool `json:"definitionProvider"`
-	ReferencesProvider bool `json:"referencesProvider"`
-	HoverProvider      bool `json:"hoverProvider"`
-	DocumentSymbolProvider bool `json:"documentSymbolProvider"`
+	DefinitionProvider     bool        `json:"definitionProvider"`
+	ReferencesProvider     bool        `json:"referencesProvider"`
+	HoverProvider          bool        `json:"hoverProvider"`
+	DocumentSymbolProvider bool        `json:"documentSymbolProvider"`
 	TextDocumentSync       interface{} `json:"textDocumentSync,omitempty"`
 }
 

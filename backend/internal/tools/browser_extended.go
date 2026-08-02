@@ -153,4 +153,3 @@ func getViewportDims(ctx context.Context) (int, int, error) {
 	)
 	return width, height, err
 }
-

@@ -28,12 +28,12 @@ func (m *mockKernel) Process(ctx context.Context, query *kernel.Query) (*kernel.
 func (m *mockKernel) ProcessStream(ctx context.Context, query *kernel.Query) (<-chan kernel.StreamChunk, error) {
 	return nil, nil
 }
-func (m *mockKernel) GetState() kernel.KernelState            { return 0 }
+func (m *mockKernel) GetState() kernel.KernelState                 { return 0 }
 func (m *mockKernel) Subscribe(handler kernel.EventHandler) uint64 { return 0 }
 func (m *mockKernel) Unsubscribe(id uint64)                        {}
-func (m *mockKernel) GetSlashCommands() map[string]string      { return nil }
-func (m *mockKernel) TaskMetricsSummary() map[string]interface{} { return nil }
-func (m *mockKernel) RecentTasks(n int) []kernel.TaskMetrics { return nil }
+func (m *mockKernel) GetSlashCommands() map[string]string          { return nil }
+func (m *mockKernel) TaskMetricsSummary() map[string]interface{}   { return nil }
+func (m *mockKernel) RecentTasks(n int) []kernel.TaskMetrics       { return nil }
 
 // mockJudge returns controlled pass/fail for testing.
 type mockJudge struct {
@@ -240,7 +240,7 @@ func TestMustNotContain(t *testing.T) {
 
 	task := Task{
 		ID: "test", Name: "Test", Query: "q",
-		EvalCriteria:  "Any valid response.",
+		EvalCriteria:   "Any valid response.",
 		MustNotContain: []string{"I don't know"},
 	}
 

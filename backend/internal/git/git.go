@@ -11,14 +11,14 @@ import (
 
 // Status Git 仓库状态
 type Status struct {
-	Branch        string       `json:"branch"`
-	Ahead         int          `json:"ahead"`
-	Behind        int          `json:"behind"`
-	Staged        []FileChange `json:"staged"`
-	Unstaged      []FileChange `json:"unstaged"`
-	Untracked     []string     `json:"untracked"`
-	Conflicts     []string     `json:"conflicts"`
-	IsClean       bool         `json:"is_clean"`
+	Branch    string       `json:"branch"`
+	Ahead     int          `json:"ahead"`
+	Behind    int          `json:"behind"`
+	Staged    []FileChange `json:"staged"`
+	Unstaged  []FileChange `json:"unstaged"`
+	Untracked []string     `json:"untracked"`
+	Conflicts []string     `json:"conflicts"`
+	IsClean   bool         `json:"is_clean"`
 }
 
 // FileChange 文件变更
@@ -31,15 +31,15 @@ type FileChange struct {
 
 // Diff 文件差异
 type Diff struct {
-	Path        string   `json:"path"`
-	OldPath     string   `json:"old_path,omitempty"`
-	Content     string   `json:"content"`
-	Additions   int      `json:"additions"`
-	Deletions   int      `json:"deletions"`
-	IsBinary    bool     `json:"is_binary"`
-	IsNewFile   bool     `json:"is_new_file"`
-	IsDeleted   bool     `json:"is_deleted"`
-	Hunks       []Hunk   `json:"hunks,omitempty"`
+	Path      string `json:"path"`
+	OldPath   string `json:"old_path,omitempty"`
+	Content   string `json:"content"`
+	Additions int    `json:"additions"`
+	Deletions int    `json:"deletions"`
+	IsBinary  bool   `json:"is_binary"`
+	IsNewFile bool   `json:"is_new_file"`
+	IsDeleted bool   `json:"is_deleted"`
+	Hunks     []Hunk `json:"hunks,omitempty"`
 }
 
 // Hunk 差异块
@@ -123,8 +123,8 @@ func (c *Client) Status() (*Status, error) {
 		// 暂存区状态
 		if indexStatus != ' ' && indexStatus != '?' {
 			status.Staged = append(status.Staged, FileChange{
-				Path:   path,
-				Status: string(indexStatus),
+				Path:    path,
+				Status:  string(indexStatus),
 				OldPath: oldPath,
 			})
 		}
@@ -135,8 +135,8 @@ func (c *Client) Status() (*Status, error) {
 				status.Untracked = append(status.Untracked, path)
 			} else {
 				status.Unstaged = append(status.Unstaged, FileChange{
-					Path:   path,
-					Status: string(workTreeStatus),
+					Path:    path,
+					Status:  string(workTreeStatus),
 					OldPath: oldPath,
 				})
 			}

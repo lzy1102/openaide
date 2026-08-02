@@ -57,8 +57,12 @@ func (c *SimpleCompressor) EstimateTokens(messages []Message) int {
 	for _, msg := range messages {
 		total += estimateTextTokens(msg.Content)
 		total += 4 // message overhead
-		if len(msg.ToolCalls) > 0 { total += 20 } // tool call overhead
-		if msg.ReasoningContent != "" { total += estimateTextTokens(msg.ReasoningContent) }
+		if len(msg.ToolCalls) > 0 {
+			total += 20
+		} // tool call overhead
+		if msg.ReasoningContent != "" {
+			total += estimateTextTokens(msg.ReasoningContent)
+		}
 	}
 	return total
 }
@@ -78,7 +82,9 @@ func estimateTextTokens(text string) int {
 			sampleLines++
 		}
 	}
-	if sampleLines == 0 { return charBasedTokenEstimate(text) }
+	if sampleLines == 0 {
+		return charBasedTokenEstimate(text)
+	}
 	return sampleTokens * len(lines) / sampleLines
 }
 
@@ -125,5 +131,3 @@ func (c *SimpleCompressor) summarize(messages []Message) string {
 	}
 	return result
 }
-
-

@@ -20,7 +20,7 @@ func (m *mockReflectionLLM) Chat(ctx context.Context, msgs []Message, tools []To
 func (m *mockReflectionLLM) ChatStream(ctx context.Context, msgs []Message, tools []ToolDefinition, opts map[string]interface{}) (<-chan StreamChunk, error) {
 	return nil, nil
 }
-func (m *mockReflectionLLM) GetModelID() string { return "mock" }
+func (m *mockReflectionLLM) GetModelID() string  { return "mock" }
 func (m *mockReflectionLLM) SetModelID(s string) {}
 
 func TestLLMReflection_Success(t *testing.T) {
@@ -107,7 +107,9 @@ func TestLLMReflection_Stateless(t *testing.T) {
 
 func stringsContains(s, sub string) bool {
 	for i := 0; i <= len(s)-len(sub); i++ {
-		if s[i:i+len(sub)] == sub { return true }
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
 	}
 	return false
 }

@@ -178,7 +178,6 @@ func (p *Planner) planWithTextPrompt(ctx context.Context, query string) (*Plan, 
 	return parsePlan(resp.Content)
 }
 
-
 func parsePlanFromFC(arguments string) (*Plan, error) {
 	var plan Plan
 	if err := json.Unmarshal([]byte(arguments), &plan); err != nil {
@@ -268,7 +267,7 @@ func (p *Planner) Research(ctx context.Context, query string) (*ResearchReport, 
 	}
 
 	// Mini ReAct loop: LLM 自主决定何时研究完毕（不再调工具 = 准备好输出报告）
-	const maxRounds = 8           // 安全上限
+	const maxRounds = 8                 // 安全上限
 	const forceOutputAt = maxRounds - 2 // 最后 2 轮不给工具，强制输出
 	for round := 0; round < maxRounds; round++ {
 		slog.Debug("Research round", "round", round, "msg_count", len(messages))
@@ -301,7 +300,7 @@ func (p *Planner) Research(ctx context.Context, query string) (*ResearchReport, 
 			}
 			// JSON 解析失败，引导 LLM 输出正确格式
 			messages = append(messages, kernel.Message{
-				Role: "user",
+				Role:    "user",
 				Content: "请输出 JSON 格式的研究报告。{\"findings\":\"...\", \"modules\":\"...\", \"risks\":\"...\", \"complexity\":\"low/medium/high\"}",
 			})
 			continue

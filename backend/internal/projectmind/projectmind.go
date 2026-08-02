@@ -14,9 +14,9 @@ import (
 type ProjectMind struct {
 	mu           sync.RWMutex
 	path         string
-	CodeMap     map[string]CodeEntry  `json:"code_map"`
-	RiskMap     map[string]RiskEntry  `json:"risk_map"`
-	Learnings   LearningSet           `json:"learnings"`
+	CodeMap      map[string]CodeEntry `json:"code_map"`
+	RiskMap      map[string]RiskEntry `json:"risk_map"`
+	Learnings    LearningSet          `json:"learnings"`
 	Architecture ArchInfo             `json:"architecture"`
 	UpdatedAt    time.Time            `json:"updated_at"`
 
@@ -30,9 +30,9 @@ type ProjectMind struct {
 type CodeEntry struct {
 	Purpose    string    `json:"purpose"`
 	Exports    []string  `json:"exports,omitempty"`
-	Confidence float64   `json:"confidence"`  // 0-1, 过期自动降
+	Confidence float64   `json:"confidence"` // 0-1, 过期自动降
 	LastSeen   time.Time `json:"last_seen"`
-	Source     string    `json:"source"`      // research/execution/review
+	Source     string    `json:"source"` // research/execution/review
 }
 
 type RiskEntry struct {
@@ -43,9 +43,9 @@ type RiskEntry struct {
 }
 
 type LearningSet struct {
-	Patterns     []string `json:"patterns"`
-	Conventions  []string `json:"conventions"`
-	Pitfalls     []string `json:"pitfalls"`
+	Patterns    []string `json:"patterns"`
+	Conventions []string `json:"conventions"`
+	Pitfalls    []string `json:"pitfalls"`
 }
 
 type ArchInfo struct {
@@ -60,7 +60,7 @@ type ArchInfo struct {
 func Load(projectDir string) *ProjectMind {
 	path := filepath.Join(projectDir, "data", "memory", "project_mind.json")
 	pm := &ProjectMind{
-		path: path,
+		path:    path,
 		CodeMap: make(map[string]CodeEntry),
 		RiskMap: make(map[string]RiskEntry),
 	}
@@ -69,8 +69,12 @@ func Load(projectDir string) *ProjectMind {
 		return pm // 首次使用，返回空
 	}
 	json.Unmarshal(data, pm)
-	if pm.CodeMap == nil { pm.CodeMap = make(map[string]CodeEntry) }
-	if pm.RiskMap == nil { pm.RiskMap = make(map[string]RiskEntry) }
+	if pm.CodeMap == nil {
+		pm.CodeMap = make(map[string]CodeEntry)
+	}
+	if pm.RiskMap == nil {
+		pm.RiskMap = make(map[string]RiskEntry)
+	}
 	return pm
 }
 
@@ -124,10 +128,15 @@ func (pm *ProjectMind) AddLearning(category, content string) {
 		pm.Learnings.Patterns = appendUnique(pm.Learnings.Patterns, content)
 	case "convention":
 		pm.Learnings.Conventions = appendUnique(pm.Learnings.Conventions, content)
-			for i, cv := range pm.Conventions {
-				if cv.Rule == content && !cv.Invalid { cv.Confidence = min(0.95, cv.Confidence+0.1); cv.ValidatedAt = time.Now(); pm.Conventions[i] = cv; return }
+		for i, cv := range pm.Conventions {
+			if cv.Rule == content && !cv.Invalid {
+				cv.Confidence = min(0.95, cv.Confidence+0.1)
+				cv.ValidatedAt = time.Now()
+				pm.Conventions[i] = cv
+				return
 			}
-			pm.Conventions = append(pm.Conventions, Convention{Rule: content, Confidence: 0.5, Source: "observation", LearnedAt: time.Now(), ValidatedAt: time.Now()})
+		}
+		pm.Conventions = append(pm.Conventions, Convention{Rule: content, Confidence: 0.5, Source: "observation", LearnedAt: time.Now(), ValidatedAt: time.Now()})
 	case "pitfall":
 		pm.Learnings.Pitfalls = appendUnique(pm.Learnings.Pitfalls, content)
 	}
@@ -137,10 +146,18 @@ func (pm *ProjectMind) AddLearning(category, content string) {
 func (pm *ProjectMind) SetArchitecture(entry string, framework, database string, modules []string) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
-	if entry != "" { pm.Architecture.EntryPoints = appendUnique(pm.Architecture.EntryPoints, entry) }
-	if framework != "" { pm.Architecture.Framework = framework }
-	if database != "" { pm.Architecture.Database = database }
-	if len(modules) > 0 { pm.Architecture.KeyModules = modules }
+	if entry != "" {
+		pm.Architecture.EntryPoints = appendUnique(pm.Architecture.EntryPoints, entry)
+	}
+	if framework != "" {
+		pm.Architecture.Framework = framework
+	}
+	if database != "" {
+		pm.Architecture.Database = database
+	}
+	if len(modules) > 0 {
+		pm.Architecture.KeyModules = modules
+	}
 }
 
 // FactsForPrompt 生成注入 prompt 的已知事实摘要
@@ -162,9 +179,13 @@ func (pm *ProjectMind) FactsForPrompt() string {
 	sb.WriteString("\n### 已知代码结构\n")
 	count := 0
 	for file, entry := range pm.CodeMap {
-		if count >= 10 { break }
+		if count >= 10 {
+			break
+		}
 		age := time.Since(entry.LastSeen)
-		if age > 7*24*time.Hour && entry.Confidence < 0.7 { continue } // 过期低置信度跳过
+		if age > 7*24*time.Hour && entry.Confidence < 0.7 {
+			continue
+		} // 过期低置信度跳过
 		sb.WriteString(fmt.Sprintf("- %s: %s (置信度: %.0f%%)\n", file, entry.Purpose, entry.Confidence*100))
 		count++
 	}
@@ -174,7 +195,9 @@ func (pm *ProjectMind) FactsForPrompt() string {
 		sb.WriteString("\n### 已知风险\n")
 		for file, r := range pm.RiskMap {
 			status := "⚠"
-			if r.Fixed { status = "✅已修复" }
+			if r.Fixed {
+				status = "✅已修复"
+			}
 			sb.WriteString(fmt.Sprintf("- %s%s: %s [%s]\n", status, file, r.Risk, r.Level))
 		}
 	}
@@ -193,7 +216,9 @@ func (pm *ProjectMind) FactsForPrompt() string {
 		}
 	}
 
-	if sb.Len() == 0 { return "" }
+	if sb.Len() == 0 {
+		return ""
+	}
 	return sb.String()
 }
 
@@ -217,7 +242,9 @@ func (pm *ProjectMind) GenerateLearnedRules() string {
 
 	var sb strings.Builder
 	for _, conv := range pm.Conventions {
-		if conv.Invalid { continue }
+		if conv.Invalid {
+			continue
+		}
 		if conv.Confidence >= 0.8 {
 			sb.WriteString(fmt.Sprintf("- %s  (conf:%.0f%%)\n", conv.Rule, conv.Confidence*100))
 		}
@@ -279,13 +306,19 @@ func (pm *ProjectMind) SyncConventionsToSkills(sm interface {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 	for _, conv := range pm.Conventions {
-		if conv.Invalid || conv.Confidence < 0.9 { continue }
+		if conv.Invalid || conv.Confidence < 0.9 {
+			continue
+		}
 		// Generate a clean skill ID from the convention rule
 		name := conv.Rule
-		if len(name) > 40 { name = name[:40] }
+		if len(name) > 40 {
+			name = name[:40]
+		}
 		id := "auto-conv-" + strings.ToLower(strings.ReplaceAll(name, " ", "-"))
 		id = strings.Map(func(r rune) rune {
-			if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' { return r }
+			if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+				return r
+			}
 			return '-'
 		}, id)
 		sm.AddClaudeSkill(id, conv.Rule,
@@ -316,7 +349,9 @@ func (pm *ProjectMind) ExpireOldFacts() {
 
 func appendUnique(slice []string, item string) []string {
 	for _, s := range slice {
-		if s == item { return slice }
+		if s == item {
+			return slice
+		}
 	}
 	return append(slice, item)
 }
@@ -325,15 +360,15 @@ func appendUnique(slice []string, item string) []string {
 
 // ExecRecord 一次任务执行的完整记录
 type ExecRecord struct {
-	Task       string    `json:"task"`
-	Approach   string    `json:"approach"`
-	Success    bool      `json:"success"`
-	FilesChanged []string `json:"files_changed,omitempty"`
-	Errors     []string  `json:"errors,omitempty"`
-	Fixes      []string  `json:"fixes,omitempty"`
-	Time       float64   `json:"time_sec"`
-	Model      string    `json:"model"`
-	At         time.Time `json:"at"`
+	Task         string    `json:"task"`
+	Approach     string    `json:"approach"`
+	Success      bool      `json:"success"`
+	FilesChanged []string  `json:"files_changed,omitempty"`
+	Errors       []string  `json:"errors,omitempty"`
+	Fixes        []string  `json:"fixes,omitempty"`
+	Time         float64   `json:"time_sec"`
+	Model        string    `json:"model"`
+	At           time.Time `json:"at"`
 }
 
 // StrategyStats 方案有效性统计
@@ -383,7 +418,9 @@ func (pm *ProjectMind) ContradictConvention(rule string) bool {
 		if c.Rule == rule && !c.Invalid {
 			c.Confidence = max(0.1, c.Confidence-0.25)
 			c.ValidatedAt = time.Now()
-			if c.Confidence < 0.3 { c.Invalid = true }
+			if c.Confidence < 0.3 {
+				c.Invalid = true
+			}
 			pm.Conventions[i] = c
 			return c.Invalid
 		}
@@ -412,7 +449,9 @@ func (pm *ProjectMind) DecayConventions() {
 	defer pm.mu.Unlock()
 	now := time.Now()
 	for i, c := range pm.Conventions {
-		if c.Invalid { continue }
+		if c.Invalid {
+			continue
+		}
 		if now.Sub(c.ValidatedAt) > 14*24*time.Hour {
 			c.Confidence *= 0.85
 			pm.Conventions[i] = c
@@ -459,7 +498,9 @@ func (pm *ProjectMind) UpdateStrategy(name string, success bool, taskType string
 	for i, s := range pm.Strategies {
 		if s.Name == name {
 			pm.Strategies[i].TotalCount++
-			if success { pm.Strategies[i].SuccessCount++ }
+			if success {
+				pm.Strategies[i].SuccessCount++
+			}
 			if success {
 				pm.Strategies[i].BestFor = appendUnique(pm.Strategies[i].BestFor, taskType)
 			} else {
@@ -470,7 +511,12 @@ func (pm *ProjectMind) UpdateStrategy(name string, success bool, taskType string
 	}
 	// 新方案
 	s := StrategyStats{Name: name, TotalCount: 1}
-	if success { s.SuccessCount = 1; s.BestFor = []string{taskType} } else { s.WorstFor = []string{taskType} }
+	if success {
+		s.SuccessCount = 1
+		s.BestFor = []string{taskType}
+	} else {
+		s.WorstFor = []string{taskType}
+	}
 	pm.Strategies = append(pm.Strategies, s)
 }
 
@@ -478,15 +524,23 @@ func (pm *ProjectMind) UpdateStrategy(name string, success bool, taskType string
 func (pm *ProjectMind) StrategyAdvice() string {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
-	if len(pm.Strategies) == 0 { return "" }
+	if len(pm.Strategies) == 0 {
+		return ""
+	}
 	var sb strings.Builder
 	sb.WriteString("## 历史方案效果\n")
 	for _, s := range pm.Strategies {
 		rate := 0
-		if s.TotalCount > 0 { rate = s.SuccessCount * 100 / s.TotalCount }
+		if s.TotalCount > 0 {
+			rate = s.SuccessCount * 100 / s.TotalCount
+		}
 		sb.WriteString(fmt.Sprintf("- %s: 成功率 %d/%d (%d%%)\n", s.Name, s.SuccessCount, s.TotalCount, rate))
-		if len(s.BestFor) > 0 { sb.WriteString(fmt.Sprintf("  适用: %s\n", strings.Join(dedup(s.BestFor), ", "))) }
-		if len(s.WorstFor) > 0 { sb.WriteString(fmt.Sprintf("  不适用: %s\n", strings.Join(dedup(s.WorstFor), ", "))) }
+		if len(s.BestFor) > 0 {
+			sb.WriteString(fmt.Sprintf("  适用: %s\n", strings.Join(dedup(s.BestFor), ", ")))
+		}
+		if len(s.WorstFor) > 0 {
+			sb.WriteString(fmt.Sprintf("  不适用: %s\n", strings.Join(dedup(s.WorstFor), ", ")))
+		}
 	}
 	return sb.String()
 }
@@ -509,7 +563,9 @@ func (pm *ProjectMind) LearnConvention(rule, source string) {
 func (pm *ProjectMind) ConventionsForPrompt() string {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
-	if len(pm.Conventions) == 0 { return "" }
+	if len(pm.Conventions) == 0 {
+		return ""
+	}
 	var sb strings.Builder
 	sb.WriteString("\n### 项目约定（自动学习）\n")
 	for _, c := range pm.Conventions {
@@ -517,7 +573,9 @@ func (pm *ProjectMind) ConventionsForPrompt() string {
 			sb.WriteString(fmt.Sprintf("- %s (置信度: %.0f%%)\n", c.Rule, c.Confidence*100))
 		}
 	}
-	if sb.Len() == 0 { return "" }
+	if sb.Len() == 0 {
+		return ""
+	}
 	return sb.String()
 }
 
@@ -543,18 +601,20 @@ func (pm *ProjectMind) RecentFailures() string {
 			failures = append(failures, fmt.Sprintf("- %s: %v", pm.ExecHistory[i].Task, pm.ExecHistory[i].Errors))
 		}
 	}
-	if len(failures) == 0 { return "" }
+	if len(failures) == 0 {
+		return ""
+	}
 	return "## 最近失败记录\n" + strings.Join(failures, "\n")
 }
-
-
 
 func dedup(slice []string) []string {
 	seen := make(map[string]bool)
 	var result []string
 	for _, s := range slice {
-		if !seen[s] { seen[s] = true; result = append(result, s) }
+		if !seen[s] {
+			seen[s] = true
+			result = append(result, s)
+		}
 	}
 	return result
 }
-

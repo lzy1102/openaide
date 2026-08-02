@@ -39,18 +39,18 @@ type Indexer struct {
 	cfg      Config
 
 	// 索引状态
-	mu          sync.RWMutex
-	indexing    bool
-	indexedAt   time.Time
-	chunkCount  int
+	mu         sync.RWMutex
+	indexing   bool
+	indexedAt  time.Time
+	chunkCount int
 }
 
 // Config 是 Indexer 的配置。
 type Config struct {
-	DBPath        string // SQLite 数据库路径
-	MaxChunks     int    // 单文件最大 chunk 数(默认 100)
-	ChunkSize     int    // chunk 字符数上限(默认 1500)
-	ChunkOverlap  int    // chunk 重叠行数(默认 5)
+	DBPath       string // SQLite 数据库路径
+	MaxChunks    int    // 单文件最大 chunk 数(默认 100)
+	ChunkSize    int    // chunk 字符数上限(默认 1500)
+	ChunkOverlap int    // chunk 重叠行数(默认 5)
 }
 
 // NewIndexer 创建并启动 Indexer。dbPath 为空时使用内存数据库。
@@ -165,10 +165,10 @@ func (ix *Indexer) Search(ctx context.Context, query string, limit int) ([]Chunk
 
 // Stats 返回索引状态。
 type Stats struct {
-	Indexing   bool      `json:"indexing"`
-	IndexedAt  time.Time `json:"indexed_at"`
-	ChunkCount int       `json:"chunk_count"`
-	HasEmbedder bool     `json:"has_embedder"`
+	Indexing    bool      `json:"indexing"`
+	IndexedAt   time.Time `json:"indexed_at"`
+	ChunkCount  int       `json:"chunk_count"`
+	HasEmbedder bool      `json:"has_embedder"`
 }
 
 func (ix *Indexer) Stats() Stats {

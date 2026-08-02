@@ -6,18 +6,18 @@ import (
 
 // Message 内核消息（与 LLM 层解耦的通用格式）
 type Message struct {
-	Role             string `json:"role"`
-	Content          string `json:"content"`
-	ReasoningContent string `json:"reasoning_content,omitempty"`
-	Name             string `json:"name,omitempty"`
+	Role             string     `json:"role"`
+	Content          string     `json:"content"`
+	ReasoningContent string     `json:"reasoning_content,omitempty"`
+	Name             string     `json:"name,omitempty"`
 	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`
-	ToolCallID       string `json:"tool_call_id,omitempty"`
+	ToolCallID       string     `json:"tool_call_id,omitempty"`
 }
 
 // ToolCall 工具调用
 type ToolCall struct {
-	ID       string `json:"id"`
-	Type     string `json:"type"`
+	ID       string       `json:"id"`
+	Type     string       `json:"type"`
 	Function FunctionCall `json:"function"`
 }
 
@@ -37,7 +37,7 @@ type ToolResult struct {
 
 // ToolDefinition 工具定义
 type ToolDefinition struct {
-	Type     string     `json:"type"`
+	Type     string      `json:"type"`
 	Function FunctionDef `json:"function"`
 }
 
@@ -51,21 +51,21 @@ type FunctionDef struct {
 
 // LLMResponse LLM 响应（内核通用格式）
 type LLMResponse struct {
-	ID               string     `json:"id"`
-	Content          string     `json:"content"`
-	ReasoningContent string     `json:"reasoning_content,omitempty"`
-	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`
+	ID               string      `json:"id"`
+	Content          string      `json:"content"`
+	ReasoningContent string      `json:"reasoning_content,omitempty"`
+	ToolCalls        []ToolCall  `json:"tool_calls,omitempty"`
 	Usage            *TokenUsage `json:"usage,omitempty"`
-	Model            string     `json:"model"`
+	Model            string      `json:"model"`
 }
 
 // TokenUsage Token 使用统计
 type TokenUsage struct {
-	PromptTokens           int `json:"prompt_tokens"`
-	CompletionTokens       int `json:"completion_tokens"`
-	TotalTokens            int `json:"total_tokens"`
-	PromptCacheHitTokens   int `json:"prompt_cache_hit_tokens,omitempty"`
-	PromptCacheMissTokens  int `json:"prompt_cache_miss_tokens,omitempty"`
+	PromptTokens          int `json:"prompt_tokens"`
+	CompletionTokens      int `json:"completion_tokens"`
+	TotalTokens           int `json:"total_tokens"`
+	PromptCacheHitTokens  int `json:"prompt_cache_hit_tokens,omitempty"`
+	PromptCacheMissTokens int `json:"prompt_cache_miss_tokens,omitempty"`
 }
 
 // StreamChunkType 流式块类型
@@ -100,12 +100,12 @@ type StreamChunk struct {
 
 // Session 对话会话
 type Session struct {
-	ID        string    `json:"id"`
-	ProjectID string    `json:"project_id"`
-	UserID    string    `json:"user_id"`
-	Messages  []Message `json:"messages"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID        string                 `json:"id"`
+	ProjectID string                 `json:"project_id"`
+	UserID    string                 `json:"user_id"`
+	Messages  []Message              `json:"messages"`
+	CreatedAt time.Time              `json:"created_at"`
+	UpdatedAt time.Time              `json:"updated_at"`
 	Metadata  map[string]interface{} `json:"metadata,omitempty"`
 }
 
@@ -125,10 +125,10 @@ func (s *Session) SafeCopy() *Session {
 
 // Query 用户查询
 type Query struct {
-	SessionID string `json:"session_id"`
-	Content   string `json:"content"`
-	UserID    string `json:"user_id,omitempty"`
-	ProjectID string `json:"project_id,omitempty"`
+	SessionID string       `json:"session_id"`
+	Content   string       `json:"content"`
+	UserID    string       `json:"user_id,omitempty"`
+	ProjectID string       `json:"project_id,omitempty"`
 	Options   QueryOptions `json:"options,omitempty"`
 }
 
@@ -152,29 +152,29 @@ type QueryOptions struct {
 	MaxTokens      int             `json:"max_tokens,omitempty"`
 	ToolFilter     []string        `json:"tool_filter,omitempty"`
 	EnableStream   bool            `json:"enable_stream,omitempty"`
-	ForcePlan      bool            `json:"force_plan,omitempty"`      // 强制规划模式
+	ForcePlan      bool            `json:"force_plan,omitempty"` // 强制规划模式
 	SkillID        string          `json:"skill_id,omitempty"`
 	ResponseFormat *ResponseFormat `json:"response_format,omitempty"` // 结构化输出格式
 
 	// 交互回调（REPL 用 pterm 实现，内核 goroutine 中同步调用）
-	OnApproval        func(tool, path, args string) bool // 危险工具审批，返回 true 允许
-	OnBudgetExhausted func(round, maxRounds int) bool // 预算用尽，返回 true 继续，false 合成
+	OnApproval        func(tool, path, args string) bool     // 危险工具审批，返回 true 允许
+	OnBudgetExhausted func(round, maxRounds int) bool        // 预算用尽，返回 true 继续，false 合成
 	OnSkillDistilled  func(skillName, skillDesc string) bool // 技能蒸馏通知，返回 true 创建
-	WorkingDir        string // 项目工作目录（Server 模式用，覆盖 CWD）
-	LastReflection    *ReflectionResult // L5: 上次反思结果，注入提示词
-	ProjectContext    string            // 项目知识（来自 ProjectMind，由编排器注入）
+	WorkingDir        string                                 // 项目工作目录（Server 模式用，覆盖 CWD）
+	LastReflection    *ReflectionResult                      // L5: 上次反思结果，注入提示词
+	ProjectContext    string                                 // 项目知识（来自 ProjectMind，由编排器注入）
 }
 
 // Response 内核响应
 type Response struct {
-	Content     string        `json:"content"`
-	ToolCalls   int           `json:"tool_calls"`
-	TokensUsed  int           `json:"tokens_used"`
-	CacheHit    int           `json:"-"` // prompt 缓存命中
-	CacheMiss   int           `json:"-"` // prompt 缓存未命中
-	Duration    time.Duration `json:"duration"`
-	Model       string        `json:"model"`
-	Error       string        `json:"error,omitempty"`
+	Content    string        `json:"content"`
+	ToolCalls  int           `json:"tool_calls"`
+	TokensUsed int           `json:"tokens_used"`
+	CacheHit   int           `json:"-"` // prompt 缓存命中
+	CacheMiss  int           `json:"-"` // prompt 缓存未命中
+	Duration   time.Duration `json:"duration"`
+	Model      string        `json:"model"`
+	Error      string        `json:"error,omitempty"`
 }
 
 // Event 内核事件
@@ -187,17 +187,17 @@ type Event struct {
 
 // EventType 事件类型常量
 const (
-	EventQueryReceived    = "query.received"
-	EventThinkingStarted  = "thinking.started"
-	EventThinkingEnded    = "thinking.ended"
-	EventToolCallStarted  = "toolcall.started"
-	EventToolCallEnded    = "toolcall.ended"
-	EventResponseStarted  = "response.started"
-	EventResponseChunk    = "response.chunk"
-	EventResponseEnded    = "response.ended"
-	EventError            = "error"
-	EventSessionCreated   = "session.created"
-	EventSessionUpdated   = "session.updated"
+	EventQueryReceived   = "query.received"
+	EventThinkingStarted = "thinking.started"
+	EventThinkingEnded   = "thinking.ended"
+	EventToolCallStarted = "toolcall.started"
+	EventToolCallEnded   = "toolcall.ended"
+	EventResponseStarted = "response.started"
+	EventResponseChunk   = "response.chunk"
+	EventResponseEnded   = "response.ended"
+	EventError           = "error"
+	EventSessionCreated  = "session.created"
+	EventSessionUpdated  = "session.updated"
 )
 
 // KernelState 内核状态

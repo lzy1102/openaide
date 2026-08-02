@@ -21,8 +21,8 @@ func fileEditToolDefs() []kernel.ToolDefinition {
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
-						"path": map[string]interface{}{"type": "string", "description": "文件路径"},
-						"search_text": map[string]interface{}{"type": "string", "description": "要搜索的文本（必须唯一）"},
+						"path":         map[string]interface{}{"type": "string", "description": "文件路径"},
+						"search_text":  map[string]interface{}{"type": "string", "description": "要搜索的文本（必须唯一）"},
 						"replace_text": map[string]interface{}{"type": "string", "description": "替换后的文本"},
 					},
 					"required": []string{"path", "search_text", "replace_text"},
@@ -32,25 +32,25 @@ func fileEditToolDefs() []kernel.ToolDefinition {
 		{
 			Type: "function",
 			Function: kernel.FunctionDef{
-				Name: "apply_patch",
+				Name:        "apply_patch",
 				Description: "批量编辑文件（SEARCH/REPLACE块格式）。一次调用可做多处修改。\n格式: <<<<<<< SEARCH\n旧代码\n=======\n新代码\n>>>>>>> REPLACE",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
-						"path": map[string]interface{}{"type": "string", "description": "文件路径"},
+						"path":    map[string]interface{}{"type": "string", "description": "文件路径"},
 						"content": map[string]interface{}{"type": "string", "description": "SEARCH/REPLACE块，多个块用空行分隔"},
 					},
 					"required": []string{"path", "content"},
 				},
 			},
-		},	}
+		}}
 }
 
 // handleDiffEdit 精确搜索替换编辑 — 只修改匹配部分，保持其他内容不变
 func handleDiffEdit(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
 	var args struct {
-		Path       string `json:"path"`
-		SearchText string `json:"search_text"`
+		Path        string `json:"path"`
+		SearchText  string `json:"search_text"`
 		ReplaceText string `json:"replace_text"`
 	}
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
@@ -232,7 +232,9 @@ func applySearchReplacePatch(absPath, content string) (string, error) {
 		if !strings.Contains(current, block.Search) {
 			// Provide context to help LLM fix the mismatch
 			preview := block.Search
-			if len(preview) > 60 { preview = preview[:57] + "..." }
+			if len(preview) > 60 {
+				preview = preview[:57] + "..."
+			}
 			failed = append(failed, fmt.Sprintf("block %d: '%s' not found in file", i+1, preview))
 			continue
 		}

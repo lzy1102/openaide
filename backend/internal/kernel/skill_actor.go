@@ -19,7 +19,7 @@ type Skill struct {
 	Keywords     []string `json:"keywords"`
 	Tools        []string `json:"tools"`
 	AllowedTools []string `json:"allowed_tools"`
-	Scripts      []string `json:"scripts,omitempty"`   // executable scripts bundled with the skill
+	Scripts      []string `json:"scripts,omitempty"` // executable scripts bundled with the skill
 	Enabled      bool     `json:"enabled"`
 
 	UsageCount   int       `json:"usage_count"`
@@ -70,7 +70,7 @@ func (a *SkillActor) AddDistilledSkill(id, name, description, prompt string, key
 			ID: id, Name: name, Description: description,
 			Prompt: prompt, Keywords: keywords,
 			AllowedTools: allowedTools,
-			Enabled: true, Confidence: 0.5,
+			Enabled:      true, Confidence: 0.5,
 		}
 	})
 }
@@ -101,13 +101,19 @@ func (a *SkillActor) AddClaudeSkill(id, name, description, prompt string, keywor
 
 func (a *SkillActor) Enable(id string) {
 	a.super.Send(func() {
-		if s, ok := a.skills[id]; ok { s.Enabled = true; a.save() }
+		if s, ok := a.skills[id]; ok {
+			s.Enabled = true
+			a.save()
+		}
 	})
 }
 
 func (a *SkillActor) Disable(id string) {
 	a.super.Send(func() {
-		if s, ok := a.skills[id]; ok { s.Enabled = false; a.save() }
+		if s, ok := a.skills[id]; ok {
+			s.Enabled = false
+			a.save()
+		}
 	})
 }
 
@@ -203,8 +209,12 @@ func (a *SkillActor) UsePreMatch(skillID string) {
 // GetTools returns the allowed tools for a skill.
 func (a *SkillActor) GetTools(ctx context.Context, query string) []string {
 	skill := a.DetectSkill(ctx, query)
-	if skill == nil { return nil }
-	if len(skill.AllowedTools) > 0 { return skill.AllowedTools }
+	if skill == nil {
+		return nil
+	}
+	if len(skill.AllowedTools) > 0 {
+		return skill.AllowedTools
+	}
 	return skill.Tools
 }
 
@@ -235,7 +245,9 @@ func (a *SkillActor) GetSkill(id string) *Skill {
 // InjectPrompt injects the skill prompt into the system prompt.
 func (a *SkillActor) InjectPrompt(ctx context.Context, query string, basePrompt string) string {
 	skill := a.DetectSkill(ctx, query)
-	if skill == nil { return basePrompt }
+	if skill == nil {
+		return basePrompt
+	}
 	result := basePrompt + fmt.Sprintf("\n\n## Current Active Skill: %s\n%s", skill.Name, skill.Prompt)
 	if len(skill.Scripts) > 0 {
 		result += "\n### Available Scripts\n"
@@ -252,7 +264,9 @@ func (a *SkillActor) InjectPrompt(ctx context.Context, query string, basePrompt 
 func (a *SkillActor) RecordUsage(skillID string, qualityScore int) {
 	a.super.SendAsync(func() {
 		s, ok := a.skills[skillID]
-		if !ok { return }
+		if !ok {
+			return
+		}
 		s.UsageCount++
 		s.LastUsed = time.Now()
 		if qualityScore >= 6 {
@@ -274,7 +288,9 @@ func (a *SkillActor) RecordLastUsage(qualityScore int) {
 		if a.lastUsed != "" {
 			// Re-dispatch to RecordUsage logic
 			s, ok := a.skills[a.lastUsed]
-			if !ok { return }
+			if !ok {
+				return
+			}
 			s.UsageCount++
 			s.LastUsed = time.Now()
 			if qualityScore >= 6 {
@@ -309,7 +325,9 @@ func (a *SkillActor) DecayUnused() {
 // ── Internal ──────────────────────────────────────────────
 
 func (a *SkillActor) save() {
-	if a.onSave != nil { a.onSave() }
+	if a.onSave != nil {
+		a.onSave()
+	}
 }
 
 // SetOnSave sets the persistence callback.
@@ -342,9 +360,13 @@ func (a *SkillActor) detectWithLLM(ctx context.Context, query string, skillList 
 			"Which skill matches? Reply with the skill ID or 'none'.\n\nSkills:\n%s\nQuery: %s",
 			b.String(), query)},
 	}, nil, map[string]interface{}{"max_tokens": 30, "temperature": 0, "route": "execution", "no_thinking": true})
-	if err != nil { return "" }
+	if err != nil {
+		return ""
+	}
 	choice := strings.TrimSpace(resp.Content)
-	if choice == "" || choice == "none" { return "" }
+	if choice == "" || choice == "none" {
+		return ""
+	}
 	return choice
 }
 

@@ -104,7 +104,9 @@ func TestConventionInvalidate(t *testing.T) {
 	pm.AddLearning("convention", "explicitly wrong")
 	pm.InvalidateConvention("explicitly wrong")
 	rules := pm.GenerateLearnedRules()
-	if rules != "" { t.Log("invalid convention removed from rules") }
+	if rules != "" {
+		t.Log("invalid convention removed from rules")
+	}
 }
 
 func TestCleanupDeadConventions(t *testing.T) {

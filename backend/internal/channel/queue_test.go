@@ -98,15 +98,24 @@ func TestTaskQueue_DefaultConfig(t *testing.T) {
 
 // ============ Registry tests ============
 
-type mockChannel struct{ id, name string; ctype ChannelType; started bool }
+type mockChannel struct {
+	id, name string
+	ctype    ChannelType
+	started  bool
+}
 
-func (m *mockChannel) ID() string     { return m.id }
-func (m *mockChannel) Name() string   { return m.name }
-func (m *mockChannel) Type() ChannelType { return m.ctype }
+func (m *mockChannel) ID() string                                              { return m.id }
+func (m *mockChannel) Name() string                                            { return m.name }
+func (m *mockChannel) Type() ChannelType                                       { return m.ctype }
 func (m *mockChannel) Send(ctx context.Context, tID string, r *Response) error { return nil }
-func (m *mockChannel) Start(ctx context.Context, h MessageHandler) error { m.started = true; return nil }
+func (m *mockChannel) Start(ctx context.Context, h MessageHandler) error {
+	m.started = true
+	return nil
+}
 func (m *mockChannel) Stop(ctx context.Context) error { m.started = false; return nil }
-func (m *mockChannel) Status(ctx context.Context) Status { return Status{ID: m.id, Running: m.started, Healthy: true} }
+func (m *mockChannel) Status(ctx context.Context) Status {
+	return Status{ID: m.id, Running: m.started, Healthy: true}
+}
 
 func TestRegistry_Register(t *testing.T) {
 	r := NewRegistry()

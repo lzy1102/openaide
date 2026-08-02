@@ -24,9 +24,9 @@ type Embedder interface {
 // NoopEmbedder returns empty vectors — used when no embedder is configured.
 type NoopEmbedder struct{}
 
-func (NoopEmbedder) Embed(_ context.Context, _ string) ([]float32, error) { return nil, nil }
+func (NoopEmbedder) Embed(_ context.Context, _ string) ([]float32, error)          { return nil, nil }
 func (NoopEmbedder) EmbedBatch(_ context.Context, _ []string) ([][]float32, error) { return nil, nil }
-func (NoopEmbedder) Dimension() int { return 0 }
+func (NoopEmbedder) Dimension() int                                                { return 0 }
 
 // EmbedderFunc wraps plain functions into an Embedder interface.
 type EmbedderFunc struct {

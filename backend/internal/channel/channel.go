@@ -27,8 +27,8 @@ import (
 type ChannelType string
 
 const (
-	TypeWebhook ChannelType = "webhook"
-	TypeFeishu  ChannelType = "feishu"
+	TypeWebhook  ChannelType = "webhook"
+	TypeFeishu   ChannelType = "feishu"
 	TypeTelegram ChannelType = "telegram"
 )
 
@@ -82,10 +82,10 @@ type Channel interface {
 
 // Status 渠道运行状态
 type Status struct {
-	ID      string       `json:"id"`
-	Type    ChannelType  `json:"type"`
-	Running bool         `json:"running"`
-	Healthy bool         `json:"healthy"`
+	ID      string                 `json:"id"`
+	Type    ChannelType            `json:"type"`
+	Running bool                   `json:"running"`
+	Healthy bool                   `json:"healthy"`
 	Info    map[string]interface{} `json:"info,omitempty"`
 }
 
@@ -151,7 +151,9 @@ func (r *Registry) StartAll(ctx context.Context, handler MessageHandler) error {
 func (r *Registry) StopAll(ctx context.Context) error {
 	var lastErr error
 	r.channels.Range(func(id string, ch Channel) bool {
-		if err := ch.Stop(ctx); err != nil { lastErr = err }
+		if err := ch.Stop(ctx); err != nil {
+			lastErr = err
+		}
 		return true
 	})
 	return lastErr

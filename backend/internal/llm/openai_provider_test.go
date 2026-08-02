@@ -23,10 +23,10 @@ func TestOpenAIProvider_ChatStream_Basic(t *testing.T) {
 	defer srv.Close()
 
 	provider := NewOpenAIProvider(&ProviderConfig{
-		BaseURL:       srv.URL,
-		APIKey:        "test-key",
-		DefaultModel:  "gpt-4o",
-		Timeout:       10,
+		BaseURL:      srv.URL,
+		APIKey:       "test-key",
+		DefaultModel: "gpt-4o",
+		Timeout:      10,
 	})
 
 	ch, err := provider.ChatStream(context.Background(), nil, nil, nil)

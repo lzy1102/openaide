@@ -19,9 +19,9 @@ import (
 type Level int
 
 const (
-	LevelWorking  Level = 0
-	LevelShort    Level = 1
-	LevelLong     Level = 2
+	LevelWorking Level = 0
+	LevelShort   Level = 1
+	LevelLong    Level = 2
 )
 
 // MemoryItem 记忆条目
@@ -422,8 +422,6 @@ func (a *MemoryActor) RetrieveArchive(ctx context.Context, query string, limit i
 	}
 	return allMsgs, bestScore, nil
 }
-
-
 
 // ── Core Facts (persistent knowledge) ────────────────────────
 

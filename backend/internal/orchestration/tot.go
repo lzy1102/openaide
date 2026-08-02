@@ -25,9 +25,9 @@ type BranchResult struct {
 
 // ExploreResult holds the full tree-of-thoughts exploration result.
 type ExploreResult struct {
-	Branches []BranchResult `json:"branches"`
-	Best     int            `json:"best"` // index of best branch
-	Rationale string        `json:"rationale"`
+	Branches  []BranchResult `json:"branches"`
+	Best      int            `json:"best"` // index of best branch
+	Rationale string         `json:"rationale"`
 }
 
 // ExploreAlternatives explores multiple approaches to a task in parallel,
@@ -46,10 +46,10 @@ func (o *Orchestrator) ExploreAlternatives(ctx context.Context, userID, projectI
 	// Phase 1: Fork — run each approach in parallel as an analyst sub-agent
 	branches := make([]BranchResult, len(approaches))
 	type idxResult struct {
-		idx  int
-		res  string
+		idx   int
+		res   string
 		tools int
-		err  error
+		err   error
 	}
 	ch := make(chan idxResult, len(approaches))
 
@@ -97,7 +97,9 @@ func (o *Orchestrator) ExploreAlternatives(ctx context.Context, userID, projectI
 	// Phase 3: Learn — record which approaches worked
 	for i, b := range branches {
 		tag := "tot-failed"
-		if i == best { tag = "tot-best" }
+		if i == best {
+			tag = "tot-best"
+		}
 		if o.mind != nil {
 			o.mind.RecordExecution(task, b.Approach.Name, i == best, nil, nil, nil, 0, "")
 		}
@@ -112,7 +114,9 @@ func (o *Orchestrator) ExploreAlternatives(ctx context.Context, userID, projectI
 }
 
 func (o *Orchestrator) evaluateBranches(ctx context.Context, task string, branches []BranchResult) (best int, rationale string) {
-	if len(branches) == 0 { return 0, "" }
+	if len(branches) == 0 {
+		return 0, ""
+	}
 
 	var sb strings.Builder
 	sb.WriteString("Evaluate the following exploration results for the task and select the best approach.\n\n")
@@ -135,7 +139,9 @@ func (o *Orchestrator) evaluateBranches(ctx context.Context, task string, branch
 	best = 0
 	fmt.Sscanf(content, "BEST=%d", &best)
 	best-- // convert to 0-indexed
-	if best < 0 || best >= len(branches) { best = 0 }
+	if best < 0 || best >= len(branches) {
+		best = 0
+	}
 
 	if idx := strings.Index(content, "REASON="); idx >= 0 {
 		rationale = strings.TrimSpace(content[idx+7:])

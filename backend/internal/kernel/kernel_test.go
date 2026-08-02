@@ -8,10 +8,10 @@ import (
 
 // MockLLMProvider 模拟 LLM 提供商
 type MockLLMProvider struct {
-	responses       []LLMResponse
-	index           int
-	streamChunks    [][]StreamChunk
-	streamIndex     int
+	responses    []LLMResponse
+	index        int
+	streamChunks [][]StreamChunk
+	streamIndex  int
 }
 
 func (m *MockLLMProvider) Chat(ctx context.Context, messages []Message, tools []ToolDefinition, options map[string]interface{}) (*LLMResponse, error) {
@@ -51,8 +51,8 @@ func (m *MockLLMProvider) ChatStream(ctx context.Context, messages []Message, to
 	return ch, nil
 }
 
-func (m *MockLLMProvider) GetModelID() string { return "mock-model" }
-func (m *MockLLMProvider) SetModelID(model string)  {}
+func (m *MockLLMProvider) GetModelID() string      { return "mock-model" }
+func (m *MockLLMProvider) SetModelID(model string) {}
 
 // MockToolExecutor 模拟工具执行器
 type MockToolExecutor struct {

@@ -233,9 +233,9 @@ func (p *AnthropicProvider) buildAnthropicBody(messages []kernel.Message, tools 
 		case "tool":
 			role = "user"
 			content = append(content, map[string]interface{}{
-				"type":          "tool_result",
-				"tool_use_id":   msg.ToolCallID,
-				"content":       msg.Content,
+				"type":        "tool_result",
+				"tool_use_id": msg.ToolCallID,
+				"content":     msg.Content,
 			})
 		case "assistant":
 			if msg.Content != "" {
@@ -307,10 +307,10 @@ func (p *AnthropicProvider) buildAnthropicBody(messages []kernel.Message, tools 
 // ============ Anthropic API 结构体 ============
 
 type anthropicResponse struct {
-	ID      string                `json:"id"`
-	Model   string                `json:"model"`
+	ID      string                  `json:"id"`
+	Model   string                  `json:"model"`
 	Content []anthropicContentBlock `json:"content"`
-	Usage   anthropicUsage        `json:"usage"`
+	Usage   anthropicUsage          `json:"usage"`
 }
 
 type anthropicContentBlock struct {
@@ -327,7 +327,7 @@ type anthropicUsage struct {
 }
 
 type anthropicStreamEvent struct {
-	Type  string              `json:"type"`
+	Type  string                `json:"type"`
 	Delta *anthropicStreamDelta `json:"delta,omitempty"`
 }
 
@@ -335,7 +335,6 @@ type anthropicStreamDelta struct {
 	Type string `json:"type"`
 	Text string `json:"text"`
 }
-
 
 // splitMultimodalAnthropic 将文本+base64图片拆分为Anthropic vision格式
 func splitMultimodalAnthropic(raw string) []map[string]interface{} {

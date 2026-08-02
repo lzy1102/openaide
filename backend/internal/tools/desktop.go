@@ -184,7 +184,9 @@ func clickCmd(x, y int, button string, double bool) *exec.Cmd {
 		args := []string{"mousemove", strconv.Itoa(x), strconv.Itoa(y), "click"}
 		btnMap := map[string]string{"left": "1", "middle": "2", "right": "3"}
 		btn := btnMap[button]
-		if btn == "" { btn = "1" }
+		if btn == "" {
+			btn = "1"
+		}
 		if double {
 			args = append(args, "--repeat", "2", btn)
 		} else {
@@ -194,7 +196,9 @@ func clickCmd(x, y int, button string, double bool) *exec.Cmd {
 	case "darwin":
 		// AppleScript click at coordinates
 		clicks := "click"
-		if double { clicks = "double click" }
+		if double {
+			clicks = "double click"
+		}
 		script := fmt.Sprintf(
 			`tell application "System Events" to %s at {%d, %d}`,
 			clicks, x, y)
@@ -262,14 +266,24 @@ func scrollCmd(x, y int) *exec.Cmd {
 	case "linux":
 		// xdotool: button 4=up, 5=down, 6=left, 7=right
 		args := []string{}
-		for i := 0; i > y; i-- { args = append(args, "click", "4") }
-		for i := 0; i < y; i++ { args = append(args, "click", "5") }
-		for i := 0; i > x; i-- { args = append(args, "click", "6") }
-		for i := 0; i < x; i++ { args = append(args, "click", "7") }
+		for i := 0; i > y; i-- {
+			args = append(args, "click", "4")
+		}
+		for i := 0; i < y; i++ {
+			args = append(args, "click", "5")
+		}
+		for i := 0; i > x; i-- {
+			args = append(args, "click", "6")
+		}
+		for i := 0; i < x; i++ {
+			args = append(args, "click", "7")
+		}
 		return exec.Command("xdotool", args...)
 	case "darwin":
 		count := abs(y)
-		if count == 0 { count = 1 }
+		if count == 0 {
+			count = 1
+		}
 		script := fmt.Sprintf(`repeat %d times\ntell application "System Events" to key code %s\nend repeat`,
 			count, map[bool]string{true: "126", false: "125"}[y < 0])
 		return exec.Command("osascript", "-e", script)
@@ -328,14 +342,18 @@ end tell`, x1, y1, x2, y2)
 }
 
 func abs(n int) int {
-	if n < 0 { return -n }
+	if n < 0 {
+		return -n
+	}
 	return n
 }
 
 // ── Tool handlers ─────────────────────────────────────
 
 func handleDesktopScreenshot(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
-	var args struct{ Region string `json:"region,omitempty"` }
+	var args struct {
+		Region string `json:"region,omitempty"`
+	}
 	json.Unmarshal([]byte(arguments), &args)
 
 	tmpFile := "/tmp/openaide_screenshot.png"
@@ -361,7 +379,9 @@ func handleDesktopClick(ctx context.Context, arguments string) (*kernel.ToolResu
 		Double bool   `json:"double,omitempty"`
 	}
 	json.Unmarshal([]byte(arguments), &args)
-	if args.Button == "" { args.Button = "left" }
+	if args.Button == "" {
+		args.Button = "left"
+	}
 
 	cmd := clickCmd(args.X, args.Y, args.Button, args.Double)
 	if cmd == nil {
@@ -372,7 +392,9 @@ func handleDesktopClick(ctx context.Context, arguments string) (*kernel.ToolResu
 }
 
 func handleDesktopType(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
-	var args struct{ Text string `json:"text"` }
+	var args struct {
+		Text string `json:"text"`
+	}
 	json.Unmarshal([]byte(arguments), &args)
 	cmd := typeCmd(args.Text)
 	if cmd == nil {
@@ -383,7 +405,9 @@ func handleDesktopType(ctx context.Context, arguments string) (*kernel.ToolResul
 }
 
 func handleDesktopKey(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
-	var args struct{ Keys string `json:"keys"` }
+	var args struct {
+		Keys string `json:"keys"`
+	}
 	json.Unmarshal([]byte(arguments), &args)
 	cmd := keyCmd(args.Keys)
 	if cmd == nil {
@@ -394,7 +418,7 @@ func handleDesktopKey(ctx context.Context, arguments string) (*kernel.ToolResult
 }
 
 func handleDesktopScroll(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
-	var args struct{ X, Y int  }
+	var args struct{ X, Y int }
 	json.Unmarshal([]byte(arguments), &args)
 	cmd := scrollCmd(args.X, args.Y)
 	if cmd == nil {
@@ -405,7 +429,7 @@ func handleDesktopScroll(ctx context.Context, arguments string) (*kernel.ToolRes
 }
 
 func handleDesktopMove(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
-	var args struct{ X, Y int  }
+	var args struct{ X, Y int }
 	json.Unmarshal([]byte(arguments), &args)
 	cmd := moveCmd(args.X, args.Y)
 	if cmd == nil {
@@ -416,7 +440,7 @@ func handleDesktopMove(ctx context.Context, arguments string) (*kernel.ToolResul
 }
 
 func handleDesktopDrag(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
-	var args struct{ X1, Y1, X2, Y2 int  }
+	var args struct{ X1, Y1, X2, Y2 int }
 	json.Unmarshal([]byte(arguments), &args)
 	cmd := dragCmd(args.X1, args.Y1, args.X2, args.Y2)
 	if cmd == nil {

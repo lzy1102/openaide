@@ -9,13 +9,13 @@ func TestRunSaga_AllSuccess(t *testing.T) {
 	order := []string{}
 	err := RunSaga([]SagaStep{
 		{
-			Name: "step1",
-			Execute: func() error { order = append(order, "1"); return nil },
+			Name:       "step1",
+			Execute:    func() error { order = append(order, "1"); return nil },
 			Compensate: func() error { order = append(order, "undo1"); return nil },
 		},
 		{
-			Name: "step2",
-			Execute: func() error { order = append(order, "2"); return nil },
+			Name:       "step2",
+			Execute:    func() error { order = append(order, "2"); return nil },
 			Compensate: func() error { order = append(order, "undo2"); return nil },
 		},
 	})
@@ -31,18 +31,18 @@ func TestRunSaga_Rollback(t *testing.T) {
 	order := []string{}
 	err := RunSaga([]SagaStep{
 		{
-			Name: "step1",
-			Execute: func() error { order = append(order, "1"); return nil },
+			Name:       "step1",
+			Execute:    func() error { order = append(order, "1"); return nil },
 			Compensate: func() error { order = append(order, "undo1"); return nil },
 		},
 		{
-			Name: "step2",
-			Execute: func() error { return errors.New("fail") },
+			Name:       "step2",
+			Execute:    func() error { return errors.New("fail") },
 			Compensate: func() error { order = append(order, "undo2"); return nil },
 		},
 		{
-			Name: "step3",
-			Execute: func() error { order = append(order, "3"); return nil },
+			Name:       "step3",
+			Execute:    func() error { order = append(order, "3"); return nil },
 			Compensate: func() error { order = append(order, "undo3"); return nil },
 		},
 	})
@@ -59,13 +59,13 @@ func TestRunSaga_CompensationFailure(t *testing.T) {
 	// Compensation failure should not panic
 	err := RunSaga([]SagaStep{
 		{
-			Name: "step1",
-			Execute: func() error { return nil },
+			Name:       "step1",
+			Execute:    func() error { return nil },
 			Compensate: func() error { return errors.New("compensation failed") },
 		},
 		{
-			Name: "step2",
-			Execute: func() error { return errors.New("main failure") },
+			Name:       "step2",
+			Execute:    func() error { return errors.New("main failure") },
 			Compensate: nil,
 		},
 	})

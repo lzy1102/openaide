@@ -227,7 +227,6 @@ func groupByDependency(subtasks []SubTask) [][]SubTask {
 	return groups
 }
 
-
 // firstTeamRole returns the first available team role as fallback.
 func (o *Orchestrator) firstTeamRole() *TeamRole {
 	if o.team != nil {

@@ -6,9 +6,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/fsnotify/fsnotify"
 	"openaide/backend/internal/config"
 	"openaide/backend/internal/kernel"
-	"github.com/fsnotify/fsnotify"
 )
 
 // ConfigReloader watches config file and hot-reloads mutable settings
@@ -67,13 +67,19 @@ func (r *ConfigReloader) loop() {
 	for r.running.Load() {
 		select {
 		case event, ok := <-r.watcher.Events:
-			if !ok { return }
+			if !ok {
+				return
+			}
 			if event.Op&(fsnotify.Write|fsnotify.Create) != 0 {
-				if timer != nil { timer.Stop() }
+				if timer != nil {
+					timer.Stop()
+				}
 				timer = time.AfterFunc(r.debounce, r.doReload)
 			}
 		case err, ok := <-r.watcher.Errors:
-			if !ok { return }
+			if !ok {
+				return
+			}
 			slog.Warn("Config watcher error", "error", err)
 		}
 	}

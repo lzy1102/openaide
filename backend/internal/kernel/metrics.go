@@ -19,20 +19,20 @@ type TaskMetrics struct {
 	Duration  float64   `json:"duration_ms"` // 毫秒
 
 	// 任务分类
-	TaskType string `json:"task_type"` // coding/review/think/debugging/general
+	TaskType   string `json:"task_type"`  // coding/review/think/debugging/general
 	Complexity string `json:"complexity"` // low/medium/high
 
 	// LLM 调用
-	Rounds       int    `json:"rounds"`        // ReAct 轮次
-	PromptTokens int    `json:"prompt_tokens"` // 总 prompt tokens
-	CompletionTokens int `json:"completion_tokens"` // 总 completion tokens
-	TotalTokens  int    `json:"total_tokens"`
-	Model        string `json:"model"` // 使用的模型
+	Rounds           int    `json:"rounds"`            // ReAct 轮次
+	PromptTokens     int    `json:"prompt_tokens"`     // 总 prompt tokens
+	CompletionTokens int    `json:"completion_tokens"` // 总 completion tokens
+	TotalTokens      int    `json:"total_tokens"`
+	Model            string `json:"model"` // 使用的模型
 
 	// 工具
-	ToolCalls     int `json:"tool_calls"`      // 工具调用次数
-	ToolErrors    int `json:"tool_errors"`     // 工具错误次数
-	UniqueTools   int `json:"unique_tools"`    // 使用的不同工具数
+	ToolCalls   int `json:"tool_calls"`   // 工具调用次数
+	ToolErrors  int `json:"tool_errors"`  // 工具错误次数
+	UniqueTools int `json:"unique_tools"` // 使用的不同工具数
 
 	// 结果
 	Success bool   `json:"success"`
@@ -44,12 +44,12 @@ type TaskMetrics struct {
 
 // MetricsStore 指标存储 — append-only JSONL + 内存环形缓冲
 type MetricsStore struct {
-	mu       sync.RWMutex
-	file     *os.File
-	encoder  *json.Encoder
-	ring     []TaskMetrics // 最近 N 条
-	ringCap  int
-	total    int64         // 历史总任务数
+	mu      sync.RWMutex
+	file    *os.File
+	encoder *json.Encoder
+	ring    []TaskMetrics // 最近 N 条
+	ringCap int
+	total   int64 // 历史总任务数
 }
 
 // NewMetricsStore 创建指标存储
@@ -138,7 +138,7 @@ func (ms *MetricsStore) Summary() map[string]interface{} {
 	defer ms.mu.RUnlock()
 
 	summary := map[string]interface{}{
-		"total_tasks": ms.total,
+		"total_tasks":  ms.total,
 		"recent_count": len(ms.ring),
 	}
 

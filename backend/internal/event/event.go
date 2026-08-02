@@ -76,10 +76,14 @@ func (b *Bus) Publish(event kernel.Event) {
 	}
 	// Dispatch
 	if handlers, ok := b.handlers.Load(event.Type); ok {
-		for _, h := range handlers { go h.HandleEvent(event) }
+		for _, h := range handlers {
+			go h.HandleEvent(event)
+		}
 	}
 	if wildcard, ok := b.handlers.Load("*"); ok {
-		for _, h := range wildcard { go h.HandleEvent(event) }
+		for _, h := range wildcard {
+			go h.HandleEvent(event)
+		}
 	}
 }
 
@@ -92,7 +96,9 @@ func (b *Bus) Subscribe(eventType string, handler kernel.EventHandler) {
 // Unsubscribe 取消订阅
 func (b *Bus) Unsubscribe(eventType string, handler kernel.EventHandler) {
 	handlers, ok := b.handlers.Load(eventType)
-	if !ok { return }
+	if !ok {
+		return
+	}
 	for i, h := range handlers {
 		if h == handler {
 			newHandlers := make([]kernel.EventHandler, len(handlers)-1)
@@ -127,8 +133,10 @@ func (b *Bus) Replay(ctx context.Context, from time.Time, to time.Time, handler 
 	for _, event := range b.events {
 		if event.Timestamp.After(from) && event.Timestamp.Before(to) {
 			select {
-			case <-ctx.Done(): return ctx.Err()
-			default: handler.HandleEvent(event)
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+				handler.HandleEvent(event)
 			}
 		}
 	}
@@ -147,7 +155,9 @@ func (b *Bus) persistenceWorker() {
 func (b *Bus) writeEventFile(event kernel.Event) {
 	path := filepath.Join(b.dataDir, fmt.Sprintf("event_%d.json", time.Now().UnixNano()))
 	data, err := json.Marshal(event)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 	os.WriteFile(path, data, 0644)
 
 	// Rotate: keep only the last 1000 event files
@@ -184,7 +194,7 @@ func (b *Bus) loadEvents() error {
 			continue
 		}
 
-			b.events = append(b.events, event)
+		b.events = append(b.events, event)
 	}
 
 	return nil
@@ -192,8 +202,8 @@ func (b *Bus) loadEvents() error {
 
 // FilteredHandler 过滤事件处理器
 type FilteredHandler struct {
-	filter   func(kernel.Event) bool
-	handler  kernel.EventHandler
+	filter  func(kernel.Event) bool
+	handler kernel.EventHandler
 }
 
 // NewFilteredHandler 创建过滤处理器

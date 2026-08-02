@@ -50,7 +50,7 @@ func TestPromptCache_Stats(t *testing.T) {
 	defer c.Shutdown()
 
 	c.Set([]kernel.Message{{Role: "user", Content: "q"}}, nil, "m", &kernel.LLMResponse{Content: "a"})
-	c.Get([]kernel.Message{{Role: "user", Content: "q"}}, nil, "m") // hit
+	c.Get([]kernel.Message{{Role: "user", Content: "q"}}, nil, "m")     // hit
 	c.Get([]kernel.Message{{Role: "user", Content: "other"}}, nil, "m") // miss
 
 	stats := c.Stats()

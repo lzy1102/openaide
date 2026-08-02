@@ -68,11 +68,11 @@ type rubyParser struct{}
 func (rubyParser) Extensions() []string { return []string{".rb"} }
 
 var (
-	rubyClassRe  = regexp.MustCompile(`(?m)^\s*(?:module\s+)?class\s+(?:[\w:]+(?:\s*<\s*[\w:]+)?)`)
-	rubyClassNm  = regexp.MustCompile(`(?m)^\s*(?:module\s+)?class\s+([\w:]+)`)
-	rubyModRe    = regexp.MustCompile(`(?m)^\s*module\s+([\w:]+)`)
-	rubyDefRe    = regexp.MustCompile(`(?m)^\s*(?:def)\s+(\w+)[?!]?(?:\s*[\w=]*)?`)
-	rubyAttrRe   = regexp.MustCompile(`(?m)^\s*attr_(?:accessor|reader|writer)\s*[:\s]+(\w+)`)
+	rubyClassRe   = regexp.MustCompile(`(?m)^\s*(?:module\s+)?class\s+(?:[\w:]+(?:\s*<\s*[\w:]+)?)`)
+	rubyClassNm   = regexp.MustCompile(`(?m)^\s*(?:module\s+)?class\s+([\w:]+)`)
+	rubyModRe     = regexp.MustCompile(`(?m)^\s*module\s+([\w:]+)`)
+	rubyDefRe     = regexp.MustCompile(`(?m)^\s*(?:def)\s+(\w+)[?!]?(?:\s*[\w=]*)?`)
+	rubyAttrRe    = regexp.MustCompile(`(?m)^\s*attr_(?:accessor|reader|writer)\s*[:\s]+(\w+)`)
 	rubyRequireRe = regexp.MustCompile(`(?m)^\s*require(?:_relative)?\s+['"]([^'"]+)['"]`)
 )
 

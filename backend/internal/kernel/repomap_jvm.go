@@ -21,12 +21,12 @@ var (
 	javaImpRe   = regexp.MustCompile(`(?m)^\s*import\s+(?:static\s+)?([\w.*]+);`)
 	// Kotlin 特有
 	// fun 不要求行首:Kotlin 常见 `object X { fun y() {} }` 内联写法
-	kotlinFunRe   = regexp.MustCompile(`\bfun\s+(\w+)\s*\(`)
-	kotlinObjRe   = regexp.MustCompile(`(?m)^\s*(?:private|public|protected|internal|abstract|open|\s)*object\s+(\w+)`)
+	kotlinFunRe = regexp.MustCompile(`\bfun\s+(\w+)\s*\(`)
+	kotlinObjRe = regexp.MustCompile(`(?m)^\s*(?:private|public|protected|internal|abstract|open|\s)*object\s+(\w+)`)
 	// Scala 特有
-	scalaObjRe    = regexp.MustCompile(`(?m)^\s*(?:private|protected|abstract|final|override|implicit|\s)*(?:case\s+)?object\s+(\w+)`)
-	scalaTraitRe  = regexp.MustCompile(`(?m)^\s*(?:private|protected|abstract|\s)*trait\s+(\w+)`)
-	scalaDefRe    = regexp.MustCompile(`(?m)^\s*(?:private|protected|abstract|final|override|implicit|\s)*def\s+(\w+)`)
+	scalaObjRe   = regexp.MustCompile(`(?m)^\s*(?:private|protected|abstract|final|override|implicit|\s)*(?:case\s+)?object\s+(\w+)`)
+	scalaTraitRe = regexp.MustCompile(`(?m)^\s*(?:private|protected|abstract|\s)*trait\s+(\w+)`)
+	scalaDefRe   = regexp.MustCompile(`(?m)^\s*(?:private|protected|abstract|final|override|implicit|\s)*def\s+(\w+)`)
 )
 
 func (javaParser) Parse(path string, content []byte) []astSymbol {

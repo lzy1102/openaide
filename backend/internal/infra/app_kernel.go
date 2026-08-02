@@ -82,8 +82,12 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 	agentKernel.SetApprover(approver)
 	minR := cfg.Kernel.MinRounds
 	maxR := cfg.Kernel.MaxRoundsCap
-	if minR <= 0 { minR = 5 }
-	if maxR <= 0 { maxR = 30 }
+	if minR <= 0 {
+		minR = 5
+	}
+	if maxR <= 0 {
+		maxR = 30
+	}
 	ar := kernel.NewAdaptiveRounds(minR, maxR)
 	ar.SetLLM(gateway)
 	agentKernel.SetAdaptiveRounds(ar)

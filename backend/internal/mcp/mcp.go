@@ -47,10 +47,16 @@ func newStdioTransport(command string, args []string, env []string) (*stdioTrans
 		cmd.Env = env
 	}
 	stdin, err := cmd.StdinPipe()
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	stdout, err := cmd.StdoutPipe()
-	if err != nil { return nil, err }
-	if err := cmd.Start(); err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
 
 	return &stdioTransport{
 		cmd: cmd, stdin: stdin, stdout: bufio.NewScanner(stdout), done: make(chan struct{}),
@@ -105,7 +111,9 @@ func (t *stdioTransport) Notify(method string, params interface{}) error {
 }
 
 func (t *stdioTransport) Close() error {
-	if t.stdin != nil { t.stdin.Close() }
+	if t.stdin != nil {
+		t.stdin.Close()
+	}
 	if t.cmd != nil && t.cmd.Process != nil {
 		t.cmd.Process.Kill()
 		t.cmd.Wait()
@@ -203,7 +211,9 @@ func (t *httpTransport) Close() error { return nil }
 // ConnectStdio connects to a local MCP server via stdio.
 func ConnectStdio(command string, args []string, env []string) (*Client, error) {
 	t, err := newStdioTransport(command, args, env)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	return newClient(t)
 }
 
@@ -212,7 +222,9 @@ func ConnectStdio(command string, args []string, env []string) (*Client, error) 
 // this uses HTTP POST — the standard MCP Streamable HTTP transport.
 func ConnectSSE(serverURL string) (*Client, error) {
 	t, err := newHTTPTransport(serverURL)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	return newClient(t)
 }
 
@@ -258,7 +270,9 @@ func (c *Client) notify(method string, params interface{}) error {
 // discoverTools fetches tool definitions from the MCP server.
 func (c *Client) discoverTools() error {
 	result, err := c.call("tools/list", nil)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 
 	var listResp struct {
 		Tools []struct {
@@ -293,7 +307,9 @@ func (c *Client) CallTool(name string, args map[string]interface{}) (*kernel.Too
 		"name":      strings.TrimPrefix(name, "mcp_"),
 		"arguments": args,
 	})
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 
 	var callResp struct {
 		Content []struct {
@@ -417,8 +433,12 @@ func (m *Manager) ConnectServer(id, command string, args []string, env []string)
 	var err error
 	if command == "sse" || strings.HasPrefix(command, "http://") || strings.HasPrefix(command, "https://") {
 		url := command
-		if len(args) > 0 { url = args[0] }
-		if !strings.HasPrefix(url, "http") { url = command }
+		if len(args) > 0 {
+			url = args[0]
+		}
+		if !strings.HasPrefix(url, "http") {
+			url = command
+		}
 		c, err = ConnectSSE(url)
 	} else {
 		c, err = ConnectStdio(command, args, env)
@@ -435,7 +455,9 @@ func (m *Manager) GetServerTools(id string) []kernel.ToolDefinition {
 	m.mu.RLock()
 	c, ok := m.servers[id]
 	m.mu.RUnlock()
-	if !ok { return nil }
+	if !ok {
+		return nil
+	}
 	return c.GetTools()
 }
 
@@ -452,7 +474,9 @@ func (m *Manager) CallTool(serverID, toolName string, args map[string]interface{
 
 // EnvMap converts a map to key=value env slice for exec.Cmd.
 func EnvMap(m map[string]string) []string {
-	if len(m) == 0 { return nil }
+	if len(m) == 0 {
+		return nil
+	}
 	env := make([]string, 0, len(m))
 	for k, v := range m {
 		env = append(env, k+"="+v)

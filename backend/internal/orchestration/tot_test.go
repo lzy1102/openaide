@@ -17,7 +17,7 @@ func (m *mockToTLLM) Chat(ctx context.Context, msgs []kernel.Message, tools []ke
 func (m *mockToTLLM) ChatStream(ctx context.Context, msgs []kernel.Message, tools []kernel.ToolDefinition, opts map[string]interface{}) (<-chan kernel.StreamChunk, error) {
 	return nil, nil
 }
-func (m *mockToTLLM) GetModelID() string { return "mock" }
+func (m *mockToTLLM) GetModelID() string  { return "mock" }
 func (m *mockToTLLM) SetModelID(s string) {}
 
 func TestExploreAlternatives_NeedsAtLeastTwo(t *testing.T) {

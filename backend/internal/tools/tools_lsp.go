@@ -27,7 +27,7 @@ func lspToolDefs() []kernel.ToolDefinition {
 				Name:        "lsp_definition",
 				Description: "Jump to the definition of a symbol at a file location. Returns file path and line where the symbol is defined.",
 				Parameters: map[string]interface{}{
-					"type":       "object",
+					"type": "object",
 					"properties": map[string]interface{}{
 						"file":      map[string]interface{}{"type": "string", "description": "File path"},
 						"line":      map[string]interface{}{"type": "integer", "description": "Line number (0-based)"},
@@ -43,7 +43,7 @@ func lspToolDefs() []kernel.ToolDefinition {
 				Name:        "lsp_references",
 				Description: "Find all references to a symbol across the codebase.",
 				Parameters: map[string]interface{}{
-					"type":       "object",
+					"type": "object",
 					"properties": map[string]interface{}{
 						"file":      map[string]interface{}{"type": "string", "description": "File path"},
 						"line":      map[string]interface{}{"type": "integer", "description": "Line number (0-based)"},
@@ -59,7 +59,7 @@ func lspToolDefs() []kernel.ToolDefinition {
 				Name:        "lsp_hover",
 				Description: "Get type information and documentation for the symbol at a position.",
 				Parameters: map[string]interface{}{
-					"type":       "object",
+					"type": "object",
 					"properties": map[string]interface{}{
 						"file":      map[string]interface{}{"type": "string", "description": "File path"},
 						"line":      map[string]interface{}{"type": "integer", "description": "Line number (0-based)"},
@@ -75,7 +75,7 @@ func lspToolDefs() []kernel.ToolDefinition {
 				Name:        "lsp_diagnostics",
 				Description: "Get compiler/linter errors for a file. Returns ERROR/WARN messages with line numbers.",
 				Parameters: map[string]interface{}{
-					"type":       "object",
+					"type": "object",
 					"properties": map[string]interface{}{
 						"file": map[string]interface{}{"type": "string", "description": "File path"},
 					},

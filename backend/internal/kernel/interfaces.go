@@ -132,10 +132,10 @@ type PermissionChecker interface {
 type PermissionLevel int
 
 const (
-	LevelStrict PermissionLevel = iota // 严格模式（默认）
-	LevelStandard                      // 标准模式
-	LevelRelaxed                       // 宽松模式
-	LevelBypass                        // 绕过模式（需显式确认）
+	LevelStrict   PermissionLevel = iota // 严格模式（默认）
+	LevelStandard                        // 标准模式
+	LevelRelaxed                         // 宽松模式
+	LevelBypass                          // 绕过模式（需显式确认）
 )
 
 func (l PermissionLevel) String() string {
@@ -161,22 +161,20 @@ type Reflection interface {
 
 // ExecutionRecord 执行记录
 type ExecutionRecord struct {
-	Query      string     `json:"query"`
-	Response   string     `json:"response"`
-	ToolCalls  []ToolCall `json:"tool_calls"`
-	Success    bool       `json:"success"`
-	Error      string     `json:"error,omitempty"`
-	Duration   int64      `json:"duration"`
-	Messages   []Message  `json:"messages,omitempty"` // full ReAct history for process supervision
-	TaskType   string     `json:"task_type,omitempty"` // coding/review/teaching/research/general
+	Query     string     `json:"query"`
+	Response  string     `json:"response"`
+	ToolCalls []ToolCall `json:"tool_calls"`
+	Success   bool       `json:"success"`
+	Error     string     `json:"error,omitempty"`
+	Duration  int64      `json:"duration"`
+	Messages  []Message  `json:"messages,omitempty"`  // full ReAct history for process supervision
+	TaskType  string     `json:"task_type,omitempty"` // coding/review/teaching/research/general
 }
 
 // ReflectionResult 反思结果
 type ReflectionResult struct {
-	Quality    int      `json:"quality"`     // 1-10
-	Issues     []string `json:"issues"`      // 发现的问题
+	Quality     int      `json:"quality"`     // 1-10
+	Issues      []string `json:"issues"`      // 发现的问题
 	Suggestions []string `json:"suggestions"` // 改进建议
-	Learned    string   `json:"learned"`     // 学到的经验
+	Learned     string   `json:"learned"`     // 学到的经验
 }
-
-

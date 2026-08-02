@@ -23,9 +23,9 @@ func webToolDefs() []kernel.ToolDefinition {
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
-						"query": map[string]interface{}{"type": "string", "description": "搜索关键词"},
-						"limit": map[string]interface{}{"type": "integer", "description": "结果数量（默认5）"},
-					"engine": map[string]interface{}{"type": "string", "description": "搜索引擎: duckduckgo, searxng（默认 searxng）"},
+						"query":  map[string]interface{}{"type": "string", "description": "搜索关键词"},
+						"limit":  map[string]interface{}{"type": "integer", "description": "结果数量（默认5）"},
+						"engine": map[string]interface{}{"type": "string", "description": "搜索引擎: duckduckgo, searxng（默认 searxng）"},
 					},
 					"required": []string{"query"},
 				},
@@ -39,7 +39,7 @@ func webToolDefs() []kernel.ToolDefinition {
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
-						"url": map[string]interface{}{"type": "string", "description": "网页URL"},
+						"url":        map[string]interface{}{"type": "string", "description": "网页URL"},
 						"max_length": map[string]interface{}{"type": "integer", "description": "最大返回长度"},
 					},
 					"required": []string{"url"},
@@ -54,7 +54,7 @@ func webToolDefs() []kernel.ToolDefinition {
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
-						"query": map[string]interface{}{"type": "string", "description": "搜索查询"},
+						"query":       map[string]interface{}{"type": "string", "description": "搜索查询"},
 						"fetch_pages": map[string]interface{}{"type": "boolean", "description": "是否抓取页面内容"},
 					},
 					"required": []string{"query"},
@@ -164,8 +164,10 @@ func handleAISearch(ctx context.Context, arguments string) (*kernel.ToolResult, 
 
 	// 1. 搜索
 	engine := "duckduckgo"
-		if searXNGURL != "" { engine = "searxng" }
-		results, err := searchWeb(ctx, args.Query, 5, engine)
+	if searXNGURL != "" {
+		engine = "searxng"
+	}
+	results, err := searchWeb(ctx, args.Query, 5, engine)
 	if err != nil {
 		return &kernel.ToolResult{Error: err.Error()}, nil
 	}

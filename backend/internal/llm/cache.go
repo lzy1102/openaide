@@ -19,11 +19,11 @@ const (
 // PromptCache is an in-memory LRU-like prompt cache.
 // No file I/O — pure memory. SafeMap for concurrent access.
 type PromptCache struct {
-	entries   *actor.SafeMap[string, *cacheEntry]
-	maxSize   int
-	stopCh    chan struct{}
-	hits      atomic.Int64
-	misses    atomic.Int64
+	entries *actor.SafeMap[string, *cacheEntry]
+	maxSize int
+	stopCh  chan struct{}
+	hits    atomic.Int64
+	misses  atomic.Int64
 }
 
 type cacheEntry struct {

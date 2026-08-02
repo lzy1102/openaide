@@ -26,7 +26,7 @@ func browserToolDefs() []kernel.ToolDefinition {
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
-						"url": map[string]interface{}{"type": "string", "description": "目标URL"},
+						"url":     map[string]interface{}{"type": "string", "description": "目标URL"},
 						"wait_ms": map[string]interface{}{"type": "integer", "description": "等待时间毫秒（默认3000）"},
 					},
 					"required": []string{"url"},
@@ -82,7 +82,7 @@ func browserToolDefs() []kernel.ToolDefinition {
 					"type": "object",
 					"properties": map[string]interface{}{
 						"selector": map[string]interface{}{"type": "string", "description": "输入框CSS选择器"},
-						"value": map[string]interface{}{"type": "string", "description": "要填写的文本"},
+						"value":    map[string]interface{}{"type": "string", "description": "要填写的文本"},
 					},
 					"required": []string{"selector", "value"},
 				},

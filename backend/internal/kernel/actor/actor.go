@@ -214,4 +214,3 @@ func (s *ActorStore[A]) Stop() {
 func (s *ActorStore[A]) Actor() *Actor {
 	return s.actor
 }
-

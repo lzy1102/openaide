@@ -33,8 +33,8 @@ type FeishuBot struct {
 	name        string
 	appID       string
 	appSecret   string
-	verifyToken string      // 飞书事件验证令牌
-	aesKey      string      // 飞书事件推送加密密钥（空=不加密）
+	verifyToken string // 飞书事件验证令牌
+	aesKey      string // 飞书事件推送加密密钥（空=不加密）
 	handler     MessageHandler
 	handlerMu   sync.RWMutex
 	started     bool
@@ -225,10 +225,10 @@ func (f *FeishuBot) serveHTTP(rw http.ResponseWriter, r *http.Request) {
 
 	// 解析飞书事件
 	var feishuEvent struct {
-		Encrypt   string `json:"encrypt"`
-		Challenge string `json:"challenge"`
-		Token     string `json:"token"`
-		Type      string `json:"type"`
+		Encrypt   string          `json:"encrypt"`
+		Challenge string          `json:"challenge"`
+		Token     string          `json:"token"`
+		Type      string          `json:"type"`
 		Event     json.RawMessage `json:"event,omitempty"`
 	}
 	if err := json.Unmarshal(body, &feishuEvent); err != nil {

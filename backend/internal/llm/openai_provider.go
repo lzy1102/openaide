@@ -34,10 +34,10 @@ func NewOpenAIProvider(config *ProviderConfig) *OpenAIProvider {
 		httpClient: &http.Client{
 			Timeout: time.Duration(timeout) * time.Second,
 			Transport: &http.Transport{
-				MaxIdleConns:        10,
-				IdleConnTimeout:     90 * time.Second,
-				MaxConnsPerHost:     6,
-				DisableCompression:  false,
+				MaxIdleConns:       10,
+				IdleConnTimeout:    90 * time.Second,
+				MaxConnsPerHost:    6,
+				DisableCompression: false,
 			},
 		},
 		modelID: config.DefaultModel,
@@ -167,9 +167,9 @@ func (p *OpenAIProvider) ChatStream(ctx context.Context, messages []kernel.Messa
 			data := strings.TrimPrefix(line, "data: ")
 			if data == "[DONE]" {
 				select {
-			case resultChan <- kernel.StreamChunk{Done: true}:
-			case <-ctx.Done():
-			}
+				case resultChan <- kernel.StreamChunk{Done: true}:
+				case <-ctx.Done():
+				}
 				return
 			}
 
@@ -543,12 +543,12 @@ type openAIUsage struct {
 }
 
 type openAIStreamChunk struct {
-	ID      string              `json:"id"`
-	Object  string              `json:"object"`
-	Created int64               `json:"created"`
-	Model   string              `json:"model"`
+	ID      string               `json:"id"`
+	Object  string               `json:"object"`
+	Created int64                `json:"created"`
+	Model   string               `json:"model"`
 	Choices []openAIStreamChoice `json:"choices"`
-	Usage   *openAIUsage        `json:"usage,omitempty"`
+	Usage   *openAIUsage         `json:"usage,omitempty"`
 }
 
 type openAIStreamChoice struct {

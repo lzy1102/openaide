@@ -16,16 +16,16 @@ func (cParser) Extensions() []string {
 }
 
 var (
-	cFuncRe     = regexp.MustCompile(`(?m)^\s*(?:static\s+|inline\s+|extern\s+|virtual\s+|explicit\s+)*[\w:*&<>\[\],\s]+\s+(\w+)\s*\([^);]*\)\s*(?:const\s*)?(?:noexcept\s*)?(?:override\s*)?(?:final\s*)?\s*\{`)
+	cFuncRe = regexp.MustCompile(`(?m)^\s*(?:static\s+|inline\s+|extern\s+|virtual\s+|explicit\s+)*[\w:*&<>\[\],\s]+\s+(\w+)\s*\([^);]*\)\s*(?:const\s*)?(?:noexcept\s*)?(?:override\s*)?(?:final\s*)?\s*\{`)
 	// class/struct 不要求行首:C++ 常见 `namespace ns { class Foo { ... }; }` 内联写法
-	cClassRe    = regexp.MustCompile(`(?:class|struct)\s+(\w+)\s*(?::\s*[^{]+)?\s*\{`)
-	cNsRe       = regexp.MustCompile(`(?m)^\s*namespace\s+(\w+)\s*\{`)
-	cEnumRe     = regexp.MustCompile(`(?m)^\s*enum\s+(?:class\s+)?(\w+)`)
+	cClassRe = regexp.MustCompile(`(?:class|struct)\s+(\w+)\s*(?::\s*[^{]+)?\s*\{`)
+	cNsRe    = regexp.MustCompile(`(?m)^\s*namespace\s+(\w+)\s*\{`)
+	cEnumRe  = regexp.MustCompile(`(?m)^\s*enum\s+(?:class\s+)?(\w+)`)
 	// typedef:用非贪婪 .+? 匹配类型部分,避免贪婪吃掉别名标识符
-	cTypedefRe  = regexp.MustCompile(`(?m)^\s*typedef\s+.+?\s+(\w+)\s*;`)
-	cUsingRe    = regexp.MustCompile(`(?m)^\s*using\s+(\w+)\s*=`)
-	cIncludeRe  = regexp.MustCompile(`(?m)^\s*#include\s+[<"]([^>"]+)[>"]`)
-	cDefineRe   = regexp.MustCompile(`(?m)^\s*#define\s+(\w+)`)
+	cTypedefRe = regexp.MustCompile(`(?m)^\s*typedef\s+.+?\s+(\w+)\s*;`)
+	cUsingRe   = regexp.MustCompile(`(?m)^\s*using\s+(\w+)\s*=`)
+	cIncludeRe = regexp.MustCompile(`(?m)^\s*#include\s+[<"]([^>"]+)[>"]`)
+	cDefineRe  = regexp.MustCompile(`(?m)^\s*#define\s+(\w+)`)
 )
 
 func (cParser) Parse(path string, content []byte) []astSymbol {
@@ -76,11 +76,11 @@ type phpParser struct{}
 func (phpParser) Extensions() []string { return []string{".php"} }
 
 var (
-	phpClassRe  = regexp.MustCompile(`(?m)^\s*(?:abstract\s+|final\s+)*(?:class|interface|trait)\s+(\w+)`)
-	phpFuncRe   = regexp.MustCompile(`(?m)^\s*(?:public|private|protected|static|abstract|final|\s)*function\s+(\w+)\s*\(`)
-	phpNsRe     = regexp.MustCompile(`(?m)^\s*namespace\s+([\w\\]+);`)
-	phpUseRe    = regexp.MustCompile(`(?m)^\s*use\s+([\w\\]+)(?:\s+as\s+\w+)?;`)
-	phpConstRe  = regexp.MustCompile(`(?m)^\s*const\s+(\w+)\s*=`)
+	phpClassRe = regexp.MustCompile(`(?m)^\s*(?:abstract\s+|final\s+)*(?:class|interface|trait)\s+(\w+)`)
+	phpFuncRe  = regexp.MustCompile(`(?m)^\s*(?:public|private|protected|static|abstract|final|\s)*function\s+(\w+)\s*\(`)
+	phpNsRe    = regexp.MustCompile(`(?m)^\s*namespace\s+([\w\\]+);`)
+	phpUseRe   = regexp.MustCompile(`(?m)^\s*use\s+([\w\\]+)(?:\s+as\s+\w+)?;`)
+	phpConstRe = regexp.MustCompile(`(?m)^\s*const\s+(\w+)\s*=`)
 )
 
 func (phpParser) Parse(path string, content []byte) []astSymbol {
@@ -114,12 +114,12 @@ type swiftParser struct{}
 func (swiftParser) Extensions() []string { return []string{".swift"} }
 
 var (
-	swiftClassRe   = regexp.MustCompile(`(?m)^\s*(?:public|private|internal|fileprivate|open|final|abstract|\s)*(?:class|struct|enum|protocol|actor)\s+(\w+)`)
-	swiftFuncRe    = regexp.MustCompile(`(?m)^\s*(?:public|private|internal|fileprivate|open|final|static|class|override|mutating|throws|async|\s)*func\s+(\w+)\s*\(`)
-	swiftVarRe     = regexp.MustCompile(`(?m)^\s*(?:public|private|internal|fileprivate|open|final|static|let|var|\s)+(?:let|var)\s+(\w+)\s*:`)
-	swiftImportRe  = regexp.MustCompile(`(?m)^\s*import\s+([\w.]+)`)
-	swiftExtRe     = regexp.MustCompile(`(?m)^\s*extension\s+([\w.]+)`)
-	swiftTypeRe    = regexp.MustCompile(`(?m)^\s*typealias\s+(\w+)\s*=`)
+	swiftClassRe  = regexp.MustCompile(`(?m)^\s*(?:public|private|internal|fileprivate|open|final|abstract|\s)*(?:class|struct|enum|protocol|actor)\s+(\w+)`)
+	swiftFuncRe   = regexp.MustCompile(`(?m)^\s*(?:public|private|internal|fileprivate|open|final|static|class|override|mutating|throws|async|\s)*func\s+(\w+)\s*\(`)
+	swiftVarRe    = regexp.MustCompile(`(?m)^\s*(?:public|private|internal|fileprivate|open|final|static|let|var|\s)+(?:let|var)\s+(\w+)\s*:`)
+	swiftImportRe = regexp.MustCompile(`(?m)^\s*import\s+([\w.]+)`)
+	swiftExtRe    = regexp.MustCompile(`(?m)^\s*extension\s+([\w.]+)`)
+	swiftTypeRe   = regexp.MustCompile(`(?m)^\s*typealias\s+(\w+)\s*=`)
 )
 
 func (swiftParser) Parse(path string, content []byte) []astSymbol {

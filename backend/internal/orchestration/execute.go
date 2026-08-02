@@ -324,7 +324,6 @@ func min(a, b int) int {
 	return b
 }
 
-
 // firstRoleName returns the first available role name, or "coder" as last resort.
 func (o *Orchestrator) firstRoleName() string {
 	if o.team != nil {

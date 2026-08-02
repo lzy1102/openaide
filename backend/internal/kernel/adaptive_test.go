@@ -14,7 +14,7 @@ func (m *mockAdaptiveLLM) Chat(ctx context.Context, msgs []Message, tools []Tool
 func (m *mockAdaptiveLLM) ChatStream(ctx context.Context, msgs []Message, tools []ToolDefinition, opts map[string]interface{}) (<-chan StreamChunk, error) {
 	return nil, nil
 }
-func (m *mockAdaptiveLLM) GetModelID() string { return "mock" }
+func (m *mockAdaptiveLLM) GetModelID() string    { return "mock" }
 func (m *mockAdaptiveLLM) SetModelID(mdl string) {}
 
 func TestAdaptiveRounds_LLM(t *testing.T) {

@@ -12,9 +12,10 @@ import (
 // 但跨轮次或外部进程仍可能并发写同一文件。
 //
 // 用法:
-//   unlock := lockFile(absPath)
-//   defer unlock()
-//   // ... 读写文件 ...
+//
+//	unlock := lockFile(absPath)
+//	defer unlock()
+//	// ... 读写文件 ...
 //
 // 不同文件的锁互不阻塞,同文件的锁串行化。
 var fileMutexMap sync.Map // path(string) -> *sync.Mutex

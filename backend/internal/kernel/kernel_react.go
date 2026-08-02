@@ -30,9 +30,9 @@ func (k *AgentKernel) prepareReActRound(ctx context.Context, messages []Message,
 			compressed, saved, err := k.compressor.Compress(ctx, messages, k.maxTokens)
 			if err == nil {
 				messages = compressed
-					messages = append(messages, Message{
-						Role: "system", Content: "[System] Context was compressed to stay within token budget. Earlier details have been summarized. Focus on the current task and most recent messages.",
-					})
+				messages = append(messages, Message{
+					Role: "system", Content: "[System] Context was compressed to stay within token budget. Earlier details have been summarized. Focus on the current task and most recent messages.",
+				})
 				slog.Debug("Context compressed", "saved_tokens", saved)
 			}
 		}
@@ -76,21 +76,32 @@ func countToolCalls(messages []Message) map[string]int {
 func buildBudgetHint(round int, toolCounts map[string]int) string {
 	// Summarize what tools were used
 	totalCalls := 0
-	for _, n := range toolCounts { totalCalls += n }
+	for _, n := range toolCounts {
+		totalCalls += n
+	}
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("[System] Round %d. You've made %d tool calls so far.", round, totalCalls))
 
 	// Show top tools used
 	if len(toolCounts) > 0 {
-		type kv struct{ k string; v int }
+		type kv struct {
+			k string
+			v int
+		}
 		var sorted []kv
-		for k, v := range toolCounts { sorted = append(sorted, kv{k, v}) }
+		for k, v := range toolCounts {
+			sorted = append(sorted, kv{k, v})
+		}
 		sort.Slice(sorted, func(i, j int) bool { return sorted[i].v > sorted[j].v })
 		sb.WriteString(" Tools used: ")
 		for i, t := range sorted {
-			if i >= 5 { break }
-			if i > 0 { sb.WriteString(", ") }
+			if i >= 5 {
+				break
+			}
+			if i > 0 {
+				sb.WriteString(", ")
+			}
 			sb.WriteString(fmt.Sprintf("%s×%d", t.k, t.v))
 		}
 		sb.WriteString(".")
@@ -152,13 +163,18 @@ func (k *AgentKernel) executeToolBatch(ctx context.Context, toolCalls []ToolCall
 			continue
 		}
 		if !isParallelSafe(task.Function.Name) {
-			if len(current.indices) > 0 { batches = append(batches, current); current = batch{} }
+			if len(current.indices) > 0 {
+				batches = append(batches, current)
+				current = batch{}
+			}
 			batches = append(batches, batch{indices: []int{i}})
 			continue
 		}
 		current.indices = append(current.indices, i)
 	}
-	if len(current.indices) > 0 { batches = append(batches, current) }
+	if len(current.indices) > 0 {
+		batches = append(batches, current)
+	}
 
 	// 3. Execute batches (parallel within batch, sequential between batches)
 	for _, b := range batches {
@@ -207,7 +223,7 @@ func (k *AgentKernel) executeToolBatch(ctx context.Context, toolCalls []ToolCall
 		select {
 		case <-done:
 		case <-ctx.Done():
-				wg.Wait() // drain in-flight goroutines before returning results
+			wg.Wait() // drain in-flight goroutines before returning results
 			toolErrors = int(toolErrCount.Load())
 			return results, toolErrors
 		}
@@ -320,7 +336,9 @@ func (k *AgentKernel) determineMaxRounds(ctx context.Context, queryContent strin
 // compressMemory compresses old working memory items into short-term summaries.
 // This prevents unlimited growth of per-message memory files.
 func (k *AgentKernel) compressMemory(ctx context.Context, sessionID string) {
-	if k.memory == nil { return }
+	if k.memory == nil {
+		return
+	}
 	// Type-assert to access the Compress method (not in the interface)
 	type memoryCompressor interface {
 		Compress(ctx context.Context, sessionID string) error
@@ -331,4 +349,3 @@ func (k *AgentKernel) compressMemory(ctx context.Context, sessionID string) {
 		}
 	}
 }
-

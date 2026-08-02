@@ -32,8 +32,8 @@ type HTTPHandler func(pattern string, handler http.HandlerFunc)
 type WebhookReceiver struct {
 	id          string
 	name        string
-	secretToken string      // HMAC-SHA256 签名密钥（空=不验证）
-	callbackURL string      // 响应回调地址（空=不回传）
+	secretToken string // HMAC-SHA256 签名密钥（空=不验证）
+	callbackURL string // 响应回调地址（空=不回传）
 	client      *http.Client
 	handler     MessageHandler
 	handlerMu   sync.RWMutex

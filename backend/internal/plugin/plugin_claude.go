@@ -11,9 +11,9 @@ import (
 
 // ClaudePluginManifest .claude-plugin/plugin.json 格式
 type ClaudePluginManifest struct {
-	Name        string       `json:"name" yaml:"name"`
-	Version     string       `json:"version" yaml:"version"`
-	Description string       `json:"description" yaml:"description"`
+	Name        string        `json:"name" yaml:"name"`
+	Version     string        `json:"version" yaml:"version"`
+	Description string        `json:"description" yaml:"description"`
 	Author      *ClaudeAuthor `json:"author,omitempty" yaml:"author,omitempty"`
 }
 
@@ -25,9 +25,9 @@ type ClaudeAuthor struct {
 
 // ClaudeSkillFrontmatter skills/*/SKILL.md 的 YAML frontmatter
 type ClaudeSkillFrontmatter struct {
-	Name        string   `yaml:"name"`
-	Description string   `yaml:"description"`
-	ArgumentHint string `yaml:"argument-hint,omitempty"`
+	Name         string   `yaml:"name"`
+	Description  string   `yaml:"description"`
+	ArgumentHint string   `yaml:"argument-hint,omitempty"`
 	AllowedTools []string `yaml:"allowed-tools,omitempty"`
 }
 
@@ -203,11 +203,15 @@ func MapClaudeTool(claudeName string) string {
 // mapClaudeTools 批量映射工具名
 // isExecutableFile checks if a file is executable (not a directory, .sh/.py/.rb or +x).
 func isExecutableFile(e os.DirEntry) bool {
-	if e.IsDir() { return false }
+	if e.IsDir() {
+		return false
+	}
 	name := e.Name()
 	// Executable by extension
 	for _, ext := range []string{".sh", ".py", ".rb", ".js", ".ts"} {
-		if strings.HasSuffix(name, ext) { return true }
+		if strings.HasSuffix(name, ext) {
+			return true
+		}
 	}
 	// Executable by permission (binary or script with +x)
 	if info, err := e.Info(); err == nil {
@@ -228,19 +232,19 @@ func mapClaudeTools(claudeNames []string) []string {
 
 // claudeToolMap Claude Code 工具名 → OpenAIDE 工具名映射
 var claudeToolMap = map[string]string{
-	"Read":      "read_file",
-	"Write":     "write_file",
-	"Edit":      "diff_edit",
-	"Glob":      "search_files",
-	"Grep":      "search_files",
-	"Bash":      "execute_command",
-	"WebSearch":      "web_search",
-	"WebFetch":       "web_fetch",
-	"Task":           "execute_command",
+	"Read":            "read_file",
+	"Write":           "write_file",
+	"Edit":            "diff_edit",
+	"Glob":            "search_files",
+	"Grep":            "search_files",
+	"Bash":            "execute_command",
+	"WebSearch":       "web_search",
+	"WebFetch":        "web_fetch",
+	"Task":            "execute_command",
 	"AskUserQuestion": "ask_user",
-	"List":           "list_directory",
-	"TodoWrite":      "todo_write",
-	"LSP":            "lsp_definition",
+	"List":            "list_directory",
+	"TodoWrite":       "todo_write",
+	"LSP":             "lsp_definition",
 }
 
 // generateKeywords derives lightweight keyword hints from plugin name and description.
@@ -368,10 +372,10 @@ type HookConfig struct {
 
 // Claude event → OpenAIDE event
 var claudeToOpenAIDEEvent = map[string]string{
-	"PreToolUse":   "tool_call_started",
-	"PostToolUse":  "tool_call_ended",
-	"Stop":         "session_ended",
-	"SessionStart": "session_created",
+	"PreToolUse":       "tool_call_started",
+	"PostToolUse":      "tool_call_ended",
+	"Stop":             "session_ended",
+	"SessionStart":     "session_created",
 	"UserPromptSubmit": "query_received",
 }
 

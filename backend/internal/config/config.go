@@ -104,9 +104,9 @@ type ProviderConfig struct {
 
 	// DeepSeek 特有配置
 	Thinking        *bool  `json:"thinking,omitempty" yaml:"thinking,omitempty"`
-	ReasoningEffort string                 `json:"reasoning_effort,omitempty" yaml:"reasoning_effort,omitempty"`
-	JSONMode        bool                   `json:"json_mode,omitempty" yaml:"json_mode,omitempty"`
-	StrictTools     bool                   `json:"strict_tools,omitempty" yaml:"strict_tools,omitempty"`
+	ReasoningEffort string `json:"reasoning_effort,omitempty" yaml:"reasoning_effort,omitempty"`
+	JSONMode        bool   `json:"json_mode,omitempty" yaml:"json_mode,omitempty"`
+	StrictTools     bool   `json:"strict_tools,omitempty" yaml:"strict_tools,omitempty"`
 }
 
 // MemoryConfig 记忆配置
@@ -126,13 +126,13 @@ type ToolsConfig struct {
 
 // KernelConfig 内核配置
 type KernelConfig struct {
-	MaxRounds        int    `json:"max_rounds" yaml:"max_rounds"`
-	MaxTokens        int    `json:"max_tokens" yaml:"max_tokens"`
-	MinRounds        int    `json:"min_rounds" yaml:"min_rounds"`
-	MaxRoundsCap     int    `json:"max_rounds_cap" yaml:"max_rounds_cap"`
-	SystemPrompt     string `json:"system_prompt" yaml:"system_prompt"`
-	UnsafeMode       *bool  `json:"unsafe_mode" yaml:"unsafe_mode"`
-	ReflectionEnabled *bool `json:"reflection_enabled" yaml:"reflection_enabled"` // toggle reflection on/off (default true)
+	MaxRounds         int    `json:"max_rounds" yaml:"max_rounds"`
+	MaxTokens         int    `json:"max_tokens" yaml:"max_tokens"`
+	MinRounds         int    `json:"min_rounds" yaml:"min_rounds"`
+	MaxRoundsCap      int    `json:"max_rounds_cap" yaml:"max_rounds_cap"`
+	SystemPrompt      string `json:"system_prompt" yaml:"system_prompt"`
+	UnsafeMode        *bool  `json:"unsafe_mode" yaml:"unsafe_mode"`
+	ReflectionEnabled *bool  `json:"reflection_enabled" yaml:"reflection_enabled"` // toggle reflection on/off (default true)
 }
 
 // CodeIndexConfig 代码索引配置。
@@ -186,10 +186,10 @@ type MCPServerEntry struct {
 
 // ChannelsConfig 渠道配置
 type ChannelsConfig struct {
-	Webhooks []WebhookChannelConfig `json:"webhooks" yaml:"webhooks"`
-	Feishu   []FeishuChannelConfig  `json:"feishu" yaml:"feishu"`
-	Telegram []TelegramChannelConfig `json:"telegram" yaml:"telegram"`
-	TaskQueue QueueConfig            `json:"task_queue" yaml:"task_queue"`
+	Webhooks  []WebhookChannelConfig  `json:"webhooks" yaml:"webhooks"`
+	Feishu    []FeishuChannelConfig   `json:"feishu" yaml:"feishu"`
+	Telegram  []TelegramChannelConfig `json:"telegram" yaml:"telegram"`
+	TaskQueue QueueConfig             `json:"task_queue" yaml:"task_queue"`
 }
 
 // WebhookChannelConfig Webhook渠道配置
@@ -238,7 +238,9 @@ func (l *LogConfig) PersistEnabled() bool {
 // DefaultConfig 默认配置
 func DefaultConfig() *Config {
 	home, _ := os.UserHomeDir()
-	if home == "" { home = "." }
+	if home == "" {
+		home = "."
+	}
 	return &Config{
 		Server: ServerConfig{
 			Host: "127.0.0.1", // 默认仅本机访问;局域网共享需显式改为 0.0.0.0
@@ -326,7 +328,6 @@ func Load(path string) (*Config, error) {
 	config.validate()
 	return config, nil
 }
-
 
 // validate checks for common config mistakes and prints warnings.
 func (c *Config) validate() {
@@ -572,17 +573,23 @@ func guessContextSize(model string) int {
 	return 200000
 }
 
-
 // parseContextSize 解析 "1m" "200k" "128k" → token 数
 func parseContextSize(s string) int {
 	s = strings.ToLower(strings.TrimSpace(s))
 	s = strings.ReplaceAll(s, "_", "")
 	mult := 1
-	if strings.HasSuffix(s, "k") { mult = 1000; s = strings.TrimSuffix(s, "k") }
-	if strings.HasSuffix(s, "m") { mult = 1000000; s = strings.TrimSuffix(s, "m") }
+	if strings.HasSuffix(s, "k") {
+		mult = 1000
+		s = strings.TrimSuffix(s, "k")
+	}
+	if strings.HasSuffix(s, "m") {
+		mult = 1000000
+		s = strings.TrimSuffix(s, "m")
+	}
 	n := 0
 	fmt.Sscanf(s, "%d", &n)
-	if n > 0 { return n * mult }
+	if n > 0 {
+		return n * mult
+	}
 	return 200000
 }
-

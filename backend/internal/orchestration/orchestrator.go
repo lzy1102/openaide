@@ -15,15 +15,15 @@ type PlanApprover func(plan *Plan) bool
 
 // Orchestrator 编排器 - 协调内核与外部系统
 type Orchestrator struct {
-	kernel      kernel.Kernel
-	llmGateway  kernel.LLMProvider
-	toolExec    kernel.ToolExecutor
-	memory      kernel.Memory
-	sessions    kernel.SessionStore
-	compressor  kernel.ContextCompressor
-	permission  kernel.PermissionChecker
-	approver    PlanApprover // 规划审批回调（nil = 自动批准）
-	team        *Team        // 多 Agent 团队（可选）
+	kernel     kernel.Kernel
+	llmGateway kernel.LLMProvider
+	toolExec   kernel.ToolExecutor
+	memory     kernel.Memory
+	sessions   kernel.SessionStore
+	compressor kernel.ContextCompressor
+	permission kernel.PermissionChecker
+	approver   PlanApprover // 规划审批回调（nil = 自动批准）
+	team       *Team        // 多 Agent 团队（可选）
 
 	// 可配置参数
 	PreviewTimeout time.Duration
@@ -36,7 +36,7 @@ type Orchestrator struct {
 	ModelRouting ModelRouting
 
 	promptsDir string // 系统提示词目录（用于自适应更新）
-	lang      string
+	lang       string
 
 	// 项目知识缓存（跨子Agent共享，避免重复读取）
 	projectFacts string
@@ -172,7 +172,9 @@ func (o *Orchestrator) DeepPlan(ctx context.Context, content string) (*DeepPlanR
 	// Phase 2: Propose alternatives (注入历史方案效果)
 	if o.mind != nil {
 		advice := o.mind.StrategyAdvice()
-		if advice != "" { content += "\n\n" + advice }
+		if advice != "" {
+			content += "\n\n" + advice
+		}
 	}
 	proposals, err := planner.Propose(ctx, content, research)
 	if err != nil {

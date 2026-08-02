@@ -28,8 +28,8 @@ type ChangeSet struct {
 // IncrementalIndexer 增量索引器
 type IncrementalIndexer struct {
 	*Indexer
-	fingerprints   map[string]*FileFingerprint
-	fingerprintsMu sync.RWMutex
+	fingerprints     map[string]*FileFingerprint
+	fingerprintsMu   sync.RWMutex
 	fingerprintsPath string
 }
 

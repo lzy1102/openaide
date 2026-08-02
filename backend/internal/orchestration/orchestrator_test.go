@@ -22,12 +22,12 @@ func (m *mockKernel) ProcessStream(ctx context.Context, query *kernel.Query) (<-
 	return ch, nil
 }
 
-func (m *mockKernel) GetState() kernel.KernelState { return m.state }
+func (m *mockKernel) GetState() kernel.KernelState                 { return m.state }
 func (m *mockKernel) Subscribe(handler kernel.EventHandler) uint64 { return 0 }
 func (m *mockKernel) Unsubscribe(id uint64)                        {}
-func (m *mockKernel) GetSlashCommands() map[string]string  { return nil }
-func (m *mockKernel) TaskMetricsSummary() map[string]interface{} { return nil }
-func (m *mockKernel) RecentTasks(n int) []kernel.TaskMetrics { return nil }
+func (m *mockKernel) GetSlashCommands() map[string]string          { return nil }
+func (m *mockKernel) TaskMetricsSummary() map[string]interface{}   { return nil }
+func (m *mockKernel) RecentTasks(n int) []kernel.TaskMetrics       { return nil }
 
 type mockLLMProvider struct{}
 
@@ -40,8 +40,8 @@ func (m *mockLLMProvider) ChatStream(ctx context.Context, messages []kernel.Mess
 	close(ch)
 	return ch, nil
 }
-func (m *mockLLMProvider) GetModelID() string { return "mock" }
-func (m *mockLLMProvider) SetModelID(model string)  {}
+func (m *mockLLMProvider) GetModelID() string      { return "mock" }
+func (m *mockLLMProvider) SetModelID(model string) {}
 
 type mockToolExecutor struct {
 	defs []kernel.ToolDefinition
@@ -249,7 +249,11 @@ func TestGroupByDependency(t *testing.T) {
 }
 
 func TestDetectBranchSignal(t *testing.T) {
-	tests := []struct{ content string; hit bool; text string }{
+	tests := []struct {
+		content string
+		hit     bool
+		text    string
+	}{
 		{"normal", false, ""},
 		{"[DISCOVERY:] found bug", true, "[DISCOVERY:] found bug"},
 		{"DISCOVERY: important\nmore", true, "DISCOVERY: important"},

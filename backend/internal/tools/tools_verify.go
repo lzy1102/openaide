@@ -22,7 +22,7 @@ func verifyToolDefs() []kernel.ToolDefinition {
 				Description: `Verify a claim about the codebase before reporting it as a finding. Call this BEFORE you report "X is missing" or "X is unsafe".
 Grep the codebase for the pattern and checks LSP references. Returns a verdict: whether the claim is TRUE or FALSE.`,
 				Parameters: map[string]interface{}{
-					"type":       "object",
+					"type": "object",
 					"properties": map[string]interface{}{
 						"claim":   map[string]interface{}{"type": "string", "description": "The claim to verify, e.g. 'Planner.Plan has no timeout'"},
 						"file":    map[string]interface{}{"type": "string", "description": "The file being analyzed (optional)"},
@@ -38,7 +38,7 @@ Grep the codebase for the pattern and checks LSP references. Returns a verdict: 
 				Name:        "trace_callers",
 				Description: "Find all callers of a function using grep. Use this to check if guards/validation exist in the call chain before claiming something is missing.",
 				Parameters: map[string]interface{}{
-					"type":       "object",
+					"type": "object",
 					"properties": map[string]interface{}{
 						"function": map[string]interface{}{"type": "string", "description": "The function name to find callers for"},
 						"file":     map[string]interface{}{"type": "string", "description": "The file containing the function (optional)"},

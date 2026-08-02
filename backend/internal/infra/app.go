@@ -20,26 +20,26 @@ import (
 	"openaide/backend/internal/mcp"
 	"openaide/backend/internal/memory"
 	"openaide/backend/internal/orchestration"
-	"openaide/backend/internal/tools"
 	"openaide/backend/internal/plugin"
 	"openaide/backend/internal/projectmind"
+	"openaide/backend/internal/tools"
 )
 
 // Application 应用容器
 type Application struct {
-	Config             *config.Config
-	Kernel             kernel.Kernel
-	Orchestrator       *orchestration.Orchestrator
-	APIServer          *api.Server
-	LLMGateway         *llm.Gateway
-	ChannelRegistry    *channel.Registry
-	TaskQueue          *channel.TaskQueue
-	PluginManager      *plugin.Manager
-	ToolRegistry   *tools.Registry
-	MCPManager    *mcp.Manager
-	sessionActor  *kernel.SessionActor // CSP actor, owns all session state
-	pluginWatcher *PluginWatcher       // hot-reload
-	codeIndexer   *codeindex.Indexer   // 代码索引(prompt 阶段注入相关代码)
+	Config          *config.Config
+	Kernel          kernel.Kernel
+	Orchestrator    *orchestration.Orchestrator
+	APIServer       *api.Server
+	LLMGateway      *llm.Gateway
+	ChannelRegistry *channel.Registry
+	TaskQueue       *channel.TaskQueue
+	PluginManager   *plugin.Manager
+	ToolRegistry    *tools.Registry
+	MCPManager      *mcp.Manager
+	sessionActor    *kernel.SessionActor // CSP actor, owns all session state
+	pluginWatcher   *PluginWatcher       // hot-reload
+	codeIndexer     *codeindex.Indexer   // 代码索引(prompt 阶段注入相关代码)
 }
 
 // NewApplication 创建应用容器
@@ -293,29 +293,29 @@ func startLSPServers() {
 
 	// Project type → language mapping. Only start one server per project.
 	detectors := map[string]string{
-		"go.mod":          "go",
-		"Cargo.toml":      "rust",
-		"CMakeLists.txt":  "cpp",
-		"build.zig":       "zig",
-		"pyproject.toml":  "python",
-		"setup.py":        "python",
+		"go.mod":           "go",
+		"Cargo.toml":       "rust",
+		"CMakeLists.txt":   "cpp",
+		"build.zig":        "zig",
+		"pyproject.toml":   "python",
+		"setup.py":         "python",
 		"requirements.txt": "python",
-		"Gemfile":         "ruby",
-		"composer.json":   "php",
-		"pom.xml":         "java",
-		"build.gradle":    "java",
+		"Gemfile":          "ruby",
+		"composer.json":    "php",
+		"pom.xml":          "java",
+		"build.gradle":     "java",
 		"build.gradle.kts": "kotlin",
-		"build.sbt":       "scala",
-		"package.json":    "typescript",
-		".csproj":         "csharp",
-		"Package.swift":   "swift",
+		"build.sbt":        "scala",
+		"package.json":     "typescript",
+		".csproj":          "csharp",
+		"Package.swift":    "swift",
 
-		"mix.exs":         "elixir",
-		"rebar.config":    "erlang",
-		"stack.yaml":      "haskell",
-		"pubspec.yaml":    "dart",
-		".Rproj":          "r",
-		"Project.toml":    "julia",
+		"mix.exs":      "elixir",
+		"rebar.config": "erlang",
+		"stack.yaml":   "haskell",
+		"pubspec.yaml": "dart",
+		".Rproj":       "r",
+		"Project.toml": "julia",
 	}
 
 	for _, e := range entries {

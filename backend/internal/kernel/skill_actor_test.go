@@ -18,7 +18,7 @@ func (m *mockLLM) ChatStream(ctx context.Context, msgs []Message, tools []ToolDe
 	close(ch)
 	return ch, nil
 }
-func (m *mockLLM) GetModelID() string { return "mock" }
+func (m *mockLLM) GetModelID() string  { return "mock" }
 func (m *mockLLM) SetModelID(s string) {}
 
 func TestSkillActor_DetectLLM(t *testing.T) {
@@ -77,7 +77,7 @@ func TestSkillActor_Feedback(t *testing.T) {
 	// Trigger detection to set lastUsed
 	a.super.Send(func() { a.lastUsed = "test" })
 
-	a.RecordLastUsage(8) // Good quality
+	a.RecordLastUsage(8)              // Good quality
 	time.Sleep(10 * time.Millisecond) // wait for async
 
 	var conf float64

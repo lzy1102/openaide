@@ -11,8 +11,8 @@ func BuiltinTasks() []Task {
 		{
 			ID: "hello-response", Name: "Greeting Response",
 			Category: "general", Difficulty: "easy",
-			Query:        "Hello! What can you help me with?",
-			EvalCriteria: "Friendly greeting response mentioning helpful capabilities. Identifies itself as OpenAIDE or an AI coding assistant.",
+			Query:          "Hello! What can you help me with?",
+			EvalCriteria:   "Friendly greeting response mentioning helpful capabilities. Identifies itself as OpenAIDE or an AI coding assistant.",
 			MustNotContain: []string{"I can't", "not able"},
 		},
 		{
@@ -26,8 +26,8 @@ func BuiltinTasks() []Task {
 		{
 			ID: "explain-concurrency", Name: "Explain Go Concurrency",
 			Category: "think", Difficulty: "easy",
-			Query:        "Explain how goroutines and channels work in Go. Give a short example.",
-			EvalCriteria: "Response explains goroutines (lightweight threads) and channels (communication mechanism) with a valid Go code example. Must mention both concepts.",
+			Query:          "Explain how goroutines and channels work in Go. Give a short example.",
+			EvalCriteria:   "Response explains goroutines (lightweight threads) and channels (communication mechanism) with a valid Go code example. Must mention both concepts.",
 			MustNotContain: []string{"I don't know", "I'm not sure"},
 		},
 
@@ -93,15 +93,15 @@ func BuiltinTasks() []Task {
 		{
 			ID: "analyze-structure", Name: "Analyze Project Structure",
 			Category: "think", Difficulty: "medium",
-			Query:        "What are the main packages in this project? List their responsibilities briefly.",
-			EvalCriteria: "Identifies key packages (kernel, tools, api, orchestration, llm, memory) and describes each one's role. Shows understanding of the layered architecture. May use tools to explore the codebase.",
+			Query:          "What are the main packages in this project? List their responsibilities briefly.",
+			EvalCriteria:   "Identifies key packages (kernel, tools, api, orchestration, llm, memory) and describes each one's role. Shows understanding of the layered architecture. May use tools to explore the codebase.",
 			MustNotContain: []string{"I don't know", "I haven't read"},
 		},
 		{
 			ID: "explain-actor-model", Name: "Explain Actor Model",
 			Category: "think", Difficulty: "medium",
-			Query:        "Explain the CSP actor pattern used in OpenAIDE's kernel. What problem does it solve?",
-			EvalCriteria: "Explains CSP (Communicating Sequential Processes) actor pattern: each module owns its data in a goroutine, communicates via channels. Mentions benefits: zero locks, no data races, simpler concurrency. Shows understanding of the pattern's value in concurrent systems.",
+			Query:          "Explain the CSP actor pattern used in OpenAIDE's kernel. What problem does it solve?",
+			EvalCriteria:   "Explains CSP (Communicating Sequential Processes) actor pattern: each module owns its data in a goroutine, communicates via channels. Mentions benefits: zero locks, no data races, simpler concurrency. Shows understanding of the pattern's value in concurrent systems.",
 			MustNotContain: []string{"I'm not familiar"},
 		},
 		{
@@ -122,8 +122,8 @@ func BuiltinTasks() []Task {
 		{
 			ID: "fix-hypothetical-bug", Name: "Fix Hypothetical Bug",
 			Category: "coding", Difficulty: "medium",
-			Query:        "A function returns nil instead of an error when a file is not found. What's the fix? Explain in 2-3 sentences.",
-			EvalCriteria: "Identifies the bug (returning nil when error should be returned) and provides the correct fix (return the error, likely os.IsNotExist or similar). Answer is concise.",
+			Query:          "A function returns nil instead of an error when a file is not found. What's the fix? Explain in 2-3 sentences.",
+			EvalCriteria:   "Identifies the bug (returning nil when error should be returned) and provides the correct fix (return the error, likely os.IsNotExist or similar). Answer is concise.",
 			MustNotContain: []string{"I don't know"},
 		},
 		{
@@ -179,8 +179,8 @@ func BuiltinTasks() []Task {
 		{
 			ID: "architecture-critique", Name: "Architecture Critique",
 			Category: "think", Difficulty: "hard",
-			Query:        "Analyze the layered architecture of OpenAIDE. What are the strengths and one potential weakness? Be specific.",
-			EvalCriteria: "Describes the layered architecture with specific layers. Lists at least two strengths. References actual packages or design patterns. The response is self-contained and complete.",
+			Query:          "Analyze the layered architecture of OpenAIDE. What are the strengths and one potential weakness? Be specific.",
+			EvalCriteria:   "Describes the layered architecture with specific layers. Lists at least two strengths. References actual packages or design patterns. The response is self-contained and complete.",
 			MustNotContain: []string{"I don't know", "I can't"},
 		},
 		{

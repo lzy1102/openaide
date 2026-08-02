@@ -15,8 +15,12 @@ type AdaptiveRounds struct {
 
 // NewAdaptiveRounds 创建自适应轮次控制器
 func NewAdaptiveRounds(min, max int) *AdaptiveRounds {
-	if min <= 0 { min = 5 }
-	if max <= 0 { max = 30 }
+	if min <= 0 {
+		min = 5
+	}
+	if max <= 0 {
+		max = 30
+	}
 	return &AdaptiveRounds{MinRounds: min, MaxRounds: max}
 }
 
@@ -26,8 +30,12 @@ func (a *AdaptiveRounds) SetLLM(llm LLMProvider) { a.llm = llm }
 // Calculate returns the LLM's round estimate, clamped to [MinRounds, MaxRounds].
 func (a *AdaptiveRounds) Calculate(ctx context.Context, query string, historyLength int) int {
 	base := a.estimateWithLLM(ctx, query)
-	if base < a.MinRounds { base = a.MinRounds }
-	if base > a.MaxRounds { base = a.MaxRounds }
+	if base < a.MinRounds {
+		base = a.MinRounds
+	}
+	if base > a.MaxRounds {
+		base = a.MaxRounds
+	}
 	return base
 }
 

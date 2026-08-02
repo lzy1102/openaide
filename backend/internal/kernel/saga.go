@@ -4,9 +4,9 @@ import "log/slog"
 
 // SagaStep represents a single operation in a saga with a compensation function.
 type SagaStep struct {
-	Name    string
-	Execute func() error        // forward operation
-	Compensate func() error     // undo (best-effort)
+	Name       string
+	Execute    func() error // forward operation
+	Compensate func() error // undo (best-effort)
 }
 
 // RunSaga executes a series of steps sequentially. If any step fails,

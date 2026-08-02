@@ -9,15 +9,15 @@ import (
 type TraceEventType string
 
 const (
-	TraceLLM         TraceEventType = "llm_call"
-	TraceTool        TraceEventType = "tool_call"
-	TraceThink       TraceEventType = "thinking"
-	TraceState       TraceEventType = "state_transition"
-	TraceCheckpoint  TraceEventType = "checkpoint"
-	TraceError       TraceEventType = "error"
-	TraceReflection  TraceEventType = "reflection"
-	TraceMemory      TraceEventType = "memory"
-	TraceSession     TraceEventType = "session"
+	TraceLLM        TraceEventType = "llm_call"
+	TraceTool       TraceEventType = "tool_call"
+	TraceThink      TraceEventType = "thinking"
+	TraceState      TraceEventType = "state_transition"
+	TraceCheckpoint TraceEventType = "checkpoint"
+	TraceError      TraceEventType = "error"
+	TraceReflection TraceEventType = "reflection"
+	TraceMemory     TraceEventType = "memory"
+	TraceSession    TraceEventType = "session"
 )
 
 // TraceStatus 跟踪状态
@@ -73,6 +73,7 @@ type SpanInfo struct {
 	EventType TraceEventType
 	Name      string
 }
+
 // NoopTracer 空操作跟踪器 - 不记录任何事件
 type NoopTracer struct{}
 
@@ -80,6 +81,6 @@ func (n *NoopTracer) Record(_ context.Context, _ *TraceEvent) error { return nil
 func (n *NoopTracer) StartSpan(ctx context.Context, _ string, _ TraceEventType, _ string) context.Context {
 	return ctx
 }
-func (n *NoopTracer) EndSpan(_ context.Context, _ interface{}, _ error)          {}
-func (n *NoopTracer) Flush(_ context.Context) error                             { return nil }
-func (n *NoopTracer) Close() error                                              { return nil }
+func (n *NoopTracer) EndSpan(_ context.Context, _ interface{}, _ error) {}
+func (n *NoopTracer) Flush(_ context.Context) error                     { return nil }
+func (n *NoopTracer) Close() error                                      { return nil }
