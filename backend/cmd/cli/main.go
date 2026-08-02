@@ -255,6 +255,11 @@ func main() {
 	}
 
 	// REPL 模式
+	// 提前初始化 markdown renderer：glamour.WithAutoStyle() 会触发 termenv 的
+	// OSC 11 背景色查询（ESC]11;?ESC\），若在 bubbletea 接管 stdin 后才首次调用，
+	// 终端响应会与 bubbletea 的输入读取竞争，泄漏为输入框乱码（gb:0c0c 问题）。
+	// 在 TUI 启动前完成查询，避免竞态。
+	initMarkdown()
 	runREPL(app, flags.continueSess, flags.yes)
 }
 
