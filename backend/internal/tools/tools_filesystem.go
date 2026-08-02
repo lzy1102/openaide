@@ -7,8 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 
@@ -256,11 +256,11 @@ func handleExecuteCommand(ctx context.Context, arguments string) (*kernel.ToolRe
 	defer cancel()
 
 	var cmd *exec.Cmd
-		if runtime.GOOS == "windows" {
-			cmd = exec.CommandContext(execCtx, "cmd", "/c", args.Command)
-		} else {
-			cmd = exec.CommandContext(execCtx, "sh", "-c", args.Command)
-		}
+	if runtime.GOOS == "windows" {
+		cmd = exec.CommandContext(execCtx, "cmd", "/c", args.Command)
+	} else {
+		cmd = exec.CommandContext(execCtx, "sh", "-c", args.Command)
+	}
 	if args.WorkingDir != "" {
 		absDir, err := validateAndResolve(args.WorkingDir)
 		if err != nil {
@@ -352,7 +352,7 @@ func handleListDirectory(ctx context.Context, arguments string) (*kernel.ToolRes
 		args.Path = "."
 	}
 
-	absPath, err := safeAbsPath(args.Path)
+	absPath, err := validatePath(args.Path)
 	if err != nil {
 		return &kernel.ToolResult{Error: err.Error(), ErrorCode: "INVALID_PATH", IsRetryable: false}, nil
 	}

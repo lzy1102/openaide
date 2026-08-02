@@ -21,22 +21,22 @@ type trackedHandler struct {
 // 作为所有 AI 智能的唯一收敛点，实现 ReAct 循环
 type AgentKernel struct {
 	// 核心依赖（通过接口解耦）
-	llmProvider    LLMProvider
-	toolExecutor   ToolExecutor
-	memory         Memory
-	sessionStore   SessionStore
-	compressor     ContextCompressor
-	permission     PermissionChecker
+	llmProvider  LLMProvider
+	toolExecutor ToolExecutor
+	memory       Memory
+	sessionStore SessionStore
+	compressor   ContextCompressor
+	permission   PermissionChecker
 
 	// 增强能力（可选）
-	reflection       Reflection
-	skillActor *SkillActor // CSP actor, zero-lock
-	approver         Approver
-	adaptiveRounds   *AdaptiveRounds
-	planner          *Planner // 复杂任务分解(可选,仅 complexity >= 阈值时触发)
+	reflection     Reflection
+	skillActor     *SkillActor // CSP actor, zero-lock
+	approver       Approver
+	adaptiveRounds *AdaptiveRounds
+	planner        *Planner // 复杂任务分解(可选,仅 complexity >= 阈值时触发)
 
 	// 跟踪系统
-	tracer  Tracer
+	tracer Tracer
 
 	// 检查点系统
 	checkpointer Checkpointer
@@ -48,16 +48,17 @@ type AgentKernel struct {
 	codeIndexer CodeIndexer
 
 	// 事件系统
-	handlerSeq    atomic.Uint64       // monotonic ID counter for tracked handlers
-	eventHandlers atomic.Value        // []trackedHandler — lock-free reads
+	handlerSeq    atomic.Uint64 // monotonic ID counter for tracked handlers
+	eventHandlers atomic.Value  // []trackedHandler — lock-free reads
 
 	// 无锁状态（atomic.Value）
 	systemPrompt atomic.Value // string — read-heavy, written only on config change
 	state        atomic.Value // KernelState — write-once, read-often
 
 	// 配置
-	maxRounds      int
-	maxTokens      int
+	maxRounds    int
+	maxTokens    int
+	stallTimeout time.Duration
 }
 
 // Config 内核配置
@@ -65,6 +66,8 @@ type Config struct {
 	MaxRounds    int
 	MaxTokens    int
 	SystemPrompt string
+	// LLMStallTimeout LLM 流式无输出停滞阈值。0=默认 120s。
+	LLMStallTimeout time.Duration
 }
 
 // DefaultConfig 默认配置
@@ -74,6 +77,14 @@ func DefaultConfig() *Config {
 		MaxTokens:    4000,
 		SystemPrompt: "",
 	}
+}
+
+// stallTimeoutValue 返回停滞阈值(0 时回退默认 120s)。
+func (k *AgentKernel) stallTimeoutValue() time.Duration {
+	if k.stallTimeout > 0 {
+		return k.stallTimeout
+	}
+	return 120 * time.Second
 }
 
 // NewAgentKernel 创建 Agent 内核
@@ -89,15 +100,14 @@ func NewAgentKernel(
 	}
 
 	k := &AgentKernel{
-		llmProvider:   llm,
-		toolExecutor:  tools,
-		memory:        memory,
-		sessionStore:  sessions,
-		maxRounds:       config.MaxRounds,
-		maxTokens:       config.MaxTokens,
+		llmProvider:  llm,
+		toolExecutor: tools,
+		memory:       memory,
+		sessionStore: sessions,
+		maxRounds:    config.MaxRounds,
+		maxTokens:    config.MaxTokens,
+		stallTimeout: config.LLMStallTimeout,
 	}
-
-
 
 	// 默认使用简单压缩器
 	k.compressor = &SimpleCompressor{}
@@ -123,9 +133,9 @@ func (k *AgentKernel) SetReflection(r Reflection) {
 	k.reflection = r
 }
 
-func (k *AgentKernel) SetApprover(a Approver) { k.approver = a }
+func (k *AgentKernel) SetApprover(a Approver)               { k.approver = a }
 func (k *AgentKernel) SetAdaptiveRounds(ar *AdaptiveRounds) { k.adaptiveRounds = ar }
-func (k *AgentKernel) SetMetrics(ms *MetricsStore) { k.metrics = ms }
+func (k *AgentKernel) SetMetrics(ms *MetricsStore)          { k.metrics = ms }
 
 // SetPlanner 设置任务规划器(可选)。
 // 设置后,复杂查询(complexity >= 15)会在 ReAct 循环前生成子任务计划,
@@ -136,18 +146,28 @@ func (k *AgentKernel) SetPlanner(p *Planner) { k.planner = p }
 // 设置后,coding/debugging 任务会在 prompt 中注入与 query 语义相关的代码 chunk。
 func (k *AgentKernel) SetCodeIndexer(ci CodeIndexer) { k.codeIndexer = ci }
 func (k *AgentKernel) SetMaxRounds(n int) {
-	if n > 0 { k.maxRounds = n; slog.Info("Kernel max_rounds updated", "value", n) }
+	if n > 0 {
+		k.maxRounds = n
+		slog.Info("Kernel max_rounds updated", "value", n)
+	}
 }
 
 func (k *AgentKernel) SetMaxTokens(n int) {
-	if n > 0 { k.maxTokens = n; slog.Info("Kernel max_tokens updated", "value", n) }
+	if n > 0 {
+		k.maxTokens = n
+		slog.Info("Kernel max_tokens updated", "value", n)
+	}
 }
 
 // ApplyConfig hot-reloads mutable kernel settings from config.
 // Only updates values that are safe to change mid-session.
 func (k *AgentKernel) ApplyConfig(maxRounds, maxTokens, minRounds, maxRoundsCap int) {
-	if maxRounds > 0 { k.maxRounds = maxRounds }
-	if maxTokens > 0 { k.maxTokens = maxTokens }
+	if maxRounds > 0 {
+		k.maxRounds = maxRounds
+	}
+	if maxTokens > 0 {
+		k.maxTokens = maxTokens
+	}
 	slog.Info("Kernel config applied", "max_rounds", k.maxRounds, "max_tokens", k.maxTokens)
 }
 
@@ -284,8 +304,20 @@ func (k *AgentKernel) buildMessages(ctx context.Context, session *Session, query
 	}
 
 	// History (adjacent to system, stable)
+	// 按 token 预算动态截断:历史约占上下文的 1/4,每条约 200 tokens。
+	// 无 MaxTokens 配置时回退到 20 条(原行为)。
 	if k.memory != nil && len(session.Messages) > 0 {
-		history, _ := k.memory.Load(ctx, session.ID, 20)
+		limit := 20
+		if k.maxTokens > 0 {
+			limit = k.maxTokens / 4 / 200
+			if limit < 2 {
+				limit = 2
+			}
+			if limit > 50 {
+				limit = 50
+			}
+		}
+		history, _ := k.memory.Load(ctx, session.ID, limit)
 		messages = append(messages, history...)
 	}
 
@@ -353,7 +385,9 @@ func runGitCmd(args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
 	cmd.Stderr = nil
 	out, err := cmd.Output()
-	if err != nil { return "", err }
+	if err != nil {
+		return "", err
+	}
 	return strings.TrimSpace(string(out)), nil
 }
 
@@ -494,17 +528,17 @@ func (k *AgentKernel) buildOptions(opts QueryOptions) map[string]interface{} {
 
 // parallelSafeTools 可在同一批次内并行执行的工具（只读/无副作用）
 var parallelSafeTools = map[string]bool{
-	"read_file":       true,
-	"list_directory":  true,
-	"search_files":    true,
-	"search_symbols":  true,
-	"web_search":      true,
-	"web_fetch":       true,
-	"read_image":      true,
-	"git_status":      true,
-	"git_diff":        true,
-	"git_log":         true,
-	"git_blame":       true,
+	"read_file":      true,
+	"list_directory": true,
+	"search_files":   true,
+	"search_symbols": true,
+	"web_search":     true,
+	"web_fetch":      true,
+	"read_image":     true,
+	"git_status":     true,
+	"git_diff":       true,
+	"git_log":        true,
+	"git_blame":      true,
 }
 
 // isParallelSafe 判断工具是否可以和其他工具并行执行
@@ -573,7 +607,7 @@ func (k *AgentKernel) executeTool(ctx context.Context, tc ToolCall, sessionID st
 	// 权限检查
 	if k.permission != nil {
 		allowed, reason := k.permission.Check(ctx, "tool.execute", tc.Function.Name, map[string]interface{}{
-			"tool_name": tc.Function.Name,
+			"tool_name":  tc.Function.Name,
 			"session_id": sessionID,
 		})
 		if !allowed {
@@ -688,22 +722,31 @@ func (k *AgentKernel) generateSessionTitle(sessionID, firstQuery string) {
 	}
 }
 
-
 // setSessionTitle atomically sets a session title from the title goroutine.
 func (k *AgentKernel) setSessionTitle(ctx context.Context, sessionID, title string) {
 	session, err := k.sessionStore.Get(ctx, sessionID)
-	if err != nil || session == nil { return }
-	if session.Metadata == nil { session.Metadata = make(map[string]interface{}) }
+	if err != nil || session == nil {
+		return
+	}
+	if session.Metadata == nil {
+		session.Metadata = make(map[string]interface{})
+	}
 	session.Metadata["title"] = title
 	k.sessionStore.Update(ctx, session)
 }
 
 // loadSessionMessages loads recent session messages for process supervision.
 func (k *AgentKernel) loadSessionMessages(ctx context.Context, sessionID string) []Message {
-	if k.sessionStore == nil { return nil }
+	if k.sessionStore == nil {
+		return nil
+	}
 	session, err := k.sessionStore.Get(ctx, sessionID)
-	if err != nil || session == nil || len(session.Messages) == 0 { return nil }
+	if err != nil || session == nil || len(session.Messages) == 0 {
+		return nil
+	}
 	msgs := session.Messages
-	if len(msgs) > 30 { msgs = msgs[len(msgs)-30:] }
+	if len(msgs) > 30 {
+		msgs = msgs[len(msgs)-30:]
+	}
 	return msgs
 }

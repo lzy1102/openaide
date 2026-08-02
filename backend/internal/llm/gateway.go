@@ -19,6 +19,7 @@ type Gateway struct {
 	defaultProvider string
 	cache           *PromptCache
 	router          *Router
+	rateLimiter     *RateLimiter // 全局 LLM 调用限流(可选,阻塞等待令牌)
 
 	// 成本感知路由：小调用走 execution，核心推理走 reasoning
 	ExecutionModel string
@@ -50,9 +51,9 @@ type ProviderConfig struct {
 
 	// DeepSeek 特有配置
 	Thinking        *bool  `json:"thinking,omitempty"`
-	ReasoningEffort string                 `json:"reasoning_effort,omitempty"`
-	JSONMode        bool                   `json:"json_mode,omitempty"`
-	StrictTools     bool                   `json:"strict_tools,omitempty"`
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+	JSONMode        bool   `json:"json_mode,omitempty"`
+	StrictTools     bool   `json:"strict_tools,omitempty"`
 }
 
 // NewGateway 创建 LLM 网关
@@ -75,6 +76,16 @@ func (g *Gateway) RegisterProvider(name string, provider Provider, config *Provi
 
 // SetPromptCache 设置提示词缓存
 func (g *Gateway) SetPromptCache(pc *PromptCache) { g.cache = pc }
+
+// SetRateLimiter 设置全局 LLM 调用限流(阻塞等待令牌)。
+// rate<=0 时禁用限流。rate=每秒令牌数, capacity=突发上限。
+func (g *Gateway) SetRateLimiter(rate, capacity int) {
+	if rate <= 0 {
+		g.rateLimiter = nil
+		return
+	}
+	g.rateLimiter = NewRateLimiter(rate, capacity)
+}
 
 // ReloadConfig 热更新 LLM 配置（不重建 provider，只更新模型和路由）
 func (g *Gateway) ReloadConfig(newModels map[string]string, reasoningModel, executionModel string) {
@@ -153,7 +164,9 @@ func (g *Gateway) GetProviderInfos() []ProviderInfo {
 func (g *Gateway) GetEnabledProviders() []string {
 	var names []string
 	g.configs.Range(func(name string, config *ProviderConfig) bool {
-		if config.Enabled { names = append(names, name) }
+		if config.Enabled {
+			names = append(names, name)
+		}
 		return true
 	})
 	return names
@@ -258,6 +271,13 @@ func (g *Gateway) ChatWithProvider(ctx context.Context, providerName string, mes
 		}
 	}
 
+	// 全局限流:阻塞等待令牌(agent 内部调用不随机失败,排队等待)
+	if g.rateLimiter != nil {
+		if err := g.rateLimiter.Wait(ctx); err != nil {
+			return nil, err
+		}
+	}
+
 	start := time.Now()
 	slog.Info("LLM call sent", "provider", providerName, "model", provider.GetModelID(), "msgs", len(messages), "tools", len(tools))
 
@@ -265,7 +285,9 @@ func (g *Gateway) ChatWithProvider(ctx context.Context, providerName string, mes
 	var err error
 	for attempt := 0; attempt < 3; attempt++ {
 		resp, err = provider.Chat(ctx, messages, tools, options)
-		if err == nil { break }
+		if err == nil {
+			break
+		}
 		if attempt < 2 {
 			d := time.Duration(1<<attempt) * time.Second
 			slog.Warn("LLM chat retry", "provider", providerName, "attempt", attempt+1, "wait", d, "error", err)
@@ -312,13 +334,22 @@ func (g *Gateway) ChatStreamWithProvider(ctx context.Context, providerName strin
 		return nil, fmt.Errorf("provider not found: %s", providerName)
 	}
 
+	// 全局限流:阻塞等待令牌(agent 内部调用不随机失败,排队等待)
+	if g.rateLimiter != nil {
+		if err := g.rateLimiter.Wait(ctx); err != nil {
+			return nil, err
+		}
+	}
+
 	slog.Info("LLM stream started", "provider", providerName, "model", provider.GetModelID(), "msgs", len(messages), "tools", len(tools))
 
 	var ch <-chan kernel.StreamChunk
 	var err error
 	for attempt := 0; attempt < 3; attempt++ {
 		ch, err = provider.ChatStream(ctx, messages, tools, options)
-		if err == nil { break }
+		if err == nil {
+			break
+		}
 		if attempt < 2 {
 			d := time.Duration(1<<attempt) * time.Second
 			slog.Warn("LLM stream retry", "provider", providerName, "attempt", attempt+1, "wait", d, "error", err)
@@ -471,7 +502,9 @@ func (g *Gateway) FallbackEmbed(ctx context.Context, text string) ([]float32, er
 
 // humanizeError wraps common API errors with user-friendly messages.
 func humanizeError(err error) error {
-	if err == nil { return nil }
+	if err == nil {
+		return nil
+	}
 	msg := err.Error()
 	switch {
 	case containsAny(msg, "429", "余额不足", "insufficient", "quota", "rate limit"):
@@ -491,7 +524,9 @@ func humanizeError(err error) error {
 func containsAny(s string, substrs ...string) bool {
 	lower := strings.ToLower(s)
 	for _, sub := range substrs {
-		if strings.Contains(lower, strings.ToLower(sub)) { return true }
+		if strings.Contains(lower, strings.ToLower(sub)) {
+			return true
+		}
 	}
 	return false
 }

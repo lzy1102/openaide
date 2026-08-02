@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	osexec "os/exec"
 	"path/filepath"
@@ -354,6 +355,11 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case tea.KeyMsg:
+		// 诊断日志:记录粘贴/控制字符/特殊键,用于排查输入异常(如终端转义泄漏)
+		// 正常打字(单个可见字符)不记录,避免日志噪音
+		if isSuspiciousKey(msg) {
+			slog.Debug("tui input", "key", strconv.Quote(msg.String()), "paste", msg.Paste, "mode", m.mode)
+		}
 		// 按模式分发按键
 		switch m.mode {
 		case modeApproval:
@@ -447,6 +453,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if msg.content != "" {
+			slog.Debug("tui textarea set from editor", "content", strconv.Quote(msg.content))
 			m.textarea.SetValue(msg.content)
 			m.textarea.CursorEnd()
 		}
@@ -468,6 +475,24 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // ── 主模式按键处理 ─────────────────────────────────────────
+
+// isSuspiciousKey 判断按键是否需要记录诊断日志:
+//   - 粘贴(可能携带转义序列)
+//   - 控制字符(如 \x0c form feed,终端泄漏的典型特征)
+//   - 特殊功能键(非单个可打印字符)
+//
+// 正常打字(单个可见字符)跳过,避免日志噪音。
+func isSuspiciousKey(msg tea.KeyMsg) bool {
+	if msg.Paste {
+		return true
+	}
+	s := msg.String()
+	runes := []rune(s)
+	if len(runes) == 1 && runes[0] >= 0x20 && runes[0] != 0x7f {
+		return false
+	}
+	return true
+}
 
 func (m tuiModel) handleMainKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Ctrl+C：流式/执行中 → 取消；idle → 退出
@@ -544,7 +569,9 @@ func (m tuiModel) handleMainKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.cmdHistIdx < len(m.cmdHistory) {
 			m.cmdHistIdx++
 			if m.cmdHistIdx <= len(m.cmdHistory) {
-				m.textarea.SetValue(m.cmdHistory[len(m.cmdHistory)-m.cmdHistIdx])
+				v := m.cmdHistory[len(m.cmdHistory)-m.cmdHistIdx]
+				slog.Debug("tui textarea set from history", "content", strconv.Quote(v))
+				m.textarea.SetValue(v)
 				m.textarea.CursorEnd()
 			}
 		}
@@ -556,7 +583,9 @@ func (m tuiModel) handleMainKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.cmdHistIdx == 0 {
 				m.textarea.Reset()
 			} else {
-				m.textarea.SetValue(m.cmdHistory[len(m.cmdHistory)-m.cmdHistIdx])
+				v := m.cmdHistory[len(m.cmdHistory)-m.cmdHistIdx]
+				slog.Debug("tui textarea set from history", "content", strconv.Quote(v))
+				m.textarea.SetValue(v)
 				m.textarea.CursorEnd()
 			}
 		}
@@ -1164,7 +1193,9 @@ func (m tuiModel) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "enter":
 		if len(m.searchResults) > 0 && m.searchIdx < len(m.searchResults) {
-			m.textarea.SetValue(m.searchResults[m.searchIdx])
+			v := m.searchResults[m.searchIdx]
+			slog.Debug("tui textarea set from search", "content", strconv.Quote(v))
+			m.textarea.SetValue(v)
 			m.textarea.CursorEnd()
 		}
 		m.mode = modeIdle

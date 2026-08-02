@@ -76,7 +76,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 			maxRounds = k.adaptiveRounds.Calculate(ctx, query.Content, len(session.Messages))
 		}
 		totalTokens := 0
-	promptTokens := 0
+		promptTokens := 0
 		totalToolCalls := 0
 		toolErrors := 0
 		startTime := time.Now()
@@ -107,8 +107,11 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 					ms.SetModelID(query.Options.ModelID)
 				}
 			}
-			llmStream, err := k.llmProvider.ChatStream(ctx, messages, tools, k.buildOptions(query.Options))
+			// 停滞 watchdog:无 token 输出超时则中断本轮并注入恢复提示
+			roundCtx, roundCancel := context.WithCancel(ctx)
+			llmStream, err := k.llmProvider.ChatStream(roundCtx, messages, tools, k.buildOptions(query.Options))
 			if err != nil {
+				roundCancel()
 				if k.tracer != nil {
 					k.tracer.Record(ctx, &TraceEvent{
 						Type: TraceError, Name: "llm_stream", SessionID: session.ID,
@@ -128,50 +131,78 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 			var lastToolCalls []ToolCall
 			var lastUsage *TokenUsage
 
-			for chunk := range llmStream {
-				if chunk.Error != nil {
-					select {
-					case resultChan <- StreamChunk{Type: ChunkTypeError, Error: chunk.Error, Done: true}:
-					case <-ctx.Done():
+			stallTimeout := k.stallTimeoutValue()
+			stalled := false
+
+			streamCh := llmStream
+		receiveLoop:
+			for streamCh != nil {
+				select {
+				case chunk, ok := <-streamCh:
+					if !ok {
+						break receiveLoop
 					}
-					k.setState(StateError)
-					return
-				}
-
-				if chunk.Done {
-					break
-				}
-
-				// 累积内容
-				if chunk.Content != "" {
-					fullContent.WriteString(chunk.Content)
-					select {
-					case resultChan <- StreamChunk{Type: ChunkTypeContent, Content: chunk.Content}:
-					case <-ctx.Done():
+					if chunk.Error != nil {
+						roundCancel()
+						select {
+						case resultChan <- StreamChunk{Type: ChunkTypeError, Error: chunk.Error, Done: true}:
+						case <-ctx.Done():
+						}
+						k.setState(StateError)
 						return
 					}
-				}
 
-				// 推理内容 -> thinking 事件
-				if chunk.ReasoningContent != "" {
-					reasoningContent.WriteString(chunk.ReasoningContent)
-					select {
-					case resultChan <- StreamChunk{Type: ChunkTypeThinking, ReasoningContent: chunk.ReasoningContent}:
-					case <-ctx.Done():
-						return
+					if chunk.Done {
+						break receiveLoop
 					}
-				}
 
-				// 工具调用（累积，取最后一个完整块）
-				if len(chunk.ToolCalls) > 0 {
-					lastToolCalls = chunk.ToolCalls
-				}
+					// 累积内容
+					if chunk.Content != "" {
+						fullContent.WriteString(chunk.Content)
+						select {
+						case resultChan <- StreamChunk{Type: ChunkTypeContent, Content: chunk.Content}:
+						case <-ctx.Done():
+							roundCancel()
+							return
+						}
+					}
 
-				if chunk.Usage != nil {
-					lastUsage = chunk.Usage
-					totalTokens += chunk.Usage.TotalTokens
-					promptTokens = chunk.Usage.PromptTokens
+					// 推理内容 -> thinking 事件
+					if chunk.ReasoningContent != "" {
+						reasoningContent.WriteString(chunk.ReasoningContent)
+						select {
+						case resultChan <- StreamChunk{Type: ChunkTypeThinking, ReasoningContent: chunk.ReasoningContent}:
+						case <-ctx.Done():
+							roundCancel()
+							return
+						}
+					}
+
+					// 工具调用（累积，取最后一个完整块）
+					if len(chunk.ToolCalls) > 0 {
+						lastToolCalls = chunk.ToolCalls
+					}
+
+					if chunk.Usage != nil {
+						lastUsage = chunk.Usage
+						totalTokens += chunk.Usage.TotalTokens
+						promptTokens = chunk.Usage.PromptTokens
+					}
+				case <-time.After(stallTimeout):
+					stalled = true
+					roundCancel()
+					break receiveLoop
 				}
+			}
+			roundCancel()
+
+			if stalled {
+				messages = append(messages, Message{
+					Role:    "user",
+					Content: "[System Notice] The LLM stream produced no output for " + stallTimeout.String() + ". If you have a pending analysis, output it now; otherwise respond with a concise status update.",
+				})
+				slog.Warn("LLM stream stalled, injecting recovery notice", "round", round, "timeout", stallTimeout)
+				continue
 			}
 
 			// 添加 assistant 消息
@@ -190,25 +221,25 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 					}
 				}
 
-			session.Messages = messages
-			k.RecordTaskMetrics(TaskMetrics{
-				SessionID:        session.ID,
-				StartedAt:        startTime,
-				EndedAt:          time.Now(),
-				Duration:         float64(time.Since(startTime).Milliseconds()),
-				TaskType:         queryTaskType(analysis),
-				Complexity:       queryComplexity(analysis),
-				Rounds:           round + 1,
-				PromptTokens:     promptTokens,
-				CompletionTokens: totalTokens - promptTokens,
-				TotalTokens:      totalTokens,
-				Model:            k.llmProvider.GetModelID(),
-				ToolCalls:        totalToolCalls,
-				ToolErrors:       toolErrors,
-				UniqueTools:      len(uniqueTools),
-				Success:          toolErrors == 0,
-			})
-			k.finalizeResponse(context.WithoutCancel(ctx), session, query, fullContent.String(), totalToolCalls, toolErrors, analysis)
+				session.Messages = messages
+				k.RecordTaskMetrics(TaskMetrics{
+					SessionID:        session.ID,
+					StartedAt:        startTime,
+					EndedAt:          time.Now(),
+					Duration:         float64(time.Since(startTime).Milliseconds()),
+					TaskType:         queryTaskType(analysis),
+					Complexity:       queryComplexity(analysis),
+					Rounds:           round + 1,
+					PromptTokens:     promptTokens,
+					CompletionTokens: totalTokens - promptTokens,
+					TotalTokens:      totalTokens,
+					Model:            k.llmProvider.GetModelID(),
+					ToolCalls:        totalToolCalls,
+					ToolErrors:       toolErrors,
+					UniqueTools:      len(uniqueTools),
+					Success:          toolErrors == 0,
+				})
+				k.finalizeResponse(context.WithoutCancel(ctx), session, query, fullContent.String(), totalToolCalls, toolErrors, analysis)
 
 				slog.Debug("ReAct stream complete", "rounds", round+1, "tokens", totalTokens, "tools", totalToolCalls, "model", k.llmProvider.GetModelID(), "duration", time.Since(startTime))
 				k.setState(StateIdle)
@@ -236,10 +267,13 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 
 			// Send tool_call events for stream (unique to stream path)
 			for _, tc := range lastToolCalls {
-				if tc.Function.Name == "" { continue }
+				if tc.Function.Name == "" {
+					continue
+				}
 				select {
 				case resultChan <- StreamChunk{Type: ChunkTypeToolCall, ToolCallID: tc.ID, ToolName: tc.Function.Name, ToolArgs: truncateToolArgs(tc.Function.Arguments)}:
-				case <-ctx.Done(): return
+				case <-ctx.Done():
+					return
 				}
 			}
 
@@ -269,7 +303,8 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 				}
 				select {
 				case resultChan <- StreamChunk{Type: ChunkTypeToolDone, ToolCallID: r.ID, ToolName: r.Name}:
-				case <-ctx.Done(): return
+				case <-ctx.Done():
+					return
 				}
 				// 工具结果入 messages 前截断:防止单条大输出(read_file 整个文件)
 				// 把上下文吃爆。截断后 LLM 仍能看到头尾,中间可用 read_file offset/limit 补读。

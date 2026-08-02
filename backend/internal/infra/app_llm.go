@@ -53,6 +53,9 @@ func createLLMGateway(cfg *config.Config) *llm.Gateway {
 
 	gateway.SetPromptCache(llm.NewPromptCache(cfg.Storage.DataDir + "/cache"))
 
+	// 全局 LLM 调用限流:10 tokens/s, 100 突发(多会话并发保护,防止 provider 配额打爆)
+	gateway.SetRateLimiter(10, 100)
+
 	if cfg.Router.Enabled {
 		gateway.SetRouter(llm.NewRouter(cfg.Router.Rules))
 	} else {
