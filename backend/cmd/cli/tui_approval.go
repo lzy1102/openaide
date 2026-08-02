@@ -95,7 +95,7 @@ func (m tuiModel) approvalView() string {
 		sb.WriteString(styleWarn.Render("⚡ "+lang.T("repl.rounds_exhausted", req.round, req.maxRounds)) + "\n")
 	} else {
 		icon := toolIcon(req.tool)
-		sb.WriteString(styleWarn.Render("⚡ Permission Required") + "\n")
+		sb.WriteString(styleWarn.Render("⚡ "+lang.T("repl.approval_title")) + "\n")
 		line := fmt.Sprintf("  %s %s %s", icon, stylePrompt.Render(req.tool), styleDim.Render(req.path))
 		sb.WriteString(line + "\n")
 		if req.args != "" {
@@ -112,6 +112,6 @@ func (m tuiModel) approvalView() string {
 			}
 		}
 	}
-	sb.WriteString(styleDim.Render("[y] allow  [a] allow all  [n] deny  [esc] cancel") + "\n")
+	sb.WriteString(styleDim.Render(lang.T("repl.approval_keys")) + "\n")
 	return styleBox.Render(sb.String())
 }

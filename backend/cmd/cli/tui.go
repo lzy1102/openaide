@@ -91,7 +91,7 @@ type tuiModel struct {
 	// 流式状态
 	streamCh     <-chan kernel.StreamChunk
 	cancel       context.CancelFunc
-	fullResponse strings.Builder
+	fullResponse string
 	toolNames    []string
 	thinkCount   int
 	totalTokens  int
@@ -254,28 +254,23 @@ func initialTUI(app *infra.Application, autoYes bool) tuiModel {
 
 func buildBanner(modelName, gitBranch, cwd, version string) string {
 	var sb strings.Builder
-	sb.WriteString(styleLogo.Render(`   ██████╗ ██████╗ ███████╗███╗   ██╗ █████╗ ██╗██████╗ ███████╗
-  ██╔═══██╗██╔══██╗██╔════╝████╗  ██║██╔══██╗██║██╔══██╗██╔════╝
-  ██║   ██║██████╔╝█████╗  ██╔██╗ ██║███████║██║██║  ██║█████╗
-  ██║   ██║██╔═══╝ ██╔══╝  ██║╚██╗██║██╔══██║██║██║  ██║██╔══╝
-  ╚██████╔╝██║     ███████╗██║ ╚████║██║  ██║██║██████╔╝███████╗
-   ╚═════╝ ╚═╝     ╚══════╝╚═╝  ╚═══╝╚═╝  ╚═╝╚═╝╚═════╝ ╚══════╝`) + "\n")
+	var left []string
+	left = append(left, styleLogo.Render("◆ OpenAIDE"))
 	if modelName != "" {
-		sb.WriteString("  " + styleSuccess.Render(modelName) + "\n")
+		left = append(left, styleSuccess.Render(modelName))
 	} else {
-		sb.WriteString("  " + styleWarn.Render("⚠ No API key configured") + "\n")
-		sb.WriteString("  " + styleInfo.Render("→ Edit ~/.openaide/config.yaml and add your API key") + "\n")
+		left = append(left, styleWarn.Render("⚠ "+lang.T("repl.no_api_key")))
 	}
-	parts := []string{}
 	if gitBranch != "" {
-		parts = append(parts, "◆ "+gitBranch)
+		left = append(left, styleInfo.Render("◆ "+gitBranch))
 	}
-	parts = append(parts, "◆ "+filepath.Base(cwd))
-	sb.WriteString("  " + styleInfo.Render(strings.Join(parts, "  ")) + "  " + styleInfo.Render(version) + "\n")
+	left = append(left, styleInfo.Render("◆ "+filepath.Base(cwd)))
+	sb.WriteString(strings.Join(left, "  ") + "  " + styleInfo.Render(version) + "\n")
 	if _, err := os.Stat(filepath.Join(cwd, "OPENAIDE.md")); err == nil {
-		sb.WriteString("  " + styleSuccess.Render("📋 OPENAIDE.md loaded") + "\n")
+		sb.WriteString("  " + styleSuccess.Render("📋 "+lang.T("repl.openaide_loaded")) + "\n")
 	}
-	sb.WriteString("\n" + styleDim.Render("/help for commands · @file · ctrl+c interrupt") + "\n\n")
+	sb.WriteString(styleDim.Render("  "+lang.T("repl.banner_hint")) + "\n")
+	sb.WriteString(styleDim.Render("────────────────────────────────────────────") + "\n\n")
 	return sb.String()
 }
 
@@ -579,7 +574,7 @@ func (m tuiModel) submitQuery() (tea.Model, tea.Cmd) {
 	}
 
 	// 展示用户消息
-	m.appendHistory(styleUser.Render("❯ "+query) + "\n\n")
+	m.appendHistory(" " + styleUser.Render("▎"+lang.T("repl.you_label")+" ") + styleUser.Render(query) + "\n\n")
 	if included != "" {
 		m.appendHistory(styleInfo.Render(included) + "\n")
 	}
@@ -696,7 +691,7 @@ func (m tuiModel) startStream(query string) (tea.Model, tea.Cmd) {
 	m.cacheMiss = 0
 	m.totalTools = 0
 	m.askQuestions = nil
-	m.fullResponse.Reset()
+	m.fullResponse = ""
 	m.startTime = time.Now()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -757,8 +752,8 @@ func (m tuiModel) handleStreamChunk(msg streamMsg) (tea.Model, tea.Cmd) {
 	switch c.Type {
 	case kernel.ChunkTypeContent, "":
 		if c.Content != "" {
-			m.fullResponse.WriteString(c.Content)
-			m.appendHistory(c.Content)
+			m.fullResponse += c.Content
+			m.refreshViewport()
 		}
 	case kernel.ChunkTypeThinking:
 		if c.ReasoningContent != "" && m.thinkCount < 2 {
@@ -781,7 +776,7 @@ func (m tuiModel) handleStreamChunk(msg streamMsg) (tea.Model, tea.Cmd) {
 					unique = append(unique, n)
 				}
 			}
-			m.appendHistory(styleTool.Render("⏳ "+strings.Join(unique, ", ")) + "\n")
+			m.appendHistory(styleTool.Render("  🔧 "+strings.Join(unique, " → ")) + "\n")
 		}
 	case kernel.ChunkTypeToolDone:
 		// 工具完成不单独打印
@@ -807,11 +802,13 @@ func (m tuiModel) finishStream() (tea.Model, tea.Cmd) {
 		m.cancel()
 		m.cancel = nil
 	}
+	m.mode = modeIdle
 	elapsed := time.Since(m.startTime)
 
 	// 最终回答（markdown 渲染）
-	if m.fullResponse.Len() > 0 {
-		m.appendHistory(RenderMarkdown(m.fullResponse.String()))
+	if m.fullResponse != "" {
+		m.appendHistory(" " + styleSuccess.Render("▎"+lang.T("repl.assistant_label")+" ") + "\n")
+		m.appendHistory(RenderMarkdown(m.fullResponse) + "\n")
 	}
 	m.appendStatusBar(m.totalTokens, m.totalTools, elapsed, m.cacheHit, m.cacheMiss)
 
@@ -899,15 +896,19 @@ func (m *tuiModel) appendHistory(s string) {
 }
 
 func (m *tuiModel) refreshViewport() {
-	m.viewport.SetContent(m.history.String())
+	content := m.history.String()
+	// 流式期间把未渲染的原始内容实时拼在末尾（不写 history，避免与最终渲染重复）
+	if m.mode == modeStreaming && m.fullResponse != "" {
+		content += " " + styleSuccess.Render("▎"+lang.T("repl.assistant_label")+" ") + "\n"
+		content += m.fullResponse
+	}
+	m.viewport.SetContent(content)
 	m.viewport.GotoBottom()
 }
 
 func (m *tuiModel) appendStatusBar(tokens, tools int, elapsed time.Duration, cacheHit, cacheMiss int) {
 	var parts []string
-	if m.modelName != "" {
-		parts = append(parts, styleDim.Render(m.modelName))
-	}
+	parts = append(parts, styleSuccess.Render("✓ "+lang.T("repl.done")))
 	if tokens > 0 {
 		parts = append(parts, styleInfo.Render(fmt.Sprintf("⚡ %dk", tokens/1000)))
 	}
@@ -915,8 +916,8 @@ func (m *tuiModel) appendStatusBar(tokens, tools int, elapsed time.Duration, cac
 		parts = append(parts, styleInfo.Render(fmt.Sprintf("🔧 %d", tools)))
 	}
 	parts = append(parts, styleInfo.Render(fmt.Sprintf("⏱ %v", elapsed.Round(100*time.Millisecond))))
-	m.appendHistory(styleStatusBar.Render("  │  "+strings.Join(parts, "  │  ")) + "\n")
-	m.appendHistory(styleDim.Render("──") + "\n")
+	m.appendHistory(styleStatusBar.Render("  "+strings.Join(parts, " · ")) + "\n")
+	m.appendHistory(styleDim.Render("────────────────────────────────────────────") + "\n")
 }
 
 func (m *tuiModel) appendPlan(plan *orchestration.Plan) {
@@ -1214,34 +1215,48 @@ func (m tuiModel) View() string {
 
 func (m tuiModel) statusView() string {
 	switch m.mode {
-	case modeStreaming, modeThinking, modePlanExec, modeSubAgent:
-		label := "streaming"
-		switch m.mode {
-		case modeThinking:
-			label = "analyzing"
-		case modePlanExec:
-			label = "executing"
-		case modeSubAgent:
-			label = "sub-agent"
+	case modeThinking:
+		txt := m.spinner.View() + " " + lang.T("repl.thinking")
+		if m.statusMsg != "" {
+			txt += " · " + m.statusMsg
 		}
-		txt := m.spinner.View() + " " + label
+		return styleStreaming.Render(txt)
+	case modeStreaming:
+		txt := m.spinner.View() + " "
+		if len(m.toolNames) > 0 {
+			txt += "🔧 " + m.toolNames[len(m.toolNames)-1]
+		} else {
+			txt += lang.T("repl.working")
+		}
+		if m.statusMsg != "" {
+			txt += " · " + m.statusMsg
+		}
+		return styleStreaming.Render(txt)
+	case modePlanExec:
+		txt := m.spinner.View() + " " + lang.T("repl.executing")
+		if m.statusMsg != "" {
+			txt += " · " + m.statusMsg
+		}
+		return styleStreaming.Render(txt)
+	case modeSubAgent:
+		txt := m.spinner.View() + " " + lang.T("repl.sub_agent")
 		if m.statusMsg != "" {
 			txt += " · " + m.statusMsg
 		}
 		return styleStreaming.Render(txt)
 	case modeApproval:
-		return styleWarn.Render("● awaiting approval")
+		return styleWarn.Render(lang.T("repl.status_approval"))
 	default:
-		return styleIdle.Render("● idle")
+		return styleIdle.Render(lang.T("repl.status_idle"))
 	}
 }
 
 func (m tuiModel) helpView() string {
 	switch m.mode {
 	case modeIdle:
-		return styleDim.Render("enter send · ctrl+j newline · tab complete · ctrl+r history · alt+enter editor · esc undo · ctrl+c quit")
+		return styleDim.Render(lang.T("repl.help_line"))
 	default:
-		return styleDim.Render("ctrl+c cancel · pgup/pgdn scroll")
+		return styleDim.Render(lang.T("repl.help_busy"))
 	}
 }
 
