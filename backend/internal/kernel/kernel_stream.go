@@ -84,6 +84,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 		uniqueTools := make(map[string]bool)
 		verifyAttempts := 0
 		stuckDetector := NewStuckDetector()
+		reflectRetries := 0
 
 		slog.Info("ReAct stream: entering loop", "query", query.Content[:min(80, len(query.Content))], "max_rounds", maxRounds, "tools", len(tools), "history_msgs", len(messages))
 		for round := 0; ; round++ {
@@ -209,9 +210,34 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 			messages = append(messages, buildFinalMessage(fullContent.String(), reasoningContent.String(), lastToolCalls))
 			slog.Debug("ReAct stream LLM response", "round", round, "content_len", fullContent.Len(), "tool_calls", len(lastToolCalls), "reasoning_len", reasoningContent.Len(), "tokens", totalTokens)
 
-			// 无工具调用 -> 返回结果
-			if len(lastToolCalls) == 0 {
-				if len(filesModified) > 0 && verifyAttempts < 3 {
+		// 无工具调用 -> 返回结果
+		if len(lastToolCalls) == 0 {
+			// Reflexion 回流：有工具错误且反思器可用时，同步反思并把教训注入重试
+			if toolErrors > 0 && k.reflection != nil && reflectRetries < maxReflectRetries {
+				reflectRetries++
+				record := ExecutionRecord{
+					Query:     query.Content,
+					Response:  fullContent.String(),
+					Success:   false,
+					Error:     fmt.Sprintf("%d tool errors", toolErrors),
+					Duration:  int64(time.Since(startTime).Milliseconds()),
+					Messages:  messages,
+					TaskType:  queryTaskType(analysis),
+					ToolCalls: lastToolCalls,
+				}
+				result, rErr := k.reflection.Reflect(ctx, session.ID, record)
+				if rErr == nil && result != nil {
+					if lesson := reflectionLessonMessage(result); lesson != "" {
+						messages = append(messages, Message{Role: "system", Content: lesson})
+						slog.Info("Reflection retry injected",
+							"round", round, "retry", reflectRetries,
+							"quality", result.Quality, "tool_errors", toolErrors)
+						continue
+					}
+				}
+			}
+
+			if len(filesModified) > 0 && verifyAttempts < 3 {
 					verifyAttempts++
 					verifyMsg := runAutoVerify(ctx, ".")
 					if verifyMsg != "" {
@@ -393,6 +419,30 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 	}()
 
 	return resultChan, nil
+}
+
+// maxReflectRetries 限制单次查询最多反思重试次数。
+// 每次重试会注入反思教训并重新进入 ReAct 循环，避免无限自我纠错。
+const maxReflectRetries = 2
+
+// reflectionLessonMessage 把反思结果格式化为注入消息。
+// 只提取具体的行为规则(suggestions)和关键教训(learned)，跳过空结果。
+func reflectionLessonMessage(result *ReflectionResult) string {
+	var lessons []string
+	for _, s := range result.Suggestions {
+		if strings.TrimSpace(s) != "" {
+			lessons = append(lessons, "- "+strings.TrimSpace(s))
+		}
+	}
+	if strings.TrimSpace(result.Learned) != "" {
+		lessons = append(lessons, "- "+strings.TrimSpace(result.Learned))
+	}
+	if len(lessons) == 0 {
+		return ""
+	}
+	return "[Reflection from previous attempt]\n" +
+		"Some tool calls failed. Apply these lessons on the retry:\n" +
+		strings.Join(lessons, "\n")
 }
 
 func detectTestCommand(dir string) string {
