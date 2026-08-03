@@ -34,6 +34,7 @@ func (m tuiModel) handleTUICommand(cmd string) (tea.Model, tea.Cmd) {
 			styleTool.Render("/log") + " — " + lang.T("repl.help_log"),
 			styleTool.Render("/sessions") + " — " + lang.T("repl.help_sessions"),
 			styleTool.Render("/handoff") + " — " + lang.T("repl.help_handoff"),
+			styleTool.Render("/compact") + " — manually compress session context",
 			styleTool.Render("/exit /quit /q") + " — " + lang.T("repl.help_exit"),
 		} {
 			m.appendHistory("  " + line + "\n")
@@ -65,6 +66,25 @@ func (m tuiModel) handleTUICommand(cmd string) (tea.Model, tea.Cmd) {
 		}
 		m.history.Reset()
 		m.appendHistory(styleSuccess.Render("✓ session cleared") + "\n")
+		return m, nil
+
+	case "/compact":
+		if ak, ok := m.app.Kernel.(*kernel.AgentKernel); ok {
+			before, after, err := ak.CompressNow(context.Background(), m.sessionID)
+			if err != nil {
+				m.appendHistory(styleWarn.Render("⚠ compact failed: "+err.Error()) + "\n")
+			} else if before == 0 && after == 0 {
+				m.appendHistory(styleInfo.Render("nothing to compact") + "\n")
+			} else {
+				pct := 0
+				if before > 0 {
+					pct = 100 - after*100/before
+				}
+				m.appendHistory(styleSuccess.Render(fmt.Sprintf("✓ context compacted: %d → %d tokens (-%d%%)", before, after, pct)) + "\n")
+			}
+		} else {
+			m.appendHistory(styleWarn.Render("⚠ compact unavailable") + "\n")
+		}
 		return m, nil
 
 	case "/undo":
@@ -401,7 +421,7 @@ func (m tuiModel) handleTabComplete() (tea.Model, tea.Cmd) {
 
 	// /命令补全
 	if strings.HasPrefix(prefix, "/") {
-		commands := []string{"/help", "/clear", "/model", "/lang", "/log", "/sessions", "/session", "/handoff", "/exit", "/analyst", "/coder", "/reviewer", "/executor", "/team", "/tree", "/status", "/undo", "/auto", "/init"}
+		commands := []string{"/help", "/clear", "/compact", "/model", "/lang", "/log", "/sessions", "/session", "/handoff", "/exit", "/analyst", "/coder", "/reviewer", "/executor", "/team", "/tree", "/status", "/undo", "/auto", "/research", "/init"}
 		var match string
 		for _, c := range commands {
 			if strings.HasPrefix(c, prefix) {

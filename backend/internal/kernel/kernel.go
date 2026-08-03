@@ -125,6 +125,41 @@ func (k *AgentKernel) SetContextCompressor(c ContextCompressor) {
 	k.compressor = c
 }
 
+// CompressNow 手动压缩当前会话的上下文（/compact 命令）。
+// 复用自动压缩的同一 compressor，把 session 消息压缩并保存回 store。
+// 返回压缩前的 token 估算和压缩后的 token 估算（估算失败时返回 0,0）。
+func (k *AgentKernel) CompressNow(ctx context.Context, sessionID string) (before, after int, err error) {
+	if k.compressor == nil {
+		return 0, 0, fmt.Errorf("no context compressor configured")
+	}
+	if k.sessionStore == nil {
+		return 0, 0, fmt.Errorf("no session store configured")
+	}
+	session, err := k.sessionStore.Get(ctx, sessionID)
+	if err != nil || session == nil {
+		return 0, 0, fmt.Errorf("session not found: %s", sessionID)
+	}
+	if len(session.Messages) == 0 {
+		return 0, 0, nil
+	}
+	before = k.compressor.EstimateTokens(session.Messages)
+	maxTokens := k.maxTokens
+	if maxTokens <= 0 {
+		maxTokens = 200000
+	}
+	compressed, saved, err := k.compressor.Compress(ctx, session.Messages, maxTokens)
+	if err != nil {
+		return before, 0, fmt.Errorf("compress failed: %w", err)
+	}
+	after = k.compressor.EstimateTokens(compressed)
+	session.Messages = compressed
+	if err := k.sessionStore.Update(ctx, session); err != nil {
+		return before, after, fmt.Errorf("persist compressed session: %w", err)
+	}
+	slog.Info("Session manually compacted", "session", sessionID[:min(8, len(sessionID))], "saved_tokens", saved)
+	return before, after, nil
+}
+
 // SetReflection 设置反思能力
 func (k *AgentKernel) SetReflection(r Reflection) {
 	k.reflection = r
