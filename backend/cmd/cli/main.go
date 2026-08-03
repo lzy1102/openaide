@@ -208,9 +208,6 @@ func main() {
 		fmt.Fprintf(os.Stderr, "%s\n", lang.T("err.start_failed", err))
 		os.Exit(1)
 	}
-	if flags.yes {
-		app.SetAutoApprove(true)
-	}
 
 	// One-shot: prompt from positional args
 	if flags.prompt != "" || len(flags.contextFiles) > 0 {

@@ -73,13 +73,6 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 	}
 	agentKernel.SetSkillActor(skillActor)
 
-	approver := kernel.NewAutoApprover()
-	if cfg.Kernel.UnsafeMode != nil {
-		approver.UnsafeMode = *cfg.Kernel.UnsafeMode
-	} else {
-		approver.UnsafeMode = false
-	}
-	agentKernel.SetApprover(approver)
 	minR := cfg.Kernel.MinRounds
 	maxR := cfg.Kernel.MaxRoundsCap
 	if minR <= 0 {

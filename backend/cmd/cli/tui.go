@@ -774,18 +774,6 @@ func (m tuiModel) startStream(query string) (tea.Model, tea.Cmd) {
 	m.refreshViewport()
 
 	opts := kernel.QueryOptions{
-		OnApproval: func(tool, path, args string) bool {
-			if m.autoYes.Get() {
-				return true
-			}
-			ch := make(chan bool)
-			select {
-			case m.approvalCh <- approvalRequest{tool: tool, path: path, args: args, resultCh: ch}:
-			case <-ctx.Done():
-				return false
-			}
-			return <-ch
-		},
 		OnBudgetExhausted: func(round, maxRounds int) bool {
 			if m.autoYes.Get() {
 				return true

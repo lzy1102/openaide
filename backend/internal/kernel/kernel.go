@@ -2,7 +2,6 @@ package kernel
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os/exec"
@@ -31,7 +30,6 @@ type AgentKernel struct {
 	// 增强能力（可选）
 	reflection     Reflection
 	skillActor     *SkillActor // CSP actor, zero-lock
-	approver       Approver
 	adaptiveRounds *AdaptiveRounds
 	planner        *Planner // 复杂任务分解(可选,仅 complexity >= 阈值时触发)
 
@@ -132,7 +130,6 @@ func (k *AgentKernel) SetReflection(r Reflection) {
 	k.reflection = r
 }
 
-func (k *AgentKernel) SetApprover(a Approver)               { k.approver = a }
 func (k *AgentKernel) SetAdaptiveRounds(ar *AdaptiveRounds) { k.adaptiveRounds = ar }
 func (k *AgentKernel) SetMetrics(ms *MetricsStore)          { k.metrics = ms }
 
@@ -160,7 +157,7 @@ func (k *AgentKernel) SetMaxTokens(n int) {
 
 // ApplyConfig hot-reloads mutable kernel settings from config.
 // Only updates values that are safe to change mid-session.
-func (k *AgentKernel) ApplyConfig(maxRounds, maxTokens, minRounds, maxRoundsCap int) {
+func (k *AgentKernel) ApplyConfig(maxRounds, maxTokens int) {
 	if maxRounds > 0 {
 		k.maxRounds = maxRounds
 	}
@@ -374,8 +371,6 @@ func (k *AgentKernel) buildSystemLayer(ctx context.Context, query *Query) string
 	return sp
 }
 
-// needsStrategyAdvice checks if the query warrants strategy injection (L3).
-// Activated by: long queries, build/implement/refactor keywords.
 func runGitCmd(args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
 	cmd.Stderr = nil
@@ -384,15 +379,6 @@ func runGitCmd(args ...string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(out)), nil
-}
-
-// snipOldToolOutputs 对旧工具输出做头尾保留裁剪（Claude Code 风格）
-// 最近 keepFull 条完整保留，更早的保留前 500 字符 + 后 500 字符，中间替换为 snipped 标记
-//
-// 已被 snipOldToolOutputsDynamic 替代(支持按上下文压力动态调整)。
-// 保留此函数供测试和向后兼容。
-func snipOldToolOutputs(messages []Message) {
-	snipOldToolOutputsDynamic(messages, 0) // 0 = 宽松档
 }
 
 // contextPressure 表示当前上下文压力等级。
@@ -443,7 +429,7 @@ const maxToolResultChars = 20000
 // truncateToolResult 对单条工具结果做头尾保留截断。
 // 超过 maxToolResultChars 时保留头部 + 尾部,中间替换为截断标记。
 // 这样 LLM 仍能看到文件开头(包声明/import/函数签名)和结尾(返回值/错误),
-// 只是中间部分被省略 —— 比 snipOldToolOutputs 的下一轮裁剪更早介入,
+// 只是中间部分被省略 —— 比 snipOldToolOutputsDynamic 的下一轮裁剪更早介入,
 // 避免当前轮就因单条过大而超出上下文限制。
 func truncateToolResult(content string) string {
 	if len(content) <= maxToolResultChars {
@@ -531,68 +517,14 @@ var parallelSafeTools = map[string]bool{
 }
 
 // isParallelSafe 判断工具是否可以和其他工具并行执行
-// DangerousTools 是需要交互审批(OnApproval 回调)的工具。
-// 当前为空 —— 审批在"方案"层面(plan 执行前)进行,不在每条命令/工具层面。
 // 安全靠以下机制保障:
 //   - execute_command: handler 层有危险命令黑名单(tools_filesystem.go)
 //   - 写操作: 有 Undo 机制(undo_edit)+ 原子写 + 文件锁
-//   - approval.go: AutoApprover 仍有 LLM 风险评估,作为非交互路径的兜底
-var DangerousTools = map[string]string{}
-
 func isParallelSafe(name string) bool {
 	return parallelSafeTools[name]
 }
 
-// extractToolPath 从工具参数中提取文件路径,用于审批提示。
-// 支持单文件工具(write_file/diff_edit)和多文件工具(edit_files)。
-func extractToolPath(toolName, arguments string) string {
-	if toolName == "edit_files" {
-		var args struct {
-			Edits []struct {
-				Path string `json:"path"`
-			} `json:"edits"`
-		}
-		if json.Unmarshal([]byte(arguments), &args) == nil && len(args.Edits) > 0 {
-			if len(args.Edits) == 1 {
-				return args.Edits[0].Path
-			}
-			return fmt.Sprintf("%s (+%d more)", args.Edits[0].Path, len(args.Edits)-1)
-		}
-		return ""
-	}
-	var args struct {
-		Path string `json:"path"`
-	}
-	json.Unmarshal([]byte(arguments), &args)
-	return args.Path
-}
-
 func (k *AgentKernel) executeTool(ctx context.Context, tc ToolCall, sessionID string, opts *QueryOptions) *ToolResult {
-	// 交互审批（REPL pterm 回调）
-	if opts != nil && opts.OnApproval != nil {
-		if _, dangerous := DangerousTools[tc.Function.Name]; dangerous {
-			path := extractToolPath(tc.Function.Name, tc.Function.Arguments)
-			if !opts.OnApproval(tc.Function.Name, path, tc.Function.Arguments) {
-				return &ToolResult{Error: "user denied"}
-			}
-		}
-	}
-	// 审批检查（高危工具需要用户确认）
-	if k.approver != nil {
-		if reason, dangerous := DangerousTools[tc.Function.Name]; dangerous {
-			result := k.approver.RequestApproval(ctx, &ApprovalRequest{
-				ID:     tc.ID,
-				Tool:   tc.Function.Name,
-				Args:   tc.Function.Arguments,
-				Reason: reason,
-				Risk:   "high",
-			})
-			if !result.Approved {
-				return &ToolResult{Error: fmt.Sprintf("Approval denied: %s", result.Reason)}
-			}
-		}
-	}
-
 	// 权限检查
 	if k.permission != nil {
 		allowed, reason := k.permission.Check(ctx, "tool.execute", tc.Function.Name, map[string]interface{}{

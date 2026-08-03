@@ -33,9 +33,6 @@ type Config struct {
 	// 搜索配置
 	Search SearchConfig `json:"search" yaml:"search"`
 
-	// 工具配置
-	Tools ToolsConfig `json:"tools" yaml:"tools"`
-
 	// 内核配置
 	Kernel KernelConfig `json:"kernel" yaml:"kernel"`
 
@@ -119,11 +116,6 @@ type SearchConfig struct {
 	SearXNGURL string `json:"searxng_url" yaml:"searxng_url"` // SearXNG 实例地址
 }
 
-// ToolsConfig 工具配置
-type ToolsConfig struct {
-	DangerousTools []string `json:"dangerous_tools" yaml:"dangerous_tools"`
-}
-
 // KernelConfig 内核配置
 type KernelConfig struct {
 	MaxRounds         int    `json:"max_rounds" yaml:"max_rounds"`
@@ -131,7 +123,6 @@ type KernelConfig struct {
 	MinRounds         int    `json:"min_rounds" yaml:"min_rounds"`
 	MaxRoundsCap      int    `json:"max_rounds_cap" yaml:"max_rounds_cap"`
 	SystemPrompt      string `json:"system_prompt" yaml:"system_prompt"`
-	UnsafeMode        *bool  `json:"unsafe_mode" yaml:"unsafe_mode"`
 	ReflectionEnabled *bool  `json:"reflection_enabled" yaml:"reflection_enabled"` // toggle reflection on/off (default true)
 }
 
@@ -256,9 +247,6 @@ func DefaultConfig() *Config {
 		},
 		Search: SearchConfig{
 			SearXNGURL: "http://localhost:8888",
-		},
-		Tools: ToolsConfig{
-			DangerousTools: []string{"execute_command", "write_file"},
 		},
 		Kernel: KernelConfig{
 			MaxRounds:    50, // 安全上限，实际由上下文窗口驱动收敛

@@ -110,8 +110,6 @@ func (r *ConfigReloader) doReload() {
 			ak.ApplyConfig(
 				cfg.Kernel.MaxRounds,
 				cfg.Kernel.MaxTokens,
-				cfg.Kernel.MinRounds,
-				cfg.Kernel.MaxRoundsCap,
 			)
 		}
 
