@@ -16,6 +16,8 @@ type approvalRequest struct {
 	path      string
 	args      string
 	isBudget  bool
+	isPlan    bool
+	planText  string
 	round     int
 	maxRounds int
 	skillName string
@@ -91,7 +93,12 @@ func (m tuiModel) approvalView() string {
 	req := m.pendingApproval
 	var sb strings.Builder
 
-	if req.isBudget {
+	if req.isPlan {
+		sb.WriteString(styleWarn.Render("📋 "+lang.T("repl.plan_approval_title")) + "\n")
+		for _, line := range strings.Split(req.planText, "\n") {
+			sb.WriteString(styleDim.Render("  "+line) + "\n")
+		}
+	} else if req.isBudget {
 		sb.WriteString(styleWarn.Render("⚡ "+lang.T("repl.rounds_exhausted", req.round, req.maxRounds)) + "\n")
 	} else {
 		icon := toolIcon(req.tool)

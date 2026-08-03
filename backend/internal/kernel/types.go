@@ -159,6 +159,8 @@ type QueryOptions struct {
 	// 交互回调（REPL 用 pterm 实现，内核 goroutine 中同步调用）
 	OnBudgetExhausted func(round, maxRounds int) bool        // 预算用尽，返回 true 继续，false 合成
 	OnSkillDistilled  func(skillName, skillDesc string) bool // 技能蒸馏通知，返回 true 创建
+	OnPlanApproved    func(plan *TaskPlan) bool              // 计划门禁，返回 true 批准执行，false 拒绝
+	ParallelResearch  bool                                   // 计划子任务并行研究（只读子循环隔离上下文回灌）
 	WorkingDir        string                                 // 项目工作目录（Server 模式用，覆盖 CWD）
 	LastReflection    *ReflectionResult                      // L5: 上次反思结果，注入提示词
 	ProjectContext    string                                 // 项目知识（来自 ProjectMind，由编排器注入）

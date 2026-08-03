@@ -38,11 +38,28 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 	messages := k.buildMessages(ctx, session, query, analysis)
 
 	// 复杂任务分解:complexity >= 阈值时,生成子任务计划注入消息
-	// 引导 agent 按步骤执行 + 每步自我验证
+	// 引导 agent 按步骤执行 + 每步自我验证。
+	var activePlan *TaskPlan
+	planDone := 0
 	if shouldPlan(analysis) && k.planner != nil {
 		if plan := k.planner.Plan(ctx, query.Content); plan != nil {
-			if planMsg := plan.ToSystemMessage(); planMsg.Content != "" {
-				messages = append(messages, planMsg)
+			if query.Options.OnPlanApproved != nil {
+				if !query.Options.OnPlanApproved(plan) {
+					slog.Info("Plan rejected by user, continuing without plan")
+					plan = nil
+				}
+			}
+			if plan != nil {
+				if planMsg := plan.ToSystemMessage(); planMsg.Content != "" {
+					messages = append(messages, planMsg)
+					activePlan = plan
+				}
+				// 计划批准后并行研究子任务,把隔离上下文的研究结论注入主循环
+				if query.Options.ParallelResearch {
+					if researchMsg := k.researchSubagentPrompt(ctx, plan); researchMsg != "" {
+						messages = append(messages, Message{Role: "system", Content: researchMsg})
+					}
+				}
 			}
 		}
 	}
@@ -361,6 +378,16 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 				}
 				if err := k.checkpointer.Save(ctx, session.ID, cp); err != nil {
 					slog.Warn("Failed to save checkpoint", "round", round, "error", err)
+				}
+			}
+
+			// 计划进度回写:每轮有工具调用即视为推进一个子步骤,
+			// 注入下一待办步骤，防止 agent 在长工具序列中偏离计划。
+			if activePlan != nil && len(execResults) > 0 && batchErrors == 0 &&
+				planDone < len(activePlan.SubTasks) {
+				planDone++
+				if msg := activePlan.ProgressMessage(planDone, len(activePlan.SubTasks)); msg.Content != "" {
+					messages = append(messages, msg)
 				}
 			}
 			slog.Debug("ReAct stream iteration end", "round", round)

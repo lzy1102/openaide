@@ -93,6 +93,7 @@ type tuiModel struct {
 	history   *strings.Builder // 已渲染输出（viewport 内容）
 	statusMsg string           // 状态行辅助文本（plan 进度等）
 	autoYes   *sharedAutoYes
+	research  *sharedAutoYes // 并行研究开关(计划子任务只读研究)
 
 	// 会话状态
 	sessionID    string
@@ -267,6 +268,9 @@ func initialTUI(app *infra.Application, autoYes bool) tuiModel {
 	ay := &sharedAutoYes{}
 	ay.Set(autoYes)
 
+	rs := &sharedAutoYes{}
+	rs.Set(true)
+
 	return tuiModel{
 		app:          app,
 		viewport:     vp,
@@ -274,6 +278,7 @@ func initialTUI(app *infra.Application, autoYes bool) tuiModel {
 		spinner:      sp,
 		history:      &strings.Builder{},
 		autoYes:      ay,
+		research:     rs,
 		approvalCh:   make(chan approvalRequest, 8),
 		progressCh:   make(chan progressMsg, 16),
 		planResultCh: make(chan planExecMsg, 1),
@@ -774,6 +779,7 @@ func (m tuiModel) startStream(query string) (tea.Model, tea.Cmd) {
 	m.refreshViewport()
 
 	opts := kernel.QueryOptions{
+		ParallelResearch: m.research.Get(),
 		OnBudgetExhausted: func(round, maxRounds int) bool {
 			if m.autoYes.Get() {
 				return true
@@ -781,6 +787,22 @@ func (m tuiModel) startStream(query string) (tea.Model, tea.Cmd) {
 			ch := make(chan bool)
 			select {
 			case m.approvalCh <- approvalRequest{isBudget: true, round: round, maxRounds: maxRounds, resultCh: ch}:
+			case <-ctx.Done():
+				return false
+			}
+			return <-ch
+		},
+		OnPlanApproved: func(plan *kernel.TaskPlan) bool {
+			if m.autoYes.Get() {
+				return true
+			}
+			ch := make(chan bool)
+			var sb strings.Builder
+			for i, st := range plan.SubTasks {
+				sb.WriteString(fmt.Sprintf("Step %d: %s\n", i+1, st.Goal))
+			}
+			select {
+			case m.approvalCh <- approvalRequest{isPlan: true, planText: sb.String(), resultCh: ch}:
 			case <-ctx.Done():
 				return false
 			}

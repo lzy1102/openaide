@@ -112,6 +112,28 @@ func (p *Planner) Plan(ctx context.Context, query string) *TaskPlan {
 	return &plan
 }
 
+// ProgressMessage 生成当前执行进度的回写消息。
+// 每轮注入一次,让 agent 明确已完成的步骤与下一步,
+// 避免在长工具序列中丢失计划方向。返回空串表示无需更新。
+func (p *TaskPlan) ProgressMessage(doneStep, totalSteps int) Message {
+	if p == nil || len(p.SubTasks) == 0 || totalSteps <= 0 {
+		return Message{}
+	}
+	if doneStep >= totalSteps {
+		return Message{Role: "system", Content: "[Plan Progress] All steps completed. Provide the final summary."}
+	}
+	var sb strings.Builder
+	sb.WriteString("[Plan Progress]\n")
+	sb.WriteString("Completed " + fmt.Sprintf("%d/%d", doneStep, totalSteps) + " steps.\n")
+	// 已完成步骤不做逐条展示,只提示下一步,减少上下文噪音
+	if next := p.SubTasks[doneStep]; doneStep < totalSteps {
+		sb.WriteString("Next step: ")
+		sb.WriteString(fmt.Sprintf("Step %d — %s\n  Approach: %s\n  Expected: %s\n",
+			doneStep+1, next.Goal, next.Approach, next.ExpectedResult))
+	}
+	return Message{Role: "system", Content: sb.String()}
+}
+
 // ToSystemMessage 把计划转为系统消息注入 ReAct 循环。
 // 消息放在 user query 之后,作为执行指引。
 func (p *TaskPlan) ToSystemMessage() Message {

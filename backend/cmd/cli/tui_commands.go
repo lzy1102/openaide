@@ -50,6 +50,7 @@ func (m tuiModel) handleTUICommand(cmd string) (tea.Model, tea.Cmd) {
 			styleTool.Render("/status") + " — system health & providers",
 			styleTool.Render("/undo") + " — rollback to last checkpoint",
 			styleTool.Render("/auto") + " — toggle autonomous (goal-driven) mode",
+			styleTool.Render("/research") + " — toggle parallel research sub-agents",
 			styleTool.Render("/init") + " — generate OPENAIDE.md for this project",
 		} {
 			m.appendHistory("  " + line + "\n")
@@ -152,6 +153,16 @@ func (m tuiModel) handleTUICommand(cmd string) (tea.Model, tea.Cmd) {
 			state = "ON"
 		}
 		m.appendHistory(styleSuccess.Render("✓ auto-approve "+state) + "\n")
+		return m, nil
+
+	case "/research":
+		on := m.research.Get()
+		m.research.Set(!on)
+		state := "OFF"
+		if !on {
+			state = "ON"
+		}
+		m.appendHistory(styleSuccess.Render("✓ parallel research "+state) + "\n")
 		return m, nil
 
 	case "/analyst", "/coder", "/reviewer", "/executor":
