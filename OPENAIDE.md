@@ -116,7 +116,7 @@ OpenAIDE is an AI Agent kernel platform in Go. Strictly layered, CSP actor concu
    - `kernel_process.go` — `Process()` sync path + `doReflection()` (async reflection after ReAct loop)
     - `kernel_stream.go` — `ProcessStream()` streaming path. Tool partitioning with parallel-safe batching. **Auto-verification**: after coding, detects project test command (go test/npm test/make test) and runs it; failures injected as user messages back into ReAct loop.
    - `kernel_prompt.go` — Layered prompt system (L0-L5), LLM task classification, file overrides, L3 dynamic tail.
-   - `kernel_react.go` — Shared ReAct helpers: prepareReActRound, partitionToolCalls, executeToolBatch
+   - `kernel_react.go` — Shared ReAct helpers: prepareReActRound, executeToolBatch
    - **Sub-packages:**
      - `kernel/actor/` — Generic Actor, ActorStore[K,V], SafeMap[K,V] (zero kernel deps, used by 12+ packages)
      - `kernel/trace/` — FileTracer (JSONL buffered), FileCheckpointer (disk crash recovery)
@@ -129,7 +129,7 @@ OpenAIDE is an AI Agent kernel platform in Go. Strictly layered, CSP actor concu
    - `interfaces.go` — All kernel-level interfaces (LLMProvider, ModelSwitcher, SessionStore, etc.)
    - `types.go` — Shared types: `Message`, `ToolCall`, `Query`, `Response`, `StreamChunk`, `Event`, `Session`
    - `llm_reflection.go` — Process supervision: evaluates each ReAct step individually, identifies best/worst decisions
-   - Other files: `compress.go`, `checkpoint.go`, `approval.go`, `adaptive.go`, `tracer.go`
+    - Other files: `compress.go`, `checkpoint.go`, `adaptive.go`, `tracer.go`
    - Legacy (not default): `session_store.go`
 
 3. **`backend/internal/memory/`** — MemGPT-style memory store:
@@ -196,7 +196,6 @@ All judgment calls delegated to LLM. No keyword matching, no regex routing, no s
 - **Role generation** (`GenerateRoles`): LLM defines custom roles for each task — not picking from a preset list, but designing role names, prompts, and tool sets from scratch based on the task at hand. Skills, plugins, and user config can inject additional roles via `AddRole()`.
 - **Pipeline routing** (`routePipeline`): LLM selects needed roles per task from available roles (dynamic or default)
 - **Model routing**: LLM `route:"execution"/"reasoning"` options (was regex patterns on query text)
-- **Tool risk assessment** (`assessWithLLM`): LLM evaluates tool arguments; exact match parsing (was `Contains("safe")` vulnerable to "unsafe")
 - **Skill detection** (`detectWithLLM`): LLM semantic skill matching (was keyword substring scoring + 18-entry keyword map)
 - **Round estimation** (`AdaptiveRounds.estimateWithLLM`): LLM judges task complexity (was keyword+length heuristics)
 - **Session titles** (`generateSessionTitle`): LLM generates meaningful 3-5 word titles async (was 25-char truncation)
@@ -495,7 +494,7 @@ storage:
   - Readline with file-backed history (~/.openaide/history), tab completion, hints
   - Markdown rendering via glamour (headers, code blocks with Chroma, tables)
   - pterm: progress bars, spinners, colored messages
-  - Claude-style approval: 3-option select (Allow/Allow All/Deny)
+  - Budget confirmation: continue/stop prompt when round limit is approached
   - ESC: cancel active request; idle → undo last user+assistant message pair
   - Ctrl+C: first press cancels request, second press exits
   - Smart routing: PreviewPlan → direct ReAct or team execution
@@ -515,7 +514,7 @@ No artificial round limits. The LLM decides when to stop. Budget hints at rounds
 
 ### User Experience
 
-- **LLM auto-approval**: Dangerous tools (e.g., `execute_command`) trigger LLM risk assessment. `AutoApprover.assessWithLLM()` evaluates the command — safe commands (ls, pwd, cat) auto-approved, risky commands (rm, format) prompt user, dangerous commands blocked. No more tedious manual approval for safe operations.
+- **Command safety**: `execute_command` runs a shared token-level blacklist check (`IsDangerousCommand`) before execution — destructive commands (rm -rf, mkfs, etc.) are blocked, safe commands (ls, pwd, cat) run directly. Write tools are protected by Undo + atomic write + file locks.
 - **Error messages**: `humanizeError` wraps API errors with human-readable tips (429→quota, 401→bad key, timeout→network, deadline→slow model).
 - **Tool visibility**: One-shot streaming mode shows tool calls on stderr as they execute.
 - **Session continuity**: `getOrCreateSession` auto-resumes the most recent session. Use `-c` flag for explicit continuation.
@@ -576,7 +575,7 @@ All stateful modules use Go's CSP model: each module owns its data in a single g
 
 ### Tool output snipping (Claude Code style)
 
-- `snipOldToolOutputs()`: keep last 4 tool results intact, older ones snipped to head(500) + tail(500)
+- `snipOldToolOutputsDynamic()`: keep last 4 tool results intact, older ones snipped to head(500) + tail(500) based on context pressure
 
 ### Lint/Repair loop (Aider-style)
 

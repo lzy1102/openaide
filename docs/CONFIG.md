@@ -61,7 +61,6 @@ kernel:
   min_rounds: 8         # 自适应轮次下限
   max_rounds_cap: 50    # 自适应轮次上限
   system_prompt: ""            # 自定义系统提示词（覆盖文件）
-  unsafe_mode: true            # 安全模式: true=跳过审批
 
 # ── 规划配置 ──
 planning:
@@ -81,12 +80,6 @@ memory:
 # ── 搜索配置 ──
 search:
   searxng_url: http://localhost:8888
-
-# ── 工具配置 ──
-tools:
-  dangerous_tools:       # 需要审批的工具
-    - execute_command
-    - write_file
 
 # ── 浏览器配置 ──
 browser:
@@ -151,7 +144,6 @@ log:
 | `max_rounds` | 50 | 硬上限，触发预算耗尽回调 |
 | `min_rounds` | 8 | 自适应下限 |
 | `max_rounds_cap` | 50 | 自适应上限 |
-| `unsafe_mode` | true | 跳过工具审批（生产环境建议 false） |
 
 ### MCP 协议
 

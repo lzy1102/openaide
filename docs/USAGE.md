@@ -47,7 +47,7 @@ openaide -c "方案 A 更好，帮我实现"               # AI 记得刚才讨�
 openaide              # 启动交互式 REPL
 openaide "prompt"     # 一次性问答
 openaide -c           # 恢复上一次会话
-openaide -y           # 自动审批所有工具操作
+openaide -y           # 跳过预算耗尽确认，自动继续
 openaide --model <n>  # 指定模型
 openaide --verbose    # 调试日志
 openaide setup        # 交互式配置向导
@@ -174,7 +174,7 @@ curl -X POST http://localhost:8080/api/v1/chat/stream \
 
 ## 配置文件热更新
 
-修改 `~/.openaide/config.yaml` 后自动重载: `max_rounds`, `max_tokens`, `unsafe_mode`, `log.level`。其他设置需重启。
+修改 `~/.openaide/config.yaml` 后自动重载: `max_rounds`, `max_tokens`, `log.level`。其他设置需重启。
 
 ## 数据目录
 

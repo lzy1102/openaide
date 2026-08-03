@@ -9,7 +9,7 @@
 |------|------|--------|----------|
 | **内核** | `internal/kernel/` | 22+14T | Agent核心：LLM统一查询分析、自适应ReAct循环（5-50轮）、CSP Actor模型、LLM动态后处理（反思）、分层提示词(L0-L5)、会话管理 |
 | **LLM** | `internal/llm/` | 6+2T | 多提供商网关（OpenAI兼容+Anthropic原生）、成本感知路由（reasoning/execution双模型）、Prompt缓存、Embedding、Router |
-| **工具** | `internal/tools/` | 18+6T | 43个内置工具：文件系统/Git/命令/搜索/浏览器/桌面/多模态/审批/验证/LSP/记忆管理 |
+| **工具** | `internal/tools/` | 18+6T | 43个内置工具：文件系统/Git/命令/搜索/浏览器/桌面/多模态/验证/LSP/记忆管理 |
 | **记忆** | `internal/memory/` | 2+3T | SQLite WAL存储 + 批量嵌入 + 向量缓存 + 跨会话记忆 |
 | **编排** | `internal/orchestration/` | 7+2T | DeepPlan管线、LLM动态Team角色生成、隔离子Agent+进度回调、Branch并行分解、ToT探索、DAG拓扑排序 |
 | **API** | `internal/api/` | 3+2T | REST + SSE + WebSocket + Prometheus /metrics + JWT鉴权中间件 + 限流 |
@@ -66,7 +66,7 @@ mcp    ←── infra/app      (MCP server 连接 + tool 注册)
                         ┌─────────────────────┼─────────────────────┐
                         ▼                     ▼                     ▼
                     buildMessages          LLM.Chat           executeTool
-                    (L0-L5分层提示词        (网关路由:          (审批+权限+
+                    (L0-L5分层提示词        (网关路由:          (命令安全+
                      记忆注入)               reasoning/execution) 工具执行)
                         │                     │                     │
                         └─────────────────────┴─────────────────────┘

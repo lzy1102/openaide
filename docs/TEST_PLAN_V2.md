@@ -48,9 +48,8 @@ mv ~/.openaide/data ~/.openaide/data.bak 2>/dev/null
 | R3 | 多轮对话 | 连续问 3 个相关问题 | 上下文连贯 | ☐ |
 | R4 | 恢复会话 | `openaide -c` | 恢复上次对话 | ☐ |
 | R5 | 工具触发 | `读取 OPENAIDE.md` | 显示 ⚙ read_file | ☐ |
-| R6 | 审批弹窗 | `创建 /tmp/test.txt 写入 hello` | 弹出 Allow/Deny | ☐ |
-| R7 | 拒绝审批 | 选 Deny | 工具被拒绝 | ☐ |
-| R8 | 全部允许 | 选 Allow All | 后续不再弹窗 | ☐ |
+| R6 | 危险命令拦截 | `创建 /tmp/test.txt 写入 hello` | 直接执行（写操作有 Undo 保护） | ☐ |
+| R7 | 安全命令 | `运行 ls -la` | 直接执行，不弹窗 | ☐ |
 | R9 | /clear | 输入 `/clear` | 清空当前会话 | ☐ |
 | R10 | 退出 | `exit` 或 Ctrl+D | 正常退出 | ☐ |
 

@@ -74,7 +74,7 @@ rm -rf ~/.openaide/data/
 | C15 | 退出 | 输入 `exit` 或 `quit` 或 Ctrl+D | 正常退出 | ☐ |
 | C16 | /clear | 输入 "/clear" | 清空当前会话，开始新会话 | ☐ |
 | C17 | 恢复会话 | `openaide -c` | 恢复上次未完成的会话 | ☐ |
-| C18 | 自动审批 | `openaide -y "创建 test.txt 写入 hello"` | 自动批准工具操作，不弹出审批 | ☐ |
+| C18 | 预算确认 | `openaide -y "长任务"` | `-y` 跳过预算耗尽确认，自动继续 | ☐ |
 | C19 | Markdown 渲染 | 在 REPL 中问 "列出 Go 语言的特性" | 代码块带语法高亮，表格格式正确 | ☐ |
 | C20 | 工具可见性 | 在 REPL 中问 "读取 OPENAIDE.md" | 终端显示 ⚙ read_file 工具调用状态 | ☐ |
 
@@ -141,11 +141,9 @@ rm -rf ~/.openaide/data/
 | A12 | Web 搜索 | `openaide "搜索 Go 1.26 的新特性"` | 调用 web_search | ☐ |
 | A13 | 网页抓取 | `openaide "抓取 https://go.dev 的内容并总结"` | 调用 web_fetch | ☐ |
 | A14 | diff_edit | `openaide "把 /tmp/test_openaide.txt 中的 hello 改成 world"` | 调用 diff_edit，显示 before/after | ☐ |
-| A15 | 执行命令 | `openaide "运行 ls -la"` | **弹出审批**，批准后执行成功 | ☐ |
-| A16 | 审批拒绝 | A15 中选择 "Deny" | 工具被拒绝，显示拒绝原因 | ☐ |
-| A17 | 审批全部允许 | A15 中选择 "Allow All" | 后续工具调用自动批准 | ☐ |
+| A15 | 执行命令 | `openaide "运行 ls -la"` | 安全命令直接执行成功 | ☐ |
+| A16 | 危险命令拦截 | `openaide "执行 rm -rf /"` | 被危险命令黑名单拦截，显示拒绝原因 | ☐ |
 | A18 | 并行工具 | `openaide "同时读取 README.md 和 OPENAIDE.md"` | 并行调用 read_file，更快完成 | ☐ |
-| A19 | 危险工具 | `openaide "执行 rm -rf /"` | 弹出审批，需要确认 | ☐ |
 
 ### 4.3 记忆管理 (MemGPT)
 

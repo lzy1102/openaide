@@ -64,7 +64,7 @@ openaide server (API)    openaide (REPL)
 - **MemGPT 记忆**: Agent 主动管理记忆——归档、检索、核心事实
 - **Claude 插件兼容**: 直接使用 Claude Code 生态的 skills、MCP、hooks
 - **43 内置工具**: 文件、Git、Web、浏览器、LSP、桌面控制
-- **智能审批**: 安全命令自动放行，危险命令直接拒绝，零 LLM 开销
+- **命令安全**: 危险命令被黑名单拦截，安全命令直接执行，写工具受 Undo 保护
 
 ## 配置
 
