@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbletea"
 
@@ -28,6 +29,12 @@ type approvalRequest struct {
 type approvalReqMsg struct {
 	req approvalRequest
 }
+
+// approvalTimeoutMsg 审批挂起超时，自动拒绝，避免内核回调永久阻塞
+type approvalTimeoutMsg struct{}
+
+// approvalTimeout 审批等待上限：超时后自动拒绝（为防止回调 goroutine 永久阻塞的兜底）
+const approvalTimeout = 2 * time.Minute
 
 // waitForApproval 订阅审批 channel
 func waitForApproval(ch chan approvalRequest) tea.Cmd {
@@ -77,7 +84,7 @@ func (m tuiModel) handleApprovalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cancel = nil
 		}
 		m.mode = modeIdle
-		m.appendHistory(styleWarn.Render("⚠ Cancelled") + "\n")
+		m.appendHistory(styleWarn.Render(lang.T("repl.cancelled")) + "\n")
 		m.textarea.Focus()
 		m.refreshViewport()
 		return m, waitForApproval(m.approvalCh)

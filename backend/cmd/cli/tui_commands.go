@@ -34,7 +34,7 @@ func (m tuiModel) handleTUICommand(cmd string) (tea.Model, tea.Cmd) {
 			styleTool.Render("/log") + " — " + lang.T("repl.help_log"),
 			styleTool.Render("/sessions") + " — " + lang.T("repl.help_sessions"),
 			styleTool.Render("/handoff") + " — " + lang.T("repl.help_handoff"),
-			styleTool.Render("/compact") + " — manually compress session context",
+			styleTool.Render("/compact") + " — " + lang.T("repl.help_compact"),
 			styleTool.Render("/exit /quit /q") + " — " + lang.T("repl.help_exit"),
 		} {
 			m.appendHistory("  " + line + "\n")
@@ -46,12 +46,12 @@ func (m tuiModel) handleTUICommand(cmd string) (tea.Model, tea.Cmd) {
 			styleTool.Render("/reviewer <task>") + " — " + lang.T("repl.help_reviewer"),
 			styleTool.Render("/executor <task>") + " — " + lang.T("repl.help_executor"),
 			styleTool.Render("/team <task>") + " — " + lang.T("repl.help_team"),
-			styleTool.Render("/tree") + " — browse project files",
-			styleTool.Render("/status") + " — system health & providers",
-			styleTool.Render("/undo") + " — rollback to last checkpoint",
-			styleTool.Render("/auto") + " — toggle autonomous (goal-driven) mode",
-			styleTool.Render("/research") + " — toggle parallel research sub-agents",
-			styleTool.Render("/init") + " — generate OPENAIDE.md for this project",
+			styleTool.Render("/tree") + " — " + lang.T("repl.help_tree"),
+			styleTool.Render("/status") + " — " + lang.T("repl.help_status"),
+			styleTool.Render("/undo") + " — " + lang.T("repl.help_undo"),
+			styleTool.Render("/auto") + " — " + lang.T("repl.help_auto"),
+			styleTool.Render("/research") + " — " + lang.T("repl.help_research"),
+			styleTool.Render("/init") + " — " + lang.T("repl.help_init"),
 		} {
 			m.appendHistory("  " + line + "\n")
 		}
@@ -66,25 +66,25 @@ func (m tuiModel) handleTUICommand(cmd string) (tea.Model, tea.Cmd) {
 			m.sessionID = sess.ID
 		}
 		m.history.Reset()
-		m.appendHistory(styleSuccess.Render("✓ session cleared") + "\n")
+		m.appendHistory(styleSuccess.Render(lang.T("repl.session_cleared")) + "\n")
 		return m, nil
 
 	case "/compact":
 		if ak, ok := m.app.Kernel.(*kernel.AgentKernel); ok {
 			before, after, err := ak.CompressNow(context.Background(), m.sessionID)
 			if err != nil {
-				m.appendHistory(styleWarn.Render("⚠ compact failed: "+err.Error()) + "\n")
+				m.appendHistory(styleWarn.Render(lang.T("repl.compact_failed", err.Error())) + "\n")
 			} else if before == 0 && after == 0 {
-				m.appendHistory(styleInfo.Render("nothing to compact") + "\n")
+				m.appendHistory(styleInfo.Render(lang.T("repl.compact_nothing")) + "\n")
 			} else {
 				pct := 0
 				if before > 0 {
 					pct = 100 - after*100/before
 				}
-				m.appendHistory(styleSuccess.Render(fmt.Sprintf("✓ context compacted: %d → %d tokens (-%d%%)", before, after, pct)) + "\n")
+				m.appendHistory(styleSuccess.Render(lang.T("repl.compact_done", before, after, pct)) + "\n")
 			}
 		} else {
-			m.appendHistory(styleWarn.Render("⚠ compact unavailable") + "\n")
+			m.appendHistory(styleWarn.Render(lang.T("repl.compact_unavailable")) + "\n")
 		}
 		return m, nil
 
@@ -100,7 +100,7 @@ func (m tuiModel) handleTUICommand(cmd string) (tea.Model, tea.Cmd) {
 
 	case "/init":
 		m.mode = modeThinking
-		m.statusMsg = "generating OPENAIDE.md…"
+		m.statusMsg = lang.T("repl.generating_doc")
 		m.textarea.Blur()
 		m.refreshViewport()
 		return m, func() tea.Msg {
@@ -116,7 +116,7 @@ func (m tuiModel) handleTUICommand(cmd string) (tea.Model, tea.Cmd) {
 				m.appendHistory(styleSuccess.Render(lang.T("repl.lang_zh")) + "\n")
 			case "en":
 				lang.SetLang(lang.EN)
-				m.appendHistory(styleSuccess.Render("English") + "\n")
+				m.appendHistory(styleSuccess.Render(lang.T("repl.lang_en")) + "\n")
 			}
 		}
 		return m, nil
@@ -148,28 +148,28 @@ func (m tuiModel) handleTUICommand(cmd string) (tea.Model, tea.Cmd) {
 	case "/auto":
 		on := m.autoYes.Get()
 		m.autoYes.Set(!on)
-		state := "OFF"
 		if !on {
-			state = "ON"
+			m.appendHistory(styleSuccess.Render(lang.T("repl.auto_on")) + "\n")
+		} else {
+			m.appendHistory(styleSuccess.Render(lang.T("repl.auto_off")) + "\n")
 		}
-		m.appendHistory(styleSuccess.Render("✓ auto-approve "+state) + "\n")
 		return m, nil
 
 	case "/research":
 		on := m.research.Get()
 		m.research.Set(!on)
-		state := "OFF"
 		if !on {
-			state = "ON"
+			m.appendHistory(styleSuccess.Render(lang.T("repl.research_on")) + "\n")
+		} else {
+			m.appendHistory(styleSuccess.Render(lang.T("repl.research_off")) + "\n")
 		}
-		m.appendHistory(styleSuccess.Render("✓ parallel research "+state) + "\n")
 		return m, nil
 
 	case "/analyst", "/coder", "/reviewer", "/executor":
 		role := strings.TrimPrefix(parts[0], "/")
 		task := strings.TrimSpace(strings.TrimPrefix(cmd, parts[0]))
 		if task == "" {
-			m.appendHistory(styleWarn.Render("usage: "+parts[0]+" <task>") + "\n")
+			m.appendHistory(styleWarn.Render(lang.T("repl.usage_role", parts[0])) + "\n")
 			return m, nil
 		}
 		return m.startSubAgent(role, task)
@@ -177,13 +177,13 @@ func (m tuiModel) handleTUICommand(cmd string) (tea.Model, tea.Cmd) {
 	case "/team":
 		task := strings.TrimSpace(strings.TrimPrefix(cmd, "/team"))
 		if task == "" {
-			m.appendHistory(styleWarn.Render("usage: /team <task>") + "\n")
+			m.appendHistory(styleWarn.Render(lang.T("repl.usage_team")) + "\n")
 			return m, nil
 		}
 		return m.startTeam(task)
 
 	default:
-		m.appendHistory(styleWarn.Render("Unknown: "+parts[0]+"  (try /help)") + "\n")
+		m.appendHistory(styleWarn.Render(lang.T("err.unknown_cmd", parts[0])) + "\n")
 		return m, nil
 	}
 }
@@ -193,7 +193,7 @@ func (m tuiModel) handleModelCmd(parts []string) (tea.Model, tea.Cmd) {
 	if len(parts) >= 2 {
 		m.app.SetModel(parts[1])
 		m.modelName = parts[1]
-		m.appendHistory(styleSuccess.Render("✓ Model: "+parts[1]) + "\n")
+		m.appendHistory(styleSuccess.Render(lang.T("repl.model_switched", parts[1])) + "\n")
 		return m, nil
 	}
 	info := m.app.LLMGateway.GetProviderInfos()
@@ -209,7 +209,7 @@ func (m tuiModel) handleModelCmd(parts []string) (tea.Model, tea.Cmd) {
 		}
 		label := fmt.Sprintf("%s  %s  %s", mark, p.Name, p.Model)
 		if p.Default {
-			label += "  (default)"
+			label += "  " + lang.T("model.default")
 		}
 		options = append(options, label)
 	}
@@ -222,7 +222,7 @@ func (m tuiModel) handleModelCmd(parts []string) (tea.Model, tea.Cmd) {
 		if len(fields) >= 3 {
 			m.app.SetModel(fields[2])
 			m.modelName = fields[2]
-			m.appendHistory(styleSuccess.Render("✓ Model: "+fields[2]) + "\n")
+			m.appendHistory(styleSuccess.Render(lang.T("repl.model_switched", fields[2])) + "\n")
 		}
 		return nil
 	}
@@ -311,7 +311,7 @@ func (m tuiModel) handleSessionCmd(parts []string) (tea.Model, tea.Cmd) {
 
 // handleTreeCmd /tree 文件树
 func (m tuiModel) handleTreeCmd() (tea.Model, tea.Cmd) {
-	m.appendHistory(stylePrompt.Render("Project tree:") + "\n")
+	m.appendHistory(stylePrompt.Render(lang.T("repl.tree_title")) + "\n")
 	showFileTreeInto(m.history, ".")
 	m.appendHistory("\n")
 	return m, nil
@@ -319,10 +319,10 @@ func (m tuiModel) handleTreeCmd() (tea.Model, tea.Cmd) {
 
 // handleStatusCmd /status 系统健康与 providers
 func (m tuiModel) handleStatusCmd() (tea.Model, tea.Cmd) {
-	m.appendHistory(stylePrompt.Render("System status:") + "\n")
+	m.appendHistory(stylePrompt.Render(lang.T("repl.status_title")) + "\n")
 	info := m.app.LLMGateway.GetProviderInfos()
 	if len(info) == 0 {
-		m.appendHistory("  " + styleWarn.Render("No providers configured") + "\n")
+		m.appendHistory("  " + styleWarn.Render(lang.T("tui.no_providers")) + "\n")
 		return m, nil
 	}
 	for _, p := range info {
@@ -333,7 +333,7 @@ func (m tuiModel) handleStatusCmd() (tea.Model, tea.Cmd) {
 		m.appendHistory(fmt.Sprintf("  %s %s — %s\n", mark, styleSuccess.Render(p.Name), p.Model))
 	}
 	if m.modelName != "" {
-		m.appendHistory("  " + styleDim.Render("active: "+m.modelName) + "\n")
+		m.appendHistory("  " + styleDim.Render(lang.T("repl.status_active", m.modelName)) + "\n")
 	}
 	return m, nil
 }
@@ -343,7 +343,7 @@ func (m tuiModel) startSubAgent(role, task string) (tea.Model, tea.Cmd) {
 	m.subRole = role
 	m.mode = modeSubAgent
 	m.subStatus = ""
-	m.statusMsg = role + " running…"
+	m.statusMsg = lang.T("repl.sub_running", role)
 	m.textarea.Blur()
 	m.layoutViewport()
 	m.refreshViewport()
@@ -376,7 +376,7 @@ func (m tuiModel) startTeam(task string) (tea.Model, tea.Cmd) {
 	m.subRole = "team"
 	m.mode = modeSubAgent
 	m.subStatus = ""
-	m.statusMsg = "team: analyst → coder → reviewer"
+	m.statusMsg = lang.T("repl.team_pipeline")
 	m.textarea.Blur()
 	m.layoutViewport()
 	m.refreshViewport()

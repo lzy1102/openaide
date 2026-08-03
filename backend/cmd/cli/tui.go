@@ -314,7 +314,7 @@ func (m *tuiModel) resumeSession(app *infra.Application) {
 		if len(s.Messages) > 0 {
 			m.sessionID = s.ID
 			msgCount := len(s.Messages)
-			m.history.WriteString(fmt.Sprintf("  %s%s: %s (%d msgs)\n",
+			m.history.WriteString(lang.T("repl.resume_row",
 				styleSuccess.Render(lang.T("repl.resume")), "", s.ID[:8], msgCount))
 			history, _ := app.Orchestrator.GetSessionHistory(context.Background(), s.ID, 3)
 			if len(history) > 0 {
@@ -371,12 +371,32 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 
 	case approvalReqMsg:
-		// 审批请求 → 进入 approval 模式
+		// 审批请求 → 进入 approval 模式；同时启动超时兜底，防止挂起无人响应时内核回调永久阻塞
 		m.pendingApproval = &msg.req
 		m.mode = modeApproval
 		m.textarea.Blur()
 		cmds = append(cmds, waitForApproval(m.approvalCh))
+		cmds = append(cmds, tea.Tick(approvalTimeout, func(time.Time) tea.Msg {
+			return approvalTimeoutMsg{}
+		}))
 		return m, tea.Batch(cmds...)
+
+	case approvalTimeoutMsg:
+		// 审批超时自动拒绝：恢复流式，避免内核回调 goroutine 泄漏
+		if m.pendingApproval == nil {
+			return m, nil
+		}
+		select {
+		case m.pendingApproval.resultCh <- false:
+		default:
+		}
+		m.pendingApproval = nil
+		m.mode = modeStreaming
+		m.appendHistory(styleWarn.Render(lang.T("repl.approval_timeout")) + "\n")
+		if m.streamCh != nil {
+			return m, waitForChunk(m.streamCh)
+		}
+		return m, nil
 
 	case tea.KeyMsg:
 		// 诊断日志:记录粘贴/控制字符/特殊键,用于排查输入异常(如终端转义泄漏)
@@ -447,7 +467,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else if msg.result != "" {
 			m.appendHistory(RenderMarkdown(msg.result))
 		}
-		m.appendHistory(styleSuccess.Render(role+" done") + "\n")
+		m.appendHistory(styleSuccess.Render(lang.T("repl.sub_done", role)) + "\n")
 		m.layoutViewport()
 		m.textarea.Focus()
 		m.refreshViewport()
@@ -458,7 +478,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.appendHistory(styleError.Render("✗ "+msg.err.Error()) + "\n")
 		} else {
-			m.appendHistory(styleSuccess.Render(fmt.Sprintf("OPENAIDE.md generated (%d chars) — will be loaded in future sessions", msg.size)) + "\n")
+			m.appendHistory(styleSuccess.Render(lang.T("repl.doc_generated", msg.size)) + "\n")
 		}
 		m.textarea.Focus()
 		m.refreshViewport()
@@ -473,7 +493,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case editorDoneMsg:
 		m.mode = modeIdle
 		if msg.err != nil {
-			m.appendHistory(styleError.Render("✗ editor: "+msg.err.Error()) + "\n")
+			m.appendHistory(styleError.Render(lang.T("repl.editor_err", msg.err.Error())) + "\n")
 			return m, nil
 		}
 		if msg.content != "" {
@@ -527,7 +547,7 @@ func (m tuiModel) handleMainKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.mode = modeIdle
 			m.tasks = nil
 			m.layoutViewport()
-			m.appendHistory(styleWarn.Render("⚠ Interrupted") + "\n")
+			m.appendHistory(styleWarn.Render(lang.T("repl.interrupted")) + "\n")
 			m.textarea.Focus()
 			m.refreshViewport()
 			return m, nil
@@ -544,7 +564,7 @@ func (m tuiModel) handleMainKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.mode = modeIdle
 			m.tasks = nil
 			m.layoutViewport()
-			m.appendHistory(styleWarn.Render("⚠ Cancelled") + "\n")
+			m.appendHistory(styleWarn.Render(lang.T("repl.cancelled")) + "\n")
 			m.textarea.Focus()
 			m.refreshViewport()
 			return m, nil
@@ -889,6 +909,14 @@ func (m tuiModel) finishStream() (tea.Model, tea.Cmd) {
 	if m.cancel != nil {
 		m.cancel()
 		m.cancel = nil
+	}
+	// 流结束但审批仍挂起时，立即拒绝，解除内核回调的阻塞等待
+	if m.pendingApproval != nil {
+		select {
+		case m.pendingApproval.resultCh <- false:
+		default:
+		}
+		m.pendingApproval = nil
 	}
 	m.mode = modeIdle
 	elapsed := time.Since(m.startTime)
@@ -1487,21 +1515,21 @@ func (m tuiModel) gaugeView() string {
 			styleGaugeLbl.Render("tok"),
 			"│",
 			styleGaugeVal.Render(fmt.Sprintf("🔧 %d", m.totalTools)),
-			styleGaugeLbl.Render("tools"),
+			styleGaugeLbl.Render(lang.T("repl.gauge_tools")),
 		)
 		if m.streamTotal > 0 {
 			parts = append(parts, "│",
 				styleGaugeVal.Render(fmt.Sprintf("🔁 %d/%d", m.streamRound, m.streamTotal)),
-				styleGaugeLbl.Render("round"))
+				styleGaugeLbl.Render(lang.T("repl.gauge_round")))
 		}
 		parts = append(parts, "│",
 			styleGaugeVal.Render(elapsed.Round(time.Second).String()),
-			styleGaugeLbl.Render("elapsed"))
+			styleGaugeLbl.Render(lang.T("repl.gauge_elapsed")))
 		if m.cacheHit+m.cacheMiss > 0 {
 			pct := m.cacheHit * 100 / (m.cacheHit + m.cacheMiss)
 			parts = append(parts, "│",
 				styleGaugeVal.Render(fmt.Sprintf("💾 %d%%", pct)),
-				styleGaugeLbl.Render("cache"))
+				styleGaugeLbl.Render(lang.T("repl.gauge_cache")))
 		}
 		return styleStatusBar.Render(strings.Join(parts, " "))
 	}
@@ -1654,13 +1682,13 @@ func (m tuiModel) selectView() string {
 			sb.WriteString("    " + item + "\n")
 		}
 	}
-	sb.WriteString(styleDim.Render("↑↓ move · enter select · esc cancel") + "\n")
+	sb.WriteString(styleDim.Render(lang.T("repl.select_hint")) + "\n")
 	return styleBox.Render(sb.String())
 }
 
 func (m tuiModel) searchView() string {
 	var sb strings.Builder
-	sb.WriteString(stylePrompt.Render("History search (type to filter):") + "\n")
+	sb.WriteString(stylePrompt.Render(lang.T("repl.history_search")) + "\n")
 	shown := 10
 	if len(m.searchResults) < shown {
 		shown = len(m.searchResults)
@@ -1672,6 +1700,6 @@ func (m tuiModel) searchView() string {
 			sb.WriteString("    " + trunc(m.searchResults[i], 60) + "\n")
 		}
 	}
-	sb.WriteString(styleDim.Render("↑↓ move · enter select · esc cancel") + "\n")
+	sb.WriteString(styleDim.Render(lang.T("repl.select_hint")) + "\n")
 	return styleBox.Render(sb.String())
 }
