@@ -381,10 +381,10 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 				}
 			}
 
-			// 计划进度回写:每轮有工具调用即视为推进一个子步骤,
-			// 注入下一待办步骤，防止 agent 在长工具序列中偏离计划。
-			if activePlan != nil && len(execResults) > 0 && batchErrors == 0 &&
-				planDone < len(activePlan.SubTasks) {
+			// 计划进度回写:每 3 轮注入一次,避免进度消息随轮数线性膨胀。
+			// 有工具调用且无错误视为推进一个子步骤,提示下一步待办。
+			if activePlan != nil && round%3 == 0 && len(execResults) > 0 &&
+				batchErrors == 0 && planDone < len(activePlan.SubTasks) {
 				planDone++
 				if msg := activePlan.ProgressMessage(planDone, len(activePlan.SubTasks)); msg.Content != "" {
 					messages = append(messages, msg)

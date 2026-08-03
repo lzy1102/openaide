@@ -269,7 +269,7 @@ func initialTUI(app *infra.Application, autoYes bool) tuiModel {
 	ay.Set(autoYes)
 
 	rs := &sharedAutoYes{}
-	rs.Set(true)
+	rs.Set(false) // 默认关闭:并行研究会增加额外 LLM 调用与上下文噪音
 
 	return tuiModel{
 		app:          app,

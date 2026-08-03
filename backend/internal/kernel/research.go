@@ -33,7 +33,7 @@ func (k *AgentKernel) runResearchSubAgent(ctx context.Context, task string) (str
 		{Role: "user", Content: task},
 	}
 
-	const maxResearchRounds = 6
+	const maxResearchRounds = 2
 	for round := 0; round < maxResearchRounds; round++ {
 		var callTools []ToolDefinition
 		finalRound := round >= maxResearchRounds-1
@@ -47,7 +47,7 @@ func (k *AgentKernel) runResearchSubAgent(ctx context.Context, task string) (str
 
 		stream, err := k.llmProvider.ChatStream(ctx, messages, callTools, map[string]interface{}{
 			"route":       "reasoning",
-			"max_tokens":  2000,
+			"max_tokens":  800,
 			"temperature": 0.2,
 		})
 		if err != nil {
@@ -149,7 +149,7 @@ func (k *AgentKernel) researchSubagentPrompt(ctx context.Context, plan *TaskPlan
 			continue
 		}
 		any = true
-		sb.WriteString(truncStr(out, 2000))
+		sb.WriteString(truncStr(out, 400))
 		sb.WriteString("\n---\n")
 	}
 	if !any {
