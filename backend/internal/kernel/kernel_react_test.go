@@ -5,64 +5,6 @@ import (
 	"testing"
 )
 
-func TestPartitionToolCalls(t *testing.T) {
-	tools := []ToolCall{
-		{Function: FunctionCall{Name: "read_file"}},
-		{Function: FunctionCall{Name: "write_file"}},
-		{Function: FunctionCall{Name: "read_file"}},
-		{Function: FunctionCall{Name: "read_file"}},
-	}
-	batches := partitionToolCalls(tools)
-	// [read], [write], [read, read] = 3 batches
-	if len(batches) != 3 {
-		t.Fatalf("expected 3 batches, got %d", len(batches))
-	}
-	if len(batches[0]) != 1 {
-		t.Error("batch 0 should have 1 tool (read)")
-	}
-	if len(batches[1]) != 1 {
-		t.Error("batch 1 should have 1 tool (write, unsafe)")
-	}
-	if len(batches[2]) != 2 {
-		t.Error("batch 2 should have 2 tools (read, read)")
-	}
-}
-
-func TestPartitionToolCalls_AllSafe(t *testing.T) {
-	tools := []ToolCall{
-		{Function: FunctionCall{Name: "read_file"}},
-		{Function: FunctionCall{Name: "search_files"}},
-		{Function: FunctionCall{Name: "web_search"}},
-	}
-	batches := partitionToolCalls(tools)
-	// All safe → 1 batch
-	if len(batches) != 1 {
-		t.Fatalf("expected 1 batch, got %d", len(batches))
-	}
-	if len(batches[0]) != 3 {
-		t.Errorf("expected 3 tools in batch, got %d", len(batches[0]))
-	}
-}
-
-func TestPartitionToolCalls_AllUnsafe(t *testing.T) {
-	tools := []ToolCall{
-		{Function: FunctionCall{Name: "write_file"}},
-		{Function: FunctionCall{Name: "execute_command"}},
-	}
-	batches := partitionToolCalls(tools)
-	// Each unsafe → separate batch
-	if len(batches) != 2 {
-		t.Fatalf("expected 2 batches, got %d", len(batches))
-	}
-}
-
-func TestPartitionToolCalls_Empty(t *testing.T) {
-	batches := partitionToolCalls(nil)
-	if batches != nil {
-		t.Error("expected nil for empty input")
-	}
-}
-
 func TestBuildFinalMessage(t *testing.T) {
 	msg := buildFinalMessage("hello", "thinking...", []ToolCall{})
 	if msg.Content != "hello" {

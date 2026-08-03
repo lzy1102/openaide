@@ -166,8 +166,8 @@ func BuiltinTasks() []Task {
 		{
 			ID: "oa-tool-execution", Name: "Explain Tool Execution",
 			Category: "think", Difficulty: "medium",
-			Query:        "How does OpenAIDE execute tool calls in parallel? Read kernel/kernel_react.go and explain the partitionToolCalls and executeToolBatch functions.",
-			EvalCriteria: "Explains that partitionToolCalls separates tools into parallel-safe (read-only) and serial (write) batches. executeToolBatch runs parallel-safe tools concurrently using goroutines. Mentions the parallelSafeTools map. Shows understanding of the concurrency model.",
+			Query:        "How does OpenAIDE execute tool calls in parallel? Read kernel/kernel_react.go and explain the executeToolBatch function.",
+			EvalCriteria: "Explains that executeToolBatch separates tools into parallel-safe (read-only) and serial (write) batches, running parallel-safe tools concurrently using goroutines. Mentions the parallelSafeTools map. Shows understanding of the concurrency model.",
 			MinToolCalls: 1,
 		},
 

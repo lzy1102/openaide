@@ -296,31 +296,6 @@ func buildSynthesisPrompt(messages []Message) []Message {
 	})
 }
 
-// partitionToolCalls splits tool calls into consecutive safe/unsafe batches.
-// Safe tools within a contiguous block run concurrently; unsafe tools run alone.
-func partitionToolCalls(toolCalls []ToolCall) [][]ToolCall {
-	if len(toolCalls) == 0 {
-		return nil
-	}
-	var batches [][]ToolCall
-	var current []ToolCall
-	for _, tc := range toolCalls {
-		if isParallelSafe(tc.Function.Name) {
-			current = append(current, tc)
-		} else {
-			if len(current) > 0 {
-				batches = append(batches, current)
-			}
-			batches = append(batches, []ToolCall{tc})
-			current = nil
-		}
-	}
-	if len(current) > 0 {
-		batches = append(batches, current)
-	}
-	return batches
-}
-
 // determineMaxRounds calculates the ReAct loop limit (adaptive or config-based).
 // Uses cached result from unified query analysis when available.
 func (k *AgentKernel) determineMaxRounds(ctx context.Context, queryContent string, historyLen int, analysis *QueryAnalysis) int {
