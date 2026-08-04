@@ -63,7 +63,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 		// 流式处理
 		ctx := r.Context()
-		stream, err := s.orchestrator.ProcessQueryStream(ctx, req.UserID, req.ProjectID, req.Message, kernel.QueryOptions{
+		stream, err := s.orchestrator.ProcessQueryStream(ctx, "", req.UserID, req.ProjectID, req.Message, kernel.QueryOptions{
 			ModelID:     req.Model,
 			Temperature: req.Temperature,
 			MaxTokens:   req.MaxTokens,

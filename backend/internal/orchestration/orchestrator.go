@@ -230,7 +230,7 @@ func (o *Orchestrator) processSingle(ctx context.Context, userID, projectID, con
 	start := time.Now()
 
 	// 1. 获取或创建会话
-	session, err := o.getOrCreateSession(ctx, projectID, userID)
+	session, err := o.getOrCreateSession(ctx, projectID, userID, "")
 	if err != nil {
 		return nil, fmt.Errorf("session error: %w", err)
 	}
@@ -280,13 +280,19 @@ func (o *Orchestrator) processSingle(ctx context.Context, userID, projectID, con
 	return resp, nil
 }
 
-// ProcessQueryStream 流式处理用户查询
-func (o *Orchestrator) ProcessQueryStream(ctx context.Context, userID, projectID, content string, opts kernel.QueryOptions) (<-chan kernel.StreamChunk, error) {
-	slog.Info("ProcessQueryStream start", "user", userID, "content_len", len(content))
-	// 获取或创建会话
-	session, err := o.getOrCreateSession(ctx, projectID, userID)
+// ProcessQueryStream 流式处理用户查询。
+// sessionID 非空时在指定会话中续聊（恢复历史上下文）；为空时使用该项目的最近会话。
+func (o *Orchestrator) ProcessQueryStream(ctx context.Context, sessionID, userID, projectID, content string, opts kernel.QueryOptions) (<-chan kernel.StreamChunk, error) {
+	slog.Info("ProcessQueryStream start", "user", userID, "session", sessionID, "content_len", len(content))
+	// 获取或创建会话（指定会话优先，否则取项目最近会话）
+	session, err := o.getOrCreateSession(ctx, projectID, userID, sessionID)
 	if err != nil {
 		return nil, err
+	}
+
+	// 注入 ProjectMind 项目知识
+	if o.mind != nil {
+		opts.ProjectContext = o.mind.FactsForPrompt() + "\n" + o.mind.GenerateLearnedRules()
 	}
 
 	query := &kernel.Query{
@@ -295,11 +301,6 @@ func (o *Orchestrator) ProcessQueryStream(ctx context.Context, userID, projectID
 		UserID:    userID,
 		ProjectID: projectID,
 		Options:   opts,
-	}
-
-	// 注入 ProjectMind 项目知识
-	if o.mind != nil {
-		opts.ProjectContext = o.mind.FactsForPrompt() + "\n" + o.mind.GenerateLearnedRules()
 	}
 
 	return o.kernel.ProcessStream(ctx, query)
@@ -414,7 +415,15 @@ func (o *Orchestrator) GetStats() map[string]interface{} {
 
 // ============ 内部方法 ============
 
-func (o *Orchestrator) getOrCreateSession(ctx context.Context, projectID, userID string) (*kernel.Session, error) {
+func (o *Orchestrator) getOrCreateSession(ctx context.Context, projectID, userID, sessionID string) (*kernel.Session, error) {
+	// 指定会话优先：续聊场景恢复该会话的完整历史
+	if sessionID != "" && o.sessions != nil {
+		session, err := o.sessions.Get(ctx, sessionID)
+		if err == nil && session != nil {
+			return session, nil
+		}
+	}
+
 	// 列出已有会话
 	if o.sessions != nil {
 		sessions, err := o.sessions.List(ctx, projectID, userID, 1, 0)

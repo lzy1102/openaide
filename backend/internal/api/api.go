@@ -201,7 +201,7 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 
 	ctx := withTrace(r)
 	defer slog.Debug("api stream end", "trace_id", traceID(ctx))
-	stream, err := s.orchestrator.ProcessQueryStream(ctx, req.UserID, req.ProjectID, req.Message, kernel.QueryOptions{
+	stream, err := s.orchestrator.ProcessQueryStream(ctx, "", req.UserID, req.ProjectID, req.Message, kernel.QueryOptions{
 		ModelID:      req.Model,
 		Temperature:  req.Temperature,
 		MaxTokens:    req.MaxTokens,

@@ -8,7 +8,8 @@ import (
 )
 
 type mockKernel struct {
-	state kernel.KernelState
+	state     kernel.KernelState
+	lastQuery *kernel.Query // 记录最近一次查询，供断言会话选择
 }
 
 func (m *mockKernel) Process(ctx context.Context, query *kernel.Query) (*kernel.Response, error) {
@@ -16,6 +17,7 @@ func (m *mockKernel) Process(ctx context.Context, query *kernel.Query) (*kernel.
 }
 
 func (m *mockKernel) ProcessStream(ctx context.Context, query *kernel.Query) (<-chan kernel.StreamChunk, error) {
+	m.lastQuery = query
 	ch := make(chan kernel.StreamChunk, 1)
 	ch <- kernel.StreamChunk{Content: "mock stream", Done: true}
 	close(ch)
@@ -175,7 +177,7 @@ func TestOrchestrator_ProcessQuery(t *testing.T) {
 func TestOrchestrator_ProcessQueryStream(t *testing.T) {
 	o := NewOrchestrator(&mockKernel{}, &mockLLMProvider{}, &mockToolExecutor{}, &mockMemory{}, kernel.NewSessionStoreAdapter())
 
-	ch, err := o.ProcessQueryStream(context.Background(), "user1", "proj1", "hello", kernel.QueryOptions{})
+	ch, err := o.ProcessQueryStream(context.Background(), "", "user1", "proj1", "hello", kernel.QueryOptions{})
 	if err != nil {
 		t.Fatalf("ProcessQueryStream failed: %v", err)
 	}
@@ -378,6 +380,48 @@ func TestTeam_BuildAllChain(t *testing.T) {
 	g := team.buildAllChain("analyst")
 	if g == nil || len(g.Nodes) != 3 {
 		t.Errorf("buildAllChain: expected 3 nodes, got %d", len(g.Nodes))
+	}
+}
+
+func TestOrchestrator_ProcessQueryStream_ResumesSpecifiedSession(t *testing.T) {
+	mk := &mockKernel{}
+	o := NewOrchestrator(mk, &mockLLMProvider{}, &mockToolExecutor{}, &mockMemory{}, kernel.NewSessionStoreAdapter())
+
+	// 先创建两个会话，指定第二个（更旧）会话续聊
+	s1, err := o.CreateSession(context.Background(), "proj1", "user1")
+	if err != nil {
+		t.Fatalf("CreateSession 1 failed: %v", err)
+	}
+	s2, err := o.CreateSession(context.Background(), "proj1", "user1")
+	if err != nil {
+		t.Fatalf("CreateSession 2 failed: %v", err)
+	}
+
+	// 用显式 sessionID 续聊，应命中 s1 而非最新会话 s2
+	ch, err := o.ProcessQueryStream(context.Background(), s1.ID, "user1", "proj1", "hello", kernel.QueryOptions{})
+	if err != nil {
+		t.Fatalf("ProcessQueryStream failed: %v", err)
+	}
+	for range ch {
+	}
+
+	if mk.lastQuery == nil {
+		t.Fatal("expected lastQuery to be recorded")
+	}
+	if mk.lastQuery.SessionID != s1.ID {
+		t.Errorf("expected session %s, got %s", s1.ID, mk.lastQuery.SessionID)
+	}
+
+	// 不传 sessionID 时回退到最新会话（s2）
+	ch2, err := o.ProcessQueryStream(context.Background(), "", "user1", "proj1", "hello", kernel.QueryOptions{})
+	if err != nil {
+		t.Fatalf("ProcessQueryStream (latest) failed: %v", err)
+	}
+	for range ch2 {
+	}
+
+	if mk.lastQuery.SessionID != s2.ID {
+		t.Errorf("expected latest session %s, got %s", s2.ID, mk.lastQuery.SessionID)
 	}
 }
 

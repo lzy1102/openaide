@@ -119,7 +119,7 @@ func (m tuiModel) startStream(query string) (tea.Model, tea.Cmd) {
 	}
 
 	return m, func() tea.Msg {
-		stream, err := m.app.Orchestrator.ProcessQueryStream(ctx, "cli-user", m.projectID, query, opts)
+		stream, err := m.app.Orchestrator.ProcessQueryStream(ctx, m.sessionID, "cli-user", m.projectID, query, opts)
 		if err != nil {
 			return streamMsg{chunk: kernel.StreamChunk{Type: kernel.ChunkTypeError, Error: err}}
 		}

@@ -215,7 +215,7 @@ func main() {
 		ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
 		defer cancel()
 
-		ch, err := app.Orchestrator.ProcessQueryStream(ctx, "cli-user", "default", prompt, kernel.QueryOptions{})
+		ch, err := app.Orchestrator.ProcessQueryStream(ctx, "", "cli-user", "default", prompt, kernel.QueryOptions{})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s\n", lang.T("err.process", err))
 			os.Exit(1)
