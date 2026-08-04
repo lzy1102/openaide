@@ -12,15 +12,15 @@ import (
 func TestCockpitViewStreaming(t *testing.T) {
 	m := testModel()
 	m.mode = modeStreaming
-	m.startTime = time.Now().Add(-45 * time.Second)
-	m.totalTokens = 2500
-	m.totalTools = 8
-	m.streamRound = 3
-	m.streamTotal = 10
-	m.cacheHit = 70
-	m.cacheMiss = 30
-	m.toolNames = []string{"read_file", "search_files", "execute_command"}
-	m.fullResponse = "thinking..."
+	m.stream.startTime = time.Now().Add(-45 * time.Second)
+	m.stream.totalTokens = 2500
+	m.stream.totalTools = 8
+	m.stream.streamRound = 3
+	m.stream.streamTotal = 10
+	m.stream.cacheHit = 70
+	m.stream.cacheMiss = 30
+	m.stream.toolNames = []string{"read_file", "search_files", "execute_command"}
+	m.stream.fullResponse = "thinking..."
 
 	view := m.View()
 
@@ -47,8 +47,8 @@ func TestCockpitViewNarrow(t *testing.T) {
 	m := testModel()
 	m.width = 80
 	m.mode = modeStreaming
-	m.startTime = time.Now()
-	m.toolNames = []string{"read_file"}
+	m.stream.startTime = time.Now()
+	m.stream.toolNames = []string{"read_file"}
 	view := m.View()
 	if strings.Contains(view, lang.T("repl.tools_running")) {
 		t.Errorf("narrow terminal should not show tool history panel title")

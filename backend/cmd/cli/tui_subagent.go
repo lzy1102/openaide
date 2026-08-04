@@ -13,14 +13,14 @@ import (
 func (m *tuiModel) applySubProgress(msg subProgressMsg) {
 	switch {
 	case msg.status == "thinking":
-		m.subStatus = lang.T("repl.thinking")
+		m.sub.status = lang.T("repl.thinking")
 	case strings.HasPrefix(msg.status, "executing:"):
-		m.subStatus = "🔧 " + strings.TrimPrefix(msg.status, "executing:")
+		m.sub.status = "🔧 " + strings.TrimPrefix(msg.status, "executing:")
 	default:
-		m.subStatus = msg.status
+		m.sub.status = msg.status
 	}
 	if msg.round > 0 {
-		m.subStatus += fmt.Sprintf(" · round %d", msg.round)
+		m.sub.status += fmt.Sprintf(" · round %d", msg.round)
 	}
 }
 
@@ -38,22 +38,22 @@ type subAgentMsg struct {
 
 // startSubAgent 单角色子代理
 func (m tuiModel) startSubAgent(role, task string) (tea.Model, tea.Cmd) {
-	m.subRole = role
+	m.sub.role = role
 	m.mode = modeSubAgent
-	m.subStatus = ""
+	m.sub.status = ""
 	m.statusMsg = lang.T("repl.sub_running", role)
 	m.textarea.Blur()
 	m.layoutViewport()
 	m.refreshViewport()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	m.cancel = cancel
-	m.subProgressCh = make(chan subProgressMsg, 32)
-	m.subResultCh = make(chan subAgentMsg, 1)
+	m.stream.cancel = cancel
+	m.sub.progressCh = make(chan subProgressMsg, 32)
+	m.sub.resultCh = make(chan subAgentMsg, 1)
 
 	progress := func(r string, round int, status string) {
 		select {
-		case m.subProgressCh <- subProgressMsg{role: r, round: round, status: status}:
+		case m.sub.progressCh <- subProgressMsg{role: r, round: round, status: status}:
 		default:
 		}
 	}
@@ -62,31 +62,31 @@ func (m tuiModel) startSubAgent(role, task string) (tea.Model, tea.Cmd) {
 		func() tea.Msg {
 			defer cancel()
 			result, err := m.app.Orchestrator.RunSubAgent(ctx, "cli-user", m.projectID, role, task, nil, progress)
-			m.subResultCh <- subAgentMsg{role: role, result: result, err: err}
+			m.sub.resultCh <- subAgentMsg{role: role, result: result, err: err}
 			return nil
 		},
-		waitForSubProgress(m.subProgressCh, m.subResultCh),
+		waitForSubProgress(m.sub.progressCh, m.sub.resultCh),
 	)
 }
 
 // startTeam /team 顺序流水线
 func (m tuiModel) startTeam(task string) (tea.Model, tea.Cmd) {
-	m.subRole = "team"
+	m.sub.role = "team"
 	m.mode = modeSubAgent
-	m.subStatus = ""
+	m.sub.status = ""
 	m.statusMsg = lang.T("repl.team_pipeline")
 	m.textarea.Blur()
 	m.layoutViewport()
 	m.refreshViewport()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	m.cancel = cancel
-	m.subProgressCh = make(chan subProgressMsg, 32)
-	m.subResultCh = make(chan subAgentMsg, 1)
+	m.stream.cancel = cancel
+	m.sub.progressCh = make(chan subProgressMsg, 32)
+	m.sub.resultCh = make(chan subAgentMsg, 1)
 
 	progress := func(r string, round int, status string) {
 		select {
-		case m.subProgressCh <- subProgressMsg{role: r, round: round, status: status}:
+		case m.sub.progressCh <- subProgressMsg{role: r, round: round, status: status}:
 		default:
 		}
 	}
@@ -98,14 +98,14 @@ func (m tuiModel) startTeam(task string) (tea.Model, tea.Cmd) {
 			for _, role := range []string{"analyst", "coder", "reviewer"} {
 				result, err := m.app.Orchestrator.RunSubAgent(ctx, "cli-user", m.projectID, role, task, prevResults, progress)
 				if err != nil {
-					m.subResultCh <- subAgentMsg{role: role, result: "", err: err}
+					m.sub.resultCh <- subAgentMsg{role: role, result: "", err: err}
 					return nil
 				}
 				prevResults = append(prevResults, result)
 			}
-			m.subResultCh <- subAgentMsg{role: "team", result: prevResults[len(prevResults)-1], err: nil}
+			m.sub.resultCh <- subAgentMsg{role: "team", result: prevResults[len(prevResults)-1], err: nil}
 			return nil
 		},
-		waitForSubProgress(m.subProgressCh, m.subResultCh),
+		waitForSubProgress(m.sub.progressCh, m.sub.resultCh),
 	)
 }

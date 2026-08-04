@@ -43,13 +43,13 @@ func TestGaugeViewIdle(t *testing.T) {
 func TestGaugeViewBusy(t *testing.T) {
 	m := testModel()
 	m.mode = modeStreaming
-	m.startTime = time.Now().Add(-45 * time.Second)
-	m.totalTokens = 1200
-	m.totalTools = 8
-	m.streamRound = 3
-	m.streamTotal = 10
-	m.cacheHit = 70
-	m.cacheMiss = 30
+	m.stream.startTime = time.Now().Add(-45 * time.Second)
+	m.stream.totalTokens = 1200
+	m.stream.totalTools = 8
+	m.stream.streamRound = 3
+	m.stream.streamTotal = 10
+	m.stream.cacheHit = 70
+	m.stream.cacheMiss = 30
 	got := m.gaugeView()
 	for _, want := range []string{"1.2k", "8", "3/10", "45s", "70%"} {
 		if !strings.Contains(got, want) {
@@ -62,7 +62,7 @@ func TestSidePanelNarrowTerminal(t *testing.T) {
 	m := testModel()
 	m.width = 80
 	m.mode = modePlanExec
-	m.tasks = []taskState{{title: "t1", status: taskDone}}
+	m.plan.tasks = []taskState{{title: "t1", status: taskDone}}
 	if got := m.sidePanel(); got != "" {
 		t.Errorf("narrow terminal should hide side panel, got %q", got)
 	}
@@ -71,7 +71,7 @@ func TestSidePanelNarrowTerminal(t *testing.T) {
 func TestSidePanelWidePlan(t *testing.T) {
 	m := testModel()
 	m.mode = modePlanExec
-	m.tasks = []taskState{{title: "t1", status: taskDone}, {title: "t2", status: taskRunning, role: "coder"}}
+	m.plan.tasks = []taskState{{title: "t1", status: taskDone}, {title: "t2", status: taskRunning, role: "coder"}}
 	got := m.sidePanel()
 	for _, want := range []string{"t1", "t2", "coder"} {
 		if !strings.Contains(got, want) {

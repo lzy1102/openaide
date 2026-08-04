@@ -68,10 +68,10 @@ func (m tuiModel) handleDeepPlan(msg deepPlanMsg) (tea.Model, tea.Cmd) {
 		options = append(options, fmt.Sprintf("%s  "+lang.T("repl.risk_effort"), opt.Name, opt.Risk, opt.Effort))
 	}
 	m.mode = modeSelect
-	m.selectTitle = lang.T("repl.select_approach")
-	m.selectItems = options
-	m.selectIdx = 0
-	m.selectOnPick = func(idx int) tea.Cmd {
+	m.selectS.title = lang.T("repl.select_approach")
+	m.selectS.items = options
+	m.selectS.idx = 0
+	m.selectS.onPick = func(idx int) tea.Cmd {
 		name := msg.result.Proposals.Options[idx].Name
 		m.mode = modeThinking
 		m.statusMsg = lang.T("repl.selected", name)
@@ -104,24 +104,24 @@ func finalizePlanCmd(app *infra.Application, query string, result *orchestration
 
 func (m tuiModel) startPlanExec(query string, plan *orchestration.Plan) (tuiModel, tea.Cmd) {
 	m.mode = modePlanExec
-	m.planTotal = len(plan.Subtasks) + 2
-	m.planCurrent = 0
-	m.planDetail = ""
-	m.startTime = time.Now()
-	m.tasks = make([]taskState, len(plan.Subtasks))
+	m.plan.total = len(plan.Subtasks) + 2
+	m.plan.current = 0
+	m.plan.detail = ""
+	m.stream.startTime = time.Now()
+	m.plan.tasks = make([]taskState, len(plan.Subtasks))
 	for i, st := range plan.Subtasks {
-		m.tasks[i] = taskState{id: st.ID, title: st.Title, status: taskPending}
+		m.plan.tasks[i] = taskState{id: st.ID, title: st.Title, status: taskPending}
 	}
 	m.layoutViewport()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	m.cancel = cancel
+	m.stream.cancel = cancel
 	m.textarea.Blur()
 	m.refreshViewport()
 
 	m.app.Orchestrator.OnProgress = func(phase, detail string) {
 		select {
-		case m.progressCh <- progressMsg{cur: 0, detail: detail}:
+		case m.plan.progressCh <- progressMsg{cur: 0, detail: detail}:
 		default:
 		}
 	}
@@ -132,21 +132,21 @@ func (m tuiModel) startPlanExec(query string, plan *orchestration.Plan) (tuiMode
 			m.app.Orchestrator.OnProgress = nil
 			return planExecMsg{resp: resp, err: err}
 		},
-		waitForProgress(m.progressCh, m.planResultCh),
+		waitForProgress(m.plan.progressCh, m.plan.resultCh),
 	)
 }
 
 func (m tuiModel) handlePlanExec(msg planExecMsg) (tea.Model, tea.Cmd) {
 	// 收尾：关闭进度通道，解除挂起的 waitForProgress
-	close(m.progressCh)
-	close(m.planResultCh)
-	m.progressCh = make(chan progressMsg, 16)
-	m.planResultCh = make(chan planExecMsg, 1)
-	if m.cancel != nil {
-		m.cancel()
-		m.cancel = nil
+	close(m.plan.progressCh)
+	close(m.plan.resultCh)
+	m.plan.progressCh = make(chan progressMsg, 16)
+	m.plan.resultCh = make(chan planExecMsg, 1)
+	if m.stream.cancel != nil {
+		m.stream.cancel()
+		m.stream.cancel = nil
 	}
-	elapsed := time.Since(m.startTime)
+	elapsed := time.Since(m.stream.startTime)
 
 	if msg.err != nil {
 		m.appendHistory(styleError.Render(fmt.Sprintf("✗ %v", msg.err)) + "\n")
@@ -163,7 +163,7 @@ func (m tuiModel) handlePlanExec(msg planExecMsg) (tea.Model, tea.Cmd) {
 	}
 	m.mode = modeIdle
 	m.statusMsg = ""
-	m.tasks = nil
+	m.plan.tasks = nil
 	m.layoutViewport()
 	m.textarea.Focus()
 	m.refreshViewport()
@@ -174,9 +174,9 @@ func (m *tuiModel) applyProgress(detail string) {
 	if rest, ok := strings.CutPrefix(detail, "✓ subtask "); ok {
 		if end := strings.IndexByte(rest, ' '); end > 0 {
 			if id, err := strconv.Atoi(rest[:end]); err == nil {
-				for i := range m.tasks {
-					if m.tasks[i].id == id {
-						m.tasks[i].status = taskDone
+				for i := range m.plan.tasks {
+					if m.plan.tasks[i].id == id {
+						m.plan.tasks[i].status = taskDone
 					}
 				}
 			}
@@ -191,10 +191,10 @@ func (m *tuiModel) applyProgress(detail string) {
 		rest := strings.TrimSpace(detail[end+1:])
 		title, _, ok := strings.Cut(rest, ":")
 		if ok {
-			for i := range m.tasks {
-				if m.tasks[i].title == title {
-					m.tasks[i].status = taskRunning
-					m.tasks[i].role = role
+			for i := range m.plan.tasks {
+				if m.plan.tasks[i].title == title {
+					m.plan.tasks[i].status = taskRunning
+					m.plan.tasks[i].role = role
 				}
 			}
 		}

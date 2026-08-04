@@ -30,21 +30,21 @@ func (m *tuiModel) layoutViewport() {
 }
 
 func (m tuiModel) planPanelContent() string {
-	if len(m.tasks) == 0 {
+	if len(m.plan.tasks) == 0 {
 		return ""
 	}
 	done := 0
-	for _, t := range m.tasks {
+	for _, t := range m.plan.tasks {
 		if t.status == taskDone {
 			done++
 		}
 	}
 	var sb strings.Builder
-	sb.WriteString(stylePrompt.Render(fmt.Sprintf("%s %d/%d", lang.T("repl.task_progress"), done, len(m.tasks))) + "\n")
+	sb.WriteString(stylePrompt.Render(fmt.Sprintf("%s %d/%d", lang.T("repl.task_progress"), done, len(m.plan.tasks))) + "\n")
 	shown := 0
-	for _, t := range m.tasks {
+	for _, t := range m.plan.tasks {
 		if shown >= 6 {
-			sb.WriteString(styleDim.Render(fmt.Sprintf("  … +%d", len(m.tasks)-shown)) + "\n")
+			sb.WriteString(styleDim.Render(fmt.Sprintf("  … +%d", len(m.plan.tasks)-shown)) + "\n")
 			break
 		}
 		shown++
@@ -61,7 +61,7 @@ func (m tuiModel) planPanelContent() string {
 			sb.WriteString(styleDim.Render("  ○ "+t.title) + "\n")
 		}
 	}
-	detail := m.planDetail
+	detail := m.plan.detail
 	if detail == "" {
 		detail = "…"
 	}
@@ -70,12 +70,12 @@ func (m tuiModel) planPanelContent() string {
 }
 
 func (m tuiModel) subAgentPanelContent() string {
-	if m.subRole == "" {
+	if m.sub.role == "" {
 		return ""
 	}
 	var sb strings.Builder
-	sb.WriteString(stylePrompt.Render(m.subRole) + "\n")
-	status := m.subStatus
+	sb.WriteString(stylePrompt.Render(m.sub.role) + "\n")
+	status := m.sub.status
 	if status == "" {
 		status = lang.T("repl.thinking")
 	}
@@ -97,9 +97,9 @@ func (m *tuiModel) appendHistory(s string) {
 func (m *tuiModel) refreshViewport() {
 	content := m.history.String()
 	// 流式期间把未渲染的原始内容实时拼在末尾（不写 history，避免与最终渲染重复）
-	if m.mode == modeStreaming && m.fullResponse != "" {
+	if m.mode == modeStreaming && m.stream.fullResponse != "" {
 		content += " " + styleSuccess.Render("▎"+lang.T("repl.assistant_label")+" ") + "\n"
-		content += m.fullResponse
+		content += m.stream.fullResponse
 	}
 	m.viewport.SetContent(content)
 	m.viewport.GotoBottom()
@@ -184,24 +184,24 @@ func (m tuiModel) gaugeView() string {
 	var parts []string
 
 	if busy {
-		elapsed := time.Since(m.startTime)
+		elapsed := time.Since(m.stream.startTime)
 		parts = append(parts,
-			styleGaugeVal.Render(fmt.Sprintf("⚡ %s", formatTokens(m.totalTokens))),
+			styleGaugeVal.Render(fmt.Sprintf("⚡ %s", formatTokens(m.stream.totalTokens))),
 			styleGaugeLbl.Render("tok"),
 			"│",
-			styleGaugeVal.Render(fmt.Sprintf("🔧 %d", m.totalTools)),
+			styleGaugeVal.Render(fmt.Sprintf("🔧 %d", m.stream.totalTools)),
 			styleGaugeLbl.Render(lang.T("repl.gauge_tools")),
 		)
-		if m.streamTotal > 0 {
+		if m.stream.streamTotal > 0 {
 			parts = append(parts, "│",
-				styleGaugeVal.Render(fmt.Sprintf("🔁 %d/%d", m.streamRound, m.streamTotal)),
+				styleGaugeVal.Render(fmt.Sprintf("🔁 %d/%d", m.stream.streamRound, m.stream.streamTotal)),
 				styleGaugeLbl.Render(lang.T("repl.gauge_round")))
 		}
 		parts = append(parts, "│",
 			styleGaugeVal.Render(elapsed.Round(time.Second).String()),
 			styleGaugeLbl.Render(lang.T("repl.gauge_elapsed")))
-		if m.cacheHit+m.cacheMiss > 0 {
-			pct := m.cacheHit * 100 / (m.cacheHit + m.cacheMiss)
+		if m.stream.cacheHit+m.stream.cacheMiss > 0 {
+			pct := m.stream.cacheHit * 100 / (m.stream.cacheHit + m.stream.cacheMiss)
 			parts = append(parts, "│",
 				styleGaugeVal.Render(fmt.Sprintf("💾 %d%%", pct)),
 				styleGaugeLbl.Render(lang.T("repl.gauge_cache")))
@@ -232,7 +232,7 @@ func (m tuiModel) taskPanelContent() string {
 	case modeSubAgent:
 		return m.subAgentPanelContent()
 	case modeThinking, modeStreaming:
-		if len(m.toolNames) > 0 {
+		if len(m.stream.toolNames) > 0 {
 			return m.toolHistoryPanel()
 		}
 	}
@@ -244,12 +244,12 @@ func (m tuiModel) toolHistoryPanel() string {
 	var sb strings.Builder
 	sb.WriteString(styleSideTtl.Render(lang.T("repl.tools_running")) + "\n")
 	shown := 0
-	for i := len(m.toolNames) - 1; i >= 0 && shown < 6; i-- {
+	for i := len(m.stream.toolNames) - 1; i >= 0 && shown < 6; i-- {
 		shown++
-		sb.WriteString(styleStreaming.Render("  ⚙ ") + styleDim.Render(trunc(m.toolNames[i], 26)) + "\n")
+		sb.WriteString(styleStreaming.Render("  ⚙ ") + styleDim.Render(trunc(m.stream.toolNames[i], 26)) + "\n")
 	}
-	if len(m.toolNames) > 6 {
-		sb.WriteString(styleDim.Render(fmt.Sprintf("  … +%d", len(m.toolNames)-6)) + "\n")
+	if len(m.stream.toolNames) > 6 {
+		sb.WriteString(styleDim.Render(fmt.Sprintf("  … +%d", len(m.stream.toolNames)-6)) + "\n")
 	}
 	return strings.TrimSuffix(sb.String(), "\n")
 }
@@ -307,13 +307,13 @@ func (m tuiModel) statusView() string {
 		return styleStreaming.Render(txt)
 	case modeStreaming:
 		txt := m.spinner.View() + " "
-		if len(m.toolNames) > 0 {
-			txt += "🔧 " + m.toolNames[len(m.toolNames)-1]
+		if len(m.stream.toolNames) > 0 {
+			txt += "🔧 " + m.stream.toolNames[len(m.stream.toolNames)-1]
 		} else {
 			txt += lang.T("repl.working")
 		}
-		if m.streamTotal > 0 {
-			txt += fmt.Sprintf(" · round %d/%d", m.streamRound, m.streamTotal)
+		if m.stream.streamTotal > 0 {
+			txt += fmt.Sprintf(" · round %d/%d", m.stream.streamRound, m.stream.streamTotal)
 		}
 		if m.statusMsg != "" {
 			txt += " · " + m.statusMsg
@@ -349,9 +349,9 @@ func (m tuiModel) helpView() string {
 
 func (m tuiModel) selectView() string {
 	var sb strings.Builder
-	sb.WriteString(stylePrompt.Render(m.selectTitle) + "\n")
-	for i, item := range m.selectItems {
-		if i == m.selectIdx {
+	sb.WriteString(stylePrompt.Render(m.selectS.title) + "\n")
+	for i, item := range m.selectS.items {
+		if i == m.selectS.idx {
 			sb.WriteString("  " + styleSelected.Render("▸ "+item) + "\n")
 		} else {
 			sb.WriteString("    " + item + "\n")
@@ -365,14 +365,14 @@ func (m tuiModel) searchView() string {
 	var sb strings.Builder
 	sb.WriteString(stylePrompt.Render(lang.T("repl.history_search")) + "\n")
 	shown := 10
-	if len(m.searchResults) < shown {
-		shown = len(m.searchResults)
+	if len(m.searchS.results) < shown {
+		shown = len(m.searchS.results)
 	}
 	for i := 0; i < shown; i++ {
-		if i == m.searchIdx {
-			sb.WriteString("  " + styleSelected.Render("▸ "+trunc(m.searchResults[i], 60)) + "\n")
+		if i == m.searchS.idx {
+			sb.WriteString("  " + styleSelected.Render("▸ "+trunc(m.searchS.results[i], 60)) + "\n")
 		} else {
-			sb.WriteString("    " + trunc(m.searchResults[i], 60) + "\n")
+			sb.WriteString("    " + trunc(m.searchS.results[i], 60) + "\n")
 		}
 	}
 	sb.WriteString(styleDim.Render(lang.T("repl.select_hint")) + "\n")

@@ -102,7 +102,24 @@ type tuiModel struct {
 	gitBranch    string
 	gitDirty     bool
 
-	// 流式状态
+	// 子状态（按生命周期内聚）
+	stream   streamState    // 单次查询流式执行
+	approval approvalState  // 审批桥接
+	plan     planState      // 计划执行
+	sub      subState       // 子代理执行
+	selectS  selectionState // 选择模式
+	searchS  searchState    // 历史搜索
+
+	// 输入历史（textarea）
+	cmdHistory []string
+	cmdHistIdx int
+
+	// banner 已完成（首次渲染时写入 viewport）
+	bannerDone bool
+}
+
+// streamState 单次查询的流式执行状态
+type streamState struct {
 	streamCh     <-chan kernel.StreamChunk
 	cancel       context.CancelFunc
 	fullResponse string
@@ -114,45 +131,46 @@ type tuiModel struct {
 	startTime    time.Time
 	totalTools   int
 	askQuestions []string // 工具产生的待回答问题
+	streamRound  int
+	streamTotal  int
+}
 
-	// 审批桥接
-	approvalCh      chan approvalRequest
-	pendingApproval *approvalRequest
+// planState 计划执行状态
+type planState struct {
+	total      int
+	current    int
+	detail     string
+	progressCh chan progressMsg
+	resultCh   chan planExecMsg
+	tasks      []taskState // 计划子任务实时状态
+}
 
-	// 计划执行
-	planTotal    int
-	planCurrent  int
-	planDetail   string
-	progressCh   chan progressMsg
-	planResultCh chan planExecMsg
-	tasks        []taskState // 计划子任务实时状态
+// approvalState 审批桥接状态
+type approvalState struct {
+	ch      chan approvalRequest
+	pending *approvalRequest
+}
 
-	// 子代理
-	subRole       string
-	subStatus     string // 子代理当前活动状态（thinking/工具/轮次）
-	subProgressCh chan subProgressMsg
-	subResultCh   chan subAgentMsg
+// subState 子代理执行状态
+type subState struct {
+	role       string
+	status     string // 子代理当前活动状态（thinking/工具/轮次）
+	progressCh chan subProgressMsg
+	resultCh   chan subAgentMsg
+}
 
-	// 流式轮次
-	streamRound int
-	streamTotal int
+// selectionState 选择模式状态
+type selectionState struct {
+	items  []string
+	idx    int
+	title  string
+	onPick func(int) tea.Cmd
+}
 
-	// 选择模式
-	selectItems  []string
-	selectIdx    int
-	selectTitle  string
-	selectOnPick func(int) tea.Cmd
-
-	// 历史搜索
-	searchResults []string
-	searchIdx     int
-
-	// 输入历史（textarea）
-	cmdHistory []string
-	cmdHistIdx int
-
-	// banner 已完成（首次渲染时写入 viewport）
-	bannerDone bool
+// searchState 历史搜索模式状态
+type searchState struct {
+	results []string
+	idx     int
 }
 
 // ── 输入键位 ───────────────────────────────────────────────
@@ -271,17 +289,19 @@ func initialTUI(app *infra.Application, autoYes bool) tuiModel {
 	rs.Set(false) // 默认关闭:并行研究会增加额外 LLM 调用与上下文噪音
 
 	return tuiModel{
-		app:          app,
-		viewport:     vp,
-		textarea:     ta,
-		spinner:      sp,
-		history:      &strings.Builder{},
-		autoYes:      ay,
-		research:     rs,
-		approvalCh:   make(chan approvalRequest, 8),
-		progressCh:   make(chan progressMsg, 16),
-		planResultCh: make(chan planExecMsg, 1),
-		cmdHistory:   []string{},
+		app:      app,
+		viewport: vp,
+		textarea: ta,
+		spinner:  sp,
+		history:  &strings.Builder{},
+		autoYes:  ay,
+		research: rs,
+		approval: approvalState{ch: make(chan approvalRequest, 8)},
+		plan: planState{
+			progressCh: make(chan progressMsg, 16),
+			resultCh:   make(chan planExecMsg, 1),
+		},
+		cmdHistory: []string{},
 	}
 }
 
@@ -346,7 +366,7 @@ func (m tuiModel) Init() tea.Cmd {
 	return tea.Batch(
 		textarea.Blink,
 		m.spinner.Tick,
-		waitForApproval(m.approvalCh),
+		waitForApproval(m.approval.ch),
 	)
 }
 
@@ -371,10 +391,10 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case approvalReqMsg:
 		// 审批请求 → 进入 approval 模式；同时启动超时兜底，防止挂起无人响应时内核回调永久阻塞
-		m.pendingApproval = &msg.req
+		m.approval.pending = &msg.req
 		m.mode = modeApproval
 		m.textarea.Blur()
-		cmds = append(cmds, waitForApproval(m.approvalCh))
+		cmds = append(cmds, waitForApproval(m.approval.ch))
 		cmds = append(cmds, tea.Tick(approvalTimeout, func(time.Time) tea.Msg {
 			return approvalTimeoutMsg{}
 		}))
@@ -382,18 +402,18 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case approvalTimeoutMsg:
 		// 审批超时自动拒绝：恢复流式，避免内核回调 goroutine 泄漏
-		if m.pendingApproval == nil {
+		if m.approval.pending == nil {
 			return m, nil
 		}
 		select {
-		case m.pendingApproval.resultCh <- false:
+		case m.approval.pending.resultCh <- false:
 		default:
 		}
-		m.pendingApproval = nil
+		m.approval.pending = nil
 		m.mode = modeStreaming
 		m.appendHistory(styleWarn.Render(lang.T("repl.approval_timeout")) + "\n")
-		if m.streamCh != nil {
-			return m, waitForChunk(m.streamCh)
+		if m.stream.streamCh != nil {
+			return m, waitForChunk(m.stream.streamCh)
 		}
 		return m, nil
 
@@ -419,8 +439,8 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleStreamChunk(msg)
 
 	case streamReadyMsg:
-		m.streamCh = msg.ch
-		m.cancel = msg.cancel
+		m.stream.streamCh = msg.ch
+		m.stream.cancel = msg.cancel
 		return m, waitForChunk(msg.ch)
 
 	case planPreviewMsg:
@@ -439,28 +459,28 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.mode != modePlanExec {
 			return m, nil
 		}
-		m.planCurrent++
-		m.planDetail = msg.detail
+		m.plan.current++
+		m.plan.detail = msg.detail
 		m.applyProgress(msg.detail)
-		m.statusMsg = fmt.Sprintf("%d/%d %s", m.planCurrent, m.planTotal, msg.detail)
-		return m, waitForProgress(m.progressCh, m.planResultCh)
+		m.statusMsg = fmt.Sprintf("%d/%d %s", m.plan.current, m.plan.total, msg.detail)
+		return m, waitForProgress(m.plan.progressCh, m.plan.resultCh)
 
 	case subProgressMsg:
 		if m.mode != modeSubAgent {
 			return m, nil
 		}
 		m.applySubProgress(msg)
-		return m, waitForSubProgress(m.subProgressCh, m.subResultCh)
+		return m, waitForSubProgress(m.sub.progressCh, m.sub.resultCh)
 
 	case subAgentMsg:
 		role := msg.role
 		if role == "" {
-			role = m.subRole
+			role = m.sub.role
 		}
 		m.mode = modeIdle
-		m.cancel = nil
-		m.subRole = ""
-		m.subStatus = ""
+		m.stream.cancel = nil
+		m.sub.role = ""
+		m.sub.status = ""
 		if msg.err != nil {
 			m.appendHistory(styleError.Render("✗ "+msg.err.Error()) + "\n")
 		} else if msg.result != "" {
@@ -540,11 +560,11 @@ func isSuspiciousKey(msg tea.KeyMsg) bool {
 func (m tuiModel) handleMainKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Ctrl+C：流式/执行中 → 取消；idle → 退出
 	if key.Matches(msg, tuiKeyMap.Quit) {
-		if m.cancel != nil && (m.mode == modeStreaming || m.mode == modePlanExec || m.mode == modeSubAgent || m.mode == modeThinking) {
-			m.cancel()
-			m.cancel = nil
+		if m.stream.cancel != nil && (m.mode == modeStreaming || m.mode == modePlanExec || m.mode == modeSubAgent || m.mode == modeThinking) {
+			m.stream.cancel()
+			m.stream.cancel = nil
 			m.mode = modeIdle
-			m.tasks = nil
+			m.plan.tasks = nil
 			m.layoutViewport()
 			m.appendHistory(styleWarn.Render(lang.T("repl.interrupted")) + "\n")
 			m.textarea.Focus()
@@ -557,11 +577,11 @@ func (m tuiModel) handleMainKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// Esc：流式/执行中 → 取消；idle → undo last message pair
 	if key.Matches(msg, tuiKeyMap.Cancel) {
-		if m.cancel != nil && (m.mode == modeStreaming || m.mode == modePlanExec || m.mode == modeSubAgent || m.mode == modeThinking) {
-			m.cancel()
-			m.cancel = nil
+		if m.stream.cancel != nil && (m.mode == modeStreaming || m.mode == modePlanExec || m.mode == modeSubAgent || m.mode == modeThinking) {
+			m.stream.cancel()
+			m.stream.cancel = nil
 			m.mode = modeIdle
-			m.tasks = nil
+			m.plan.tasks = nil
 			m.layoutViewport()
 			m.appendHistory(styleWarn.Render(lang.T("repl.cancelled")) + "\n")
 			m.textarea.Focus()
@@ -600,8 +620,8 @@ func (m tuiModel) handleMainKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Ctrl+R 历史搜索
 	if key.Matches(msg, tuiKeyMap.Search) {
 		m.mode = modeSearch
-		m.searchResults = reverseHistory(m.cmdHistory)
-		m.searchIdx = 0
+		m.searchS.results = reverseHistory(m.cmdHistory)
+		m.searchS.idx = 0
 		m.textarea.Blur()
 		m.refreshViewport()
 		return m, nil

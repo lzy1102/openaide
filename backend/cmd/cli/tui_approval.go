@@ -49,10 +49,10 @@ func waitForApproval(ch chan approvalRequest) tea.Cmd {
 
 // handleApprovalKey 审批模式下按键处理
 func (m tuiModel) handleApprovalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.pendingApproval == nil {
+	if m.approval.pending == nil {
 		m.mode = modeIdle
 		m.textarea.Focus()
-		return m, waitForApproval(m.approvalCh)
+		return m, waitForApproval(m.approval.ch)
 	}
 
 	switch msg.String() {
@@ -61,43 +61,43 @@ func (m tuiModel) handleApprovalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if msg.String() == "a" || msg.String() == "A" {
 			m.autoYes.Set(true)
 		}
-		m.pendingApproval.resultCh <- allow
-		m.pendingApproval = nil
+		m.approval.pending.resultCh <- allow
+		m.approval.pending = nil
 		m.mode = modeStreaming
-		if m.streamCh != nil {
-			return m, waitForChunk(m.streamCh)
+		if m.stream.streamCh != nil {
+			return m, waitForChunk(m.stream.streamCh)
 		}
 		return m, nil
 	case "n", "N", "esc":
-		m.pendingApproval.resultCh <- false
-		m.pendingApproval = nil
+		m.approval.pending.resultCh <- false
+		m.approval.pending = nil
 		m.mode = modeStreaming
-		if m.streamCh != nil {
-			return m, waitForChunk(m.streamCh)
+		if m.stream.streamCh != nil {
+			return m, waitForChunk(m.stream.streamCh)
 		}
 		return m, nil
 	case "ctrl+c":
-		m.pendingApproval.resultCh <- false
-		m.pendingApproval = nil
-		if m.cancel != nil {
-			m.cancel()
-			m.cancel = nil
+		m.approval.pending.resultCh <- false
+		m.approval.pending = nil
+		if m.stream.cancel != nil {
+			m.stream.cancel()
+			m.stream.cancel = nil
 		}
 		m.mode = modeIdle
 		m.appendHistory(styleWarn.Render(lang.T("repl.cancelled")) + "\n")
 		m.textarea.Focus()
 		m.refreshViewport()
-		return m, waitForApproval(m.approvalCh)
+		return m, waitForApproval(m.approval.ch)
 	}
 	return m, nil
 }
 
 // approvalView 审批面板渲染
 func (m tuiModel) approvalView() string {
-	if m.pendingApproval == nil {
+	if m.approval.pending == nil {
 		return ""
 	}
-	req := m.pendingApproval
+	req := m.approval.pending
 	var sb strings.Builder
 
 	if req.isPlan {

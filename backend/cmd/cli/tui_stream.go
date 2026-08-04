@@ -69,20 +69,20 @@ func waitForSubProgress(progressCh chan subProgressMsg, resultCh chan subAgentMs
 func (m tuiModel) startStream(query string) (tea.Model, tea.Cmd) {
 	m.mode = modeStreaming
 	m.statusMsg = ""
-	m.thinkCount = 0
-	m.toolNames = nil
-	m.totalTokens = 0
-	m.cacheHit = 0
-	m.cacheMiss = 0
-	m.totalTools = 0
-	m.askQuestions = nil
-	m.fullResponse = ""
-	m.streamRound = 0
-	m.streamTotal = 0
-	m.startTime = time.Now()
+	m.stream.thinkCount = 0
+	m.stream.toolNames = nil
+	m.stream.totalTokens = 0
+	m.stream.cacheHit = 0
+	m.stream.cacheMiss = 0
+	m.stream.totalTools = 0
+	m.stream.askQuestions = nil
+	m.stream.fullResponse = ""
+	m.stream.streamRound = 0
+	m.stream.streamTotal = 0
+	m.stream.startTime = time.Now()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	m.cancel = cancel
+	m.stream.cancel = cancel
 	m.textarea.Blur()
 	m.refreshViewport()
 
@@ -94,7 +94,7 @@ func (m tuiModel) startStream(query string) (tea.Model, tea.Cmd) {
 			}
 			ch := make(chan bool)
 			select {
-			case m.approvalCh <- approvalRequest{isBudget: true, round: round, maxRounds: maxRounds, resultCh: ch}:
+			case m.approval.ch <- approvalRequest{isBudget: true, round: round, maxRounds: maxRounds, resultCh: ch}:
 			case <-ctx.Done():
 				return false
 			}
@@ -110,7 +110,7 @@ func (m tuiModel) startStream(query string) (tea.Model, tea.Cmd) {
 				sb.WriteString(fmt.Sprintf("Step %d: %s\n", i+1, st.Goal))
 			}
 			select {
-			case m.approvalCh <- approvalRequest{isPlan: true, planText: sb.String(), resultCh: ch}:
+			case m.approval.ch <- approvalRequest{isPlan: true, planText: sb.String(), resultCh: ch}:
 			case <-ctx.Done():
 				return false
 			}
@@ -144,29 +144,29 @@ func (m tuiModel) handleStreamChunk(msg streamMsg) (tea.Model, tea.Cmd) {
 	switch c.Type {
 	case kernel.ChunkTypeContent, "":
 		if c.Content != "" {
-			m.fullResponse += c.Content
+			m.stream.fullResponse += c.Content
 			m.refreshViewport()
 		}
 	case kernel.ChunkTypeThinking:
 		if c.Round > 0 {
-			m.streamRound = c.Round
-			m.streamTotal = c.TotalRounds
+			m.stream.streamRound = c.Round
+			m.stream.streamTotal = c.TotalRounds
 		}
-		if c.ReasoningContent != "" && m.thinkCount < 2 {
+		if c.ReasoningContent != "" && m.stream.thinkCount < 2 {
 			first := strings.SplitN(c.ReasoningContent, "\n", 2)[0]
 			if len(first) > 100 {
 				first = first[:97] + "..."
 			}
 			m.appendHistory(styleThink.Render("[think] "+first) + "\n")
-			m.thinkCount++
+			m.stream.thinkCount++
 		}
 	case kernel.ChunkTypeToolCall:
 		if c.ToolName != "" {
-			m.toolNames = append(m.toolNames, c.ToolName)
-			m.totalTools++
+			m.stream.toolNames = append(m.stream.toolNames, c.ToolName)
+			m.stream.totalTools++
 			seen := map[string]bool{}
 			var unique []string
-			for _, n := range m.toolNames {
+			for _, n := range m.stream.toolNames {
 				if !seen[n] {
 					seen[n] = true
 					unique = append(unique, n)
@@ -180,9 +180,9 @@ func (m tuiModel) handleStreamChunk(msg streamMsg) (tea.Model, tea.Cmd) {
 		// 多轮进度
 	case kernel.ChunkTypeDone:
 		if c.Usage != nil {
-			m.totalTokens = c.Usage.TotalTokens
-			m.cacheHit = c.Usage.PromptCacheHitTokens
-			m.cacheMiss = c.Usage.PromptCacheMissTokens
+			m.stream.totalTokens = c.Usage.TotalTokens
+			m.stream.cacheHit = c.Usage.PromptCacheHitTokens
+			m.stream.cacheMiss = c.Usage.PromptCacheMissTokens
 		}
 		return m.finishStream()
 	}
@@ -190,31 +190,31 @@ func (m tuiModel) handleStreamChunk(msg streamMsg) (tea.Model, tea.Cmd) {
 	if c.Done {
 		return m.finishStream()
 	}
-	return m, waitForChunk(m.streamCh)
+	return m, waitForChunk(m.stream.streamCh)
 }
 
 func (m tuiModel) finishStream() (tea.Model, tea.Cmd) {
-	if m.cancel != nil {
-		m.cancel()
-		m.cancel = nil
+	if m.stream.cancel != nil {
+		m.stream.cancel()
+		m.stream.cancel = nil
 	}
 	// 流结束但审批仍挂起时，立即拒绝，解除内核回调的阻塞等待
-	if m.pendingApproval != nil {
+	if m.approval.pending != nil {
 		select {
-		case m.pendingApproval.resultCh <- false:
+		case m.approval.pending.resultCh <- false:
 		default:
 		}
-		m.pendingApproval = nil
+		m.approval.pending = nil
 	}
 	m.mode = modeIdle
-	elapsed := time.Since(m.startTime)
+	elapsed := time.Since(m.stream.startTime)
 
 	// 最终回答（markdown 渲染）
-	if m.fullResponse != "" {
+	if m.stream.fullResponse != "" {
 		m.appendHistory(" " + styleSuccess.Render("▎"+lang.T("repl.assistant_label")+" ") + "\n")
-		m.appendHistory(RenderMarkdown(m.fullResponse) + "\n")
+		m.appendHistory(RenderMarkdown(m.stream.fullResponse) + "\n")
 	}
-	m.appendStatusBar(m.totalTokens, m.totalTools, elapsed, m.cacheHit, m.cacheMiss)
+	m.appendStatusBar(m.stream.totalTokens, m.stream.totalTools, elapsed, m.stream.cacheHit, m.stream.cacheMiss)
 
 	if qs := m.app.ToolRegistry.GetPendingQuestions(); len(qs) > 0 {
 		for _, q := range qs {

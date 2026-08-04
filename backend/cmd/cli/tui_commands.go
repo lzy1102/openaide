@@ -214,10 +214,10 @@ func (m tuiModel) handleModelCmd(parts []string) (tea.Model, tea.Cmd) {
 		options = append(options, label)
 	}
 	m.mode = modeSelect
-	m.selectTitle = lang.T("repl.select_model")
-	m.selectItems = options
-	m.selectIdx = 0
-	m.selectOnPick = func(idx int) tea.Cmd {
+	m.selectS.title = lang.T("repl.select_model")
+	m.selectS.items = options
+	m.selectS.idx = 0
+	m.selectS.onPick = func(idx int) tea.Cmd {
 		fields := strings.Fields(options[idx])
 		if len(fields) >= 3 {
 			m.app.SetModel(fields[2])
@@ -260,10 +260,10 @@ func (m tuiModel) handleSessionsCmd() (tea.Model, tea.Cmd) {
 		options = append(options, fmt.Sprintf("%s  %s  [%d msgs]  %s", marker, title, len(s.Messages), s.UpdatedAt.Format("15:04")))
 	}
 	m.mode = modeSelect
-	m.selectTitle = lang.T("repl.select_session")
-	m.selectItems = options
-	m.selectIdx = 0
-	m.selectOnPick = func(idx int) tea.Cmd {
+	m.selectS.title = lang.T("repl.select_session")
+	m.selectS.items = options
+	m.selectS.idx = 0
+	m.selectS.onPick = func(idx int) tea.Cmd {
 		sess := sessions[idx]
 		m.sessionID = sess.ID
 		m.appendHistory(styleSuccess.Render(fmt.Sprintf("✓ %s", trunc(sess.ID, 8))) + "\n")
