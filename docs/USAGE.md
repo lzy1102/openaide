@@ -9,7 +9,7 @@ openaide setup
 # 2. 试一个简单问题
 openaide "这个项目是干什么的"
 
-# 3. 继续刚才的对话（会话自动保存）
+# 3. 继续刚才的对话（会话自动保存，历史作为上下文）
 openaide -c "帮我看看 kernel 包的架构"
 
 # 4. 审查代码
@@ -45,8 +45,9 @@ openaide -c "方案 A 更好，帮我实现"               # AI 记得刚才讨�
 
 ```bash
 openaide              # 启动交互式 REPL
-openaide "prompt"     # 一次性问答
-openaide -c           # 恢复上一次会话
+openaide "prompt"     # 一次性问答（自动沿用最近会话上下文）
+openaide -c           # 恢复上一次会话（完整历史作为上下文，TUI 模式）
+openaide -c "prompt"  # 一次性问答 + 沿用最近会话上下文
 openaide -y           # 跳过预算耗尽确认，自动继续
 openaide --model <n>  # 指定模型
 openaide --verbose    # 调试日志
@@ -99,7 +100,7 @@ go run ./cmd/eval -output results.json
 | `/lang zh\|en` | 切换界面语言 |
 | `/log` | 查看最近日志 |
 | `/sessions` | 列出所有会话 |
-| `/session <id>` | 切换到指定会话 |
+| `/session <id>` | 切换到指定会话，后续查询以该会话历史为上下文 |
 | `/handoff` | 保存当前状态 |
 | `/exit`, `/quit`, `/q` | 退出 |
 | `/undo` | 撤销上一次文件修改 |

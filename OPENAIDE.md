@@ -503,7 +503,7 @@ storage:
   - Simplified prompt (session ID + ❯, model in banner)
   - /clear deletes session + starts fresh (no confirmation)
   - Slash commands: `/analyst`, `/coder`, `/reviewer`, `/executor`, `/team`, `/auto`
-  - Session resume: `-c` flag loads last non-empty session
+  - Session resume: `-c` flag loads last non-empty session (full history injected as context)
   - Version display: `openaide --version` shows build info from ldflags
 - `cmd/cli/repl_output.go` — pterm/ANSI styling, glamour renderer, output helpers
 - `cmd/cli/setup.go` — interactive setup wizard (language→provider→API key→model)
@@ -517,7 +517,7 @@ No artificial round limits. The LLM decides when to stop. Budget hints at rounds
 - **Command safety**: `execute_command` runs a shared token-level blacklist check (`IsDangerousCommand`) before execution — destructive commands (rm -rf, mkfs, etc.) are blocked, safe commands (ls, pwd, cat) run directly. Write tools are protected by Undo + atomic write + file locks.
 - **Error messages**: `humanizeError` wraps API errors with human-readable tips (429→quota, 401→bad key, timeout→network, deadline→slow model).
 - **Tool visibility**: One-shot streaming mode shows tool calls on stderr as they execute.
-- **Session continuity**: `getOrCreateSession` auto-resumes the most recent session. Use `-c` flag for explicit continuation.
+- **Session continuity**: `getOrCreateSession` auto-resumes the most recent session. Use `-c` flag for explicit continuation. In TUI/REPL, the resumed session ID (`-c` or `/session <id>`) is threaded through `ProcessQueryStream` into the kernel, so the selected session's full history is loaded as context — not just the most recent session.
 - **Config validation**: `validate()` warns on missing API keys and placeholder values at startup.
 - **Cross-session learning**: `SeedFromHistory` pre-loads the pattern detector with query history from past sessions on startup. Pattern detection survives restarts.
 

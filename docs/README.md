@@ -78,7 +78,7 @@ ARCHITECTURE.md → MODULES.md → MIGRATION.md → DEPLOYMENT.md
 | MODULES.md | 已更新 | 2026-05-27 |
 | QUICKSTART.md | 已更新 | 2026-05-27 |
 | DEPLOYMENT.md | 初稿完成 | 2026-05-15 |
-| USAGE.md | 已更新 | 2026-05-27 |
+| USAGE.md | 已更新 | 2026-08-04 |
 
 ---
 
