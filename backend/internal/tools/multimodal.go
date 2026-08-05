@@ -18,13 +18,13 @@ func multimodalToolDefs() []kernel.ToolDefinition {
 			Type: "function",
 			Function: kernel.FunctionDef{
 				Name:        "read_image",
-				Description: "读取图片文件，返回base64数据供多模态模型分析",
+				Description: "Read an image file, returning base64 data for multimodal model analysis",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
 						"path": map[string]interface{}{
 							"type":        "string",
-							"description": "图片路径",
+							"description": "Image file path",
 						},
 					},
 					"required": []string{"path"},

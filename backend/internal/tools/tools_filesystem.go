@@ -21,21 +21,21 @@ func fileSystemToolDefs() []kernel.ToolDefinition {
 			Type: "function",
 			Function: kernel.FunctionDef{
 				Name:        "read_file",
-				Description: "读取文件内容，支持 offset/limit 分页",
+				Description: "Read file content with optional offset/limit pagination.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
 						"path": map[string]interface{}{
 							"type":        "string",
-							"description": "文件路径",
+							"description": "File path",
 						},
 						"offset": map[string]interface{}{
 							"type":        "integer",
-							"description": "起始行号（0-based，默认0）",
+							"description": "Starting line number (0-based, default 0)",
 						},
 						"limit": map[string]interface{}{
 							"type":        "integer",
-							"description": "读取行数（默认全部）",
+							"description": "Number of lines to read (default: all)",
 						},
 					},
 					"required": []string{"path"},
@@ -46,17 +46,17 @@ func fileSystemToolDefs() []kernel.ToolDefinition {
 			Type: "function",
 			Function: kernel.FunctionDef{
 				Name:        "write_file",
-				Description: "写入文件内容",
+				Description: "Write content to a file. Atomic write with undo checkpoint.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
 						"path": map[string]interface{}{
 							"type":        "string",
-							"description": "文件路径",
+							"description": "File path",
 						},
 						"content": map[string]interface{}{
 							"type":        "string",
-							"description": "文件内容",
+							"description": "File content",
 						},
 					},
 					"required": []string{"path", "content"},
@@ -67,17 +67,17 @@ func fileSystemToolDefs() []kernel.ToolDefinition {
 			Type: "function",
 			Function: kernel.FunctionDef{
 				Name:        "execute_command",
-				Description: "执行系统命令",
+				Description: "Execute a system command. Dangerous commands are blocked by a safety blacklist.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
 						"command": map[string]interface{}{
 							"type":        "string",
-							"description": "要执行的命令",
+							"description": "Command to execute",
 						},
 						"working_dir": map[string]interface{}{
 							"type":        "string",
-							"description": "工作目录（可选）",
+							"description": "Working directory (optional)",
 						},
 					},
 					"required": []string{"command"},
@@ -88,13 +88,13 @@ func fileSystemToolDefs() []kernel.ToolDefinition {
 			Type: "function",
 			Function: kernel.FunctionDef{
 				Name:        "list_directory",
-				Description: "列出目录内容",
+				Description: "List directory contents with size and modification time.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
 						"path": map[string]interface{}{
 							"type":        "string",
-							"description": "目录路径",
+							"description": "Directory path",
 						},
 					},
 					"required": []string{"path"},
@@ -105,17 +105,17 @@ func fileSystemToolDefs() []kernel.ToolDefinition {
 			Type: "function",
 			Function: kernel.FunctionDef{
 				Name:        "search_files",
-				Description: "搜索文件内容",
+				Description: "Search file contents using a regex pattern within a directory.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
 						"pattern": map[string]interface{}{
 							"type":        "string",
-							"description": "搜索模式",
+							"description": "Search pattern (regex)",
 						},
 						"path": map[string]interface{}{
 							"type":        "string",
-							"description": "搜索路径",
+							"description": "Directory to search",
 						},
 					},
 					"required": []string{"pattern", "path"},

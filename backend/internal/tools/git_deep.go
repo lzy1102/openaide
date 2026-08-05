@@ -17,13 +17,13 @@ func gitToolDefs() []kernel.ToolDefinition {
 			Type: "function",
 			Function: kernel.FunctionDef{
 				Name:        "git_status",
-				Description: "获取 Git 仓库状态",
+				Description: "Get Git repository status",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
 						"path": map[string]interface{}{
 							"type":        "string",
-							"description": "仓库路径（可选，默认当前目录）",
+							"description": "Repository path (optional, defaults to current directory)",
 						},
 					},
 				},
@@ -33,12 +33,12 @@ func gitToolDefs() []kernel.ToolDefinition {
 			Type: "function",
 			Function: kernel.FunctionDef{
 				Name:        "git_diff",
-				Description: "获取Git工作区差异",
+				Description: "Get Git working-tree diff",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
-						"path":   map[string]interface{}{"type": "string", "description": "文件路径（可选，默认所有文件）"},
-						"staged": map[string]interface{}{"type": "boolean", "description": "是否只看暂存区"},
+						"path":   map[string]interface{}{"type": "string", "description": "File path (optional, defaults to all files)"},
+						"staged": map[string]interface{}{"type": "boolean", "description": "Only show staged changes"},
 					},
 				},
 			},
@@ -47,11 +47,11 @@ func gitToolDefs() []kernel.ToolDefinition {
 			Type: "function",
 			Function: kernel.FunctionDef{
 				Name:        "git_log",
-				Description: "获取Git提交历史",
+				Description: "Get Git commit history",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
-						"limit": map[string]interface{}{"type": "integer", "description": "返回条数（默认10）"},
+						"limit": map[string]interface{}{"type": "integer", "description": "Number of commits to return (default 10)"},
 					},
 				},
 			},
@@ -60,11 +60,11 @@ func gitToolDefs() []kernel.ToolDefinition {
 			Type: "function",
 			Function: kernel.FunctionDef{
 				Name:        "git_blame",
-				Description: "追溯文件每行的最后修改者",
+				Description: "Trace the last modifier of each line in a file",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
-						"path": map[string]interface{}{"type": "string", "description": "文件路径"},
+						"path": map[string]interface{}{"type": "string", "description": "File path"},
 					},
 					"required": []string{"path"},
 				},
@@ -74,19 +74,19 @@ func gitToolDefs() []kernel.ToolDefinition {
 			Type: "function",
 			Function: kernel.FunctionDef{
 				Name: "git_commit",
-				Description: "暂存并提交文件到 Git。自动先 git add 指定文件(或全部)再 commit。" +
-					"用于编辑完成后自动提交,闭环工作流。",
+				Description: "Stage and commit files to Git. Automatically runs git add on the specified files (or all changes) before committing." +
+					"Use to close the loop after edits are complete.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
 						"message": map[string]interface{}{
 							"type":        "string",
-							"description": "提交信息",
+							"description": "Commit message",
 						},
 						"paths": map[string]interface{}{
 							"type":        "array",
 							"items":       map[string]interface{}{"type": "string"},
-							"description": "要暂存的文件路径列表(可选,默认全部变更)",
+							"description": "File paths to stage (optional, defaults to all changes)",
 						},
 					},
 					"required": []string{"message"},
@@ -97,13 +97,13 @@ func gitToolDefs() []kernel.ToolDefinition {
 			Type: "function",
 			Function: kernel.FunctionDef{
 				Name:        "git_create_branch",
-				Description: "创建并切换到新分支。用于在修改前隔离工作。",
+				Description: "Create and switch to a new branch. Use to isolate work before making changes.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
 						"name": map[string]interface{}{
 							"type":        "string",
-							"description": "新分支名称",
+							"description": "New branch name",
 						},
 					},
 					"required": []string{"name"},

@@ -29,29 +29,29 @@ func multiFileEditToolDefs() []kernel.ToolDefinition {
 			Type: "function",
 			Function: kernel.FunctionDef{
 				Name: "edit_files",
-				Description: "原子性批量编辑多个文件。全部编辑预检通过后才会写入;" +
-					"任一写入失败自动回滚已修改文件。适合跨文件重构。" +
-					"同一文件可包含多个 edit,按顺序应用。",
+				Description: "Atomically batch-edit multiple files. All edits are pre-checked before any write;" +
+					"if any write fails, already-modified files are rolled back. Ideal for cross-file refactors." +
+					"A file can contain multiple edits, applied in order.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
 						"edits": map[string]interface{}{
 							"type":        "array",
-							"description": "编辑列表,每个 edit 修改一处",
+							"description": "List of edits, one edit per change",
 							"items": map[string]interface{}{
 								"type": "object",
 								"properties": map[string]interface{}{
 									"path": map[string]interface{}{
 										"type":        "string",
-										"description": "文件路径(相对或绝对)",
+										"description": "File path (relative or absolute)",
 									},
 									"search_text": map[string]interface{}{
 										"type":        "string",
-										"description": "要搜索的文本(在该文件中必须唯一)",
+										"description": "Text to search for (must be unique in the file)",
 									},
 									"replace_text": map[string]interface{}{
 										"type":        "string",
-										"description": "替换后的文本",
+										"description": "Replacement text",
 									},
 								},
 								"required": []string{"path", "search_text", "replace_text"},

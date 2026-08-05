@@ -17,13 +17,13 @@ func fileEditToolDefs() []kernel.ToolDefinition {
 			Type: "function",
 			Function: kernel.FunctionDef{
 				Name:        "diff_edit",
-				Description: "精确搜索替换编辑文件（只修改匹配部分）",
+				Description: "Precise search-and-replace file edit (only modifies the matching part).",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
-						"path":         map[string]interface{}{"type": "string", "description": "文件路径"},
-						"search_text":  map[string]interface{}{"type": "string", "description": "要搜索的文本（必须唯一）"},
-						"replace_text": map[string]interface{}{"type": "string", "description": "替换后的文本"},
+						"path":         map[string]interface{}{"type": "string", "description": "File path"},
+						"search_text":  map[string]interface{}{"type": "string", "description": "Text to search for (must be unique in the file)"},
+						"replace_text": map[string]interface{}{"type": "string", "description": "Replacement text"},
 					},
 					"required": []string{"path", "search_text", "replace_text"},
 				},
@@ -33,12 +33,12 @@ func fileEditToolDefs() []kernel.ToolDefinition {
 			Type: "function",
 			Function: kernel.FunctionDef{
 				Name:        "apply_patch",
-				Description: "批量编辑文件（SEARCH/REPLACE块格式）。一次调用可做多处修改。\n格式: <<<<<<< SEARCH\n旧代码\n=======\n新代码\n>>>>>>> REPLACE",
+				Description: "Batch-edit a file using SEARCH/REPLACE blocks. Apply multiple edits in one call.\nFormat: <<<<<<< SEARCH\nold code\n=======\nnew code\n>>>>>>> REPLACE",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
-						"path":    map[string]interface{}{"type": "string", "description": "文件路径"},
-						"content": map[string]interface{}{"type": "string", "description": "SEARCH/REPLACE块，多个块用空行分隔"},
+						"path":    map[string]interface{}{"type": "string", "description": "File path"},
+						"content": map[string]interface{}{"type": "string", "description": "SEARCH/REPLACE blocks, separated by blank lines"},
 					},
 					"required": []string{"path", "content"},
 				},
@@ -48,14 +48,14 @@ func fileEditToolDefs() []kernel.ToolDefinition {
 			Type: "function",
 			Function: kernel.FunctionDef{
 				Name:        "diff_edit_lines",
-				Description: "按行号范围编辑文件（替换指定行区间内容）。适合结构化替换。",
+				Description: "Edit a file by line-number range (replace the specified line interval). Good for structured replacements.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
-						"path":       map[string]interface{}{"type": "string", "description": "文件路径"},
-						"start_line": map[string]interface{}{"type": "integer", "description": "起始行号（从 1 开始）"},
-						"end_line":   map[string]interface{}{"type": "integer", "description": "结束行号（含），省略则只替换 start_line 一行"},
-						"content":    map[string]interface{}{"type": "string", "description": "替换后的内容"},
+						"path":       map[string]interface{}{"type": "string", "description": "File path"},
+						"start_line": map[string]interface{}{"type": "integer", "description": "Starting line number (1-based)"},
+						"end_line":   map[string]interface{}{"type": "integer", "description": "Ending line number (inclusive); omit to replace only start_line"},
+						"content":    map[string]interface{}{"type": "string", "description": "Replacement content"},
 					},
 					"required": []string{"path", "start_line", "content"},
 				},

@@ -139,9 +139,9 @@ func undoToolDefs() []kernel.ToolDefinition {
 			Type: "function",
 			Function: kernel.FunctionDef{
 				Name: "undo_edit",
-				Description: "撤销最近一次文件编辑,恢复到写操作前的状态。" +
-					"如果文件之前不存在则删除。可连续调用撤销多次。" +
-					"用于 agent 改错文件时快速回滚。",
+				Description: "Undo the most recent file edit, restoring the file to its pre-write state." +
+					"If the file did not exist before, it is deleted. Can be called repeatedly to undo multiple edits." +
+					"Use to quickly roll back when the agent modified a file incorrectly.",
 				Parameters: map[string]interface{}{
 					"type":       "object",
 					"properties": map[string]interface{}{},
@@ -152,8 +152,8 @@ func undoToolDefs() []kernel.ToolDefinition {
 			Type: "function",
 			Function: kernel.FunctionDef{
 				Name: "list_undo_checkpoints",
-				Description: "列出当前可撤销的文件检查点(最近 " +
-					fmt.Sprintf("%d", maxFileCheckpoints) + " 次写操作)。",
+				Description: "List the file checkpoints currently available to undo (last " +
+					fmt.Sprintf("%d", maxFileCheckpoints) + " write operations).",
 				Parameters: map[string]interface{}{
 					"type":       "object",
 					"properties": map[string]interface{}{},

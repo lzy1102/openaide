@@ -16,17 +16,17 @@ func symbolToolDefs() []kernel.ToolDefinition {
 			Type: "function",
 			Function: kernel.FunctionDef{
 				Name:        "search_symbols",
-				Description: "搜索代码符号（函数、类型、方法等）",
+				Description: "Search code symbols (functions, types, methods, etc.)",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
 						"query": map[string]interface{}{
 							"type":        "string",
-							"description": "符号名称或部分名称",
+							"description": "Symbol name or partial name",
 						},
 						"path": map[string]interface{}{
 							"type":        "string",
-							"description": "搜索路径（默认当前目录）",
+							"description": "Search path (default: current directory)",
 						},
 					},
 					"required": []string{"query"},

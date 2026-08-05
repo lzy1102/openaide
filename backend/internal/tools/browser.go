@@ -22,12 +22,12 @@ func browserToolDefs() []kernel.ToolDefinition {
 			Type: "function",
 			Function: kernel.FunctionDef{
 				Name:        "browser_navigate",
-				Description: "浏览器导航到URL，等待页面加载",
+				Description: "Navigate the browser to a URL and wait for the page to load",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
-						"url":     map[string]interface{}{"type": "string", "description": "目标URL"},
-						"wait_ms": map[string]interface{}{"type": "integer", "description": "等待时间毫秒（默认3000）"},
+						"url":     map[string]interface{}{"type": "string", "description": "Target URL"},
+						"wait_ms": map[string]interface{}{"type": "integer", "description": "Wait time in milliseconds (default 3000)"},
 					},
 					"required": []string{"url"},
 				},
@@ -37,11 +37,11 @@ func browserToolDefs() []kernel.ToolDefinition {
 			Type: "function",
 			Function: kernel.FunctionDef{
 				Name:        "browser_extract",
-				Description: "提取当前页面文本内容（支持JS渲染后的页面）",
+				Description: "Extract text content from the current page (supports JS-rendered pages)",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
-						"selector": map[string]interface{}{"type": "string", "description": "CSS选择器（默认body）"},
+						"selector": map[string]interface{}{"type": "string", "description": "CSS selector (default: body)"},
 					},
 				},
 			},
@@ -50,11 +50,11 @@ func browserToolDefs() []kernel.ToolDefinition {
 			Type: "function",
 			Function: kernel.FunctionDef{
 				Name:        "browser_screenshot",
-				Description: "截取当前页面，返回base64图片",
+				Description: "Take a screenshot of the current page, returning a base64 image",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
-						"full_page": map[string]interface{}{"type": "boolean", "description": "是否全页截图"},
+						"full_page": map[string]interface{}{"type": "boolean", "description": "Capture the full page (scrolled)"},
 					},
 				},
 			},
@@ -63,11 +63,11 @@ func browserToolDefs() []kernel.ToolDefinition {
 			Type: "function",
 			Function: kernel.FunctionDef{
 				Name:        "browser_click",
-				Description: "点击页面元素（CSS选择器）",
+				Description: "Click a page element by CSS selector",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
-						"selector": map[string]interface{}{"type": "string", "description": "CSS选择器，如 #submit, .btn, button"},
+						"selector": map[string]interface{}{"type": "string", "description": "CSS selector, e.g. #submit, .btn, button"},
 					},
 					"required": []string{"selector"},
 				},
@@ -77,12 +77,12 @@ func browserToolDefs() []kernel.ToolDefinition {
 			Type: "function",
 			Function: kernel.FunctionDef{
 				Name:        "browser_fill",
-				Description: "在输入框中填写文本",
+				Description: "Fill text into an input field",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
-						"selector": map[string]interface{}{"type": "string", "description": "输入框CSS选择器"},
-						"value":    map[string]interface{}{"type": "string", "description": "要填写的文本"},
+						"selector": map[string]interface{}{"type": "string", "description": "Input CSS selector"},
+						"value":    map[string]interface{}{"type": "string", "description": "Text to fill"},
 					},
 					"required": []string{"selector", "value"},
 				},
