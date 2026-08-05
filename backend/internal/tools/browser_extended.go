@@ -87,7 +87,9 @@ func handleBrowserScroll(ctx context.Context, arguments string) (*kernel.ToolRes
 	var args struct {
 		Y int `json:"y,omitempty"`
 	}
-	json.Unmarshal([]byte(arguments), &args)
+	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+		return &kernel.ToolResult{Error: err.Error()}, nil
+	}
 	if args.Y == 0 {
 		args.Y = 300 // default: scroll down ~1 page
 	}
@@ -115,7 +117,9 @@ func handleBrowserType(ctx context.Context, arguments string) (*kernel.ToolResul
 	var args struct {
 		Text string `json:"text"`
 	}
-	json.Unmarshal([]byte(arguments), &args)
+	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+		return &kernel.ToolResult{Error: err.Error()}, nil
+	}
 
 	if err := initBrowser(); err != nil {
 		return &kernel.ToolResult{Error: err.Error()}, nil

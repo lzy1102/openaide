@@ -7,7 +7,7 @@
 
 [English](README.md) | [中文](#)
 
-**Go 实现的 AI Agent 内核——反思进化、记忆积累、每次任务都在变聪明。** SQLite · 向量记忆 · 43 工具 · 24 语言 LSP
+**Go 实现的 AI Agent 内核——反思进化、记忆积累、每次任务都在变聪明。** SQLite · 向量记忆 · 39–47 工具 · 24 语言 LSP
 
 > 反思 → 技能反馈 → MemGPT 记忆 —— 越用越聪明。
 
@@ -53,7 +53,7 @@ openaide server (API)    openaide (REPL)
     Plan → Execute         ReAct 循环
          ↓                     ↓
     llm/   tools/   memory/
-    43 工具 · 向量记忆 · SQLite
+    39–47 工具 · 向量记忆 · SQLite
 ```
 
 ## 核心能力
@@ -63,8 +63,10 @@ openaide server (API)    openaide (REPL)
 - **深度规划**: 研究 → 提案 → 选择 → 计划 → 执行——多轮深度思考
 - **MemGPT 记忆**: Agent 主动管理记忆——归档、检索、核心事实
 - **Claude 插件兼容**: 直接使用 Claude Code 生态的 skills、MCP、hooks
-- **43 内置工具**: 文件、Git、Web、浏览器、LSP、桌面控制
+- **39–47 内置工具**: 文件、Git、Web、浏览器、LSP、桌面控制
 - **命令安全**: 危险命令被黑名单拦截，安全命令直接执行，写工具受 Undo 保护
+
+> **浏览器工具**（8 个：`browser_navigate` / `browser_extract` / `browser_screenshot` / `browser_click` / `browser_fill` / `browser_click_at` / `browser_scroll` / `browser_type`）为**可选开启**：需要本地 Chromium（约 500 MB），仅在启用时注册。通过 `~/.openaide/config.yaml` 中 `browser.enabled: true` 或 `OPENAIDE_BROWSER=true` 开启。Chromium 自动安装仅在 root 下可用——否则请自行安装 Chrome/Chromium，例如 `sudo apt-get install chromium-browser`。
 
 ## 配置
 

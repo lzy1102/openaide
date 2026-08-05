@@ -66,8 +66,13 @@ func BuiltinTools() []kernel.ToolDefinition {
 	defs = append(defs, undoToolDefs()...)
 	defs = append(defs, gitToolDefs()...)
 	defs = append(defs, webToolDefs()...)
-	defs = append(defs, browserToolDefs()...)
-	defs = append(defs, browserExtendedDefs()...)
+	// Browser tools require a Chromium install (~500MB) and are opt-in.
+	// Keep them out of the schema when disabled so the LLM never picks a
+	// tool that will fail at call time.
+	if browserEnabled() {
+		defs = append(defs, browserToolDefs()...)
+		defs = append(defs, browserExtendedDefs()...)
+	}
 	defs = append(defs, desktopToolDefs()...)
 	defs = append(defs, askToolDefs()...)
 	defs = append(defs, memoryToolDefs()...)

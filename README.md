@@ -7,7 +7,7 @@
 
 [English](#) | [中文](README.zh.md)
 
-**Go-based AI agent kernel that learns from every task.** SQLite · Vector ANN · 43 tools · 24-language LSP
+**Go-based AI agent kernel that learns from every task.** SQLite · Vector ANN · 39–47 tools · 24-language LSP
 
 > Reflection → Skill Feedback → MemGPT Memory — gets smarter with every use.
 
@@ -53,7 +53,7 @@ openaide server (REST+SSE)  openaide (REPL)
     Plan → Execute          ReAct loop
          ↓                        ↓
     llm/   tools/   memory/
-    43 tools · Vector memory · SQLite
+    39–47 tools · Vector memory · SQLite
 ```
 
 ## Key Features
@@ -63,8 +63,10 @@ openaide server (REST+SSE)  openaide (REPL)
 - **DeepPlan**: Research → Propose → Select → Plan → Execute — multi-round deep thinking
 - **MemGPT Memory**: Agent manages its own memory — archive, retrieve, core facts
 - **Claude Plugin Compatible**: Drop-in skills, MCP servers, hooks from Claude Code ecosystem
-- **43 Built-in Tools**: Filesystem, Git, Web, Browser, LSP, Desktop control
+- **39–47 Built-in Tools**: Filesystem, Git, Web, Browser, LSP, Desktop control
 - **Command Safety**: Dangerous commands blocked by blacklist, safe commands run directly, write tools protected by Undo
+
+> **Browser tools** (8 tools: `browser_navigate` / `browser_extract` / `browser_screenshot` / `browser_click` / `browser_fill` / `browser_click_at` / `browser_scroll` / `browser_type`) are **opt-in**: they require a local Chromium install (~500 MB) and are only registered when enabled. Enable via `browser.enabled: true` in `~/.openaide/config.yaml` or `OPENAIDE_BROWSER=true`. Auto-install of Chromium works only when running as root — otherwise install Chrome/Chromium yourself, e.g. `sudo apt-get install chromium-browser`.
 
 ## Configuration
 
