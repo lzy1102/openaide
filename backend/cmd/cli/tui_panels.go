@@ -178,7 +178,7 @@ func (m tuiModel) hudView() string {
 	return styleHudBg.Render(strings.Join(parts, "  "))
 }
 
-// gaugeView 渲染仪表盘行：token / 工具 / 轮次 / 耗时 / 缓存命中
+// gaugeView 渲染仪表盘行：执行中显示实时指标，idle 显示项目常驻统计
 func (m tuiModel) gaugeView() string {
 	busy := m.mode == modeStreaming || m.mode == modePlanExec || m.mode == modeSubAgent || m.mode == modeThinking
 	var parts []string
@@ -209,19 +209,76 @@ func (m tuiModel) gaugeView() string {
 		return styleStatusBar.Render(strings.Join(parts, " "))
 	}
 
-	return styleStatusBar.Render("⏸ standby")
+	// idle：项目常驻统计（启动时缓存，纯渲染）
+	parts = append(parts,
+		styleGaugeVal.Render(fmt.Sprintf("💬 %d", m.idle.sessionCount)),
+		styleGaugeLbl.Render(lang.T("repl.idle_sessions")),
+		"│",
+		styleGaugeVal.Render(fmt.Sprintf("🔧 %d", m.idle.toolCount)),
+		styleGaugeLbl.Render(lang.T("repl.idle_tools")),
+		"│",
+		styleGaugeVal.Render(fmt.Sprintf("🧠 %d", m.idle.factCount)),
+		styleGaugeLbl.Render(lang.T("repl.idle_facts")),
+		"│",
+		styleGaugeVal.Render(fmt.Sprintf("💡 %d", m.idle.learnCount)),
+		styleGaugeLbl.Render(lang.T("repl.idle_learnings")),
+	)
+	return styleStatusBar.Render(strings.Join(parts, " "))
 }
 
-// sidePanel 渲染侧翼仪表（任务/子代理状态），窄终端返回空
+// sidePanel 渲染侧翼仪表（任务/子代理/最近会话），窄终端返回空
 func (m tuiModel) sidePanel() string {
 	if m.width < 100 {
 		return ""
 	}
 	content := m.taskPanelContent()
 	if content == "" {
+		content = m.idlePanelContent()
+	}
+	if content == "" {
 		return ""
 	}
 	return styleSideBar.Render(content)
+}
+
+// idlePanelContent idle 侧翼：最近会话列表
+func (m tuiModel) idlePanelContent() string {
+	if m.mode != modeIdle || len(m.idle.recent) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString(styleSideTtl.Render(lang.T("repl.idle_recent_sessions")) + "\n")
+	shown := 0
+	for _, s := range m.idle.recent {
+		if shown >= 6 {
+			break
+		}
+		shown++
+		id := s.id
+		if len(id) > 8 {
+			id = id[:8]
+		}
+		age := humanAge(s.updatedAt)
+		sb.WriteString(styleStreaming.Render("  ● ") +
+			styleDim.Render(trunc(id, 10)) +
+			styleGaugeLbl.Render(fmt.Sprintf("  %d msgs · %s", s.msgCount, age)) + "\n")
+	}
+	return strings.TrimSuffix(sb.String(), "\n")
+}
+
+// humanAge 相对时间描述：<1m→刚刚, <1h→N 分钟, <24h→N 小时, 否则 N 天
+func humanAge(t time.Time) string {
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return lang.T("repl.idle_just_now")
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%dd", int(d.Hours()/24))
+	}
 }
 
 // taskPanelContent 提取任务/子代理面板的纯内容（无边框），供侧翼复用

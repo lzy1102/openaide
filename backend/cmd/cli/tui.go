@@ -109,6 +109,7 @@ type tuiModel struct {
 	sub      subState       // 子代理执行
 	selectS  selectionState // 选择模式
 	searchS  searchState    // 历史搜索
+	idle     idleState      // idle 驾驶舱缓存（启动时加载一次）
 
 	// 输入历史（textarea）
 	cmdHistory []string
@@ -171,6 +172,22 @@ type selectionState struct {
 type searchState struct {
 	results []string
 	idx     int
+}
+
+// idleState idle 驾驶舱缓存：启动时一次性加载，渲染只读
+type idleState struct {
+	sessionCount int
+	toolCount    int
+	factCount    int
+	learnCount   int
+	recent       []idleRecentSession
+}
+
+// idleRecentSession 最近会话摘要（侧翼面板）
+type idleRecentSession struct {
+	id        string
+	msgCount  int
+	updatedAt time.Time
 }
 
 // ── 输入键位 ───────────────────────────────────────────────
@@ -253,6 +270,7 @@ func runTUI(app *infra.Application, continueSess, autoYes bool) {
 	m.gitBranch = gitBranch
 	m.gitDirty = gitDirty
 	m.history.WriteString(buildBanner(modelName, gitBranch, cwd, Version))
+	m.loadIdleStats(app)
 
 	if continueSess {
 		m.resumeSession(app)
@@ -357,6 +375,33 @@ func (m *tuiModel) resumeSession(app *infra.Application) {
 		if sess != nil {
 			m.sessionID = sess.ID
 		}
+	}
+}
+
+// loadIdleStats 启动时一次性加载 idle 驾驶舱统计（渲染只读缓存）
+func (m *tuiModel) loadIdleStats(app *infra.Application) {
+	ctx := context.Background()
+
+	if sessions, err := app.Orchestrator.ListSessions(ctx, m.projectID, "cli-user", 6, 0); err == nil {
+		m.idle.sessionCount = len(sessions)
+		for _, s := range sessions {
+			m.idle.recent = append(m.idle.recent, idleRecentSession{
+				id:        s.ID,
+				msgCount:  len(s.Messages),
+				updatedAt: s.UpdatedAt,
+			})
+		}
+	}
+
+	if stats := app.Orchestrator.GetStats(); stats != nil {
+		if tc, ok := stats["tool_count"].(int); ok {
+			m.idle.toolCount = tc
+		}
+	}
+
+	if pm := app.Orchestrator.GetProjectMind(); pm != nil {
+		m.idle.factCount = len(pm.CodeMap) + len(pm.RiskMap)
+		m.idle.learnCount = len(pm.Learnings.Patterns) + len(pm.Learnings.Conventions) + len(pm.Learnings.Pitfalls)
 	}
 }
 

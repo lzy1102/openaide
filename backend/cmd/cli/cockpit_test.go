@@ -35,8 +35,48 @@ func TestHudView(t *testing.T) {
 
 func TestGaugeViewIdle(t *testing.T) {
 	m := testModel()
-	if got := m.gaugeView(); !strings.Contains(got, "standby") {
-		t.Errorf("idle gauge should show standby, got %q", got)
+	m.idle.sessionCount = 3
+	m.idle.toolCount = 42
+	m.idle.factCount = 7
+	m.idle.learnCount = 5
+	got := m.gaugeView()
+	for _, want := range []string{"3", "42", "7", "5"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("idle gauge missing %q: %q", want, got)
+		}
+	}
+}
+
+func TestGaugeViewIdleZero(t *testing.T) {
+	m := testModel()
+	got := m.gaugeView()
+	for _, want := range []string{"0", "0"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("idle gauge with zero stats should render, missing %q: %q", want, got)
+		}
+	}
+}
+
+func TestSidePanelIdleRecentSessions(t *testing.T) {
+	m := testModel()
+	m.mode = modeIdle
+	m.idle.recent = []idleRecentSession{
+		{id: "sess_11111111", msgCount: 12, updatedAt: time.Now().Add(-5 * time.Minute)},
+		{id: "sess_22222222", msgCount: 3, updatedAt: time.Now().Add(-2 * time.Hour)},
+	}
+	got := m.sidePanel()
+	for _, want := range []string{"sess_111", "sess_222", "12 msgs", "3 msgs", "5m", "2h"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("idle side panel missing %q: %q", want, got)
+		}
+	}
+}
+
+func TestSidePanelIdleEmpty(t *testing.T) {
+	m := testModel()
+	m.mode = modeIdle
+	if got := m.sidePanel(); got != "" {
+		t.Errorf("idle side panel without sessions should be empty, got %q", got)
 	}
 }
 
