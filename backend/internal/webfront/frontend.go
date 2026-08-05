@@ -32,13 +32,12 @@ func FrontendHandler() http.Handler {
 	fileServer := http.FileServer(http.FS(subFS))
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Serve index.html for SPA routes (client-side routing handles /chat, /settings, etc.)
-		if r.URL.Path == "/" || (!strings.HasPrefix(r.URL.Path, "/assets/") && !strings.Contains(r.URL.Path, ".")) {
-			f, err := subFS.Open("index.html")
-			if err == nil {
-				f.Close()
-				r.URL.Path = "/index.html"
-			}
+		// SPA fallback: routes without a file extension (client-side routing
+		// handles /chat, /settings, etc.) are rewritten to "/", letting
+		// FileServer serve index.html directly. Rewriting to "/index.html"
+		// instead would make FileServer 301-redirect back to "./".
+		if r.URL.Path != "/" && !strings.HasPrefix(r.URL.Path, "/assets/") && !strings.Contains(r.URL.Path, ".") {
+			r.URL.Path = "/"
 		}
 		fileServer.ServeHTTP(w, r)
 	})
