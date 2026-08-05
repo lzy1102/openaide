@@ -6,9 +6,6 @@ cmd/cli/cli
 cmd/server/server
 cmd/*/data/
 
-# Frontend embed (copied by Makefile before build)
-cmd/server/frontend/
-
 # IDE
 .idea/
 .vscode/

@@ -18,6 +18,7 @@ import (
 	"openaide/backend/internal/infra"
 	"openaide/backend/internal/kernel"
 	"openaide/backend/internal/lang"
+	"openaide/backend/internal/webfront"
 )
 
 // Build info — injected via ldflags at build time
@@ -415,7 +416,7 @@ func cmdServer(args []string) {
 	}
 
 	// 嵌入前端
-	if h := FrontendHandler(); h != nil {
+	if h := webfront.FrontendHandler(); h != nil {
 		app.APIServer.SetFrontendHandler(h)
 		slog.Info("Frontend embedded in binary")
 	}

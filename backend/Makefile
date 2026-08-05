@@ -24,7 +24,7 @@ LDFLAGS = -s -w -X main.Version=$(VERSION) -X main.BuildTime=$(shell date -u +%Y
 
 build:
 	@echo "Building..."
-	@cp -r ../frontend/* cmd/cli/frontend/ 2>/dev/null || true
+	@cp -r ../frontend/* internal/webfront/frontend/ 2>/dev/null || true
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/openaide ./cmd/cli
 
 # Desktop app: bare binary (go build, no packaging)
@@ -62,7 +62,7 @@ install: build
 	@echo "Installed to ~/.openaide/bin/ — restart your shell or run: source ~/.bashrc"
 
 build-all:
-	@cp -r ../frontend/* cmd/cli/frontend/ 2>/dev/null || true
+	@cp -r ../frontend/* internal/webfront/frontend/ 2>/dev/null || true
 	$(MAKE) build-linux-amd64 build-linux-arm64 build-windows-amd64 build-darwin-amd64 build-darwin-arm64
 
 build-linux-amd64:

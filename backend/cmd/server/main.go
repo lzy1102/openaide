@@ -11,6 +11,7 @@ import (
 
 	"openaide/backend/internal/config"
 	"openaide/backend/internal/infra"
+	"openaide/backend/internal/webfront"
 )
 
 func main() {
@@ -36,8 +37,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 嵌入前端 (go:embed frontend/*)
-	if h := FrontendHandler(); h != nil {
+	// 嵌入前端 (webfront 共享包)
+	if h := webfront.FrontendHandler(); h != nil {
 		app.APIServer.SetFrontendHandler(h)
 		slog.Info("Frontend embedded in binary")
 	}

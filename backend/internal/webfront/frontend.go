@@ -1,4 +1,7 @@
-package main
+// Package webfront provides the embedded web frontend shared by all
+// entrypoints (CLI, server). The frontend assets live in ./frontend and
+// are copied there by the Makefile before building.
+package webfront
 
 import (
 	"embed"
