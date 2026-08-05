@@ -63,6 +63,7 @@ func BuiltinTools() []kernel.ToolDefinition {
 	defs = append(defs, fileSystemToolDefs()...)
 	defs = append(defs, fileEditToolDefs()...)
 	defs = append(defs, multiFileEditToolDefs()...)
+	defs = append(defs, undoToolDefs()...)
 	defs = append(defs, gitToolDefs()...)
 	defs = append(defs, webToolDefs()...)
 	defs = append(defs, browserToolDefs()...)

@@ -43,6 +43,23 @@ func fileEditToolDefs() []kernel.ToolDefinition {
 					"required": []string{"path", "content"},
 				},
 			},
+		},
+		{
+			Type: "function",
+			Function: kernel.FunctionDef{
+				Name:        "diff_edit_lines",
+				Description: "按行号范围编辑文件（替换指定行区间内容）。适合结构化替换。",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"path":       map[string]interface{}{"type": "string", "description": "文件路径"},
+						"start_line": map[string]interface{}{"type": "integer", "description": "起始行号（从 1 开始）"},
+						"end_line":   map[string]interface{}{"type": "integer", "description": "结束行号（含），省略则只替换 start_line 一行"},
+						"content":    map[string]interface{}{"type": "string", "description": "替换后的内容"},
+					},
+					"required": []string{"path", "start_line", "content"},
+				},
+			},
 		}}
 }
 

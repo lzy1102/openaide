@@ -40,6 +40,17 @@ func todoToolDefs() []kernel.ToolDefinition {
 				},
 			},
 		},
+		{
+			Type: "function",
+			Function: kernel.FunctionDef{
+				Name:        "todo_read",
+				Description: "Read the current task list. Use to check pending/completed tasks before continuing a multi-step task.",
+				Parameters: map[string]interface{}{
+					"type":       "object",
+					"properties": map[string]interface{}{},
+				},
+			},
+		},
 	}
 }
 
