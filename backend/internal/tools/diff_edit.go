@@ -187,6 +187,7 @@ func handleDiffEditLines(ctx context.Context, arguments string) (*kernel.ToolRes
 	newLines = append(newLines, replacement...)
 	newLines = append(newLines, lines[args.EndLine:]...)
 
+	saveFileCheckpoint(absPath, "diff_edit_lines")
 	if err := os.WriteFile(absPath, []byte(strings.Join(newLines, "\n")), 0644); err != nil {
 		return &kernel.ToolResult{Error: err.Error()}, nil
 	}
@@ -264,6 +265,7 @@ func applySearchReplacePatch(absPath, content string) (string, error) {
 			len(blocks), strings.Join(failed, "\n"))
 	}
 
+	saveFileCheckpoint(absPath, "apply_patch")
 	if err := os.WriteFile(absPath, []byte(current), 0644); err != nil {
 		return "", fmt.Errorf("write file: %w", err)
 	}
