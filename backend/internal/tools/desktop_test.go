@@ -8,6 +8,67 @@ import (
 	"testing"
 )
 
+// Command-construction tests run on every OS without a GUI: they verify the
+// right executable and args are produced, but never execute the commands.
+
+func TestDesktopCmdConstruction(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("command construction verified on linux")
+	}
+
+	cases := []struct {
+		name string
+		cmd  func() []string
+		want []string // any of these binaries is acceptable
+	}{
+		{"screenshot_full", func() []string {
+			c := screenshotCmd("")
+			return append([]string{c.Path}, c.Args...)
+		}, []string{"gnome-screenshot", "scrot"}},
+		{"screenshot_selection", func() []string {
+			c := screenshotCmd("selection")
+			return append([]string{c.Path}, c.Args...)
+		}, []string{"gnome-screenshot"}},
+		{"click", func() []string {
+			c := clickCmd(10, 20, "left", false)
+			return append([]string{c.Path}, c.Args...)
+		}, []string{"xdotool"}},
+		{"type", func() []string {
+			c := typeCmd("hello")
+			return append([]string{c.Path}, c.Args...)
+		}, []string{"xdotool"}},
+		{"key", func() []string {
+			c := keyCmd("ctrl+c")
+			return append([]string{c.Path}, c.Args...)
+		}, []string{"xdotool"}},
+		{"scroll", func() []string {
+			c := scrollCmd(0, 2)
+			return append([]string{c.Path}, c.Args...)
+		}, []string{"xdotool"}},
+		{"move", func() []string {
+			c := moveCmd(5, 6)
+			return append([]string{c.Path}, c.Args...)
+		}, []string{"xdotool"}},
+		{"drag", func() []string {
+			c := dragCmd(0, 0, 5, 5)
+			return append([]string{c.Path}, c.Args...)
+		}, []string{"xdotool"}},
+	}
+	for _, c := range cases {
+		got := c.cmd()[0]
+		ok := false
+		for _, w := range c.want {
+			if strings.Contains(got, w) {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			t.Errorf("%s: command = %v, want one of %v", c.name, c.cmd(), c.want)
+		}
+	}
+}
+
 // Desktop handlers depend on a graphical session (DISPLAY + xdotool on Linux).
 // Tests assert they fail gracefully with a clear hint when no session exists,
 // never hang, and never claim success on a failed command.

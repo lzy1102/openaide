@@ -1,6 +1,8 @@
 package tools
 
 import (
+	"context"
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -90,4 +92,53 @@ replacement
 	if err == nil {
 		t.Error("expected error for no matching search")
 	}
+}
+
+func TestHandleApplyPatch(t *testing.T) {
+	dir := t.TempDir()
+	f := dir + "/test.txt"
+	os.WriteFile(f, []byte("line1\nold line\nline3\n"), 0644)
+
+	ctx := context.Background()
+	patch := `<<<<<<< SEARCH
+old line
+=======
+new line
+>>>>>>> REPLACE`
+
+	t.Run("success", func(t *testing.T) {
+		arg, _ := json.Marshal(map[string]string{"path": f, "content": patch})
+		r, _ := handleApplyPatch(ctx, string(arg))
+		if r.Error != "" {
+			t.Fatalf("unexpected error: %v", r.Error)
+		}
+		if !strings.Contains(r.Content.(string), "1 SEARCH/REPLACE") {
+			t.Errorf("content = %q, want success message", r.Content)
+		}
+		data, _ := os.ReadFile(f)
+		if !strings.Contains(string(data), "new line") {
+			t.Error("file should contain new line")
+		}
+	})
+
+	t.Run("missing_args", func(t *testing.T) {
+		r, _ := handleApplyPatch(ctx, `{}`)
+		if !strings.Contains(r.Error, "path and content are required") {
+			t.Errorf("error = %q, want 'path and content are required'", r.Error)
+		}
+	})
+
+	t.Run("bad_json", func(t *testing.T) {
+		r, _ := handleApplyPatch(ctx, `{oops`)
+		if r.Error == "" {
+			t.Error("expected error for invalid JSON")
+		}
+	})
+
+	t.Run("nonexistent_file", func(t *testing.T) {
+		r, _ := handleApplyPatch(ctx, `{"path":"`+dir+`/nope.txt","content":"`+patch+`"}`)
+		if r.Error == "" {
+			t.Error("expected error for nonexistent file")
+		}
+	})
 }

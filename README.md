@@ -68,6 +68,8 @@ openaide server (REST+SSE)  openaide (REPL)
 
 > **Browser tools** (8 tools: `browser_navigate` / `browser_extract` / `browser_screenshot` / `browser_click` / `browser_fill` / `browser_click_at` / `browser_scroll` / `browser_type`) are **opt-in**: they require a local Chromium install (~500 MB) and are only registered when enabled. Enable via `browser.enabled: true` in `~/.openaide/config.yaml` or `OPENAIDE_BROWSER=true`. Auto-install of Chromium works only when running as root — otherwise install Chrome/Chromium yourself, e.g. `sudo apt-get install chromium-browser`.
 
+> **No delete/move tools by design**: OpenAIDE intentionally has no `delete_file` / `move_file` / `rename_file` tools — destructive file operations are not exposed to the agent, so it can never destroy work. Do destructive ops yourself in your terminal when needed.
+
 ## Configuration
 
 `~/.openaide/config.yaml`:

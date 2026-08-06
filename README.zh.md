@@ -68,6 +68,8 @@ openaide server (API)    openaide (REPL)
 
 > **浏览器工具**（8 个：`browser_navigate` / `browser_extract` / `browser_screenshot` / `browser_click` / `browser_fill` / `browser_click_at` / `browser_scroll` / `browser_type`）为**可选开启**：需要本地 Chromium（约 500 MB），仅在启用时注册。通过 `~/.openaide/config.yaml` 中 `browser.enabled: true` 或 `OPENAIDE_BROWSER=true` 开启。Chromium 自动安装仅在 root 下可用——否则请自行安装 Chrome/Chromium，例如 `sudo apt-get install chromium-browser`。
 
+> **有意不提供删除/移动工具**：OpenAIDE 刻意不暴露 `delete_file` / `move_file` / `rename_file`——破坏性文件操作不对 Agent 开放，确保它永远不会摧毁你的工作。需要时请在终端自行执行。
+
 ## 配置
 
 `~/.openaide/config.yaml`:

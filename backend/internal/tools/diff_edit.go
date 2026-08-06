@@ -285,7 +285,9 @@ func handleApplyPatch(ctx context.Context, arguments string) (*kernel.ToolResult
 		Path    string `json:"path"`
 		Content string `json:"content"`
 	}
-	json.Unmarshal([]byte(arguments), &args)
+	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+		return &kernel.ToolResult{Error: err.Error()}, nil
+	}
 	if args.Path == "" || args.Content == "" {
 		return &kernel.ToolResult{Error: "path and content are required"}, nil
 	}
