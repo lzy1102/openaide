@@ -56,7 +56,9 @@ func handleVerifyClaim(ctx context.Context, args string) (*kernel.ToolResult, er
 		File    string `json:"file"`
 		Pattern string `json:"pattern"`
 	}
-	json.Unmarshal([]byte(args), &a)
+	if err := json.Unmarshal([]byte(args), &a); err != nil {
+		return &kernel.ToolResult{Error: err.Error()}, nil
+	}
 
 	if a.Claim == "" {
 		return &kernel.ToolResult{Error: "claim parameter required"}, nil
@@ -112,7 +114,12 @@ func handleTraceCallers(ctx context.Context, args string) (*kernel.ToolResult, e
 		Function string `json:"function"`
 		File     string `json:"file"`
 	}
-	json.Unmarshal([]byte(args), &a)
+	if err := json.Unmarshal([]byte(args), &a); err != nil {
+		return &kernel.ToolResult{Error: err.Error()}, nil
+	}
+	if a.Function == "" {
+		return &kernel.ToolResult{Error: "function parameter required"}, nil
+	}
 
 	cwd, _ := os.Getwd()
 	matches := grepCodebase(cwd, a.Function)

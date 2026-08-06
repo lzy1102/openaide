@@ -99,7 +99,9 @@ func handleLSPDefinition(ctx context.Context, args string) (*kernel.ToolResult, 
 		Line      int    `json:"line"`
 		Character int    `json:"character"`
 	}
-	json.Unmarshal([]byte(args), &a)
+	if err := json.Unmarshal([]byte(args), &a); err != nil {
+		return &kernel.ToolResult{Error: err.Error()}, nil
+	}
 	if a.File == "" {
 		return &kernel.ToolResult{Error: "file parameter required"}, nil
 	}
@@ -131,7 +133,12 @@ func handleLSPReferences(ctx context.Context, args string) (*kernel.ToolResult, 
 		Line      int    `json:"line"`
 		Character int    `json:"character"`
 	}
-	json.Unmarshal([]byte(args), &a)
+	if err := json.Unmarshal([]byte(args), &a); err != nil {
+		return &kernel.ToolResult{Error: err.Error()}, nil
+	}
+	if a.File == "" {
+		return &kernel.ToolResult{Error: "file parameter required"}, nil
+	}
 	c := clientForFile(a.File)
 	if c == nil {
 		return &kernel.ToolResult{Error: "no LSP server for this file type"}, nil
@@ -154,7 +161,12 @@ func handleLSPHover(ctx context.Context, args string) (*kernel.ToolResult, error
 		Line      int    `json:"line"`
 		Character int    `json:"character"`
 	}
-	json.Unmarshal([]byte(args), &a)
+	if err := json.Unmarshal([]byte(args), &a); err != nil {
+		return &kernel.ToolResult{Error: err.Error()}, nil
+	}
+	if a.File == "" {
+		return &kernel.ToolResult{Error: "file parameter required"}, nil
+	}
 	c := clientForFile(a.File)
 	if c == nil {
 		return &kernel.ToolResult{Error: "no LSP server for this file type"}, nil
@@ -168,7 +180,9 @@ func handleLSPHover(ctx context.Context, args string) (*kernel.ToolResult, error
 
 func handleLSPDiagnostics(ctx context.Context, args string) (*kernel.ToolResult, error) {
 	var a struct{ File string }
-	json.Unmarshal([]byte(args), &a)
+	if err := json.Unmarshal([]byte(args), &a); err != nil {
+		return &kernel.ToolResult{Error: err.Error()}, nil
+	}
 
 	var sb strings.Builder
 	sb.WriteString("Diagnostics:\n")

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"openaide/backend/internal/git"
@@ -280,13 +281,14 @@ func handleGitBlame(ctx context.Context, arguments string) (*kernel.ToolResult, 
 		return toolErrInvalidPath(err), nil
 	}
 
-	client := git.NewClient(absPath)
+	// git commands run from the file's directory, not the file itself.
+	client := git.NewClient(filepath.Dir(absPath))
 	if !client.IsRepo() {
 		return &kernel.ToolResult{Error: fmt.Sprintf("not a git repo: %s", absPath)}, nil
 	}
 
 	// Execute git blame via os/exec
-	cmd := execCommand(ctx, absPath, "git", "blame", "--line-porcelain", args.Path)
+	cmd := execCommand(ctx, filepath.Dir(absPath), "git", "blame", "--line-porcelain", args.Path)
 	data, err := cmd.Output()
 	if err != nil {
 		return &kernel.ToolResult{Error: fmt.Sprintf("git blame failed: %v", err)}, nil

@@ -348,13 +348,34 @@ func abs(n int) int {
 	return n
 }
 
+// desktopSessionError reports why desktop automation is unavailable, or "" if usable.
+// On Linux a graphical session and xdotool are required; other OSes use built-in
+// tooling (osascript / PowerShell) so only fail at call time.
+func desktopSessionError() string {
+	if detectOS() != "linux" {
+		return ""
+	}
+	if os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "" {
+		return "desktop automation unavailable: no graphical session (DISPLAY is not set)"
+	}
+	if _, err := exec.LookPath("xdotool"); err != nil {
+		return "desktop automation unavailable: xdotool not found (install with: sudo apt-get install xdotool)"
+	}
+	return ""
+}
+
 // ── Tool handlers ─────────────────────────────────────
 
 func handleDesktopScreenshot(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
 	var args struct {
 		Region string `json:"region,omitempty"`
 	}
-	json.Unmarshal([]byte(arguments), &args)
+	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+		return &kernel.ToolResult{Error: err.Error()}, nil
+	}
+	if msg := desktopSessionError(); msg != "" {
+		return &kernel.ToolResult{Error: msg}, nil
+	}
 
 	tmpFile := "/tmp/openaide_screenshot.png"
 	cmd := screenshotCmd(args.Region)
@@ -378,7 +399,12 @@ func handleDesktopClick(ctx context.Context, arguments string) (*kernel.ToolResu
 		Button string `json:"button,omitempty"`
 		Double bool   `json:"double,omitempty"`
 	}
-	json.Unmarshal([]byte(arguments), &args)
+	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+		return &kernel.ToolResult{Error: err.Error()}, nil
+	}
+	if msg := desktopSessionError(); msg != "" {
+		return &kernel.ToolResult{Error: msg}, nil
+	}
 	if args.Button == "" {
 		args.Button = "left"
 	}
@@ -387,7 +413,9 @@ func handleDesktopClick(ctx context.Context, arguments string) (*kernel.ToolResu
 	if cmd == nil {
 		return &kernel.ToolResult{Error: "desktop click not supported on " + detectOS()}, nil
 	}
-	cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return &kernel.ToolResult{Error: fmt.Sprintf("desktop click failed: %v", err)}, nil
+	}
 	return &kernel.ToolResult{Content: fmt.Sprintf("// Clicked %s at (%d,%d)", args.Button, args.X, args.Y)}, nil
 }
 
@@ -395,12 +423,22 @@ func handleDesktopType(ctx context.Context, arguments string) (*kernel.ToolResul
 	var args struct {
 		Text string `json:"text"`
 	}
-	json.Unmarshal([]byte(arguments), &args)
+	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+		return &kernel.ToolResult{Error: err.Error()}, nil
+	}
+	if args.Text == "" {
+		return &kernel.ToolResult{Error: "text parameter required"}, nil
+	}
+	if msg := desktopSessionError(); msg != "" {
+		return &kernel.ToolResult{Error: msg}, nil
+	}
 	cmd := typeCmd(args.Text)
 	if cmd == nil {
 		return &kernel.ToolResult{Error: "desktop type not supported on " + detectOS()}, nil
 	}
-	cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return &kernel.ToolResult{Error: fmt.Sprintf("desktop type failed: %v", err)}, nil
+	}
 	return &kernel.ToolResult{Content: fmt.Sprintf("// Typed %d chars", len(args.Text))}, nil
 }
 
@@ -408,44 +446,75 @@ func handleDesktopKey(ctx context.Context, arguments string) (*kernel.ToolResult
 	var args struct {
 		Keys string `json:"keys"`
 	}
-	json.Unmarshal([]byte(arguments), &args)
+	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+		return &kernel.ToolResult{Error: err.Error()}, nil
+	}
+	if args.Keys == "" {
+		return &kernel.ToolResult{Error: "keys parameter required"}, nil
+	}
+	if msg := desktopSessionError(); msg != "" {
+		return &kernel.ToolResult{Error: msg}, nil
+	}
 	cmd := keyCmd(args.Keys)
 	if cmd == nil {
 		return &kernel.ToolResult{Error: "desktop key not supported on " + detectOS()}, nil
 	}
-	cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return &kernel.ToolResult{Error: fmt.Sprintf("desktop key failed: %v", err)}, nil
+	}
 	return &kernel.ToolResult{Content: fmt.Sprintf("// Pressed: %s", args.Keys)}, nil
 }
 
 func handleDesktopScroll(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
 	var args struct{ X, Y int }
-	json.Unmarshal([]byte(arguments), &args)
+	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+		return &kernel.ToolResult{Error: err.Error()}, nil
+	}
+	if msg := desktopSessionError(); msg != "" {
+		return &kernel.ToolResult{Error: msg}, nil
+	}
 	cmd := scrollCmd(args.X, args.Y)
 	if cmd == nil {
 		return &kernel.ToolResult{Error: "desktop scroll not supported on " + detectOS()}, nil
 	}
-	cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return &kernel.ToolResult{Error: fmt.Sprintf("desktop scroll failed: %v", err)}, nil
+	}
 	return &kernel.ToolResult{Content: fmt.Sprintf("// Scrolled (x:%d y:%d)", args.X, args.Y)}, nil
 }
 
 func handleDesktopMove(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
 	var args struct{ X, Y int }
-	json.Unmarshal([]byte(arguments), &args)
+	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+		return &kernel.ToolResult{Error: err.Error()}, nil
+	}
+	if msg := desktopSessionError(); msg != "" {
+		return &kernel.ToolResult{Error: msg}, nil
+	}
 	cmd := moveCmd(args.X, args.Y)
 	if cmd == nil {
 		return &kernel.ToolResult{Error: "desktop move not supported on " + detectOS()}, nil
 	}
-	cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return &kernel.ToolResult{Error: fmt.Sprintf("desktop move failed: %v", err)}, nil
+	}
 	return &kernel.ToolResult{Content: fmt.Sprintf("// Moved to (%d,%d)", args.X, args.Y)}, nil
 }
 
 func handleDesktopDrag(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
 	var args struct{ X1, Y1, X2, Y2 int }
-	json.Unmarshal([]byte(arguments), &args)
+	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+		return &kernel.ToolResult{Error: err.Error()}, nil
+	}
+	if msg := desktopSessionError(); msg != "" {
+		return &kernel.ToolResult{Error: msg}, nil
+	}
 	cmd := dragCmd(args.X1, args.Y1, args.X2, args.Y2)
 	if cmd == nil {
 		return &kernel.ToolResult{Error: "desktop drag not supported on " + detectOS()}, nil
 	}
-	cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return &kernel.ToolResult{Error: fmt.Sprintf("desktop drag failed: %v", err)}, nil
+	}
 	return &kernel.ToolResult{Content: fmt.Sprintf("// Dragged (%d,%d)→(%d,%d)", args.X1, args.Y1, args.X2, args.Y2)}, nil
 }
