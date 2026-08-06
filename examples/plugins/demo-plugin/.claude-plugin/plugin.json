@@ -1,0 +1,9 @@
+{
+  "name": "demo-plugin",
+  "version": "0.1.0",
+  "description": "演示插件：打包一个 skill、一个 MCP server、一个 hook 的完整结构",
+  "author": {
+    "name": "OpenAIDE",
+    "email": "dev@example.com"
+  }
+}

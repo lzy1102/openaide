@@ -1,0 +1,8 @@
+{
+  "name": "git-cleanup",
+  "version": "0.1.0",
+  "description": "清理本地已合并的 git 分支",
+  "author": {
+    "name": "OpenAIDE"
+  }
+}
