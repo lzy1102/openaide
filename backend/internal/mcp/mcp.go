@@ -303,6 +303,9 @@ func (c *Client) GetTools() []kernel.ToolDefinition { return c.tools }
 
 // CallTool invokes a tool on the MCP server.
 func (c *Client) CallTool(name string, args map[string]interface{}) (*kernel.ToolResult, error) {
+	if c.transport == nil {
+		return nil, fmt.Errorf("mcp client not connected")
+	}
 	result, err := c.call("tools/call", map[string]interface{}{
 		"name":      strings.TrimPrefix(name, "mcp_"),
 		"arguments": args,
