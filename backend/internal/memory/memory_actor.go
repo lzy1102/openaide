@@ -9,6 +9,7 @@ import (
 
 	"openaide/backend/internal/kernel"
 	"openaide/backend/internal/kernel/actor"
+	"openaide/backend/internal/rag"
 
 	_ "modernc.org/sqlite"
 )
@@ -24,33 +25,28 @@ const (
 	LevelLong    Level = 2
 )
 
+// 外部向量库集合名
+const (
+	CollectionMemory  = "memory"
+	CollectionArchive = "archive"
+	CollectionCore    = "core"
+)
+
 // MemoryItem 记忆条目
 type MemoryItem struct {
 	ID        string    `json:"id"`
 	SessionID string    `json:"session_id"`
 	Content   string    `json:"content"`
 	Level     Level     `json:"level"`
-	Embedding []float32 `json:"embedding,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// memVec holds an in-memory embedding for fast search.
-type memVec struct {
-	id  string
-	vec []float32
-}
-
-// MemoryActor is a CSP-style memory store backed by SQLite with
-// an in-memory vector cache. Search is pure in-memory.
-const maxMemVectors = 5000
-
+// MemoryActor is a CSP-style memory store backed by SQLite.
+// Semantic retrieval is delegated to an external vector store (rag.Retriever).
 type MemoryActor struct {
-	super    *actor.Actor
-	embedder kernel.Embedder
-	db       *sql.DB
-	cache    []memVec
-	embCache map[string][]float32
-	embKeys  []string
+	super     *actor.Actor
+	retriever rag.Retriever
+	db        *sql.DB
 }
 
 // NewMemoryActor creates and starts a memory actor.
@@ -61,19 +57,22 @@ func NewMemoryActor(path string) (*MemoryActor, error) {
 	}
 	db.SetMaxOpenConns(1)
 	a := &MemoryActor{
-		super:    actor.NewActor(64),
-		db:       db,
-		embCache: make(map[string][]float32),
+		super:     actor.NewActor(64),
+		db:        db,
+		retriever: rag.NoopRetriever{},
 	}
 	a.super.Send(func() {
 		a.migrate()
-		a.loadCache()
 	})
 	return a, nil
 }
 
-func (a *MemoryActor) SetEmbedder(e kernel.Embedder) {
-	a.super.Send(func() { a.embedder = e })
+// SetRetriever injects the external retrieval backend.
+func (a *MemoryActor) SetRetriever(r rag.Retriever) {
+	if r == nil {
+		r = rag.NoopRetriever{}
+	}
+	a.super.Send(func() { a.retriever = r })
 }
 
 func (a *MemoryActor) migrate() {
@@ -82,7 +81,6 @@ func (a *MemoryActor) migrate() {
 		session_id TEXT NOT NULL,
 		content TEXT NOT NULL DEFAULT '',
 		level INTEGER DEFAULT 0,
-		embedding TEXT DEFAULT '[]',
 		created_at TEXT NOT NULL DEFAULT ''
 	)`)
 	a.db.Exec(`CREATE INDEX IF NOT EXISTS idx_memory_session ON memory_items(session_id)`)
@@ -93,7 +91,6 @@ func (a *MemoryActor) migrate() {
 		session_id TEXT NOT NULL,
 		summary TEXT NOT NULL DEFAULT '',
 		messages_json TEXT NOT NULL DEFAULT '[]',
-		embedding TEXT DEFAULT '[]',
 		importance REAL DEFAULT 0.5,
 		archived_at TEXT NOT NULL DEFAULT ''
 	)`)
@@ -104,92 +101,45 @@ func (a *MemoryActor) migrate() {
 		id TEXT PRIMARY KEY,
 		content TEXT NOT NULL DEFAULT '',
 		importance REAL DEFAULT 0.5,
-		embedding TEXT DEFAULT '[]',
 		created_at TEXT NOT NULL DEFAULT '',
 		accessed_at TEXT NOT NULL DEFAULT ''
 	)`)
 }
 
-// Save stores messages using batch embedding (one API call for all).
+// Save stores messages locally and indexes them into the external store.
 func (a *MemoryActor) Save(ctx context.Context, sessionID string, messages []kernel.Message) error {
 	if len(messages) == 0 {
 		return nil
 	}
 
-	// Batch embed with cache
-	var embeddings [][]float32
-	if a.embedder != nil && a.embedder.Dimension() > 0 {
-		texts := make([]string, len(messages))
-		for i, msg := range messages {
-			texts[i] = msg.Content
-		}
-		// Check cache first, only embed uncached texts
-		var uncached []int
-		for i, t := range texts {
-			if v, ok := a.embCache[hashMemKey(t)]; ok {
-				if embeddings == nil {
-					embeddings = make([][]float32, len(messages))
-				}
-				embeddings[i] = v
-			} else {
-				uncached = append(uncached, i)
-			}
-		}
-		if len(uncached) > 0 {
-			uncachedTexts := make([]string, len(uncached))
-			for i, idx := range uncached {
-				uncachedTexts[i] = texts[idx]
-			}
-			newEmbs, _ := a.embedder.EmbedBatch(ctx, uncachedTexts)
-			if embeddings == nil {
-				embeddings = make([][]float32, len(messages))
-			}
-			for i, idx := range uncached {
-				if i < len(newEmbs) {
-					embeddings[idx] = newEmbs[i]
-					// Store in cache
-					a.embCache[hashMemKey(texts[idx])] = newEmbs[i]
-					a.embKeys = append(a.embKeys, hashMemKey(texts[idx]))
-				}
-			}
-		}
-		// LRU evict embeddings
-		for len(a.embKeys) > 200 {
-			delete(a.embCache, a.embKeys[0])
-			a.embKeys = a.embKeys[1:]
-		}
-	}
-
-	// Build items
 	items := make([]*MemoryItem, len(messages))
+	docs := make([]rag.Document, 0, len(messages))
 	for i, msg := range messages {
-		vec := []float32(nil)
-		if i < len(embeddings) {
-			vec = embeddings[i]
-		}
+		id := kernel.NewSessionID()
 		items[i] = &MemoryItem{
-			ID:        kernel.NewSessionID(),
+			ID:        id,
 			SessionID: sessionID,
 			Content:   msg.Content,
 			Level:     LevelWorking,
-			Embedding: vec,
 		}
+		docs = append(docs, rag.Document{
+			ID:      id,
+			Content: msg.Content,
+			Metadata: map[string]string{
+				"session_id": sessionID,
+			},
+		})
 	}
+
+	// 外部索引(Noop 时静默返回 nil)
+	_ = a.retriever.Index(ctx, CollectionMemory, docs)
 
 	// Single actor dispatch for all inserts
 	a.super.Send(func() {
 		for _, item := range items {
-			embJSON, _ := json.Marshal(item.Embedding)
 			a.db.ExecContext(ctx,
-				`INSERT INTO memory_items (id, session_id, content, level, embedding, created_at) VALUES (?, ?, ?, ?, ?, datetime('now'))`,
-				item.ID, item.SessionID, item.Content, int(item.Level), string(embJSON))
-			a.cache = append(a.cache, memVec{id: item.ID, vec: item.Embedding})
-		}
-		// LRU evict
-		for len(a.cache) > maxMemVectors {
-			oldest := a.cache[0]
-			a.db.ExecContext(ctx, `DELETE FROM memory_items WHERE id=?`, oldest.id)
-			a.cache = a.cache[1:]
+				`INSERT INTO memory_items (id, session_id, content, level, created_at) VALUES (?, ?, ?, ?, datetime('now'))`,
+				item.ID, item.SessionID, item.Content, int(item.Level))
 		}
 	})
 	return nil
@@ -226,77 +176,60 @@ func (a *MemoryActor) Load(ctx context.Context, sessionID string, limit int) ([]
 	return messages, nil
 }
 
-// Search finds matching memories using in-memory vector cache.
+// Search finds matching memories via the external vector store.
+// Returns empty results (not an error) when the store is unavailable.
 func (a *MemoryActor) Search(ctx context.Context, query string, limit int) ([]kernel.Message, float64, error) {
-	var queryVec []float32
-	if a.embedder != nil {
-		queryVec, _ = a.embedder.Embed(ctx, query)
-	}
 	if limit <= 0 {
 		limit = 10
 	}
+	results, err := a.retriever.Search(ctx, CollectionMemory, query, limit)
+	if err != nil || len(results) == 0 {
+		return nil, 0, nil
+	}
 
-	var messages []kernel.Message
-	var bestScore float64
-	a.super.Send(func() {
-		type entry struct {
-			id    string
-			score float64
+	messages := make([]kernel.Message, 0, len(results))
+	bestScore := float64(0)
+	for _, r := range results {
+		messages = append(messages, kernel.Message{Role: "assistant", Content: r.Content})
+		if r.Score > bestScore {
+			bestScore = r.Score
 		}
-		var entries []entry
-		for _, dv := range a.cache {
-			score := float64(0)
-			if len(queryVec) > 0 && len(dv.vec) == len(queryVec) {
-				score = kernel.CosineSimilarity(queryVec, dv.vec)
-				if score < 0.5 {
-					continue
-				}
-			}
-			entries = append(entries, entry{id: dv.id, score: score})
-		}
-		for i := 0; i < len(entries); i++ {
-			for j := i + 1; j < len(entries); j++ {
-				if entries[j].score > entries[i].score {
-					entries[i], entries[j] = entries[j], entries[i]
-				}
-			}
-		}
-		// Fetch content for top results
-		for i := 0; i < len(entries) && len(messages) < limit; i++ {
-			var content string
-			a.db.QueryRowContext(ctx, `SELECT content FROM memory_items WHERE id=?`, entries[i].id).Scan(&content)
-			messages = append(messages, kernel.Message{Role: "assistant", Content: content})
-			if entries[i].score > bestScore {
-				bestScore = entries[i].score
-			}
-		}
-	})
+	}
 	return messages, bestScore, nil
 }
 
-// Compress compacts old memory items.
+// Compress compacts old memory items (local + external).
 func (a *MemoryActor) Compress(ctx context.Context, sessionID string) error {
+	var deletedIDs []string
 	a.super.Send(func() {
-		a.db.ExecContext(ctx,
-			`DELETE FROM memory_items WHERE id IN (SELECT id FROM memory_items WHERE session_id=? ORDER BY created_at ASC LIMIT max(0, (SELECT COUNT(*)-20 FROM memory_items WHERE session_id=?)))`,
+		rows, err := a.db.QueryContext(ctx,
+			`SELECT id FROM memory_items WHERE session_id=? ORDER BY created_at ASC LIMIT max(0, (SELECT COUNT(*)-20 FROM memory_items WHERE session_id=?))`,
 			sessionID, sessionID)
-		// Rebuild cache
-		a.loadCacheLocked()
+		if err == nil {
+			for rows.Next() {
+				var id string
+				if rows.Scan(&id) == nil {
+					deletedIDs = append(deletedIDs, id)
+				}
+			}
+			rows.Close()
+		}
+		for _, id := range deletedIDs {
+			a.db.ExecContext(ctx, `DELETE FROM memory_items WHERE id=?`, id)
+		}
 	})
+	if len(deletedIDs) > 0 {
+		_ = a.retriever.Delete(ctx, CollectionMemory, deletedIDs)
+	}
 	return nil
 }
 
-// Delete removes a memory item.
+// Delete removes a memory item (local + external).
 func (a *MemoryActor) Delete(ctx context.Context, id string) {
 	a.super.Send(func() {
 		a.db.ExecContext(ctx, `DELETE FROM memory_items WHERE id=?`, id)
-		for i, dv := range a.cache {
-			if dv.id == id {
-				a.cache = append(a.cache[:i], a.cache[i+1:]...)
-				break
-			}
-		}
 	})
+	_ = a.retriever.Delete(ctx, CollectionMemory, []string{id})
 }
 
 // Stop shuts down the actor.
@@ -305,180 +238,99 @@ func (a *MemoryActor) Stop() {
 	a.db.Close()
 }
 
-func (a *MemoryActor) loadCache() {
-	a.loadCacheLocked()
-}
-
-func (a *MemoryActor) loadCacheLocked() {
-	rows, err := a.db.Query(`SELECT id, embedding FROM memory_items`)
-	if err != nil {
-		return
-	}
-	defer rows.Close()
-	a.cache = nil
-	for rows.Next() {
-		var id, embJSON string
-		if err := rows.Scan(&id, &embJSON); err != nil {
-			continue
-		}
-		var emb []float32
-		if json.Unmarshal([]byte(embJSON), &emb) == nil {
-			a.cache = append(a.cache, memVec{id: id, vec: emb})
-		}
-	}
-}
-
 // ── MemGPT-style Archival Memory ────────────────────────────
 
-// ArchiveConversation stores a compressed conversation summary with embedding.
-// The agent can later retrieve this via archive search.
+// ArchiveConversation stores a compressed conversation summary locally
+// and indexes the summary into the external archive collection.
 func (a *MemoryActor) ArchiveConversation(ctx context.Context, sessionID, summary string, messages []kernel.Message, importance float64) error {
 	msgJSON, _ := json.Marshal(messages)
 	now := time.Now().Format(time.RFC3339)
+	archiveID := sessionID + "-archive"
 
-	// Generate embedding for the summary
-	var embJSON string
-	if a.embedder != nil && a.embedder.Dimension() > 0 {
-		if vec, err := a.embedder.Embed(ctx, summary); err == nil && len(vec) > 0 {
-			embBytes, _ := json.Marshal(vec)
-			embJSON = string(embBytes)
-		}
-	}
+	_ = a.retriever.Index(ctx, CollectionArchive, []rag.Document{{
+		ID:      archiveID,
+		Content: summary,
+		Metadata: map[string]string{
+			"session_id": sessionID,
+		},
+	}})
 
 	a.super.Send(func() {
 		a.db.ExecContext(ctx,
-			`INSERT OR REPLACE INTO memory_archive (id, session_id, summary, messages_json, embedding, importance, archived_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			sessionID+"-archive", sessionID, summary, string(msgJSON), embJSON, importance, now)
+			`INSERT OR REPLACE INTO memory_archive (id, session_id, summary, messages_json, importance, archived_at)
+			 VALUES (?, ?, ?, ?, ?, ?)`,
+			archiveID, sessionID, summary, string(msgJSON), importance, now)
 	})
 	return nil
 }
 
-// RetrieveArchive searches archived conversations by embedding similarity.
+// RetrieveArchive searches archived conversations via the external store,
+// then fetches the full message list from the local archive table.
 func (a *MemoryActor) RetrieveArchive(ctx context.Context, query string, limit int) ([]kernel.Message, float64, error) {
 	if limit <= 0 {
 		limit = 5
 	}
-
-	var queryVec []float32
-	if a.embedder != nil {
-		queryVec, _ = a.embedder.Embed(ctx, query)
-	}
-	if len(queryVec) == 0 {
-		return a.Search(ctx, query, limit) // fallback to working memory
+	results, err := a.retriever.Search(ctx, CollectionArchive, query, limit)
+	if err != nil || len(results) == 0 {
+		return nil, 0, nil
 	}
 
-	// Search archive by reading all entries and scoring
-	type result struct {
-		messages []kernel.Message
-		score    float64
-	}
-	var results []result
-
+	var allMsgs []kernel.Message
+	bestScore := float64(0)
 	a.super.Send(func() {
-		rows, err := a.db.QueryContext(ctx,
-			`SELECT messages_json, embedding FROM memory_archive ORDER BY archived_at DESC LIMIT 50`)
-		if err != nil {
-			return
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var msgJSON, embJSON string
-			if err := rows.Scan(&msgJSON, &embJSON); err != nil {
+		for _, r := range results {
+			var msgJSON string
+			err := a.db.QueryRowContext(ctx,
+				`SELECT messages_json FROM memory_archive WHERE id=?`, r.ID).Scan(&msgJSON)
+			if err != nil {
 				continue
 			}
 			var messages []kernel.Message
-			json.Unmarshal([]byte(msgJSON), &messages)
-			var emb []float32
-			json.Unmarshal([]byte(embJSON), &emb)
-
-			score := float64(0.3) // base recency
-			if len(emb) == len(queryVec) {
-				score = kernel.CosineSimilarity(queryVec, emb)
+			if json.Unmarshal([]byte(msgJSON), &messages) == nil {
+				allMsgs = append(allMsgs, messages...)
 			}
-			results = append(results, result{messages, score})
+			if r.Score > bestScore {
+				bestScore = r.Score
+			}
 		}
 	})
-
-	// Sort by score and take top
-	// Sort by score descending (bubble sort — archive is typically <100 entries)
-	for i := 0; i < len(results); i++ {
-		for j := i + 1; j < len(results); j++ {
-			if results[j].score > results[i].score {
-				results[i], results[j] = results[j], results[i]
-			}
-		}
-	}
-	var allMsgs []kernel.Message
-	bestScore := float64(0)
-	for i, r := range results {
-		if i >= limit {
-			break
-		}
-		allMsgs = append(allMsgs, r.messages...)
-		if r.score > bestScore {
-			bestScore = r.score
-		}
-	}
 	return allMsgs, bestScore, nil
 }
 
 // ── Core Facts (persistent knowledge) ────────────────────────
 
-// StoreCoreFact persists a key fact that survives all sessions.
+// StoreCoreFact persists a key fact locally and indexes it externally.
 func (a *MemoryActor) StoreCoreFact(ctx context.Context, content string, importance float64) {
 	now := time.Now().Format(time.RFC3339)
 	id := fmt.Sprintf("fact_%d", time.Now().UnixNano())
 
-	var embJSON string
-	if a.embedder != nil && a.embedder.Dimension() > 0 {
-		if vec, err := a.embedder.Embed(ctx, content); err == nil && len(vec) > 0 {
-			embBytes, _ := json.Marshal(vec)
-			embJSON = string(embBytes)
-		}
-	}
+	_ = a.retriever.Index(ctx, CollectionCore, []rag.Document{{
+		ID:      id,
+		Content: content,
+	}})
 
 	a.super.Send(func() {
 		a.db.ExecContext(ctx,
-			`INSERT OR REPLACE INTO core_facts (id, content, importance, embedding, created_at, accessed_at)
-			 VALUES (?, ?, ?, ?, ?, ?)`,
-			id, content, importance, embJSON, now, now)
+			`INSERT OR REPLACE INTO core_facts (id, content, importance, created_at, accessed_at)
+			 VALUES (?, ?, ?, ?, ?)`,
+			id, content, importance, now, now)
 	})
 }
 
-// GetCoreFacts retrieves the most important core facts matching a query.
+// GetCoreFacts retrieves the most relevant core facts via the external store.
 func (a *MemoryActor) GetCoreFacts(ctx context.Context, query string, limit int) []string {
 	if limit <= 0 {
 		limit = 5
 	}
-
-	var facts []string
-	a.super.Send(func() {
-		rows, err := a.db.QueryContext(ctx,
-			`SELECT content FROM core_facts ORDER BY importance DESC, accessed_at DESC LIMIT ?`, limit*3)
-		if err != nil {
-			return
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var c string
-			if rows.Scan(&c) == nil {
-				facts = append(facts, c)
-			}
-		}
-	})
-	if len(facts) > limit {
-		facts = facts[:limit]
+	results, err := a.retriever.Search(ctx, CollectionCore, query, limit)
+	if err != nil || len(results) == 0 {
+		return nil
+	}
+	facts := make([]string, 0, len(results))
+	for _, r := range results {
+		facts = append(facts, r.Content)
 	}
 	return facts
-}
-
-func hashMemKey(s string) string {
-	h := 0
-	for _, r := range s {
-		h = h*31 + int(r)
-	}
-	return fmt.Sprintf("%x", h)
 }
 
 var _ kernel.Memory = (*MemoryActor)(nil)

@@ -69,6 +69,7 @@ func TestStoreCoreFact(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer a.Stop()
+	a.SetRetriever(newMemRetriever())
 
 	ctx := context.Background()
 	a.StoreCoreFact(ctx, "Token validation happens in middleware/token.go, not in the login handler", 0.9)
@@ -89,6 +90,7 @@ func TestMemoryManager_Integration(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer a.Stop()
+	a.SetRetriever(newMemRetriever())
 
 	ctx := context.Background()
 

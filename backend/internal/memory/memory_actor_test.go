@@ -47,6 +47,7 @@ func TestMemoryActor_SaveLoad(t *testing.T) {
 func TestMemoryActor_Search(t *testing.T) {
 	a, _ := NewMemoryActor(t.TempDir() + "/memory.db")
 	defer a.Stop()
+	a.SetRetriever(newMemRetriever())
 	ctx := context.Background()
 
 	a.Save(ctx, "s1", []kernel.Message{{Role: "user", Content: "deploy to production"}})
