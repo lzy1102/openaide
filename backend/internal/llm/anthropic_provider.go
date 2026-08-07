@@ -368,13 +368,3 @@ func splitMultimodalAnthropic(raw string) []map[string]interface{} {
 func regexpCompile(pattern string) *regexp.Regexp {
 	return regexp.MustCompile(pattern)
 }
-
-// Embed 向量化（Anthropic 不支持 embeddings API）
-func (p *AnthropicProvider) Embed(ctx context.Context, text string) ([]float32, error) {
-	return nil, fmt.Errorf("embeddings not supported by anthropic provider, use an openai provider")
-}
-
-// EmbedBatch 批量向量化（Anthropic 不支持 embeddings API）
-func (p *AnthropicProvider) EmbedBatch(ctx context.Context, texts []string) ([][]float32, error) {
-	return nil, fmt.Errorf("embeddings not supported by anthropic provider, use an openai provider")
-}

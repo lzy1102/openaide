@@ -30,8 +30,6 @@ type Gateway struct {
 type Provider interface {
 	Chat(ctx context.Context, messages []kernel.Message, tools []kernel.ToolDefinition, options map[string]interface{}) (*kernel.LLMResponse, error)
 	ChatStream(ctx context.Context, messages []kernel.Message, tools []kernel.ToolDefinition, options map[string]interface{}) (<-chan kernel.StreamChunk, error)
-	Embed(ctx context.Context, text string) ([]float32, error)
-	EmbedBatch(ctx context.Context, texts []string) ([][]float32, error)
 	GetModelID() string
 	SetModelID(model string)
 	HealthCheck(ctx context.Context) error
@@ -430,69 +428,6 @@ func (g *Gateway) FallbackChat(ctx context.Context, messages []kernel.Message, t
 		}
 		lastErr = err
 		slog.Warn("Provider failed, trying next", "provider", name, "error", err)
-	}
-
-	return nil, fmt.Errorf("all providers failed, last error: %w", lastErr)
-}
-
-// Embed 使用默认提供商进行文本向量化
-func (g *Gateway) Embed(ctx context.Context, text string) ([]float32, error) {
-	providerName := g.GetDefaultProvider()
-	if providerName == "" {
-		return nil, fmt.Errorf("no provider configured for embedding")
-	}
-
-	provider, ok := g.providers.Load(providerName)
-
-	if !ok {
-		return nil, fmt.Errorf("provider not found: %s", providerName)
-	}
-
-	return provider.Embed(ctx, text)
-}
-
-// EmbedWithProvider 使用指定提供商进行文本向量化
-func (g *Gateway) EmbedWithProvider(ctx context.Context, providerName, text string) ([]float32, error) {
-	provider, ok := g.providers.Load(providerName)
-
-	if !ok {
-		return nil, fmt.Errorf("provider not found: %s", providerName)
-	}
-
-	return provider.Embed(ctx, text)
-}
-
-// EmbedBatch 批量向量化
-func (g *Gateway) EmbedBatch(ctx context.Context, texts []string) ([][]float32, error) {
-	providerName := g.GetDefaultProvider()
-	if providerName == "" {
-		return nil, fmt.Errorf("no provider configured for embedding")
-	}
-
-	provider, ok := g.providers.Load(providerName)
-
-	if !ok {
-		return nil, fmt.Errorf("provider not found: %s", providerName)
-	}
-
-	return provider.EmbedBatch(ctx, texts)
-}
-
-// FallbackEmbed 带故障转移的向量化
-func (g *Gateway) FallbackEmbed(ctx context.Context, text string) ([]float32, error) {
-	providers := g.GetEnabledProviders()
-	if len(providers) == 0 {
-		return nil, fmt.Errorf("no enabled providers")
-	}
-
-	var lastErr error
-	for _, name := range providers {
-		vec, err := g.EmbedWithProvider(ctx, name, text)
-		if err == nil {
-			return vec, nil
-		}
-		lastErr = err
-		slog.Warn("Embedding provider failed, trying next", "provider", name, "error", err)
 	}
 
 	return nil, fmt.Errorf("all providers failed, last error: %w", lastErr)

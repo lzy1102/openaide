@@ -250,74 +250,6 @@ func (p *OpenAIProvider) SetModelID(model string) {
 	p.modelID = model
 }
 
-// Embed 文本向量化
-func (p *OpenAIProvider) Embed(ctx context.Context, text string) ([]float32, error) {
-	return p.embeddingRequest(ctx, []string{text})
-}
-
-// EmbedBatch 批量向量化
-func (p *OpenAIProvider) EmbedBatch(ctx context.Context, texts []string) ([][]float32, error) {
-	if len(texts) == 0 {
-		return nil, fmt.Errorf("empty texts")
-	}
-	res, err := p.embeddingRequest(ctx, texts)
-	if err != nil {
-		return nil, err
-	}
-	return [][]float32{res}, nil
-}
-
-func (p *OpenAIProvider) embeddingRequest(ctx context.Context, inputs []string) ([]float32, error) {
-	model := p.config.DefaultModel
-	if p.config.EmbeddingModel != "" {
-		model = p.config.EmbeddingModel
-	}
-
-	body := map[string]interface{}{
-		"model": model,
-		"input": inputs,
-	}
-
-	data, err := json.Marshal(body)
-	if err != nil {
-		return nil, fmt.Errorf("marshal embedding request: %w", err)
-	}
-
-	url := p.config.BaseURL + "/embeddings"
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(data))
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+p.config.APIKey)
-	for k, v := range p.config.Headers {
-		req.Header.Set(k, v)
-	}
-
-	resp, err := p.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("embedding http request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("embedding http error %d: %s", resp.StatusCode, string(body))
-	}
-
-	var result openAIEmbeddingResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decode embedding response: %w", err)
-	}
-
-	if len(result.Data) == 0 {
-		return nil, fmt.Errorf("empty embedding response")
-	}
-
-	return result.Data[0].Embedding, nil
-}
-
 // HealthCheck 健康检查
 func (p *OpenAIProvider) HealthCheck(ctx context.Context) error {
 	_, err := p.Chat(ctx, []kernel.Message{
@@ -562,18 +494,4 @@ type openAIMessageDelta struct {
 	Content          string           `json:"content,omitempty"`
 	ReasoningContent string           `json:"reasoning_content,omitempty"`
 	ToolCalls        []openAIToolCall `json:"tool_calls,omitempty"`
-}
-
-// embedding 请求响应类型
-type openAIEmbeddingResponse struct {
-	Object string                `json:"object"`
-	Data   []openAIEmbeddingData `json:"data"`
-	Model  string                `json:"model"`
-	Usage  *openAIUsage          `json:"usage,omitempty"`
-}
-
-type openAIEmbeddingData struct {
-	Object    string    `json:"object"`
-	Index     int       `json:"index"`
-	Embedding []float32 `json:"embedding"`
 }
