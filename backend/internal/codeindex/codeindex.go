@@ -1,11 +1,11 @@
-// Package codeindex 提供基于向量检索的项目代码索引。
+// Package codeindex 提供基于外部向量库的项目代码索引。
 //
 // 设计原则:
 //   - 不参与 ReAct 工具调用,只在 prompt 阶段为 kernel 注入相关代码上下文
-//   - SQLite 存储嵌入向量(复用 modernc.org/sqlite,纯 Go 无 CGO)
-//   - 增量索引:启动时异步全量扫描,运行时通过 IndexFile() 处理文件变更
-//   - 优雅降级:配 embedder 用语义检索,否则退化为 TF-IDF 关键词检索
-//   - CSP actor 串行化所有写操作,SQLite 连接由 actor 独占
+//   - 检索完全外挂:chunk 经 rag.Retriever 写入外部向量库(pgvector),
+//     搜索也通过 rag.Retriever 完成;本包不实现任何本地检索
+//   - SQLite 仅用于文件 hash 追踪与 chunk 元数据(增量索引判断)
+//   - CSP actor 串行化所有写操作
 package codeindex
 
 import (
@@ -22,6 +22,7 @@ import (
 
 	"openaide/backend/internal/kernel"
 	"openaide/backend/internal/kernel/actor"
+	"openaide/backend/internal/rag"
 
 	_ "modernc.org/sqlite"
 )
@@ -30,13 +31,16 @@ import (
 // 直接复用 kernel.CodeChunk,使 Indexer 满足 kernel.CodeIndexer 接口。
 type Chunk = kernel.CodeChunk
 
+// Collection 是代码 chunk 在外部向量库中的集合名。
+const Collection = "code"
+
 // Indexer 是代码索引主结构。CSP actor 串行化所有写操作。
 type Indexer struct {
-	store    *Store
-	embedder kernel.Embedder // nil 表示用 TF-IDF 降级
-	actor    *actor.Actor
-	root     string
-	cfg      Config
+	store     *Store
+	retriever rag.Retriever // 外部向量库;Noop 时检索返回空
+	actor     *actor.Actor
+	root      string
+	cfg       Config
 
 	// 索引状态
 	mu         sync.RWMutex
@@ -54,7 +58,7 @@ type Config struct {
 }
 
 // NewIndexer 创建并启动 Indexer。dbPath 为空时使用内存数据库。
-func NewIndexer(cfg Config, embedder kernel.Embedder) (*Indexer, error) {
+func NewIndexer(cfg Config, retriever rag.Retriever) (*Indexer, error) {
 	if cfg.MaxChunks <= 0 {
 		cfg.MaxChunks = 100
 	}
@@ -64,6 +68,9 @@ func NewIndexer(cfg Config, embedder kernel.Embedder) (*Indexer, error) {
 	if cfg.ChunkOverlap < 0 {
 		cfg.ChunkOverlap = 5
 	}
+	if retriever == nil {
+		retriever = rag.NoopRetriever{}
+	}
 
 	store, err := NewStore(cfg.DBPath)
 	if err != nil {
@@ -71,10 +78,10 @@ func NewIndexer(cfg Config, embedder kernel.Embedder) (*Indexer, error) {
 	}
 
 	ix := &Indexer{
-		store:    store,
-		embedder: embedder,
-		actor:    actor.NewActor(32),
-		cfg:      cfg,
+		store:     store,
+		retriever: retriever,
+		actor:     actor.NewActor(32),
+		cfg:       cfg,
 	}
 
 	// 启动时统计已有 chunk 数
@@ -146,40 +153,58 @@ func (ix *Indexer) RemoveFile(absPath string) {
 		return
 	}
 	ix.actor.Send(func() {
-		ix.store.DeleteByPath(rel)
+		ix.deleteFile(rel)
 	})
 }
 
 // Search 返回与 query 语义最相关的 top-K chunk。
-// embedder 未配置时使用 TF-IDF 关键词匹配。
+// 外部向量库未连接时返回空结果。
 func (ix *Indexer) Search(ctx context.Context, query string, limit int) ([]Chunk, error) {
 	if limit <= 0 {
 		limit = 5
 	}
-	// 读操作不需要走 actor,SQLite WAL 支持并发读
-	if ix.embedder != nil && ix.embedder.Dimension() > 0 {
-		return ix.searchSemantic(ctx, query, limit)
+	results, err := ix.retriever.Search(ctx, Collection, query, limit)
+	if err != nil {
+		slog.Debug("CodeIndexer: external search failed", "error", err)
+		return nil, nil
 	}
-	return ix.searchTFIDF(query, limit)
+	out := make([]Chunk, 0, len(results))
+	for _, r := range results {
+		chunk := Chunk{
+			ID:      r.ID,
+			Content: r.Content,
+			Score:   r.Score,
+			Path:    r.Metadata["path"],
+			Symbol:  r.Metadata["symbol"],
+		}
+		if start, ok := r.Metadata["start_line"]; ok {
+			fmt.Sscanf(start, "%d", &chunk.StartLine)
+		}
+		if end, ok := r.Metadata["end_line"]; ok {
+			fmt.Sscanf(end, "%d", &chunk.EndLine)
+		}
+		out = append(out, chunk)
+	}
+	return out, nil
 }
 
 // Stats 返回索引状态。
 type Stats struct {
-	Indexing    bool      `json:"indexing"`
-	IndexedAt   time.Time `json:"indexed_at"`
-	ChunkCount  int       `json:"chunk_count"`
-	HasEmbedder bool      `json:"has_embedder"`
+	Indexing   bool      `json:"indexing"`
+	IndexedAt  time.Time `json:"indexed_at"`
+	ChunkCount int       `json:"chunk_count"`
+	Retrieval  bool      `json:"retrieval"` // 外部检索是否可用
 }
 
 func (ix *Indexer) Stats() Stats {
 	ix.mu.RLock()
 	defer ix.mu.RUnlock()
-	hasEmb := ix.embedder != nil && ix.embedder.Dimension() > 0
+	_, ok := ix.retriever.(rag.NoopRetriever)
 	return Stats{
-		Indexing:    ix.indexing,
-		IndexedAt:   ix.indexedAt,
-		ChunkCount:  ix.chunkCount,
-		HasEmbedder: hasEmb,
+		Indexing:   ix.indexing,
+		IndexedAt:  ix.indexedAt,
+		ChunkCount: ix.chunkCount,
+		Retrieval:  !ok,
 	}
 }
 
@@ -270,7 +295,7 @@ func (ix *Indexer) doIndexFile(root, relPath, absPath string) {
 	chunker := NewChunker(ix.cfg)
 	chunks := chunker.Chunk(relPath, data)
 	if len(chunks) == 0 {
-		ix.store.DeleteByPath(relPath)
+		ix.deleteFile(relPath)
 		return
 	}
 	if err := ix.indexChunks(relPath, data, chunks); err != nil {
@@ -278,53 +303,54 @@ func (ix *Indexer) doIndexFile(root, relPath, absPath string) {
 	}
 }
 
-// indexChunks 计算嵌入并写入存储。
+// indexChunks 将 chunk 写入外部向量库,并记录元数据。
 func (ix *Indexer) indexChunks(relPath string, data []byte, chunks []Chunk) error {
-	// 先删除旧 chunk
-	ix.store.DeleteByPath(relPath)
+	// 先删除旧 chunk(本地 + 外部)
+	ix.deleteFile(relPath)
 
 	fileHash := hashBytes(data)
 
-	// 批量计算 embedding
-	contents := make([]string, len(chunks))
-	for i, c := range chunks {
-		contents[i] = c.Content
-	}
-
-	var embeddings [][]float32
-	if ix.embedder != nil && ix.embedder.Dimension() > 0 {
-		var err error
-		embeddings, err = ix.embedder.EmbedBatch(context.Background(), contents)
-		if err != nil {
-			slog.Debug("CodeIndexer: embed batch failed, falling back", "error", err)
-			embeddings = nil
-		}
-	}
-
+	docs := make([]rag.Document, len(chunks))
 	for i, c := range chunks {
 		c.ID = chunkID(relPath, c.StartLine, c.EndLine)
-		if i < len(embeddings) && embeddings[i] != nil {
-			ix.store.Upsert(c, embeddings[i], fileHash)
-		} else {
-			ix.store.Upsert(c, nil, fileHash)
+		docs[i] = rag.Document{
+			ID:      c.ID,
+			Content: c.Content,
+			Metadata: map[string]string{
+				"path":       c.Path,
+				"symbol":     c.Symbol,
+				"start_line": fmt.Sprintf("%d", c.StartLine),
+				"end_line":   fmt.Sprintf("%d", c.EndLine),
+			},
 		}
+		chunks[i] = c
+	}
+
+	if err := ix.retriever.Index(context.Background(), Collection, docs); err != nil {
+		slog.Debug("CodeIndexer: external index failed", "path", relPath, "error", err)
+		return err
+	}
+
+	for _, c := range chunks {
+		ix.store.Upsert(c, fileHash)
 	}
 	return nil
 }
 
-// ── 内部:搜索 ────────────────────────────────────────────────
-
-func (ix *Indexer) searchSemantic(ctx context.Context, query string, limit int) ([]Chunk, error) {
-	qVec, err := ix.embedder.Embed(ctx, query)
-	if err != nil || len(qVec) == 0 {
-		// embed 失败降级到 TF-IDF
-		return ix.searchTFIDF(query, limit)
+// deleteFile 删除某文件的全部 chunk:先取本地 ID,再删本地元数据,
+// 最后从外部向量库删除。外部检索不可用(Noop)时静默跳过。
+func (ix *Indexer) deleteFile(relPath string) {
+	ids, err := ix.store.ListByPath(relPath)
+	if err != nil {
+		ids = nil
 	}
-	return ix.store.SearchByVector(qVec, limit)
-}
-
-func (ix *Indexer) searchTFIDF(query string, limit int) ([]Chunk, error) {
-	return ix.store.SearchByKeyword(query, limit)
+	ix.store.DeleteByPath(relPath)
+	if len(ids) == 0 {
+		return
+	}
+	if err := ix.retriever.Delete(context.Background(), Collection, ids); err != nil {
+		slog.Debug("CodeIndexer: external delete failed", "path", relPath, "error", err)
+	}
 }
 
 // ── 辅助 ─────────────────────────────────────────────────────
@@ -376,7 +402,6 @@ func isBinaryExt(ext string) bool {
 }
 
 // hasParserFor 检查 kernel 是否注册了处理该扩展名的 parser。
-// 通过尝试调用 GenerateRepoMap 后台扫描的相同入口判断。
 // 为避免循环依赖,这里硬编码 kernel 支持的扩展名清单。
 func hasParserFor(ext string) bool {
 	switch ext {
@@ -389,7 +414,7 @@ func hasParserFor(ext string) bool {
 	return false
 }
 
-// MarshalEmbedding / UnmarshalEmbedding 用于 SQLite 存储的 JSON 序列化。
+// MarshalEmbedding / UnmarshalEmbedding 保留兼容(SQLite 旧数据可能含向量列)。
 func MarshalEmbedding(vec []float32) string {
 	if len(vec) == 0 {
 		return "[]"

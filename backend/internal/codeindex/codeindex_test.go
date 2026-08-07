@@ -5,9 +5,70 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"openaide/backend/internal/rag"
 )
+
+// memRetriever 是测试用的内存 rag.Retriever 实现,按子串匹配内容。
+type memRetriever struct {
+	mu   sync.Mutex
+	docs map[string]map[string]rag.Document // collection -> id -> doc
+}
+
+func newMemRetriever() *memRetriever {
+	return &memRetriever{docs: make(map[string]map[string]rag.Document)}
+}
+
+func (m *memRetriever) Index(_ context.Context, collection string, docs []rag.Document) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.docs[collection] == nil {
+		m.docs[collection] = make(map[string]rag.Document)
+	}
+	for _, d := range docs {
+		m.docs[collection][d.ID] = d
+	}
+	return nil
+}
+
+func (m *memRetriever) Search(_ context.Context, collection, query string, limit int) ([]rag.Result, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	qTokens := strings.Fields(strings.ToLower(query))
+	var out []rag.Result
+	for _, d := range m.docs[collection] {
+		content := strings.ToLower(d.Content)
+		path := strings.ToLower(d.Metadata["path"])
+		all := true
+		for _, tok := range qTokens {
+			if !strings.Contains(content, tok) && !strings.Contains(path, tok) {
+				all = false
+				break
+			}
+		}
+		if all {
+			out = append(out, rag.Result{ID: d.ID, Content: d.Content, Score: 1, Metadata: d.Metadata})
+		}
+	}
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (m *memRetriever) Delete(_ context.Context, collection string, ids []string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, id := range ids {
+		delete(m.docs[collection], id)
+	}
+	return nil
+}
+
+func (m *memRetriever) Ping(context.Context) error { return nil }
 
 // 等待索引完成(最多 5 秒)
 func waitForIndex(t *testing.T, ix *Indexer, timeout time.Duration) {
@@ -22,7 +83,7 @@ func waitForIndex(t *testing.T, ix *Indexer, timeout time.Duration) {
 	t.Fatal("indexer did not finish within timeout")
 }
 
-func TestIndexer_TFIDFSearch(t *testing.T) {
+func TestIndexer_SearchWithRetriever(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "auth.go", `package auth
 
@@ -46,7 +107,7 @@ func Helper() {
 	println("debug")
 }`)
 
-	ix, err := NewIndexer(Config{DBPath: dir + "/test.db"}, nil)
+	ix, err := NewIndexer(Config{DBPath: dir + "/test.db"}, newMemRetriever())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +116,6 @@ func Helper() {
 	ix.IndexProject(dir)
 	waitForIndex(t, ix, 5*time.Second)
 
-	// 搜索 "Authenticate"
 	results, err := ix.Search(context.Background(), "Authenticate user", 5)
 	if err != nil {
 		t.Fatal(err)
@@ -64,7 +124,6 @@ func Helper() {
 		t.Fatal("expected non-empty results")
 	}
 
-	// 第一个结果应该是 auth.go(因为包含 Authenticate/user 等关键词)
 	found := false
 	for _, c := range results {
 		if strings.Contains(c.Path, "auth.go") {
@@ -77,12 +136,38 @@ func Helper() {
 	}
 }
 
+func TestIndexer_SearchNoopReturnsEmpty(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "auth.go", `package auth
+func Authenticate() bool { return true }`)
+
+	ix, err := NewIndexer(Config{DBPath: dir + "/test.db"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ix.Stop()
+
+	ix.IndexProject(dir)
+	waitForIndex(t, ix, 3*time.Second)
+
+	results, err := ix.Search(context.Background(), "Authenticate", 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 0 {
+		t.Errorf("expected empty results without external store, got %d", len(results))
+	}
+	if ix.Stats().Retrieval {
+		t.Error("expected Retrieval=false for Noop retriever")
+	}
+}
+
 func TestIndexer_IncrementalFile(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "a.go", `package a
 func A() {}`)
 
-	ix, err := NewIndexer(Config{DBPath: dir + "/test.db"}, nil)
+	ix, err := NewIndexer(Config{DBPath: dir + "/test.db"}, newMemRetriever())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,11 +184,10 @@ func A() {}`)
 	if err := ix.IndexFile(newFile); err != nil {
 		t.Fatal(err)
 	}
+	// 等待 actor 处理
+	time.Sleep(300 * time.Millisecond)
 
-	// 检查能搜到 B
-	// 注意:tokenize 会过滤单字符英文 token,所以查询用 "func B" 而非 "B function"
-	// ("B" 会被过滤,"function" 与 b.go 中的 "func" 不匹配)
-	results, err := ix.Search(context.Background(), "func B", 10)
+	results, err := ix.Search(context.Background(), "B", 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +212,7 @@ func A() {}`
 		t.Fatal(err)
 	}
 
-	ix, err := NewIndexer(Config{DBPath: dir + "/test.db"}, nil)
+	ix, err := NewIndexer(Config{DBPath: dir + "/test.db"}, newMemRetriever())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,58 +319,37 @@ func TestChunker_LongFile(t *testing.T) {
 	}
 }
 
-func TestStore_TFIDFRelevance(t *testing.T) {
+func TestStore_MetadataAndHash(t *testing.T) {
 	s, err := NewStore("")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
 
-	// 写入若干 chunks
-	s.Upsert(Chunk{ID: "a:1-5", Path: "a", StartLine: 1, EndLine: 5, Content: "func auth login password user"}, nil, "h1")
-	s.Upsert(Chunk{ID: "b:1-3", Path: "b", StartLine: 1, EndLine: 3, Content: "func util debug helper print"}, nil, "h2")
+	s.Upsert(Chunk{ID: "a:1-5", Path: "a", StartLine: 1, EndLine: 5, Content: "func auth login"}, "h1")
+	s.Upsert(Chunk{ID: "b:1-3", Path: "b", StartLine: 1, EndLine: 3, Content: "func util debug"}, "h2")
 
-	// 搜索 "auth login"
-	results, err := s.SearchByKeyword("auth login", 5)
+	ids, err := s.ListByPath("a")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(results) == 0 {
-		t.Fatal("expected results")
+	if len(ids) != 1 || ids[0] != "a:1-5" {
+		t.Errorf("expected [a:1-5] for path a, got %v", ids)
 	}
-	if results[0].Path != "a" {
-		t.Errorf("expected top result from path 'a', got %s", results[0].Path)
-	}
-}
 
-func TestTokenize(t *testing.T) {
-	tokens := tokenize("func Hello(name string) { return 'hi' }")
-	// 应包含 func, hello, name, string, return, hi
-	expect := map[string]bool{"func": false, "hello": false, "name": false, "string": false, "return": false}
-	for _, tk := range tokens {
-		if _, ok := expect[tk]; ok {
-			expect[tk] = true
-		}
+	if !s.FileChanged("a", "h2") {
+		t.Error("expected FileChanged=true for different hash")
 	}
-	for k, v := range expect {
-		if !v {
-			t.Errorf("expected token %s not found in: %v", k, tokens)
-		}
+	if s.FileChanged("a", "h1") {
+		t.Error("expected FileChanged=false for same hash")
 	}
-}
+	if !s.FileChanged("missing", "h1") {
+		t.Error("expected FileChanged=true for missing file")
+	}
 
-func TestTokenize_Chinese(t *testing.T) {
-	tokens := tokenize("定义 用户 鉴权 函数")
-	expect := map[string]bool{"定": false, "义": false, "用": false, "户": false}
-	for _, tk := range tokens {
-		if _, ok := expect[tk]; ok {
-			expect[tk] = true
-		}
-	}
-	for k, v := range expect {
-		if !v {
-			t.Errorf("expected Chinese token %s not found in: %v", k, tokens)
-		}
+	s.DeleteByPath("a")
+	if !s.FileChanged("a", "h1") {
+		t.Error("expected FileChanged=true after delete")
 	}
 }
 
