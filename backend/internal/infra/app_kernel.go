@@ -19,9 +19,10 @@ import (
 	"openaide/backend/internal/kernel/trace"
 	"openaide/backend/internal/llm"
 	"openaide/backend/internal/plugin"
+	"openaide/backend/internal/rag"
 )
 
-func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedder, toolRegistry kernel.ToolExecutor, memManager kernel.Memory, sessionStore kernel.SessionStore) (*kernel.AgentKernel, *plugin.Manager, *codeindex.Indexer, error) {
+func createKernel(cfg *config.Config, gateway *llm.Gateway, retriever rag.Retriever, toolRegistry kernel.ToolExecutor, memManager kernel.Memory, sessionStore kernel.SessionStore) (*kernel.AgentKernel, *plugin.Manager, *codeindex.Indexer, error) {
 	systemPrompt := cfg.Kernel.SystemPrompt
 	kernelConfig := &kernel.Config{
 		MaxRounds:    cfg.Kernel.MaxRounds,
@@ -130,7 +131,7 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 	agentKernel.SetContextCompressor(compress.NewLLMCompressor(gateway, compress.NewNovelCompressor()))
 
 	// 代码索引:启动时异步全量索引 CWD,prompt 阶段注入相关代码 chunk。
-	// embedder 已配置走语义检索,否则自动降级为 TF-IDF 关键词检索。
+	// 检索完全外挂到 rag.Retriever,未配置时返回空结果。
 	// 通过 cfg.CodeIndex.Enabled = false 可关闭。
 	var codeIdx *codeindex.Indexer
 	if cfg.CodeIndex.EnabledOrDefault() {
@@ -139,12 +140,10 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, embedder llm.Embedde
 			ChunkSize: cfg.CodeIndex.ChunkSize,
 			MaxChunks: cfg.CodeIndex.MaxChunks,
 		}
-		if idx, err := codeindex.NewIndexer(idxCfg, embedder); err == nil {
+		if idx, err := codeindex.NewIndexer(idxCfg, retriever); err == nil {
 			agentKernel.SetCodeIndexer(idx)
 			codeIdx = idx
-			slog.Info("CodeIndexer enabled",
-				"db", idxCfg.DBPath,
-				"semantic", embedder != nil)
+			slog.Info("CodeIndexer enabled", "db", idxCfg.DBPath)
 		} else {
 			slog.Warn("CodeIndexer init failed, code injection disabled", "error", err)
 		}

@@ -39,6 +39,9 @@ type Config struct {
 	// 代码索引配置(prompt 阶段注入相关代码)
 	CodeIndex CodeIndexConfig `json:"codeindex" yaml:"codeindex"`
 
+	// 外部检索配置(代码 + 记忆语义检索的后端)
+	RAG RAGConfig `json:"rag" yaml:"rag"`
+
 	// 规划配置
 	Planning PlanningConfig `json:"planning" yaml:"planning"`
 
@@ -129,7 +132,7 @@ type KernelConfig struct {
 // CodeIndexConfig 代码索引配置。
 // enabled 为 true(默认)时,启动时异步全量索引 CWD 项目,
 // 并在 coding/debugging 任务的 prompt 阶段注入 top-K 相关代码 chunk。
-// embedder 已配置则走语义检索,否则自动降级为 TF-IDF 关键词检索。
+// 检索完全外挂到 rag.Retriever(pgvector),未配置时返回空结果。
 type CodeIndexConfig struct {
 	Enabled   *bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`       // 默认 true(nil = true)
 	ChunkSize int   `json:"chunk_size,omitempty" yaml:"chunk_size,omitempty"` // 0 = 默认 1500
@@ -139,6 +142,21 @@ type CodeIndexConfig struct {
 // EnabledOrDefault 判断是否启用代码索引,默认 true
 func (c CodeIndexConfig) EnabledOrDefault() bool {
 	return c.Enabled == nil || *c.Enabled
+}
+
+// RAGConfig 外部向量检索配置。
+// 未配置 DSN 或后端不可达时,自动降级为 NoopRetriever(检索返回空结果)。
+type RAGConfig struct {
+	// PostgreSQL + pgvector 连接串,如 postgres://user:pass@host:5432/db
+	DSN string `json:"dsn,omitempty" yaml:"dsn,omitempty"`
+
+	// 外部 embedding API(OpenAI 兼容 /embeddings 端点)
+	EmbeddingURL   string `json:"embedding_url,omitempty" yaml:"embedding_url,omitempty"`
+	EmbeddingKey   string `json:"embedding_key,omitempty" yaml:"embedding_key,omitempty"`
+	EmbeddingModel string `json:"embedding_model,omitempty" yaml:"embedding_model,omitempty"` // 默认 text-embedding-3-small
+
+	// 向量集合名(代码 / 记忆 / 归档 / 核心事实)
+	Collection string `json:"collection,omitempty" yaml:"collection,omitempty"` // 默认 openaide_docs
 }
 
 // PlanningConfig 任务规划配置

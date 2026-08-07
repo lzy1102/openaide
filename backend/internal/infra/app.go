@@ -22,6 +22,7 @@ import (
 	"openaide/backend/internal/orchestration"
 	"openaide/backend/internal/plugin"
 	"openaide/backend/internal/projectmind"
+	"openaide/backend/internal/rag"
 	"openaide/backend/internal/tools"
 )
 
@@ -50,9 +51,14 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 	gateway := createLLMGateway(cfg)
 	app.LLMGateway = gateway
 
-	// 2. Embedder（用于记忆和知识库语义搜索）
-	embedderDim := 1536
-	embedder := llm.NewEmbedderFunc(gateway.Embed, gateway.EmbedBatch, embedderDim)
+	// 2. 外部检索后端(RAG)。未配置或不可达时自动降级为 NoopRetriever。
+	retriever := rag.NewFromConfig(rag.PGVectorConfig{
+		DSN:            cfg.RAG.DSN,
+		EmbeddingURL:   cfg.RAG.EmbeddingURL,
+		EmbeddingKey:   cfg.RAG.EmbeddingKey,
+		EmbeddingModel: cfg.RAG.EmbeddingModel,
+		Collection:     cfg.RAG.Collection,
+	})
 
 	// 3. 工具注册表 + MCP
 	tools.LoadIgnorePatterns(".")
@@ -124,7 +130,7 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 	if err != nil {
 		return nil, fmt.Errorf("memory actor: %w", err)
 	}
-	memManager.SetEmbedder(embedder)
+	memManager.SetRetriever(retriever)
 	tools.SetMemoryManager(memManager)
 
 	// 5. 会话存储（CSP actor）
@@ -135,7 +141,7 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 	app.sessionActor = sessionStore
 
 	// 6. 内核 + 所有增强能力
-	agentKernel, pluginMgr, codeIdx, err := createKernel(cfg, gateway, embedder, toolRegistry, memManager, sessionStore)
+	agentKernel, pluginMgr, codeIdx, err := createKernel(cfg, gateway, retriever, toolRegistry, memManager, sessionStore)
 	if err != nil {
 		return nil, fmt.Errorf("create kernel: %w", err)
 	}
