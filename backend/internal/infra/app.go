@@ -268,6 +268,7 @@ func (app *Application) Stop(ctx context.Context) error {
 		app.LLMGateway.Shutdown()
 	}
 	tools.ShutdownBrowser()
+	tools.CloseAllLSPClients()
 	if app.TaskQueue != nil {
 		if err := app.TaskQueue.Stop(ctx); err != nil {
 			slog.Error("Failed to stop task queue", "error", err)
@@ -318,16 +319,17 @@ func startLSPServers() {
 		"Project.toml": "julia",
 	}
 
+	started := make(map[string]bool)
 	for _, e := range entries {
 		name := e.Name()
 		for indicator, lang := range detectors {
-			if name == indicator && !e.IsDir() {
+			if name == indicator && !e.IsDir() && !started[lang] {
 				if c, err := lsp.Start(cwd, lang); err == nil {
 					tools.SetLSPClient(lang, c)
+					started[lang] = true
 				} else {
 					slog.Debug("LSP server not available", "lang", lang, "error", err)
 				}
-				return // Only one LSP per project
 			}
 		}
 	}

@@ -113,6 +113,8 @@ func (r *Registry) BuiltinHandlers() map[string]kernel.ToolHandler {
 		"lsp_references":        handleLSPReferences,
 		"lsp_hover":             handleLSPHover,
 		"lsp_diagnostics":       handleLSPDiagnostics,
+		"lsp_symbols":           handleLSPSymbols,
+		"lsp_rename":            handleLSPRename,
 		"read_image":            handleReadImage,
 		"todo_write":            handleTodoWrite,
 		"todo_read":             handleTodoRead,

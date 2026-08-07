@@ -127,3 +127,68 @@ func TestLSPGoConnect(t *testing.T) {
 		t.Logf("LSP Hover: %s", hover.Contents.Value)
 	}
 }
+
+func TestLSPDidChangeAndSymbols(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "demo.go")
+	content := "package demo\n\nvar Greeting = \"hello\"\n\nfunc SayHello() string {\n\treturn Greeting\n}\n"
+	if err := os.WriteFile(file, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Start(dir, "go")
+	if err != nil {
+		t.Skip("gopls not available:", err)
+	}
+	defer c.Close()
+
+	// 先 open 再 symbols：验证 documentSymbol 能力与符号枚举
+	c.OpenDocument(file, content)
+	syms, err := c.Symbols(file)
+	if err != nil {
+		t.Fatalf("Symbols: %v", err)
+	}
+	names := make(map[string]bool)
+	for _, s := range syms {
+		names[s.Name] = true
+	}
+	for _, want := range []string{"Greeting", "SayHello"} {
+		if !names[want] {
+			t.Errorf("Symbols missing %q (got %v)", want, names)
+		}
+	}
+
+	// didChange 后重读内容不应报错
+	c.DidChange(file, strings.Replace(content, "Greeting", "Greeting2", -1))
+}
+
+func TestLSPRename(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "demo.go")
+	content := "package demo\n\nvar Greeting = \"hello\"\n\nfunc SayHello() string {\n\treturn Greeting\n}\n"
+	if err := os.WriteFile(file, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Start(dir, "go")
+	if err != nil {
+		t.Skip("gopls not available:", err)
+	}
+	defer c.Close()
+
+	c.OpenDocument(file, content)
+	// Greeting 在文件第 3 行（0-based line 2），字符偏移 4
+	edit, err := c.Rename(file, 2, 4, "Greeting2")
+	if err != nil {
+		t.Fatalf("Rename: %v", err)
+	}
+	if edit == nil || len(edit.Changes) == 0 {
+		t.Skip("gopls returned no rename edits (server capability variance)")
+	}
+	for uri, edits := range edit.Changes {
+		t.Logf("Rename edits for %s: %d", uri, len(edits))
+		for _, e := range edits {
+			if !strings.Contains(e.NewText, "Greeting2") {
+				t.Errorf("rename edit %q does not contain Greeting2", e.NewText)
+			}
+		}
+	}
+}

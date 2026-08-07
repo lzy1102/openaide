@@ -68,9 +68,12 @@ type ClientCapabilities struct {
 }
 
 type TextDocumentClientCapabilities struct {
-	Hover      *struct{} `json:"hover,omitempty"`
-	Definition *struct{} `json:"definition,omitempty"`
-	References *struct{} `json:"references,omitempty"`
+	Hover              *struct{} `json:"hover,omitempty"`
+	Definition         *struct{} `json:"definition,omitempty"`
+	References         *struct{} `json:"references,omitempty"`
+	DocumentSymbol     *struct{} `json:"documentSymbol,omitempty"`
+	Rename             *struct{} `json:"rename,omitempty"`
+	PublishDiagnostics *struct{} `json:"publishDiagnostics,omitempty"`
 }
 
 type InitializeResult struct {
@@ -144,4 +147,35 @@ type TextDocumentItem struct {
 	LanguageID string `json:"languageId"`
 	Version    int    `json:"version"`
 	Text       string `json:"text"`
+}
+
+type VersionedTextDocumentIdentifier struct {
+	URI     string `json:"uri"`
+	Version int    `json:"version"`
+}
+
+// DidChangeTextDocumentParams — full-text sync (range omitted = whole document).
+type DidChangeTextDocumentParams struct {
+	TextDocument   VersionedTextDocumentIdentifier  `json:"textDocument"`
+	ContentChanges []TextDocumentContentChangeEvent `json:"contentChanges"`
+}
+
+type TextDocumentContentChangeEvent struct {
+	Text string `json:"text"`
+}
+
+// ── Rename ─────────────────────────────────────────────────
+
+type RenameParams struct {
+	TextDocumentPositionParams
+	NewName string `json:"newName"`
+}
+
+type WorkspaceEdit struct {
+	Changes map[string][]TextEdit `json:"changes,omitempty"`
+}
+
+type TextEdit struct {
+	Range   Range  `json:"range"`
+	NewText string `json:"newText"`
 }

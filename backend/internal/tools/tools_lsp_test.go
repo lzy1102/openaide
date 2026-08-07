@@ -20,8 +20,16 @@ func TestLSPHandlersArgValidation(t *testing.T) {
 		{"definition_missing_file", func() string { r, _ := handleLSPDefinition(ctx, `{}`); return r.Error }, "file parameter required"},
 		{"references_missing_file", func() string { r, _ := handleLSPReferences(ctx, `{}`); return r.Error }, "file parameter required"},
 		{"hover_missing_file", func() string { r, _ := handleLSPHover(ctx, `{}`); return r.Error }, "file parameter required"},
+		{"symbols_missing_file", func() string { r, _ := handleLSPSymbols(ctx, `{}`); return r.Error }, "file parameter required"},
+		{"rename_missing_file", func() string { r, _ := handleLSPRename(ctx, `{"line":1,"character":0,"new_name":"x"}`); return r.Error }, "file and new_name"},
+		{"rename_missing_newname", func() string {
+			r, _ := handleLSPRename(ctx, `{"file":"/tmp/foo.go","line":1,"character":0}`)
+			return r.Error
+		}, "file and new_name"},
 		{"definition_bad_json", func() string { r, _ := handleLSPDefinition(ctx, `{oops`); return r.Error }, ""},
 		{"diagnostics_bad_json", func() string { r, _ := handleLSPDiagnostics(ctx, `{oops`); return r.Error }, ""},
+		{"symbols_bad_json", func() string { r, _ := handleLSPSymbols(ctx, `{oops`); return r.Error }, ""},
+		{"rename_bad_json", func() string { r, _ := handleLSPRename(ctx, `{oops`); return r.Error }, ""},
 	}
 	for _, c := range cases {
 		if msg := c.call(); !strings.Contains(msg, c.want) {
@@ -48,6 +56,14 @@ func TestLSPHandlersNoServer(t *testing.T) {
 		}, "no LSP server"},
 		{"hover", func() string {
 			r, _ := handleLSPHover(ctx, `{"file":"/tmp/foo.ts","line":1,"character":0}`)
+			return r.Error
+		}, "no LSP server"},
+		{"symbols", func() string {
+			r, _ := handleLSPSymbols(ctx, `{"file":"/tmp/foo.ts"}`)
+			return r.Error
+		}, "no LSP server"},
+		{"rename", func() string {
+			r, _ := handleLSPRename(ctx, `{"file":"/tmp/foo.ts","line":1,"character":0,"new_name":"bar"}`)
 			return r.Error
 		}, "no LSP server"},
 	}
@@ -86,5 +102,29 @@ func TestSymbolHandlersArgValidation(t *testing.T) {
 		if msg := c.call(); !strings.Contains(msg, c.want) {
 			t.Errorf("%s: error = %q, want containing %q", c.name, msg, c.want)
 		}
+	}
+}
+
+func TestLSPToolsRegistered(t *testing.T) {
+	defs := lspToolDefs()
+	names := make(map[string]bool)
+	for _, d := range defs {
+		names[d.Function.Name] = true
+	}
+	for _, want := range []string{"lsp_definition", "lsp_references", "lsp_hover", "lsp_diagnostics", "lsp_symbols", "lsp_rename"} {
+		if !names[want] {
+			t.Errorf("lspToolDefs missing %s", want)
+		}
+	}
+}
+
+func TestNoLSPServerError(t *testing.T) {
+	r := noLSPServerError("/tmp/foo.go")
+	if !strings.Contains(r.Error, "no LSP server") || !strings.Contains(r.Error, "go") {
+		t.Errorf("noLSPServerError = %q, want mention of language and no-server", r.Error)
+	}
+	r = noLSPServerError("/tmp/foo.unknown_ext")
+	if !strings.Contains(r.Error, "unsupported file type") {
+		t.Errorf("noLSPServerError unknown ext = %q, want 'unsupported file type'", r.Error)
 	}
 }

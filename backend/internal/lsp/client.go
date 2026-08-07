@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // Client communicates with a language server via JSON-RPC over stdio.
@@ -29,6 +30,10 @@ type Client struct {
 	diags   map[string][]Diagnostic // uri → diagnostics
 	diagsMu sync.RWMutex
 
+	// Document version tracking for didChange
+	docVersions   map[string]int
+	docVersionsMu sync.Mutex
+
 	rootURI  string
 	language string
 }
@@ -43,12 +48,13 @@ func Start(rootPath, language string) (*Client, error) {
 	absRoot, _ := filepath.Abs(rootPath)
 
 	c := &Client{
-		cmd:      cmd,
-		respCh:   make(map[int]chan *Response),
-		done:     make(chan struct{}),
-		diags:    make(map[string][]Diagnostic),
-		rootURI:  "file://" + absRoot,
-		language: language,
+		cmd:         cmd,
+		respCh:      make(map[int]chan *Response),
+		done:        make(chan struct{}),
+		diags:       make(map[string][]Diagnostic),
+		docVersions: make(map[string]int),
+		rootURI:     "file://" + absRoot,
+		language:    language,
 	}
 
 	// Pipe stdio
@@ -217,9 +223,12 @@ func (c *Client) initialize() (*InitializeResult, error) {
 		RootURI:   c.rootURI,
 		Capabilities: ClientCapabilities{
 			TextDocument: TextDocumentClientCapabilities{
-				Hover:      &struct{}{},
-				Definition: &struct{}{},
-				References: &struct{}{},
+				Hover:              &struct{}{},
+				Definition:         &struct{}{},
+				References:         &struct{}{},
+				DocumentSymbol:     &struct{}{},
+				Rename:             &struct{}{},
+				PublishDiagnostics: &struct{}{},
 			},
 		},
 	}
@@ -286,6 +295,9 @@ func (c *Client) Symbols(filePath string) ([]DocumentSymbol, error) {
 
 // OpenDocument notifies the server that a file is open (needed for diagnostics).
 func (c *Client) OpenDocument(filePath, text string) {
+	c.docVersionsMu.Lock()
+	c.docVersions[toURI(filePath)] = 1
+	c.docVersionsMu.Unlock()
 	params := DidOpenTextDocumentParams{
 		TextDocument: TextDocumentItem{
 			URI:        toURI(filePath),
@@ -297,6 +309,39 @@ func (c *Client) OpenDocument(filePath, text string) {
 	c.notify("textDocument/didOpen", params)
 }
 
+// DidChange notifies the server that a file's content changed (full-text sync).
+func (c *Client) DidChange(filePath, newText string) {
+	uri := toURI(filePath)
+	c.docVersionsMu.Lock()
+	c.docVersions[uri]++
+	version := c.docVersions[uri]
+	c.docVersionsMu.Unlock()
+	params := DidChangeTextDocumentParams{
+		TextDocument: VersionedTextDocumentIdentifier{
+			URI:     uri,
+			Version: version,
+		},
+		ContentChanges: []TextDocumentContentChangeEvent{{Text: newText}},
+	}
+	c.notify("textDocument/didChange", params)
+}
+
+// Rename computes a workspace edit renaming a symbol.
+func (c *Client) Rename(filePath string, line, character int, newName string) (*WorkspaceEdit, error) {
+	params := RenameParams{
+		TextDocumentPositionParams: TextDocumentPositionParams{
+			TextDocument: TextDocumentIdentifier{URI: toURI(filePath)},
+			Position:     Position{Line: line, Character: character},
+		},
+		NewName: newName,
+	}
+	var edit WorkspaceEdit
+	if err := c.call("textDocument/rename", params, &edit); err != nil {
+		return nil, err
+	}
+	return &edit, nil
+}
+
 // Diagnostics returns cached diagnostics for a file.
 func (c *Client) Diagnostics(filePath string) []Diagnostic {
 	c.diagsMu.RLock()
@@ -306,7 +351,15 @@ func (c *Client) Diagnostics(filePath string) []Diagnostic {
 
 // Close shuts down the language server.
 func (c *Client) Close() {
-	c.notify("shutdown", nil)
+	shutdownDone := make(chan struct{})
+	go func() {
+		c.call("shutdown", nil, nil)
+		close(shutdownDone)
+	}()
+	select {
+	case <-shutdownDone:
+	case <-time.After(3 * time.Second):
+	}
 	c.notify("exit", nil)
 	close(c.done)
 	c.cmd.Wait()
@@ -337,14 +390,18 @@ func (c *Client) call(method string, params, result interface{}) error {
 	c.stdin.Write(body)
 	c.mu.Unlock()
 
-	resp := <-ch
-	if resp.Error != nil {
-		return fmt.Errorf("LSP error %d: %s", resp.Error.Code, resp.Error.Message)
+	select {
+	case resp := <-ch:
+		if resp.Error != nil {
+			return fmt.Errorf("LSP error %d: %s", resp.Error.Code, resp.Error.Message)
+		}
+		if result != nil && resp.Result != nil {
+			return json.Unmarshal(resp.Result, result)
+		}
+		return nil
+	case <-c.done:
+		return fmt.Errorf("LSP server closed")
 	}
-	if result != nil && resp.Result != nil {
-		return json.Unmarshal(resp.Result, result)
-	}
-	return nil
 }
 
 func (c *Client) notify(method string, params interface{}) {

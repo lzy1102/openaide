@@ -108,6 +108,7 @@ func handleDiffEdit(ctx context.Context, arguments string) (*kernel.ToolResult, 
 	if err := atomicWriteFile(absPath, []byte(newContent), 0644); err != nil {
 		return &kernel.ToolResult{Error: err.Error()}, nil
 	}
+	NotifyFileChanged(absPath)
 
 	// ACI verification: show before/after context with line numbers
 	lineNum := findLineNumber(content, args.SearchText)
@@ -191,6 +192,7 @@ func handleDiffEditLines(ctx context.Context, arguments string) (*kernel.ToolRes
 	if err := os.WriteFile(absPath, []byte(strings.Join(newLines, "\n")), 0644); err != nil {
 		return &kernel.ToolResult{Error: err.Error()}, nil
 	}
+	NotifyFileChanged(absPath)
 
 	return &kernel.ToolResult{
 		Content: fmt.Sprintf("✓ %s: replaced lines %d-%d with %d lines", absPath, args.StartLine, args.EndLine, len(replacement)),
@@ -269,6 +271,7 @@ func applySearchReplacePatch(absPath, content string) (string, error) {
 	if err := os.WriteFile(absPath, []byte(current), 0644); err != nil {
 		return "", fmt.Errorf("write file: %w", err)
 	}
+	NotifyFileChanged(absPath)
 
 	result := fmt.Sprintf("✓ %s: %d SEARCH/REPLACE blocks applied", absPath, applied)
 	if len(failed) > 0 {

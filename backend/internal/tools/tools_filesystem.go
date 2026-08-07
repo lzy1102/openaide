@@ -193,6 +193,7 @@ func handleWriteFile(ctx context.Context, arguments string) (*kernel.ToolResult,
 	if err := atomicWriteFile(absPath, []byte(args.Content), 0644); err != nil {
 		return toolErrIO("write", err), nil
 	}
+	NotifyFileChanged(absPath)
 
 	// ACI: show what was written with line numbers for verification
 	lines := strings.Split(args.Content, "\n")

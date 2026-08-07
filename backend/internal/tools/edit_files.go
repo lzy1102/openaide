@@ -239,6 +239,9 @@ func handleEditFiles(ctx context.Context, arguments string) (*kernel.ToolResult,
 		sb.WriteString("\n")
 	}
 	sb.WriteString("Verified: all replacements confirmed in re-read")
+	for _, p := range appliedPaths {
+		NotifyFileChanged(p)
+	}
 	return &kernel.ToolResult{Content: sb.String()}, nil
 }
 
