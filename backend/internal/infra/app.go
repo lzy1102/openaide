@@ -51,13 +51,26 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 	gateway := createLLMGateway(cfg)
 	app.LLMGateway = gateway
 
-	// 2. 外部检索后端(RAG)。未配置或不可达时自动降级为 NoopRetriever。
-	retriever := rag.NewFromConfig(rag.PGVectorConfig{
-		DSN:            cfg.RAG.DSN,
+	// 2. 外部检索后端(RAG)。Type 选择后端,未配置或不可达时自动降级为 NoopRetriever。
+	retriever := rag.NewFromConfig(rag.Config{
+		Type:           cfg.RAG.Type,
 		EmbeddingURL:   cfg.RAG.EmbeddingURL,
 		EmbeddingKey:   cfg.RAG.EmbeddingKey,
 		EmbeddingModel: cfg.RAG.EmbeddingModel,
 		Collection:     cfg.RAG.Collection,
+		DSN:            cfg.RAG.DSN,
+		QdrantHost:     cfg.RAG.QdrantHost,
+		QdrantPort:     cfg.RAG.QdrantPort,
+		QdrantAPIKey:   cfg.RAG.QdrantAPIKey,
+		QdrantTLS:      cfg.RAG.QdrantTLS,
+		MilvusAddress:  cfg.RAG.MilvusAddress,
+		MilvusUsername: cfg.RAG.MilvusUsername,
+		MilvusPassword: cfg.RAG.MilvusPassword,
+		RedisAddr:      cfg.RAG.RedisAddr,
+		RedisPassword:  cfg.RAG.RedisPassword,
+		RedisDB:        cfg.RAG.RedisDB,
+		ChromaURL:      cfg.RAG.ChromaURL,
+		ChromaToken:    cfg.RAG.ChromaToken,
 	})
 
 	// 3. 工具注册表 + MCP

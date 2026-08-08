@@ -145,18 +145,42 @@ func (c CodeIndexConfig) EnabledOrDefault() bool {
 }
 
 // RAGConfig 外部向量检索配置。
-// 未配置 DSN 或后端不可达时,自动降级为 NoopRetriever(检索返回空结果)。
+// Type 选择后端,未配置对应后端参数或后端不可达时,自动降级为 NoopRetriever(检索返回空结果)。
+// 所有后端共用 EmbeddingURL/EmbeddingKey/EmbeddingModel(外部 OpenAI 兼容 /embeddings 端点)。
 type RAGConfig struct {
-	// PostgreSQL + pgvector 连接串,如 postgres://user:pass@host:5432/db
-	DSN string `json:"dsn,omitempty" yaml:"dsn,omitempty"`
+	// 后端类型: ""/pgvector(默认) / qdrant / milvus / redis / chroma
+	Type string `json:"type,omitempty" yaml:"type,omitempty"`
 
-	// 外部 embedding API(OpenAI 兼容 /embeddings 端点)
+	// 外部 embedding API(OpenAI 兼容 /embeddings 端点),所有后端共用
 	EmbeddingURL   string `json:"embedding_url,omitempty" yaml:"embedding_url,omitempty"`
 	EmbeddingKey   string `json:"embedding_key,omitempty" yaml:"embedding_key,omitempty"`
 	EmbeddingModel string `json:"embedding_model,omitempty" yaml:"embedding_model,omitempty"` // 默认 text-embedding-3-small
 
 	// 向量集合名(代码 / 记忆 / 归档 / 核心事实)
 	Collection string `json:"collection,omitempty" yaml:"collection,omitempty"` // 默认 openaide_docs
+
+	// PostgreSQL + pgvector 连接串,如 postgres://user:pass@host:5432/db
+	DSN string `json:"dsn,omitempty" yaml:"dsn,omitempty"`
+
+	// Qdrant(自托管,gRPC 端口默认 6334)
+	QdrantHost   string `json:"qdrant_host,omitempty" yaml:"qdrant_host,omitempty"`
+	QdrantPort   int    `json:"qdrant_port,omitempty" yaml:"qdrant_port,omitempty"`
+	QdrantAPIKey string `json:"qdrant_api_key,omitempty" yaml:"qdrant_api_key,omitempty"`
+	QdrantTLS    bool   `json:"qdrant_tls,omitempty" yaml:"qdrant_tls,omitempty"`
+
+	// Milvus(自托管,gRPC 地址如 localhost:19530)
+	MilvusAddress  string `json:"milvus_address,omitempty" yaml:"milvus_address,omitempty"`
+	MilvusUsername string `json:"milvus_username,omitempty" yaml:"milvus_username,omitempty"`
+	MilvusPassword string `json:"milvus_password,omitempty" yaml:"milvus_password,omitempty"`
+
+	// Redis + RediSearch(模块需启用,默认 localhost:6379)
+	RedisAddr     string `json:"redis_addr,omitempty" yaml:"redis_addr,omitempty"`
+	RedisPassword string `json:"redis_password,omitempty" yaml:"redis_password,omitempty"`
+	RedisDB       int    `json:"redis_db,omitempty" yaml:"redis_db,omitempty"`
+
+	// Chroma(自托管 HTTP,默认 http://localhost:8000)
+	ChromaURL   string `json:"chroma_url,omitempty" yaml:"chroma_url,omitempty"`
+	ChromaToken string `json:"chroma_token,omitempty" yaml:"chroma_token,omitempty"`
 }
 
 // PlanningConfig 任务规划配置
