@@ -73,6 +73,47 @@ func TestPromptL3(t *testing.T) {
 	}
 }
 
+func TestPromptIntent(t *testing.T) {
+	if got := promptIntent(nil); got != "" {
+		t.Errorf("promptIntent(nil) = %q, want empty", got)
+	}
+	if got := promptIntent(&QueryAnalysis{}); got != "" {
+		t.Errorf("promptIntent(empty analysis) = %q, want empty", got)
+	}
+
+	got := promptIntent(&QueryAnalysis{
+		TaskType:   "coding",
+		Complexity: 12,
+		Strategy:   "locate token validation, then check expiry branches",
+	})
+	for _, want := range []string{"[Intent]", "task: coding", "complexity: 12", "interpreted: locate token validation, then check expiry branches"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("promptIntent missing %q, got: %s", want, got)
+		}
+	}
+}
+
+func TestPromptL3_ActiveContext(t *testing.T) {
+	mock := &MockLLMProvider{
+		responses: []LLMResponse{{Content: "coding"}},
+	}
+	k := NewAgentKernel(mock, &MockToolExecutor{}, &MockMemory{}, NewSessionStoreAdapter(), DefaultConfig())
+
+	l3 := k.promptL3(context.Background(), "fix the login bug", "")
+	if !strings.Contains(l3, "Active context: fix the login bug") {
+		t.Errorf("promptL3 missing active context anchor, got: %s", l3)
+	}
+
+	// General mode: no mode text, so no anchor and still empty
+	mock2 := &MockLLMProvider{
+		responses: []LLMResponse{{Content: "general"}},
+	}
+	k2 := NewAgentKernel(mock2, &MockToolExecutor{}, &MockMemory{}, NewSessionStoreAdapter(), DefaultConfig())
+	if got := k2.promptL3(context.Background(), "hello", ""); got != "" {
+		t.Errorf("promptL3(general) = %q, want empty", got)
+	}
+}
+
 func TestPromptL3_AnalysisFormat(t *testing.T) {
 	for _, tc := range []struct {
 		query    string
