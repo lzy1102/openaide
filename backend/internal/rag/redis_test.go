@@ -42,7 +42,7 @@ func TestParseSearchResults(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("got %d results, want 2", len(got))
 	}
-	if got[0].ID != "a" || got[0].Content != "hello" || got[0].Metadata["lang"] != "go" || got[0].Score != 0.25 {
+	if got[0].ID != "a" || got[0].Content != "hello" || got[0].Metadata["lang"] != "go" || got[0].Score != 0.75 {
 		t.Errorf("result[0] = %+v", got[0])
 	}
 	if got[1].ID != "b" || got[1].Content != "world" {

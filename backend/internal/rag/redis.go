@@ -227,7 +227,7 @@ func parseSearchResults(col string, raw interface{}) ([]Result, error) {
 			case "score":
 				if s, ok := fields[j+1].(string); ok {
 					if f, err := strconv.ParseFloat(s, 64); err == nil {
-						res.Score = f
+						res.Score = 1 - f // RediSearch 返回 cosine 距离;归一化为相似度(越大越好,与其余后端一致)
 					}
 				}
 			}
