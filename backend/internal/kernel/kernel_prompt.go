@@ -550,16 +550,41 @@ func (k *AgentKernel) injectRelevantCode(ctx context.Context, query string) stri
 	}
 	var sb strings.Builder
 	sb.WriteString("[RelevantCode]\n")
+	// token 硬预算:注入内容不超过 ~300 tokens(注释声明与实现一致)。
+	const maxChars = 1200
 	for _, c := range chunks {
-		// 取 content 第一行作为摘要(通常是声明行)
-		summary := firstLine(c.Content)
-		if len(summary) > 80 {
-			summary = summary[:77] + "..."
+		summary := summarizeChunk(c, 80)
+		line := fmt.Sprintf("- %s:%d-%d  %s — %s\n",
+			c.Path, c.StartLine, c.EndLine, c.Symbol, summary)
+		if sb.Len()+len(line) > maxChars {
+			break // 超预算:停止追加剩余 chunk
 		}
-		sb.WriteString(fmt.Sprintf("- %s:%d-%d  %s — %s\n",
-			c.Path, c.StartLine, c.EndLine, c.Symbol, summary))
+		sb.WriteString(line)
 	}
 	return sb.String()
+}
+
+// summarizeChunk 从 chunk 中提取最信息量的摘要行:
+// 优先取包含 Symbol 的声明行(对跨行结构如 type User struct 也有意义),
+// 回退到 content 第一行。maxLen 限制单行长度。
+func summarizeChunk(c CodeChunk, maxLen int) string {
+	summary := ""
+	if c.Symbol != "" {
+		for _, line := range strings.Split(c.Content, "\n") {
+			line = strings.TrimSpace(line)
+			if line != "" && strings.Contains(line, c.Symbol) {
+				summary = line
+				break
+			}
+		}
+	}
+	if summary == "" {
+		summary = firstLine(c.Content)
+	}
+	if len(summary) > maxLen {
+		summary = summary[:maxLen-3] + "..."
+	}
+	return summary
 }
 
 // firstLine 返回文本的第一行(去除前后空白)。
