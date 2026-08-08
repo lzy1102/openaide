@@ -91,6 +91,9 @@ ReAct 循环 (max_rounds 轮, 停滞检测 120s)
    ├─ LLM 调用 (Gateway 成本感知路由: execution→flash / reasoning→pro)
    ├─ 工具调用 (ToolExecutor → tools.Registry → 47 内置 + mcp_* 外部)
    ├─ SkillActor 过滤工具白名单 (allowed-tools)
+   ├─ 上下文管理: 超 90% 预算 → LLM 压缩 + 重注入 [OriginalQuery]+[Intent]
+   ├─ 方向检查: 每 5 轮 LLM 判定 on_track/off_track, 偏离注入 [Direction] 重聚焦
+   ├─ 停滞检测: 重复工具/连续失败 → pivot 消息 (StuckDetector)
    └─ 每轮: 检查点保存 · 追踪记录 · 事件发布 (hooks/事件总线)
    │
    ▼
@@ -116,6 +119,8 @@ finalizeResponse: 保存记忆 → 更新会话 → 生成标题 → 反思
   | L6 | 代码索引相关 chunk (codeindex) | 动态尾部 |
   - 稳定前缀（L0-L2）保持 prompt 缓存命中率；动态尾部（L3-L6）按查询生成
 - **统一查询分析**（kernel_stream.go:32）：一次 LLM 调用替代三次独立判断（任务类型 + 技能检测 + 复杂度），预匹配信号零成本复用
+- **任务上下文保持**（kernel.go / kernel_react.go）：buildMessages 保存原始查询 + Intent 到 TaskContext；上下文压缩后自动重注入 `[OriginalQuery]` + `[Intent]`，防止摘要丢失任务目标
+- **方向检查**（direction_check.go）：每 5 轮用 LLM（execution 路由）判定最近活动是否偏离原始需求；检测到偏离（off_track）时注入 `[Direction]` 重聚焦消息
 - **SkillActor**（skill_actor.go）：CSP 无锁 actor 模式，技能自动检测（LLM 匹配 + 统一分析预匹配）、prompt 注入、工具白名单、自动提炼 + 持久化（`auto_skills.json`）
 - **Planner**：复杂任务（complexity ≥ 15）分解为子任务计划注入
 - **AdaptiveRounds**：按任务动态调整轮数（默认 5-30）

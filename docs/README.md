@@ -76,7 +76,7 @@ ARCHITECTURE.md → MODULES.md → MIGRATION.md → DEPLOYMENT.md
 
 | 文档 | 状态 | 最后更新 |
 |------|------|----------|
-| ARCHITECTURE.md | 已更新 | 2026-08-06 |
+| ARCHITECTURE.md | 已更新 | 2026-08-08 |
 | MODULES.md | 已更新 | 2026-08-08 |
 | QUICKSTART.md | 已更新 | 2026-05-27 |
 | DEPLOYMENT.md | 初稿完成 | 2026-05-15 |
