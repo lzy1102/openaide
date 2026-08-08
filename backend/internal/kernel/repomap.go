@@ -16,10 +16,24 @@ const repoMapMaxFiles = 2000
 // GenerateRepoMap 扫描项目生成符号地图(带缓存)。
 // 返回 markdown 格式字符串,可直接注入 system prompt。
 func GenerateRepoMap(root string) string {
+	return generateRepoMap(root, "")
+}
+
+// GenerateRepoMapForQuery 生成查询感知的符号地图:文件按与查询关键词的
+// 匹配度排序,只注入 top-N 相关文件(大仓库节省 token)。
+// 与 GenerateRepoMap 共享同一扫描缓存,仅格式化阶段不同。
+func GenerateRepoMapForQuery(root, query string) string {
+	return generateRepoMap(root, query)
+}
+
+func generateRepoMap(root, query string) string {
 	// 检查 root-level 缓存
 	repomapCacheMu.RLock()
 	if entry, ok := repomapCache[root]; ok && time.Since(entry.updatedAt) < repomapCacheTTL {
 		repomapCacheMu.RUnlock()
+		if query != "" {
+			return formatRepoMapScored(entry.symbols, query)
+		}
 		return formatRepoMap(entry.symbols)
 	}
 	repomapCacheMu.RUnlock()
@@ -35,6 +49,9 @@ func GenerateRepoMap(root string) string {
 	}
 	repomapCacheMu.Unlock()
 
+	if query != "" {
+		return formatRepoMapScored(symbols, query)
+	}
 	return formatRepoMap(symbols)
 }
 
