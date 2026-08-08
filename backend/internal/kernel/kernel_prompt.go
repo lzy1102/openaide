@@ -490,7 +490,7 @@ func (k *AgentKernel) promptL3(ctx context.Context, query string, taskType strin
 	// Inject RepoMap for coding/debugging only (saves tokens on think/general/review)
 	if task == "coding" || task == "debugging" {
 		cwd, _ := os.Getwd()
-		if rm := GenerateRepoMap(cwd); rm != "" {
+		if rm := GenerateRepoMapForQuery(cwd, query); rm != "" {
 			l3 += "\n\n[RepoMap]\n" + rm
 		}
 		// 注入与 query 语义相关的代码 chunk(类似 Cursor @codebase)

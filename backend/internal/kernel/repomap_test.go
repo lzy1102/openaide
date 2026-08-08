@@ -1,6 +1,7 @@
 package kernel
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -452,5 +453,66 @@ func TestInvalidateRepoMapCache(t *testing.T) {
 	files, syms = CountRepoMapSymbols(dir)
 	if files != 0 || syms != 0 {
 		t.Errorf("expected empty cache after invalidation, got files=%d syms=%d", files, syms)
+	}
+}
+
+func TestGenerateRepoMapForQuery_RelevanceOrder(t *testing.T) {
+	dir := t.TempDir()
+	writeTempFile(t, dir, "auth.go", `package auth
+func Authenticate(user, pass string) bool { return true }
+func TokenValid(t string) bool { return true }`)
+	writeTempFile(t, dir, "theme.css", `body { color: red }`)
+
+	InvalidateRepoMapCache(dir)
+	result := GenerateRepoMapForQuery(dir, "fix token auth validation")
+	if !strings.Contains(result, "auth.go") {
+		t.Errorf("auth.go should appear for auth query: %s", result)
+	}
+	if strings.Contains(result, "theme.css") {
+		t.Errorf("theme.css should be deprioritized (no keyword match): %s", result)
+	}
+}
+
+func TestGenerateRepoMapForQuery_Truncation(t *testing.T) {
+	dir := t.TempDir()
+	// 超过 repomapMaxFiles 的文件数
+	for i := 0; i < 70; i++ {
+		writeTempFile(t, dir, fmt.Sprintf("f%02d.go", i), "package p\nfunc F() {}")
+	}
+	InvalidateRepoMapCache(dir)
+
+	// 无匹配查询:退化为路径排序全量(旧行为兼容)
+	full := GenerateRepoMapForQuery(dir, "")
+	if !strings.Contains(full, "f00.go") || !strings.Contains(full, "f69.go") {
+		t.Error("empty query should include all files")
+	}
+	// 有查询:截断到 repomapMaxFiles
+	scored := GenerateRepoMapForQuery(dir, "query with no matching keywords anywhere")
+	if strings.Count(scored, "### ") > repomapMaxFiles {
+		t.Errorf("scored repomap exceeded %d files", repomapMaxFiles)
+	}
+}
+
+func TestRepoMapKeywords(t *testing.T) {
+	got := repoMapKeywords("Fix the login token!")
+	for _, want := range []string{"fix", "the", "login", "token"} {
+		found := false
+		for _, g := range got {
+			if g == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("keywords missing %q, got %v", want, got)
+		}
+	}
+	// CJK 关键词支持
+	cjk := repoMapKeywords("修复登录问题")
+	if len(cjk) == 0 {
+		t.Error("CJK query should produce keywords")
+	}
+	// 短词过滤
+	if got := repoMapKeywords("a bc def"); len(got) != 1 {
+		t.Errorf("expected only 'def' (>=3 chars), got %v", got)
 	}
 }
