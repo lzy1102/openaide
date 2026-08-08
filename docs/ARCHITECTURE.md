@@ -128,6 +128,27 @@ finalizeResponse: 保存记忆 → 更新会话 → 生成标题 → 反思
 - **Reflection**：LLM 反思 → 技能反馈 + 记忆沉淀（学习闭环核心）
 - **trace/**: FileTracer + FileCheckpointer（会话恢复）
 
+### 1.5 防跑偏体系（长任务可靠性）
+
+内核通过三层防线确保长任务不跑偏、压缩后不变傻：
+
+**锚定层（记得要干什么）**
+- `[Intent]` 层：每轮消息携带 analyzeQuery 生成的 task/complexity/interpreted，模型始终可见系统对需求的理解
+- `Active context` 锚点：L3 模式文案尾部引用原始查询（≤100 字符）
+- `[Clarify]` 层：歧义查询（ambiguous=true）先陈述理解再行动
+- TaskContext 重注入：上下文压缩后重注入 `[OriginalQuery]` + `[Intent]`，摘要丢失目标也能恢复
+
+**监控层（发现跑偏）**
+- 方向检查（direction_check.go）：每 5 轮 LLM 判定 on_track/off_track，偏离注入 `[Direction]` 重聚焦
+- StuckDetector：连续失败/重复工具/重复错误 ≥3 次 → pivot 消息强制换策略
+- 预算提示（round ≥10/20/50 分级）：显示工具用量 → 停止探索 → 强制收尾
+
+**纠偏层（回到正轨）**
+- pivot 消息：换策略 + 具体建议（重读文件/换工具/拆步骤）
+- `[Recovery]` 重定向：pivot 达 3 次上限后，要求陈述已验证进展并换不同方法
+- 渐进式重摘要：超限时最多重摘要 3 次，保留用户意图优先级（用户意图 > 决策 > 技术事实 > 任务状态 > 工具结果）
+- 计划进度回写：每 3 轮注入子任务进度，提示下一步待办
+
 ### 2. LLM 网关 `internal/llm/`（10 源 + 3 测试）
 
 - 多 provider 注册（OpenAI 兼容协议，DeepSeek 特化配置：thinking/reasoning_effort/json_mode/strict_tools）
