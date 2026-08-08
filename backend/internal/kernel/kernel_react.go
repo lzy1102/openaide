@@ -52,7 +52,20 @@ func (k *AgentKernel) prepareReActRound(ctx context.Context, messages []Message,
 			tokenCount = promptTokens
 		}
 		if tokenCount > k.maxTokens*9/10 {
-			compressed, saved, err := k.compressor.Compress(ctx, messages, k.maxTokens)
+			// 渐进式压缩:一次摘要可能仍超限(超长单条/海量工具输出),
+			// 循环重摘要最多 3 次直到进入预算,替代粗暴裁剪。
+			compressed := messages
+			var saved int
+			var err error
+			for attempt := 0; attempt < 3; attempt++ {
+				compressed, saved, err = k.compressor.Compress(ctx, compressed, k.maxTokens)
+				if err != nil {
+					break
+				}
+				if saved <= 0 || k.compressor.EstimateTokens(compressed) <= k.maxTokens*9/10 {
+					break
+				}
+			}
 			if err == nil {
 				messages = compressed
 				// 压缩后重注入任务上下文:原始查询 + Intent + 最近进展摘要,
