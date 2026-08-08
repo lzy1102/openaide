@@ -78,7 +78,12 @@ func (o *Orchestrator) executePlan(ctx context.Context, userID, projectID, conte
 				task := fmt.Sprintf("Goal: %s\nStep: %s\nDetails: %s", plan.Goal, st.Title, st.Description)
 				r, err := o.RunSubAgent(gCtx, userID, projectID, roleName, task, deps, makeProgress(st.Title))
 				if err != nil {
-					return fmt.Errorf("subtask %d (%s): %w", st.ID, roleName, err)
+					// 子代理失败(超时/错误):标记失败而非终止整批,
+					// 后续子任务仍可基于已成功的结果继续。
+					results[idx] = fmt.Sprintf("[subtask %d failed: %v]", st.ID, err)
+					o.reportProgress("execute", fmt.Sprintf("✗ subtask %d failed (%s): %v", st.ID, st.Title, err))
+					slog.Warn("Subtask sub-agent failed", "subtask", st.ID, "role", roleName, "error", err)
+					return nil
 				}
 				results[idx] = r
 				o.reportProgress("execute", fmt.Sprintf("✓ subtask %d done (%s)", st.ID, st.Title))

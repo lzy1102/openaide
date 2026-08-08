@@ -133,7 +133,7 @@ func (k *AgentKernel) researchSubagentPrompt(ctx context.Context, plan *TaskPlan
 			defer cancel()
 			out, err := k.runResearchSubAgent(rc, t)
 			if err != nil {
-				slog.Debug("Research sub-agent failed", "task", truncStr(t, 60), "error", err)
+				slog.Warn("Research sub-agent failed", "task", truncStr(t, 60), "error", err)
 				out = ""
 			}
 			results[i] = out
