@@ -56,6 +56,8 @@ type Config struct {
 	ChunkSize    int     // chunk 字符数上限(默认 1500)
 	ChunkOverlap int     // chunk 重叠行数(默认 5)
 	MinScore     float64 // 检索注入的最低相似度;0 = 默认 0.3
+	MinScoreMode string  // 阈值策略: "fixed"(默认) / "relative" / "combined"
+	ScoreRatio   float64 // relative/combined 模式的相对阈值比例;0 = 默认 0.6
 }
 
 // NewIndexer 创建并启动 Indexer。dbPath 为空时使用内存数据库。
@@ -71,6 +73,14 @@ func NewIndexer(cfg Config, retriever rag.Retriever) (*Indexer, error) {
 	}
 	if cfg.MinScore <= 0 {
 		cfg.MinScore = 0.3
+	}
+	if cfg.ScoreRatio <= 0 {
+		cfg.ScoreRatio = 0.6
+	}
+	switch cfg.MinScoreMode {
+	case "relative", "combined":
+	default:
+		cfg.MinScoreMode = "fixed" // 未知模式回退固定阈值
 	}
 	if retriever == nil {
 		retriever = rag.NoopRetriever{}
@@ -173,9 +183,32 @@ func (ix *Indexer) Search(ctx context.Context, query string, limit int) ([]Chunk
 		return nil, nil
 	}
 	out := make([]Chunk, 0, len(results))
+	// 阈值策略:
+	//  fixed:    score < MinScore 丢弃
+	//  relative: score < top*ScoreRatio 丢弃
+	//  combined: 先 relative,且 top < MinScore 时全部丢弃
+	topScore := float64(0)
+	if ix.cfg.MinScoreMode != "fixed" && len(results) > 0 {
+		topScore = results[0].Score
+		for _, r := range results {
+			if r.Score > topScore {
+				topScore = r.Score
+			}
+		}
+		if ix.cfg.MinScoreMode == "combined" && topScore < ix.cfg.MinScore {
+			return out, nil // 检索整体不相关,全部丢弃
+		}
+	}
 	for _, r := range results {
-		if r.Score < ix.cfg.MinScore {
-			continue // 低相似度 chunk 不注入,避免无关代码噪声
+		switch ix.cfg.MinScoreMode {
+		case "relative", "combined":
+			if r.Score < topScore*ix.cfg.ScoreRatio {
+				continue
+			}
+		default:
+			if r.Score < ix.cfg.MinScore {
+				continue // 低相似度 chunk 不注入,避免无关代码噪声
+			}
 		}
 		chunk := Chunk{
 			ID:      r.ID,

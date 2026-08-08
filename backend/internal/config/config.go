@@ -138,6 +138,8 @@ type CodeIndexConfig struct {
 	ChunkSize int     `json:"chunk_size,omitempty" yaml:"chunk_size,omitempty"` // 0 = 默认 1500
 	MaxChunks int     `json:"max_chunks,omitempty" yaml:"max_chunks,omitempty"` // 0 = 默认 100
 	MinScore  float64 `json:"min_score,omitempty" yaml:"min_score,omitempty"`   // 注入最低相似度;0 = 默认 0.3
+	ScoreMode string  `json:"score_mode,omitempty" yaml:"score_mode,omitempty"` // fixed(默认)/relative/combined
+	ScoreRatio float64 `json:"score_ratio,omitempty" yaml:"score_ratio,omitempty"` // relative/combined 的比例;0 = 默认 0.6
 }
 
 // EnabledOrDefault 判断是否启用代码索引,默认 true

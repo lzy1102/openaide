@@ -417,3 +417,56 @@ func writeFile(t *testing.T, dir, name, content string) {
 		t.Fatal(err)
 	}
 }
+
+// scoredRetriever 返回固定分数列表,用于阈值模式测试。
+type scoredRetriever struct {
+	scores []float64
+	docs   []rag.Result
+}
+
+func (s *scoredRetriever) Search(_ context.Context, collection, query string, limit int) ([]rag.Result, error) {
+	return s.docs, nil
+}
+func (s *scoredRetriever) Index(context.Context, string, []rag.Document) error { return nil }
+func (s *scoredRetriever) Delete(context.Context, string, []string) error     { return nil }
+func (s *scoredRetriever) Ping(context.Context) error                         { return nil }
+
+func newScoredDocs(scores ...float64) []rag.Result {
+	out := make([]rag.Result, len(scores))
+	for i, sc := range scores {
+		out[i] = rag.Result{ID: "id", Content: "c", Score: sc, Metadata: map[string]string{"path": "f.go"}}
+	}
+	return out
+}
+
+func TestIndexer_SearchScoreModes(t *testing.T) {
+	tests := []struct {
+		name  string
+		mode  string
+		docs  []rag.Result
+		want  int
+	}{
+		{"fixed filters below 0.3", "fixed", newScoredDocs(0.8, 0.5, 0.2), 2},
+		{"relative keeps top*0.6", "relative", newScoredDocs(0.9, 0.5, 0.3), 1}, // 0.9*0.6=0.54 → 0.5,0.3 丢弃
+		{"relative keeps tight cluster", "relative", newScoredDocs(0.82, 0.74, 0.55), 3}, // 0.82*0.6=0.49 → 全保留
+		{"combined drops all when top below floor", "combined", newScoredDocs(0.29, 0.24, 0.2), 0},
+		{"combined keeps above floor", "combined", newScoredDocs(0.9, 0.5, 0.3), 1}, // 0.54 阈值 → 0.5,0.3 丢弃
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			ix, err := NewIndexer(Config{DBPath: dir + "/t.db", MinScoreMode: tt.mode, MinScore: 0.3, ScoreRatio: 0.6}, &scoredRetriever{docs: tt.docs})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer ix.Stop()
+			got, err := ix.Search(context.Background(), "q", 5)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(got) != tt.want {
+				t.Errorf("%s: got %d chunks, want %d (scores=%v)", tt.name, len(got), tt.want, tt.docs)
+			}
+		})
+	}
+}
