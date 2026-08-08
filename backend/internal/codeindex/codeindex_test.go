@@ -136,6 +136,58 @@ func Helper() {
 	}
 }
 
+func TestIndexer_SearchFiltersLowScore(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "auth.go", "package auth\nfunc Authenticate() {}")
+
+	mr := newMemRetriever()
+	_ = mr.Index(context.Background(), Collection, []rag.Document{{
+		ID:       "auth.go:1-2",
+		Content:  "package auth",
+		Metadata: map[string]string{"path": "auth.go", "symbol": "Authenticate"},
+	}})
+
+	// memRetriever 恒返回 Score=1,加一个低分结果模拟噪声。
+	low := &lowScoreRetriever{mr}
+	ix, err := NewIndexer(Config{DBPath: dir + "/test.db", MinScore: 0.5}, low)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ix.Stop()
+
+	ix.IndexProject(dir)
+	waitForIndex(t, ix, 5*time.Second)
+
+	results, err := ix.Search(context.Background(), "Authenticate", 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range results {
+		if c.Score < 0.5 {
+			t.Errorf("chunk below min_score injected: score=%.2f path=%s", c.Score, c.Path)
+		}
+	}
+}
+
+// lowScoreRetriever 包装 memRetriever,给 doc:b 返回低分,验证过滤。
+type lowScoreRetriever struct {
+	*memRetriever
+}
+
+func (l *lowScoreRetriever) Search(ctx context.Context, collection, query string, limit int) ([]rag.Result, error) {
+	res, err := l.memRetriever.Search(ctx, collection, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	for i := range res {
+		if res[i].ID == "auth.go:1-2" {
+			continue
+		}
+		res[i].Score = 0.1
+	}
+	return res, nil
+}
+
 func TestIndexer_SearchNoopReturnsEmpty(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "auth.go", `package auth

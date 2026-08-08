@@ -51,10 +51,11 @@ type Indexer struct {
 
 // Config 是 Indexer 的配置。
 type Config struct {
-	DBPath       string // SQLite 数据库路径
-	MaxChunks    int    // 单文件最大 chunk 数(默认 100)
-	ChunkSize    int    // chunk 字符数上限(默认 1500)
-	ChunkOverlap int    // chunk 重叠行数(默认 5)
+	DBPath       string  // SQLite 数据库路径
+	MaxChunks    int     // 单文件最大 chunk 数(默认 100)
+	ChunkSize    int     // chunk 字符数上限(默认 1500)
+	ChunkOverlap int     // chunk 重叠行数(默认 5)
+	MinScore     float64 // 检索注入的最低相似度;0 = 默认 0.3
 }
 
 // NewIndexer 创建并启动 Indexer。dbPath 为空时使用内存数据库。
@@ -67,6 +68,9 @@ func NewIndexer(cfg Config, retriever rag.Retriever) (*Indexer, error) {
 	}
 	if cfg.ChunkOverlap < 0 {
 		cfg.ChunkOverlap = 5
+	}
+	if cfg.MinScore <= 0 {
+		cfg.MinScore = 0.3
 	}
 	if retriever == nil {
 		retriever = rag.NoopRetriever{}
@@ -170,6 +174,9 @@ func (ix *Indexer) Search(ctx context.Context, query string, limit int) ([]Chunk
 	}
 	out := make([]Chunk, 0, len(results))
 	for _, r := range results {
+		if r.Score < ix.cfg.MinScore {
+			continue // 低相似度 chunk 不注入,避免无关代码噪声
+		}
 		chunk := Chunk{
 			ID:      r.ID,
 			Content: r.Content,
