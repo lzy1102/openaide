@@ -110,7 +110,7 @@ finalizeResponse: 保存记忆 → 更新会话 → 生成标题 → 反思
   | 层 | 内容 | 缓存性 |
   |----|------|--------|
   | L0 | 安全规则 + 角色 | 稳定前缀 |
-  | L1 | 项目上下文 (cwd/git/规则文件/语言) | 稳定前缀 |
+  | L1 | 项目上下文 (cwd/git/规则文件带优先级/语言共享锚点表) | 稳定前缀 |
   | L2 | Skill 注入 (SkillActor.InjectPrompt) | 稳定前缀 |
   | Intent | 系统对需求的理解 (task/complexity/interpreted, 紧跟用户查询) | 动态 |
   | L3 | 任务适配 (coding/review/think/debugging) + Active context 锚点 | 动态尾部 |
