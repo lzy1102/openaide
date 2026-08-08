@@ -26,8 +26,9 @@ type Orchestrator struct {
 	team       *Team        // 多 Agent 团队（可选）
 
 	// 可配置参数
-	PreviewTimeout time.Duration
-	DeepTimeout    time.Duration
+	PreviewTimeout  time.Duration
+	DeepTimeout     time.Duration
+	subAgentTimeout time.Duration // 子代理超时;0 = 默认 60s
 
 	// 项目持久记忆（跨会话积累）
 	mind *projectmind.ProjectMind
@@ -89,6 +90,9 @@ func (o *Orchestrator) SetPlanApprover(approver PlanApprover) {
 func (o *Orchestrator) SetTeam(t *Team) {
 	o.team = t
 }
+
+// SetSubAgentTimeout 覆盖子代理超时(测试或特殊场景)。
+func (o *Orchestrator) SetSubAgentTimeout(d time.Duration) { o.subAgentTimeout = d }
 
 // SetProjectMind 设置项目持久记忆
 func (o *Orchestrator) SetProjectMind(pm *projectmind.ProjectMind) {

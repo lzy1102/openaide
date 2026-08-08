@@ -24,13 +24,25 @@ const subAgentCoreRules = `## Core Rules — ALWAYS Follow
 - Never leave TODO or FIXME comments. Either do it or don't mention it.`
 
 // SubAgentProgress is a callback for reporting sub-agent execution progress.
-// roleName: which role is executing; round: current round; status: "thinking"/"executing"/"done"/"error".
+// roleName: which role is executing; round: current round; status: "thinking"/"executing"/"done"/"error"/"timeout".
 type SubAgentProgress func(roleName string, round int, status string)
+
+// subAgentTimeout 子代理默认执行超时。防止 LLM 挂起或工具卡死时无限阻塞。
+// 可通过 Orchestrator.SetSubAgentTimeout 覆盖(测试用短超时)。
+const subAgentTimeout = 60 * time.Second
 
 // RunSubAgent creates an isolated session and runs a single role with a mini ReAct loop.
 // The sub-agent gets the role's allowed tools and can actually execute them.
 // Only the final result summary is returned — intermediate tool calls stay in the sub-session.
 func (o *Orchestrator) RunSubAgent(ctx context.Context, userID, projectID, roleName, task string, previousResults []string, onProgress SubAgentProgress) (string, error) {
+	timeout := o.subAgentTimeout
+	if timeout <= 0 {
+		timeout = subAgentTimeout
+	}
+	// 独立超时:即使外部 ctx 无 deadline,子代理也必须有界执行。
+	sctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
 	role := o.getTeamRole(roleName)
 	if role == nil {
 		// Fallback: use first available role from Team
@@ -94,12 +106,21 @@ func (o *Orchestrator) RunSubAgent(ctx context.Context, userID, projectID, roleN
 
 		// 流式调用:让 onProgress 回调能收到每轮的增量输出,
 		// 替代之前同步 Chat() 的黑盒等待。
-		stream, err := o.llmGateway.ChatStream(ctx, messages, callTools, map[string]interface{}{
+		stream, err := o.llmGateway.ChatStream(sctx, messages, callTools, map[string]interface{}{
 			"route":       modelRoute,
 			"max_tokens":  4000,
 			"temperature": 0.3,
 		})
 		if err != nil {
+			if sctx.Err() == context.DeadlineExceeded {
+				if onProgress != nil {
+					onProgress(roleName, round, "timeout")
+				}
+				return "", fmt.Errorf("sub-agent %s timed out after %s: %w", roleName, timeout, err)
+			}
+			if onProgress != nil {
+				onProgress(roleName, round, "error")
+			}
 			return "", fmt.Errorf("sub-agent %s: %w", roleName, err)
 		}
 
@@ -119,6 +140,14 @@ func (o *Orchestrator) RunSubAgent(ctx context.Context, userID, projectID, roleN
 			if chunk.Done {
 				break
 			}
+		}
+
+		// 超时检查:流在 deadline 后结束或 sctx 已取消
+		if sctx.Err() != nil {
+			if onProgress != nil {
+				onProgress(roleName, round, "timeout")
+			}
+			return "", fmt.Errorf("sub-agent %s timed out after %s", roleName, timeout)
 		}
 
 		messages = append(messages, kernel.Message{
@@ -143,7 +172,7 @@ func (o *Orchestrator) RunSubAgent(ctx context.Context, userID, projectID, roleN
 			if onProgress != nil {
 				onProgress(roleName, round, "executing:"+tc.Function.Name)
 			}
-			result, err := o.toolExec.Execute(ctx, tc, session.ID)
+			result, err := o.toolExec.Execute(sctx, tc, session.ID)
 			content := fmt.Sprintf("%v", result.Content)
 			if err != nil {
 				content = fmt.Sprintf("Error: %v", err)
