@@ -17,6 +17,39 @@ type Identity struct {
 	WorkDir     string `json:"work_dir"`
 }
 
+// ProjectAnchor 项目语言锚点:锚点文件路径 → 语言标识。
+type ProjectAnchor struct {
+	Path string // 项目根下存在的文件
+	Lang string // 语言标识
+}
+
+// ProjectAnchors 是共享的项目语言锚点表(单一来源)。
+// identity 包取首个命中作为项目类型;kernel 包取全部命中注入语言约定。
+// 保持两个包列表一致,避免漂移。
+var ProjectAnchors = []ProjectAnchor{
+	{"go.mod", "go"},
+	{"go.work", "go-workspace"},
+	{"package.json", "node"},
+	{"Cargo.toml", "rust"},
+	{"pyproject.toml", "python"},
+	{"setup.py", "python"},
+	{"requirements.txt", "python"},
+	{"pom.xml", "java"},
+	{"build.gradle", "java"},
+	{"build.gradle.kts", "kotlin"},
+	{"CMakeLists.txt", "c"},
+	{"Makefile", "c"},
+	{"Package.swift", "swift"},
+	{"composer.json", "php"},
+	{"Gemfile", "ruby"},
+	{"pubspec.yaml", "dart"},
+	{"mix.exs", "elixir"},
+	{"stack.yaml", "haskell"},
+	{"rebar.config", "erlang"},
+	{"dune-project", "ocaml"},
+	{"cpanfile", "perl"},
+}
+
 // Detector 身份检测器
 type Detector struct{}
 
@@ -48,31 +81,11 @@ func (d *Detector) Detect(ctx context.Context, workDir string) (*Identity, error
 }
 
 func (d *Detector) detectProjectType(workDir string) string {
-	// 检查各种项目文件
-	files := []struct {
-		path string
-		typ  string
-	}{
-		{"go.mod", "go"},
-		{"go.work", "go-workspace"},
-		{"package.json", "node"},
-		{"Cargo.toml", "rust"},
-		{"pyproject.toml", "python"},
-		{"setup.py", "python"},
-		{"requirements.txt", "python"},
-		{"pom.xml", "java"},
-		{"build.gradle", "java"},
-		{"composer.json", "php"},
-		{"Gemfile", "ruby"},
-		{"pubspec.yaml", "flutter"},
-	}
-
-	for _, f := range files {
-		if _, err := os.Stat(filepath.Join(workDir, f.path)); err == nil {
-			return f.typ
+	for _, a := range ProjectAnchors {
+		if _, err := os.Stat(filepath.Join(workDir, a.Path)); err == nil {
+			return a.Lang
 		}
 	}
-
 	return "unknown"
 }
 

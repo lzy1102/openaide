@@ -30,7 +30,7 @@ func TestDetectProjectType(t *testing.T) {
 		{"build.gradle", func(dir string) { touch(t, filepath.Join(dir, "build.gradle")) }, "java"},
 		{"composer.json", func(dir string) { touch(t, filepath.Join(dir, "composer.json")) }, "php"},
 		{"Gemfile", func(dir string) { touch(t, filepath.Join(dir, "Gemfile")) }, "ruby"},
-		{"pubspec.yaml", func(dir string) { touch(t, filepath.Join(dir, "pubspec.yaml")) }, "flutter"},
+		{"pubspec.yaml", func(dir string) { touch(t, filepath.Join(dir, "pubspec.yaml")) }, "dart"},
 		{"go.work", func(dir string) { touch(t, filepath.Join(dir, "go.work")) }, "go-workspace"},
 		{"unknown", func(dir string) {}, "unknown"},
 	}
