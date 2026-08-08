@@ -148,3 +148,7 @@ func (d *StuckDetector) PivotMessage(reason string) string {
 
 // PivotCount 返回累计 pivot 次数(用于日志/指标)。
 func (d *StuckDetector) PivotCount() int { return d.pivotCount }
+
+// PivotLimitReached 报告是否已达到本查询的 pivot 上限。
+// 达到后 IsStuck 不再触发,调用方应注入恢复重定向。
+func (d *StuckDetector) PivotLimitReached() bool { return d.pivotCount >= maxPivotsPerSession }

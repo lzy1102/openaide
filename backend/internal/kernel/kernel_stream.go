@@ -376,6 +376,11 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 				slog.Info("Stuck detected, injecting pivot",
 					"round", round, "reason", reason,
 					"pivot_count", stuckDetector.PivotCount())
+			} else if stuckDetector.PivotLimitReached() && k.checkpointer != nil {
+				// pivot 上限已到:从检查点重定向,要求基于已保存进度重新规划。
+				// 每轮只注入一次(round 唯一),避免重复。
+				messages = append(messages, Message{Role: "system", Content: "[Recovery] You have hit the stuck-detection limit. Review your recent progress, restate what you have verified so far, and pick a DIFFERENT approach for the remaining goal. Do not repeat failed actions."})
+				slog.Info("Stuck pivot limit reached, injecting recovery redirect", "round", round)
 			}
 
 			// 每轮结束后保存检查点

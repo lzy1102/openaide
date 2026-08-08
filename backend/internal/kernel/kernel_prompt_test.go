@@ -268,3 +268,46 @@ func TestDedupeProjectContext(t *testing.T) {
 		t.Error("short line should not be filtered from project context (only from rules)")
 	}
 }
+
+func TestScanSubdirRules(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "api"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "vendor"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "api/CLAUDE.md"), []byte("api rules here\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// vendor 应被跳过
+	if err := os.WriteFile(filepath.Join(dir, "vendor/CLAUDE.md"), []byte("vendor rules\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	rules := scanSubdirRules(dir)
+	if len(rules) != 1 || rules[0].dir != "api" {
+		t.Errorf("expected only api subdir rule, got %+v", rules)
+	}
+	if !strings.Contains(rules[0].content, "api rules") {
+		t.Errorf("api rule content missing: %+v", rules)
+	}
+}
+
+func TestPivotLimitReached(t *testing.T) {
+	d := NewStuckDetector()
+	if d.PivotLimitReached() {
+		t.Error("fresh detector should not be at pivot limit")
+	}
+	// 连续失败触发 pivot 直至上限(round 间隔 >3 避开冷却期)
+	for i := 0; i < 5; i++ {
+		d.RecordResult("read_file", "x", "boom", i*10)
+		d.IsStuck(i * 10)
+	}
+	if !d.PivotLimitReached() {
+		t.Error("expected pivot limit reached after repeated failures")
+	}
+	// 达到上限后 IsStuck 不再触发
+	if stuck, _ := d.IsStuck(500); stuck {
+		t.Error("IsStuck should be silent after pivot limit")
+	}
+}
