@@ -259,6 +259,24 @@ func promptL1() string {
 		sb.WriteString("Rule conflict precedence: CLAUDE.md > OPENAIDE.md > CODEBUDDY.md > CONVENTIONS.md (earlier file wins).\n")
 	}
 
+	// 子目录规则:扫描一层子目录的 CLAUDE.md(Claude Code 层级规则)。
+	// 限制数量与总量,避免 token 膨胀;只注入根规则未覆盖的目录。
+	subRules := scanSubdirRules(cwd)
+	if len(subRules) > 0 {
+		sb.WriteString("\n[SubdirRules]\n")
+		total := 0
+		for _, sr := range subRules {
+			if total+len(sr.content) > 4000 {
+				sb.WriteString("... (more subdir rules omitted)\n")
+				break
+			}
+			sb.WriteString("### " + sr.dir + "/CLAUDE.md\n")
+			sb.WriteString(sr.content)
+			sb.WriteString("\n")
+			total += len(sr.content)
+		}
+	}
+
 	// Language-specific conventions
 	if langs := detectProjectLangs(cwd); len(langs) > 0 {
 		sb.WriteString("\n[Language] ")
@@ -270,6 +288,42 @@ func promptL1() string {
 	}
 
 	return sb.String()
+}
+
+// subdirRule 是一条子目录规则。
+type subdirRule struct {
+	dir     string // 相对目录名
+	content string // 规则文件内容(截断后)
+}
+
+// scanSubdirRules 扫描项目根一层子目录的 CLAUDE.md(Claude Code 层级规则)。
+// 最多收集 10 个,每个内容截断 2000 字符,按目录名排序。
+// 跳过隐藏目录与常见依赖目录。
+func scanSubdirRules(root string) []subdirRule {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil
+	}
+	skipped := map[string]bool{".git": true, "vendor": true, "node_modules": true, "bin": true, "dist": true, "build": true, ".venv": true, "__pycache__": true}
+	var out []subdirRule
+	for _, e := range entries {
+		if len(out) >= 10 {
+			break
+		}
+		if !e.IsDir() || skipped[e.Name()] || strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(root, e.Name(), "CLAUDE.md"))
+		if err != nil || len(data) == 0 {
+			continue
+		}
+		content := string(data)
+		if len(content) > 2000 {
+			content = content[:2000] + "\n(truncated)"
+		}
+		out = append(out, subdirRule{dir: e.Name(), content: content})
+	}
+	return out
 }
 
 func detectProjectLangs(dir string) []string {
