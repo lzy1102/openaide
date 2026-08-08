@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"openaide/backend/internal/identity"
 )
 
 // ── Layered Prompt System ──────────────────────────────────
@@ -246,7 +248,12 @@ func promptL1() string {
 			sb.WriteString(f)
 			sb.WriteString(":\n")
 			sb.WriteString(content)
+			sb.WriteString("\n")
 		}
+	}
+	// 冲突优先级声明:多个规则文件存在时,靠前的文件优先。
+	if loaded {
+		sb.WriteString("Rule conflict precedence: CLAUDE.md > OPENAIDE.md > CODEBUDDY.md > CONVENTIONS.md (earlier file wins).\n")
 	}
 
 	// Language-specific conventions
@@ -263,37 +270,16 @@ func promptL1() string {
 }
 
 func detectProjectLangs(dir string) []string {
-	checks := []struct{ file, lang string }{
-		{"go.mod", "go"},
-		{"package.json", "node"},
-		{"pyproject.toml", "python"},
-		{"Cargo.toml", "rust"},
-		{"pom.xml", "java"},
-		{"build.gradle", "java"},
-		{"build.gradle.kts", "kotlin"},
-		{"CMakeLists.txt", "c"},
-		{"Makefile", "c"},
-		{"Package.swift", "swift"},
-		{"composer.json", "php"},
-		{"Gemfile", "ruby"},
-		{"build.sbt", "scala"},
-		{"pubspec.yaml", "dart"},
-		{"mix.exs", "elixir"},
-		{"stack.yaml", "haskell"},
-		{"rebar.config", "erlang"},
-		{"dune-project", "ocaml"},
-		{"cpanfile", "perl"},
-		// Additional: glob-based checks
-	}
 	var langs []string
 	seen := map[string]bool{}
-	for _, c := range checks {
-		if seen[c.lang] {
+	// 单文件锚点:与 identity 包共享同一张表,保持单一来源。
+	for _, a := range identity.ProjectAnchors {
+		if seen[a.Lang] {
 			continue
 		}
-		if _, err := os.Stat(filepath.Join(dir, c.file)); err == nil {
-			langs = append(langs, c.lang)
-			seen[c.lang] = true
+		if _, err := os.Stat(filepath.Join(dir, a.Path)); err == nil {
+			langs = append(langs, a.Lang)
+			seen[a.Lang] = true
 		}
 	}
 	// Glob-based detection (patterns, not single files)

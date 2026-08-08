@@ -2,6 +2,8 @@ package kernel
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -174,5 +176,65 @@ func TestBuildSystemLayer_FileOverride(t *testing.T) {
 	result := k.buildSystemLayer(context.Background(), &Query{Content: "hello", Options: QueryOptions{}})
 	if !strings.Contains(result, custom) {
 		t.Error("buildSystemLayer should use custom prompt when set")
+	}
+}
+
+func TestDetectProjectLangs_SharedAnchors(t *testing.T) {
+	dir := t.TempDir()
+	// 盲区补齐:go.work / setup.py / requirements.txt 应被识别
+	for _, f := range []string{"go.work", "setup.py", "requirements.txt"} {
+		if err := os.WriteFile(filepath.Join(dir, f), []byte("x"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	langs := detectProjectLangs(dir)
+	for _, want := range []string{"go-workspace", "python"} {
+		found := false
+		for _, l := range langs {
+			if l == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("detectProjectLangs missing %q, got %v", want, langs)
+		}
+	}
+}
+
+func TestDetectProjectLangs_GlobFallback(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "app.csproj"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, l := range detectProjectLangs(dir) {
+		if l == "csharp" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("glob anchor *.csproj should detect csharp")
+	}
+}
+
+func TestPromptL1_RulePrecedence(t *testing.T) {
+	dir := t.TempDir()
+	oldWD, _ := os.Getwd()
+	defer os.Chdir(oldWD)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	// 两个规则文件存在,声明优先级
+	for _, f := range []string{"CLAUDE.md", "OPENAIDE.md"} {
+		if err := os.WriteFile(filepath.Join(dir, f), []byte("rule: x"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	l1 := promptL1()
+	if !strings.Contains(l1, "CLAUDE.md > OPENAIDE.md") {
+		t.Errorf("promptL1 missing rule precedence declaration, got: %s", l1)
+	}
+	if !strings.Contains(l1, "CLAUDE.md") || !strings.Contains(l1, "OPENAIDE.md") {
+		t.Error("promptL1 should include both rule file contents")
 	}
 }
