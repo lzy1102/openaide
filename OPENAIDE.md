@@ -587,9 +587,10 @@ All stateful modules use Go's CSP model: each module owns its data in a single g
 
 ### RepoMap (Aider-style code symbol map)
 
-- `repomap.go`: regex-based symbol extraction from Go files (func, type, const, var)
-- Injected into system prompt as `[RepoMap] 项目符号地图: file: symbol1, symbol2, ...`
-- 5-min TTL cache; LLM sees code structure without exploration rounds
+- `repomap.go`: AST-parser-based symbol extraction across 21 languages (func, type, const, var, class)
+- Injected into system prompt as `[RepoMap]` in coding/debugging tasks
+- **Query-aware** (`GenerateRepoMapForQuery`): files ranked by keyword match against the query (file name +3, symbol +2, export +1), truncated to top 60 files — large repos inject only relevant structure
+- 5-min TTL cache shared between full and query-aware modes; LLM sees code structure without exploration rounds
 - Skips dot-dirs, vendor, node_modules, bin
 
 ### Key patterns
