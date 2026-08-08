@@ -134,9 +134,10 @@ type KernelConfig struct {
 // 并在 coding/debugging 任务的 prompt 阶段注入 top-K 相关代码 chunk。
 // 检索完全外挂到 rag.Retriever(pgvector),未配置时返回空结果。
 type CodeIndexConfig struct {
-	Enabled   *bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`       // 默认 true(nil = true)
-	ChunkSize int   `json:"chunk_size,omitempty" yaml:"chunk_size,omitempty"` // 0 = 默认 1500
-	MaxChunks int   `json:"max_chunks,omitempty" yaml:"max_chunks,omitempty"` // 0 = 默认 100
+	Enabled   *bool   `json:"enabled,omitempty" yaml:"enabled,omitempty"`       // 默认 true(nil = true)
+	ChunkSize int     `json:"chunk_size,omitempty" yaml:"chunk_size,omitempty"` // 0 = 默认 1500
+	MaxChunks int     `json:"max_chunks,omitempty" yaml:"max_chunks,omitempty"` // 0 = 默认 100
+	MinScore  float64 `json:"min_score,omitempty" yaml:"min_score,omitempty"`   // 注入最低相似度;0 = 默认 0.3
 }
 
 // EnabledOrDefault 判断是否启用代码索引,默认 true

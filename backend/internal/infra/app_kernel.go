@@ -139,6 +139,7 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, retriever rag.Retrie
 			DBPath:    cfg.Storage.DataDir + "/codeindex.db",
 			ChunkSize: cfg.CodeIndex.ChunkSize,
 			MaxChunks: cfg.CodeIndex.MaxChunks,
+			MinScore:  cfg.CodeIndex.MinScore,
 		}
 		if idx, err := codeindex.NewIndexer(idxCfg, retriever); err == nil {
 			agentKernel.SetCodeIndexer(idx)
