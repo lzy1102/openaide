@@ -29,14 +29,15 @@ func TestNoopRetriever_AllMethods(t *testing.T) {
 }
 
 func TestNewFromConfig_EmptyDSNReturnsNoop(t *testing.T) {
-	r := NewFromConfig(PGVectorConfig{})
+	r := NewFromConfig(Config{})
 	if _, ok := r.(NoopRetriever); !ok {
-		t.Errorf("expected NoopRetriever for empty DSN, got %T", r)
+		t.Errorf("expected NoopRetriever for empty config, got %T", r)
 	}
 }
 
 func TestNewFromConfig_UnreachableReturnsNoop(t *testing.T) {
-	r := NewFromConfig(PGVectorConfig{
+	r := NewFromConfig(Config{
+		Type:         "pgvector",
 		DSN:          "postgres://invalid:invalid@127.0.0.1:1/db?connect_timeout=1",
 		EmbeddingURL: "http://127.0.0.1:1/embeddings",
 	})

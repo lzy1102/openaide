@@ -1,13 +1,10 @@
 package rag
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 	"time"
 
@@ -31,11 +28,8 @@ type PGVectorConfig struct {
 // query with an embedding of the user query.
 type PGVector struct {
 	db         *sql.DB
-	embedURL   string
-	embedKey   string
-	embedMod   string
+	emb        *embedder
 	collection string
-	client     *http.Client
 }
 
 // NewPGVector connects to PostgreSQL and ensures the vector extension and
@@ -49,9 +43,6 @@ func NewPGVector(cfg PGVectorConfig) (*PGVector, error) {
 	}
 	if cfg.Collection == "" {
 		cfg.Collection = "openaide_docs"
-	}
-	if cfg.EmbeddingModel == "" {
-		cfg.EmbeddingModel = "text-embedding-3-small"
 	}
 
 	db, err := sql.Open("postgres", cfg.DSN)
@@ -67,11 +58,8 @@ func NewPGVector(cfg PGVectorConfig) (*PGVector, error) {
 
 	pv := &PGVector{
 		db:         db,
-		embedURL:   strings.TrimSuffix(cfg.EmbeddingURL, "/"),
-		embedKey:   cfg.EmbeddingKey,
-		embedMod:   cfg.EmbeddingModel,
+		emb:        newEmbedder(cfg.EmbeddingURL, cfg.EmbeddingKey, cfg.EmbeddingModel),
 		collection: cfg.Collection,
-		client:     &http.Client{Timeout: 30 * time.Second},
 	}
 	if err := pv.migrate(ctx); err != nil {
 		db.Close()
@@ -109,7 +97,7 @@ func (pv *PGVector) Index(ctx context.Context, collection string, docs []Documen
 	for i, d := range docs {
 		texts[i] = d.Content
 	}
-	vecs, err := pv.embed(ctx, texts)
+	vecs, err := pv.emb.Embed(ctx, texts)
 	if err != nil {
 		return fmt.Errorf("pgvector: embed: %w", err)
 	}
@@ -136,7 +124,7 @@ func (pv *PGVector) Index(ctx context.Context, collection string, docs []Documen
 
 // Search embeds the query and returns the top-k nearest documents.
 func (pv *PGVector) Search(ctx context.Context, collection, query string, limit int) ([]Result, error) {
-	vecs, err := pv.embed(ctx, []string{query})
+	vecs, err := pv.emb.Embed(ctx, []string{query})
 	if err != nil || len(vecs) == 0 {
 		return nil, nil // degrade to empty results when embedding fails
 	}
@@ -185,46 +173,6 @@ func (pv *PGVector) Delete(ctx context.Context, collection string, ids []string)
 // Ping reports whether the backing store is reachable.
 func (pv *PGVector) Ping(ctx context.Context) error {
 	return pv.db.PingContext(ctx)
-}
-
-// embed calls the external OpenAI-compatible /embeddings endpoint.
-func (pv *PGVector) embed(ctx context.Context, texts []string) ([][]float32, error) {
-	body, _ := json.Marshal(map[string]interface{}{
-		"model": pv.embedMod,
-		"input": texts,
-	})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, pv.embedURL+"/embeddings", bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if pv.embedKey != "" {
-		req.Header.Set("Authorization", "Bearer "+pv.embedKey)
-	}
-
-	resp, err := pv.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("embedding API %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
-	}
-
-	var payload struct {
-		Data []struct {
-			Embedding []float32 `json:"embedding"`
-		} `json:"data"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return nil, err
-	}
-	out := make([][]float32, 0, len(payload.Data))
-	for _, d := range payload.Data {
-		out = append(out, d.Embedding)
-	}
-	return out, nil
 }
 
 // vectorString renders a []float32 as a pgvector literal, e.g. "[0.1,0.2]".
