@@ -187,7 +187,7 @@ finalizeResponse: 保存记忆 → 更新会话 → 生成标题 → 反思
 
 - **Orchestrator**：面向 API 的高层入口，封装 kernel
 - **Team 多智能体**（team.go/team_roles.go）：LLM 动态生成角色（analyst/coder/reviewer/executor），隔离会话
-- **SubAgent**（subagent.go）：隔离子代理 + 进度回调
+- **SubAgent**（subagent.go）：隔离子代理 + 进度回调（thinking/executing/done/error/timeout）；独立超时（默认 60s，`SetSubAgentTimeout` 可调）；子任务失败容错标记而非终止整批
 - **TOT**（tot.go）：树状推理多路径探索 + 投票
 - **Planner**（planner.go）：DeepPlan 规划管线 + PlanApprover 审批
 
