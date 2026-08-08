@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -390,11 +392,54 @@ func (k *AgentKernel) buildMessages(ctx context.Context, session *Session, query
 
 	// L4: Cross-session learner insights + ProjectMind conventions (dynamic tail)
 	if query.Options.ProjectContext != "" {
-		messages = append(messages, Message{Role: "system", Content: "[ProjectKnowledge]\n" + query.Options.ProjectContext})
+		messages = append(messages, Message{Role: "system", Content: "[ProjectKnowledge]\n" + dedupeProjectContext(query.Options.ProjectContext)})
 	}
 
 	slog.Info("buildMessages complete", "msgs", len(messages))
 	return messages
+}
+
+// dedupeProjectContext 过滤 ProjectKnowledge 中与规则文件重复的行,
+// 避免 L4 与 L1 注入相同内容(ProjectMind 可能从规则文件学到约定)。
+// 仅过滤长度 ≥20 的完整行,比较时忽略行首列表标记(- / * / •),避免误删短行。
+func dedupeProjectContext(projectContext string) string {
+	cwd, _ := os.Getwd()
+	ruleContent := make(map[string]bool)
+	for _, f := range ruleFiles {
+		if data, err := os.ReadFile(filepath.Join(cwd, f)); err == nil {
+			for _, line := range strings.Split(string(data), "\n") {
+				trimmed := normalizeDedupeLine(line)
+				if len(trimmed) >= 20 {
+					ruleContent[trimmed] = true
+				}
+			}
+		}
+	}
+	if len(ruleContent) == 0 {
+		return projectContext
+	}
+	var sb strings.Builder
+	for _, line := range strings.Split(projectContext, "\n") {
+		trimmed := normalizeDedupeLine(line)
+		if len(trimmed) >= 20 && ruleContent[trimmed] {
+			continue // 与规则文件重复,丢弃
+		}
+		sb.WriteString(line)
+		sb.WriteString("\n")
+	}
+	return strings.TrimRight(sb.String(), "\n")
+}
+
+// normalizeDedupeLine 去掉行首列表标记与首尾空白,用于去重比较。
+func normalizeDedupeLine(line string) string {
+	trimmed := strings.TrimSpace(line)
+	for _, prefix := range []string{"- ", "* ", "• ", "> "} {
+		if strings.HasPrefix(trimmed, prefix) {
+			trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, prefix))
+			break
+		}
+	}
+	return trimmed
 }
 
 // ── Layer Builders ──────────────────────────────────────────

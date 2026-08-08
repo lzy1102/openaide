@@ -216,6 +216,10 @@ You have a memory system that persists across sessions:
 
 // ── L1: Project Context ────────────────────────────────────
 
+// ruleFiles 是项目规则锚点文件(按优先级排序)。
+// 冲突时靠前的文件优先;L4 ProjectKnowledge 去重也依赖此列表。
+var ruleFiles = []string{"CLAUDE.md", "OPENAIDE.md", "CODEBUDDY.md", "CONVENTIONS.md"}
+
 func promptL1() string {
 	cwd, _ := os.Getwd()
 	var sb strings.Builder
@@ -229,7 +233,6 @@ func promptL1() string {
 	}
 
 	// Project rules — load all found rule files, merge into one context
-	ruleFiles := []string{"CLAUDE.md", "OPENAIDE.md", "CODEBUDDY.md", "CONVENTIONS.md"}
 	loaded := false
 	for _, f := range ruleFiles {
 		if data, err := os.ReadFile(filepath.Join(cwd, f)); err == nil && len(data) > 0 {

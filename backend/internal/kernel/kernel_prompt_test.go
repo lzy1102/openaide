@@ -238,3 +238,33 @@ func TestPromptL1_RulePrecedence(t *testing.T) {
 		t.Error("promptL1 should include both rule file contents")
 	}
 }
+
+func TestDedupeProjectContext(t *testing.T) {
+	dir := t.TempDir()
+	oldWD, _ := os.Getwd()
+	defer os.Chdir(oldWD)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	// 规则文件含一条长约定
+	rule := "Always use context.Context for async operations"
+	if err := os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte(rule+"\nshort: x\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := "## 项目已知信息\n- 框架: go\n" + "- " + rule + "\n- 独立约定: 使用表驱动测试\n"
+	got := dedupeProjectContext(ctx)
+	if strings.Contains(got, rule) {
+		t.Errorf("duplicate rule line not removed: %s", got)
+	}
+	if !strings.Contains(got, "框架: go") {
+		t.Error("non-duplicate lines should be kept")
+	}
+	if !strings.Contains(got, "独立约定") {
+		t.Error("independent convention should be kept")
+	}
+	// 短行不受影响
+	if !strings.Contains(got, "short: x") && strings.Contains(ctx, "short: x") {
+		t.Error("short line should not be filtered from project context (only from rules)")
+	}
+}
