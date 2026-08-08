@@ -351,6 +351,12 @@ func (k *AgentKernel) buildMessages(ctx context.Context, session *Session, query
 	// User query
 	messages = append(messages, Message{Role: "user", Content: query.Content})
 
+	// Intent layer: 系统对需求的理解(analyzeQuery 生成的 task/strategy)。
+	// 紧跟用户查询注入,使主模型首轮即获得与系统一致的意图解读。
+	if intent := promptIntent(analysis); intent != "" {
+		messages = append(messages, Message{Role: "system", Content: intent})
+	}
+
 	// ── Dynamic Tail: Layers 3-6 (after user query, varies per query) ──
 
 	// L3: Task Adapter (coding/review/think/debugging) — per-query, not cached

@@ -492,6 +492,15 @@ func (k *AgentKernel) promptL3(ctx context.Context, query string, taskType strin
 		task = k.detectTaskType(ctx, query)
 	}
 	l3 := promptL3_task_EN(task)
+	// Active context 锚点:将原始查询附加到模式文案,防止多轮 ReAct 后需求漂移。
+	// 仅在模式文案非空时追加(general 无文案,保持返回空)。
+	if l3 != "" && query != "" {
+		q := strings.TrimSpace(query)
+		if len(q) > 100 {
+			q = q[:97] + "..."
+		}
+		l3 += "\nActive context: " + q
+	}
 	// Inject RepoMap for coding/debugging only (saves tokens on think/general/review)
 	if task == "coding" || task == "debugging" {
 		cwd, _ := os.Getwd()
@@ -507,6 +516,34 @@ func (k *AgentKernel) promptL3(ctx context.Context, query string, taskType strin
 		}
 	}
 	return l3
+}
+
+// promptIntent 注入系统对当前查询的理解(来自 analyzeQuery 的输出)。
+// 让主模型在首轮即获得与系统一致的意图解读,避免需求理解偏差。
+// analysis 为空或字段全空时返回空字符串(不注入)。
+func promptIntent(a *QueryAnalysis) string {
+	if a == nil {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString("[Intent]\n")
+	if a.TaskType != "" {
+		sb.WriteString("task: ")
+		sb.WriteString(a.TaskType)
+		sb.WriteString("\n")
+	}
+	if a.Complexity > 0 {
+		sb.WriteString(fmt.Sprintf("complexity: %d\n", a.Complexity))
+	}
+	if a.Strategy != "" {
+		sb.WriteString("interpreted: ")
+		sb.WriteString(a.Strategy)
+		sb.WriteString("\n")
+	}
+	if sb.Len() == len("[Intent]\n") {
+		return ""
+	}
+	return sb.String()
 }
 
 // injectRelevantCode 调用 CodeIndexer 检索相关代码,格式化为 prompt 段落。
