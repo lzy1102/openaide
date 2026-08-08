@@ -65,7 +65,7 @@ ARCHITECTURE.md → MODULES.md → MIGRATION.md → DEPLOYMENT.md
 | **混合运行模式** | REPL(默认) + API 服务器模式，单一 Go 二进制 | ARCHITECTURE.md 仓库结构 |
 | **ReAct 内核** | 统一查询分析 + ReAct 循环 + 反思沉淀作为核心 | ARCHITECTURE.md 核心数据流 |
 | **Actor/CSP 无锁** | 有状态模块单 goroutine + channel 通信，零锁核心路径 | ARCHITECTURE.md 关键架构决策 |
-| **分层提示词 L0-L6** | 稳定前缀缓存友好 + 动态尾部按需注入 | ARCHITECTURE.md 核心模块详解 1 |
+| **分层提示词 L0-L6 + Intent** | 稳定前缀缓存友好 + 动态尾部按需注入 + Intent 层传递系统对需求的理解 | ARCHITECTURE.md 核心模块详解 1 |
 | **成本感知双模型** | reasoning/execution 路由，flash 执行 / pro 推理 | ARCHITECTURE.md 核心模块详解 2 |
 | **LLM 语义压缩** | LLM 压缩 + NovelCompressor 降级，token 预算截断 | MODULES.md 模块清单（压缩） |
 | **生态兼容扩展** | MCP + Claude 插件/Skill/Hooks 自动发现 | ARCHITECTURE.md 核心模块详解 6 |

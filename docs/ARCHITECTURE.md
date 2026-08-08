@@ -79,9 +79,11 @@ kernel_stream.go: 统一查询分析 (一次 LLM 调用)
    └─ 期望轮数 (AdaptiveRounds)
    │
    ▼
-buildMessages: 7 层 Prompt 组装 (L0-L6)
+buildMessages: 分层 Prompt 组装 (L0-L6 + Intent)
    ├─ 稳定前缀: L0 安全规则 + L1 项目上下文 + L2 Skill 注入 (prompt 缓存友好)
    ├─ 会话历史 (按 token 预算截断)
+   ├─ 用户查询
+   ├─ Intent 层: 系统对需求的理解 (task/complexity/interpreted, 来自统一查询分析)
    └─ 动态尾部: L3 任务适配 + L4 项目知识 + L5 上轮反思 + L6 代码索引
    │
    ▼
@@ -101,13 +103,14 @@ finalizeResponse: 保存记忆 → 更新会话 → 生成标题 → 反思
 ### 1. 内核层 `internal/kernel/`（最核心，50 源 + 16 测试）
 
 - **AgentKernel**（kernel.go）：依赖注入容器——LLMProvider、ToolExecutor、Memory、SessionStore、Reflection、Planner、Checkpointer、Tracer、SkillActor、CodeIndexer、Compressor 全部可插拔（`Set*` 系列方法）
-- **7 层 Prompt 架构**（kernel_prompt.go）：
+- **分层 Prompt 架构**（kernel_prompt.go）：
   | 层 | 内容 | 缓存性 |
   |----|------|--------|
   | L0 | 安全规则 + 角色 | 稳定前缀 |
   | L1 | 项目上下文 (cwd/git/规则文件/语言) | 稳定前缀 |
   | L2 | Skill 注入 (SkillActor.InjectPrompt) | 稳定前缀 |
-  | L3 | 任务适配 (coding/review/think/debugging) | 动态尾部 |
+  | Intent | 系统对需求的理解 (task/complexity/interpreted, 紧跟用户查询) | 动态 |
+  | L3 | 任务适配 (coding/review/think/debugging) + Active context 锚点 | 动态尾部 |
   | L4 | 跨会话学习者洞察 + ProjectMind 约定 | 动态尾部 |
   | L5 | 上一轮反思结果 | 动态尾部 |
   | L6 | 代码索引相关 chunk (codeindex) | 动态尾部 |
