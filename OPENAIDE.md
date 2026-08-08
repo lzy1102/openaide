@@ -228,6 +228,8 @@ Key fixes from audit:
   - **Output format**: structured `[用户意图] [关键事实] [当前状态] [注意事项]`, under 200 words, matching user's language
   - **Parameters**: `max_tokens=400`, `temperature=0.2` for deterministic summaries
   - `extractPendingQuestions()`: detects unanswered user queries in compressed messages, re-injects as `[待解决问题]` to prevent information loss
+  - **Progressive re-summarization**: if the context is still over budget after one LLM summary, re-summarize up to 3 times instead of falling back to crude output truncation
+  - **Task-context reinjection**: after compression, `[OriginalQuery]` + `[Intent]` are re-injected from the saved TaskContext so the model never loses the task goal
   - **Fallback chain**: LLM call fails → `SimpleCompressor` → returns original messages if everything fails
 
 ### Deep thinking pipeline (Research → Propose → Select → Plan)
@@ -322,7 +324,7 @@ All tools return structured, agent-friendly output:
 
 ### Prompt system
 
-- **Layered architecture**: Stable prefix (L0 Identity + L1 Project + L2 Skill) cached in system message. Intent layer (system's reading of the query: task/complexity/interpreted) injected right after the user message. Dynamic tail (L3 Mode Signal + L5 Reflection + L6 Knowledge RAG) appended per-query.
+- **Layered architecture**: Stable prefix (L0 Identity + L1 Project + L2 Skill) cached in system message. Intent layer (system's reading of the query: task/complexity/interpreted) injected right after the user message. Dynamic tail (L3 Mode Signal + L5 Reflection + L6 Knowledge RAG) appended per-query. L6 `[RelevantCode]` entries summarize via the symbol declaration line (not just the first line) and are capped at ~300 tokens.
 - **L0**: Core rules — Hard Blocks + Grounding Protocol + Certainty Labels + **Coding Workflow — Simplicity First** (with Resource Lifecycle rule) + Engineering Checklist (with Simplicity + Resource Lifecycle checks) + Review Mode + Debugging Mode + Error Recovery + Interaction + Learning (~30 rules, ~600 tokens).
 - **L1**: Project context — working directory, git branch, OPENAIDE.md loading, RepoMap. Auto-detects 21 languages (go/java/python/rust/c/c++/c#/swift/kotlin/node/php/ruby/scala/dart/elixir/haskell/erlang/ocaml/r/lua/julia/perl) via a shared anchor-file table (`identity.ProjectAnchors`, single source shared with project-type detection) plus glob fallbacks, and injects language-specific conventions.
 - **L3**: Mode activation signal injected per-query (dynamic tail) with an `Active context` anchor quoting the original query (≤100 chars) to prevent multi-round drift. `detectTaskType()` uses LLM to classify into 5 categories: coding/review/think/debugging/general. Each mode is a 2-3 line activation signal — all real rules live in L0. No duplication between layers.

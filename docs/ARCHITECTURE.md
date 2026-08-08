@@ -91,7 +91,7 @@ ReAct 循环 (max_rounds 轮, 停滞检测 120s)
    ├─ LLM 调用 (Gateway 成本感知路由: execution→flash / reasoning→pro)
    ├─ 工具调用 (ToolExecutor → tools.Registry → 47 内置 + mcp_* 外部)
    ├─ SkillActor 过滤工具白名单 (allowed-tools)
-   ├─ 上下文管理: 超 90% 预算 → LLM 压缩 + 重注入 [OriginalQuery]+[Intent]
+   ├─ 上下文管理: 超 90% 预算 → LLM 渐进式重摘要(≤3次) + 重注入 [OriginalQuery]+[Intent]
    ├─ 方向检查: 每 5 轮 LLM 判定 on_track/off_track, 偏离注入 [Direction] 重聚焦
    ├─ 停滞检测: 重复工具/连续失败 → pivot 消息 (StuckDetector)
    └─ 每轮: 检查点保存 · 追踪记录 · 事件发布 (hooks/事件总线)
