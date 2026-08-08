@@ -23,6 +23,7 @@ type QueryAnalysis struct {
 	Complexity   int      `json:"complexity"`    // estimated max rounds
 	Strategy     string   `json:"strategy"`      // ReAct strategy hint
 	AllowedTools []string `json:"allowed_tools"` // tools to keep, nil = all
+	Ambiguous    bool     `json:"ambiguous"`     // 查询存在多种合理解释,需先澄清
 	SkillPrompt  string   `json:"-"`             // resolved from matched skill (not in JSON)
 }
 
@@ -40,6 +41,7 @@ Return a JSON object with these fields:
 - skill_id: matched skill ID from the list, or "" if none match
 - complexity: estimated ReAct rounds needed (integer, 5-50)
 - strategy: a ONE-SENTENCE strategy hint for the agent
+- ambiguous: true if the query has multiple plausible interpretations (unclear target, missing scope, conflicting goals); false otherwise
 
 ## Rules
 - Coding/bugfix: match relevant skill, complexity 10-30
@@ -47,6 +49,7 @@ Return a JSON object with these fields:
 - Think/explain/analyze: no skill needed, complexity 5-15
 - General/chitchat/greetings: no skill, complexity 5
 - Be conservative with skill_id: only match if genuinely relevant
+- ambiguous=true only for genuinely ambiguous requests, not for short or casual phrasing
 
 Reply with ONLY the JSON object, no other text.`
 

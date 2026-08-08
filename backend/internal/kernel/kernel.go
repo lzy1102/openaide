@@ -366,6 +366,12 @@ func (k *AgentKernel) buildMessages(ctx context.Context, session *Session, query
 		messages = append(messages, Message{Role: "system", Content: intent})
 	}
 
+	// 歧义澄清引导:查询存在多种合理解释时,要求模型先陈述理解并请求确认,
+	// 避免在错误理解上执行多轮后才暴露偏差。
+	if analysis != nil && analysis.Ambiguous {
+		messages = append(messages, Message{Role: "system", Content: "[Clarify] This request has multiple plausible interpretations. Before acting, restate your understanding in one sentence and, if the direction materially affects the outcome, ask the user to confirm which interpretation to follow."})
+	}
+
 	// ── Dynamic Tail: Layers 3-6 (after user query, varies per query) ──
 
 	// L3: Task Adapter (coding/review/think/debugging) — per-query, not cached
