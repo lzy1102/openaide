@@ -62,6 +62,13 @@ kernel:
   max_rounds_cap: 50    # 自适应轮次上限
   system_prompt: ""            # 自定义系统提示词（覆盖文件）
 
+# ── 代码索引配置 ──
+codeindex:
+  enabled: true         # 默认 true：启动时异步索引 CWD，coding/debugging 任务注入相关代码
+  chunk_size: 1500      # chunk 字符数上限（0 = 默认 1500）
+  max_chunks: 100       # 单文件最大 chunk 数（0 = 默认 100）
+  min_score: 0.3        # 注入最低相似度（0 = 默认 0.3）；低于阈值的检索结果不注入
+
 # ── 规划配置 ──
 planning:
   enabled: true
@@ -182,6 +189,7 @@ RAG 提供统一的外部向量检索接口，由记忆（memory）和代码索�
 - **embedding**：所有后端共用 `embedding_url` / `embedding_key` / `embedding_model`（外部 OpenAI 兼容 `/embeddings` 端点）。模型默认 `text-embedding-3-small`。
 - **降级策略**：后端未配置、不可达或 Ping 失败时，自动降级为 `NoopRetriever`（检索返回空结果），不阻塞 agent 运行。
 - **连接超时**：pgvector/milvus 等后端的连接与 Ping 均带 5 秒超时，不可达时快速失败而非挂起。
+- **代码注入阈值**：coding/debugging 任务注入的代码 chunk 需满足相似度 ≥ `codeindex.min_score`（默认 0.3），低分无关 chunk 不注入。注意各后端 Score 已统一为相似度（越大越好），redis 返回的距离已在内部归一化。
 - **集合名**：`rag.collection` 默认 `openaide_docs`，代码/记忆/归档/核心事实共用。
 
 ## 环境变量
