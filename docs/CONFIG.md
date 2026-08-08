@@ -73,6 +73,27 @@ storage:
   data_dir: ~/.openaide/data
   session_store: sqlite   # file / sqlite / memory
 
+# ── RAG 向量检索配置 ──
+rag:
+  type: ""                # 后端: ""/pgvector(默认) / qdrant / milvus / redis / chroma
+  embedding_url: https://api.openai.com/v1   # 外部 OpenAI 兼容 /embeddings 端点（所有后端共用）
+  embedding_key: sk-xxx                      # 嵌入 API 密钥
+  embedding_model: text-embedding-3-small    # 嵌入模型（默认 text-embedding-3-small）
+  collection: openaide_docs                  # 向量集合名（默认 openaide_docs）
+  # dsn: postgres://user:pass@host:5432/db  # pgvector 连接串（type 为空但 dsn 非空时自动按 pgvector）
+  # qdrant_host: localhost                   # Qdrant gRPC 地址（默认 6334 端口）
+  # qdrant_port: 6334
+  # qdrant_api_key: ""                       # Qdrant API 密钥（可选）
+  # qdrant_tls: false                        # Qdrant 使用 TLS
+  # milvus_address: localhost:19530          # Milvus gRPC 地址
+  # milvus_username: ""                      # Milvus 用户名（可选）
+  # milvus_password: ""                      # Milvus 密码（可选）
+  # redis_addr: localhost:6379               # Redis + RediSearch 地址
+  # redis_password: ""                       # Redis 密码（可选）
+  # redis_db: 0                              # Redis 数据库编号
+  # chroma_url: http://localhost:8000        # Chroma HTTP 地址
+  # chroma_token: ""                         # Chroma 访问令牌（可选）
+
 # ── 记忆配置 ──
 memory:
   data_dir: ~/.openaide/data/memory
@@ -152,6 +173,16 @@ log:
 - **SSE**: 连接远程 MCP 服务器的 Server-Sent Events 端点
 
 MCP 工具自动注册为内核工具，与内置工具统一调用。
+
+### RAG 向量检索
+
+RAG 提供统一的外部向量检索接口，由记忆（memory）和代码索引（codeindex）消费：
+
+- **后端选择**：`rag.type` 决定后端。留空时若配置了 `dsn` 则自动按 pgvector 处理（兼容旧配置），否则返回空结果（NoopRetriever）。
+- **embedding**：所有后端共用 `embedding_url` / `embedding_key` / `embedding_model`（外部 OpenAI 兼容 `/embeddings` 端点）。模型默认 `text-embedding-3-small`。
+- **降级策略**：后端未配置、不可达或 Ping 失败时，自动降级为 `NoopRetriever`（检索返回空结果），不阻塞 agent 运行。
+- **连接超时**：pgvector/milvus 等后端的连接与 Ping 均带 5 秒超时，不可达时快速失败而非挂起。
+- **集合名**：`rag.collection` 默认 `openaide_docs`，代码/记忆/归档/核心事实共用。
 
 ## 环境变量
 

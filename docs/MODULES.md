@@ -1,7 +1,7 @@
 # OpenAIDE 模块职责分工文档
 
 > 版本: v3.3.0
-> 更新: 2026-08-06
+> 更新: 2026-08-08
 
 ## 模块清单
 
@@ -11,6 +11,7 @@
 | **LLM** | `internal/llm/` | 10/3 | 多提供商网关(OpenAI兼容)、成本感知路由(reasoning/execution双模型)、Prompt缓存、限流、重试、故障转移、Embedding |
 | **工具** | `internal/tools/` | 40/19 | 47个内置工具：文件/Git/Web/浏览器(8个opt-in)/桌面/LSP/多模态/验证/记忆/待办 |
 | **记忆** | `internal/memory/` | 5/3 | MemGPT三级记忆：会话记忆 + 向量搜索 + 归档 + 核心事实 |
+| **RAG** | `internal/rag/` | 14/5 | 外部向量检索：多后端(pgvector/qdrant/milvus/redis/chroma) + OpenAI兼容embedding，未配置/不可达自动降级 NoopRetriever |
 | **编排** | `internal/orchestration/` | 9/2 | Team多Agent(LLM动态角色)、隔离子Agent+进度回调、TOT树状推理+投票、DeepPlan规划+审批 |
 | **API** | `internal/api/` | 5/2 | REST + SSE + WebSocket + Prometheus /metrics + 限流 |
 | **基础设施** | `internal/infra/` | 9/2 | DI容器(Application)、LLM/Kernel工厂、技能注入、Claude hooks注册、MCP注册、配置热重载、插件热加载、追踪 |
@@ -44,6 +45,9 @@ openaide server            ──→ infra ──→ api ──→ orchestration
                               ├── plugin (Claude Code 格式兼容)
                               ├── mcp (外部工具生态)
                               └── codeindex / projectmind
+
+memory / codeindex ──→ rag (外部向量库: pgvector/qdrant/milvus/redis/chroma)
+infra ──→ rag (NewFromConfig 工厂, 不可达时降级 NoopRetriever)
 
 orchestration/
   ├── team.go         — Team多Agent管理、LLM动态角色生成(team_roles.go)
