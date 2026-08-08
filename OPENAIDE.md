@@ -248,7 +248,7 @@ OpenAIDE's unique value: deep pre-execution analysis before any code changes.
 
 OpenAIDE reads and integrates with other agent ecosystems:
 
-- **Rule files**: Auto-loads OPENAIDE.md, CLAUDE.md, CODEBUDDY.md, CONVENTIONS.md (precedence: CLAUDE.md > OPENAIDE.md > CODEBUDDY.md > CONVENTIONS.md) — write once, works across OpenAIDE + Claude Code + Cursor + Aider + OpenCode + Copilot.
+- **Rule files**: Auto-loads OPENAIDE.md, CLAUDE.md, CODEBUDDY.md, CONVENTIONS.md (precedence: CLAUDE.md > OPENAIDE.md > CODEBUDDY.md > CONVENTIONS.md) plus one-level subdirectory CLAUDE.md files (`[SubdirRules]`, max 10, 4K chars) — write once, works across OpenAIDE + Claude Code + Cursor + Aider + OpenCode + Copilot.
 - **Claude Code plugins**: Full format support (manifest, skills, MCP, hooks). See plugin system section.
 - **OpenCode config**: Auto-discovers `opencode.json` in project root — imports MCP servers + instructions.
 - **MCP protocol**: Universal standard across all major coding agents. Supports stdio (subprocess, 30s timeout) and HTTP/SSE (POST to /message). Full MCP lifecycle: initialize → initialized notification → tools/list → tools/call → shutdown. Handles text, image, and resource content types.
@@ -324,7 +324,7 @@ All tools return structured, agent-friendly output:
 
 ### Prompt system
 
-- **Layered architecture**: Stable prefix (L0 Identity + L1 Project + L2 Skill) cached in system message. Intent layer (system's reading of the query: task/complexity/interpreted) injected right after the user message. Dynamic tail (L3 Mode Signal + L5 Reflection + L6 Knowledge RAG) appended per-query. L6 `[RelevantCode]` entries summarize via the symbol declaration line (not just the first line) and are capped at ~300 tokens.
+- **Layered architecture**: Stable prefix (L0 Identity + L1 Project + L2 Skill) cached in system message. Intent layer (system's reading of the query: task/complexity/interpreted) injected right after the user message; ambiguous queries (analyzeQuery `ambiguous=true`) get a `[Clarify]` layer telling the model to restate its understanding before acting. Dynamic tail (L3 Mode Signal + L5 Reflection + L6 Knowledge RAG) appended per-query. L6 `[RelevantCode]` entries summarize via the symbol declaration line (not just the first line) and are capped at ~300 tokens.
 - **L0**: Core rules — Hard Blocks + Grounding Protocol + Certainty Labels + **Coding Workflow — Simplicity First** (with Resource Lifecycle rule) + Engineering Checklist (with Simplicity + Resource Lifecycle checks) + Review Mode + Debugging Mode + Error Recovery + Interaction + Learning (~30 rules, ~600 tokens).
 - **L1**: Project context — working directory, git branch, OPENAIDE.md loading, RepoMap. Auto-detects 21 languages (go/java/python/rust/c/c++/c#/swift/kotlin/node/php/ruby/scala/dart/elixir/haskell/erlang/ocaml/r/lua/julia/perl) via a shared anchor-file table (`identity.ProjectAnchors`, single source shared with project-type detection) plus glob fallbacks, and injects language-specific conventions.
 - **L3**: Mode activation signal injected per-query (dynamic tail) with an `Active context` anchor quoting the original query (≤100 chars) to prevent multi-round drift. `detectTaskType()` uses LLM to classify into 5 categories: coding/review/think/debugging/general. Each mode is a 2-3 line activation signal — all real rules live in L0. No duplication between layers.

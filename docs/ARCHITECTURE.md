@@ -93,7 +93,7 @@ ReAct 循环 (max_rounds 轮, 停滞检测 120s)
    ├─ SkillActor 过滤工具白名单 (allowed-tools)
    ├─ 上下文管理: 超 90% 预算 → LLM 渐进式重摘要(≤3次) + 重注入 [OriginalQuery]+[Intent]
    ├─ 方向检查: 每 5 轮 LLM 判定 on_track/off_track, 偏离注入 [Direction] 重聚焦
-   ├─ 停滞检测: 重复工具/连续失败 → pivot 消息 (StuckDetector)
+   ├─ 停滞检测: 重复工具/连续失败 → pivot 消息;pivot 达上限 → [Recovery] 重规划引导 (StuckDetector)
    └─ 每轮: 检查点保存 · 追踪记录 · 事件发布 (hooks/事件总线)
    │
    ▼
@@ -113,6 +113,7 @@ finalizeResponse: 保存记忆 → 更新会话 → 生成标题 → 反思
   | L1 | 项目上下文 (cwd/git/规则文件带优先级/语言共享锚点表) | 稳定前缀 |
   | L2 | Skill 注入 (SkillActor.InjectPrompt) | 稳定前缀 |
   | Intent | 系统对需求的理解 (task/complexity/interpreted, 紧跟用户查询) | 动态 |
+  | Clarify | 歧义查询澄清引导 (ambiguous=true 时注入, 要求先陈述理解) | 动态 |
   | L3 | 任务适配 (coding/review/think/debugging) + Active context 锚点 | 动态尾部 |
   | L4 | 跨会话学习者洞察 + ProjectMind 约定 | 动态尾部 |
   | L5 | 上一轮反思结果 | 动态尾部 |
