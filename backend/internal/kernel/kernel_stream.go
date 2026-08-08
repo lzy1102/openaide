@@ -113,6 +113,15 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 			}
 			messages = k.prepareReActRound(ctx, messages, round, promptTokens, &query.Options)
 
+			// 方向检查:每 directionCheckInterval 轮检测是否偏离原始需求。
+			// 检测到偏离时注入重聚焦提示,防止长任务跑偏。
+			if round > 0 && round%directionCheckInterval == 0 {
+				if pivot := k.checkDirection(ctx, query.Content, messages); pivot != "" {
+					messages = append(messages, Message{Role: "system", Content: pivot})
+					slog.Info("Direction pivot injected", "round", round)
+				}
+			}
+
 			// 发送 thinking 事件
 			k.setState(StateThinking)
 			select {
