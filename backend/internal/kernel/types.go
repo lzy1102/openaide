@@ -132,6 +132,13 @@ type Query struct {
 	Options   QueryOptions `json:"options,omitempty"`
 }
 
+// TaskContext 当前任务上下文,由 buildMessages 保存、压缩后 prepareReActRound 重注入,
+// 确保长任务在上下文压缩后仍保留原始查询与系统意图解读。
+type TaskContext struct {
+	Query  string // 原始用户查询
+	Intent string // [Intent] 块(promptIntent 输出,可能为空)
+}
+
 // ResponseFormat 结构化输出格式
 type ResponseFormat struct {
 	Type       string      `json:"type"`                  // "json_object" | "json_schema" | "text"

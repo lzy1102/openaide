@@ -15,6 +15,31 @@ import (
 // Extracted from Process and ProcessStream to eliminate duplication.
 // Each method does ONE thing with a clear name.
 
+// taskContextReinject 组装压缩后重注入的任务上下文消息:
+// 原始查询 + Intent 块(来自 buildMessages 保存的 TaskContext)。
+// 返回空串表示无可用上下文。
+func (k *AgentKernel) taskContextReinject() string {
+	v := k.taskCtx.Load()
+	tc, ok := v.(TaskContext)
+	if !ok {
+		return ""
+	}
+	var sb strings.Builder
+	if tc.Query != "" {
+		q := tc.Query
+		if len(q) > 200 {
+			q = q[:197] + "..."
+		}
+		sb.WriteString("[OriginalQuery]\n")
+		sb.WriteString(q)
+		sb.WriteString("\n")
+	}
+	if tc.Intent != "" {
+		sb.WriteString(tc.Intent)
+	}
+	return sb.String()
+}
+
 // prepareReActRound handles context management before each ReAct iteration:
 // 1. Compress context if exceeds 90% of token budget
 // 2. Snips old tool outputs to avoid context bloat
@@ -30,6 +55,13 @@ func (k *AgentKernel) prepareReActRound(ctx context.Context, messages []Message,
 			compressed, saved, err := k.compressor.Compress(ctx, messages, k.maxTokens)
 			if err == nil {
 				messages = compressed
+				// 压缩后重注入任务上下文:原始查询 + Intent + 最近进展摘要,
+				// 防止摘要丢失目标导致后续轮次跑偏。
+				if taskMsg := k.taskContextReinject(); taskMsg != "" {
+					messages = append(messages, Message{
+						Role: "system", Content: taskMsg,
+					})
+				}
 				messages = append(messages, Message{
 					Role: "system", Content: "[System] Context was compressed to stay within token budget. Earlier details have been summarized. Focus on the current task and most recent messages.",
 				})

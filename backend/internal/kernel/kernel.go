@@ -52,6 +52,7 @@ type AgentKernel struct {
 	// 无锁状态（atomic.Value）
 	systemPrompt atomic.Value // string — read-heavy, written only on config change
 	state        atomic.Value // KernelState — write-once, read-often
+	taskCtx      atomic.Value // TaskContext — 当前任务上下文(压缩后重注入用)
 
 	// 配置
 	maxRounds    int
@@ -350,6 +351,12 @@ func (k *AgentKernel) buildMessages(ctx context.Context, session *Session, query
 	}
 	// User query
 	messages = append(messages, Message{Role: "user", Content: query.Content})
+
+	// 保存任务上下文:压缩后 prepareReActRound 用它重注入,防止长任务丢失目标。
+	k.taskCtx.Store(TaskContext{
+		Query:  query.Content,
+		Intent: promptIntent(analysis),
+	})
 
 	// Intent layer: 系统对需求的理解(analyzeQuery 生成的 task/strategy)。
 	// 紧跟用户查询注入,使主模型首轮即获得与系统一致的意图解读。
