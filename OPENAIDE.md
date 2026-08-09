@@ -166,7 +166,7 @@ OpenAIDE is an AI Agent kernel platform in Go. Strictly layered, CSP actor concu
    - `planner.go` — `Planner`: Research (multi-round hypothesis→verify→report, read-only tools), Propose (2-3 alternatives with reasoning/pros/cons/risk/effort), PlanWithApproach (detailed plan from chosen approach).
    - `team.go` — Team with LLM-defined dynamic roles. `GenerateRoles`: LLM analyzes the task and outputs custom roles (name, description, prompt, tools) as JSON. Falls back to 4 default roles (analyst/coder/reviewer/executor). `routePipeline`: LLM assigns all subtask roles at once.
    - `team_roles.go` — `GenerateRoles()` prompts LLM to define task-specific roles from scratch. Available tools list injected so LLM assigns minimal tool sets. `AddRole()` for manual role injection.
-   - `subagent.go` — `RunSubAgent`: isolated session + mini ReAct loop (10 rounds) + role-filtered tools + budget injection + core rules injection + model routing (reasoning vs execution) + independent timeout (60s default, `SetSubAgentTimeout`) with progress statuses thinking/executing/done/error/timeout. Sub-agents can actually read, write, and execute — not just return text.
+   - `subagent.go` — `RunSubAgent`: isolated session + mini ReAct loop (10 rounds) + role-filtered tools + budget injection + core rules injection + model routing (reasoning vs execution) + two-level timeout (per-round 60s default via `SetSubAgentTimeout`, total = rounds × per-round) with progress statuses thinking/executing/done/error/timeout. Sub-agents can actually read, write, and execute — not just return text.
 
 ### Unified Query Analysis (single-pass pre-execution)
 
