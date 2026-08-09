@@ -60,6 +60,9 @@ type AgentKernel struct {
 	maxRounds    int
 	maxTokens    int
 	stallTimeout time.Duration
+
+	// 研究子循环超时(0 = 默认 60s)
+	researchTimeout time.Duration
 }
 
 // Config 内核配置
@@ -179,6 +182,10 @@ func (k *AgentKernel) SetPlanner(p *Planner) { k.planner = p }
 // SetCodeIndexer 设置代码索引器(可选)。
 // 设置后,coding/debugging 任务会在 prompt 中注入与 query 语义相关的代码 chunk。
 func (k *AgentKernel) SetCodeIndexer(ci CodeIndexer) { k.codeIndexer = ci }
+
+// SetResearchTimeout 覆盖研究子循环超时(0 = 默认 60s)。
+func (k *AgentKernel) SetResearchTimeout(d time.Duration) { k.researchTimeout = d }
+
 func (k *AgentKernel) SetMaxRounds(n int) {
 	if n > 0 {
 		k.maxRounds = n

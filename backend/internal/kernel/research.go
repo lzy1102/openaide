@@ -129,7 +129,11 @@ func (k *AgentKernel) researchSubagentPrompt(ctx context.Context, plan *TaskPlan
 		go func(i int, t string) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			rc, cancel := context.WithTimeout(ctx, 30*time.Second)
+			timeout := k.researchTimeout
+			if timeout <= 0 {
+				timeout = 60 * time.Second
+			}
+			rc, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
 			out, err := k.runResearchSubAgent(rc, t)
 			if err != nil {
