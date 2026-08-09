@@ -27,7 +27,8 @@ const subAgentCoreRules = `## Core Rules — ALWAYS Follow
 // roleName: which role is executing; round: current round; status: "thinking"/"executing"/"done"/"error"/"timeout".
 type SubAgentProgress func(roleName string, round int, status string)
 
-// subAgentTimeout 子代理默认执行超时。防止 LLM 挂起或工具卡死时无限阻塞。
+// subAgentTimeout 子代理每轮执行超时。防止单轮 LLM 挂起或工具卡死时无限阻塞。
+// 总预算由轮数自然决定(maxRounds × subAgentTimeout),长任务不受固定总时限限制。
 // 可通过 Orchestrator.SetSubAgentTimeout 覆盖(测试用短超时)。
 const subAgentTimeout = 60 * time.Second
 
@@ -35,12 +36,13 @@ const subAgentTimeout = 60 * time.Second
 // The sub-agent gets the role's allowed tools and can actually execute them.
 // Only the final result summary is returned — intermediate tool calls stay in the sub-session.
 func (o *Orchestrator) RunSubAgent(ctx context.Context, userID, projectID, roleName, task string, previousResults []string, onProgress SubAgentProgress) (string, error) {
-	timeout := o.subAgentTimeout
-	if timeout <= 0 {
-		timeout = subAgentTimeout
+	roundTimeout := o.subAgentTimeout
+	if roundTimeout <= 0 {
+		roundTimeout = subAgentTimeout
 	}
-	// 独立超时:即使外部 ctx 无 deadline,子代理也必须有界执行。
-	sctx, cancel := context.WithTimeout(ctx, timeout)
+	const maxRounds = 10
+	// 外层总安全网:轮数 × 每轮超时(防整体失控),远大于任何单轮预算。
+	sctx, cancel := context.WithTimeout(ctx, maxRounds*roundTimeout)
 	defer cancel()
 
 	role := o.getTeamRole(roleName)
@@ -81,7 +83,6 @@ func (o *Orchestrator) RunSubAgent(ctx context.Context, userID, projectID, roleN
 	slog.Info("Sub-agent started", "role", roleName, "model", modelRoute, "tools", len(tools))
 
 	// Mini ReAct loop — sub-agents can think and act
-	const maxRounds = 10
 	for round := 0; round < maxRounds; round++ {
 		// Progress: thinking
 		if onProgress != nil {
@@ -104,19 +105,23 @@ func (o *Orchestrator) RunSubAgent(ctx context.Context, userID, projectID, roleN
 			callTools = tools
 		}
 
+		// 每轮独立超时:单轮 LLM 挂起在 roundTimeout 内被砍,不影响总轮数预算。
+		roundCtx, roundCancel := context.WithTimeout(sctx, roundTimeout)
+
 		// 流式调用:让 onProgress 回调能收到每轮的增量输出,
 		// 替代之前同步 Chat() 的黑盒等待。
-		stream, err := o.llmGateway.ChatStream(sctx, messages, callTools, map[string]interface{}{
+		stream, err := o.llmGateway.ChatStream(roundCtx, messages, callTools, map[string]interface{}{
 			"route":       modelRoute,
 			"max_tokens":  4000,
 			"temperature": 0.3,
 		})
 		if err != nil {
-			if sctx.Err() == context.DeadlineExceeded {
+			roundCancel()
+			if roundCtx.Err() == context.DeadlineExceeded {
 				if onProgress != nil {
 					onProgress(roleName, round, "timeout")
 				}
-				return "", fmt.Errorf("sub-agent %s timed out after %s: %w", roleName, timeout, err)
+				return "", fmt.Errorf("sub-agent %s round %d timed out after %s: %w", roleName, round, roundTimeout, err)
 			}
 			if onProgress != nil {
 				onProgress(roleName, round, "error")
@@ -142,13 +147,15 @@ func (o *Orchestrator) RunSubAgent(ctx context.Context, userID, projectID, roleN
 			}
 		}
 
-		// 超时检查:流在 deadline 后结束或 sctx 已取消
-		if sctx.Err() != nil {
+		// 超时检查:流在 deadline 后结束或 roundCtx 已取消
+		if roundCtx.Err() != nil {
+			roundCancel()
 			if onProgress != nil {
 				onProgress(roleName, round, "timeout")
 			}
-			return "", fmt.Errorf("sub-agent %s timed out after %s", roleName, timeout)
+			return "", fmt.Errorf("sub-agent %s round %d timed out after %s", roleName, round, roundTimeout)
 		}
+		roundCancel()
 
 		messages = append(messages, kernel.Message{
 			Role:      "assistant",

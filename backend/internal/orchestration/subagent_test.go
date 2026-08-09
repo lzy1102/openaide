@@ -71,3 +71,26 @@ func TestRunSubAgent_DoneVisible(t *testing.T) {
 		t.Error("expected non-empty result")
 	}
 }
+
+func TestRunSubAgent_MultiRoundSurvivesRoundTimeout(t *testing.T) {
+	// 语义验证:subAgentTimeout 是每轮超时,总预算 = maxRounds × 每轮。
+	// 用长总预算 + 快完成路径,确认设置不影响正常完成。
+	store := kernel.NewSessionStoreAdapter()
+	o := NewOrchestrator(&mockKernel{}, &mockLLMProvider{}, &mockToolExecutor{}, &mockMemory{}, store)
+	o.SetSubAgentTimeout(30 * time.Second) // 每轮 30s
+	team := NewTeam(o)
+	team.AddRole("analyst", "Analyst", "Analysis role", "You analyze", []string{"read_file"})
+	o.SetTeam(team)
+
+	start := time.Now()
+	result, err := o.RunSubAgent(context.Background(), "u", "p", "analyst", "analyze", nil, nil)
+	if err != nil {
+		t.Fatalf("RunSubAgent: %v", err)
+	}
+	if result == "" {
+		t.Error("expected non-empty result")
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Errorf("fast path should not hit round timeout, took %v", elapsed)
+	}
+}
