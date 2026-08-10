@@ -12,6 +12,8 @@ const translations = {
             sendError: '抱歉，处理消息时出错。错误：'
         },
         thinking: { title: '思考过程' },
+        workflows: { title: '工作流', comingSoon: '工作流管理功能即将上线...' },
+        skills: { title: '技能', comingSoon: '技能管理功能即将上线...' },
         common: { language: '语言', theme: '主题', settings: '设置' },
         theme: { toggle: '切换主题' },
         language: { zhCN: '简体中文', en: 'English', ja: '日本語', ko: '한국어' }
@@ -27,6 +29,8 @@ const translations = {
             sendError: 'Sorry, there was an error processing your message. Error: '
         },
         thinking: { title: 'Thinking Process' },
+        workflows: { title: 'Workflows', comingSoon: 'Workflow management coming soon...' },
+        skills: { title: 'Skills', comingSoon: 'Skill management coming soon...' },
         common: { language: 'Language', theme: 'Theme', settings: 'Settings' },
         theme: { toggle: 'Toggle Theme' },
         language: { zhCN: '简体中文', en: 'English', ja: '日本語', ko: '한국어' }
@@ -42,6 +46,8 @@ const translations = {
             sendError: '申し訳ありませんが、メッセージの処理中にエラーが発生しました。エラー：'
         },
         thinking: { title: '思考プロセス' },
+        workflows: { title: 'ワークフロー', comingSoon: 'ワークフロー管理機能は近日公開予定...' },
+        skills: { title: 'スキル', comingSoon: 'スキル管理機能は近日公開予定...' },
         common: { language: '言語', theme: 'テーマ', settings: '設定' },
         theme: { toggle: 'テーマ切替' },
         language: { zhCN: '简体中文', en: 'English', ja: '日本語', ko: '한국어' }
@@ -57,6 +63,8 @@ const translations = {
             sendError: '메시지 처리 중 오류가 발생했습니다. 오류: '
         },
         thinking: { title: '생각 과정' },
+        workflows: { title: '워크플로우', comingSoon: '워크플로우 관리 기능이 곧 출시됩니다...' },
+        skills: { title: '스킬', comingSoon: '스킬 관리 기능이 곧 출시됩니다...' },
         common: { language: '언어', theme: '테마', settings: '설정' },
         theme: { toggle: '테마 전환' },
         language: { zhCN: '简体中文', en: 'English', ja: '日本語', ko: '한국어' }
