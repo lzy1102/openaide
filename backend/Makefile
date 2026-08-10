@@ -63,7 +63,9 @@ install: build
 
 build-all:
 	@cp -r ../frontend/* internal/webfront/frontend/ 2>/dev/null || true
-	$(MAKE) build-linux-amd64 build-linux-arm64 build-windows-amd64 build-darwin-amd64 build-darwin-arm64
+	# Run platform builds sequentially (-j1): parallel cross-compiles exhaust
+	# process/file limits with the heavy RAG deps (milvus/qdrant/chroma)
+	$(MAKE) -j1 build-linux-amd64 build-linux-arm64 build-windows-amd64 build-darwin-amd64 build-darwin-arm64
 
 build-linux-amd64:
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/openaide-linux-amd64 ./cmd/cli
