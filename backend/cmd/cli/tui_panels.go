@@ -334,7 +334,13 @@ func (m tuiModel) View() string {
 		bottom = m.searchView()
 	default:
 		help := m.helpView()
-		bottom = lipgloss.JoinVertical(lipgloss.Left, help, m.textarea.View())
+		// 输入区用边框包裹,与主区形成鲜明分隔。
+		input := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("240")).
+			Padding(0, 1).
+			Render(m.textarea.View())
+		bottom = lipgloss.JoinVertical(lipgloss.Left, help, input)
 	}
 
 	// 中央主屏 + 侧翼仪表（窄终端自动降级为单列）

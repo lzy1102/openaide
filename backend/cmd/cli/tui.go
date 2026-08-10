@@ -279,8 +279,10 @@ func runTUI(app *infra.Application, continueSess, autoYes bool) {
 			m.sessionID = sess.ID
 		}
 	}
+	// 首次渲染:把 banner(及恢复的历史)同步到 viewport,否则首帧为空。
+	m.refreshViewport()
 
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("\n  ✗ TUI error: %v\n", err)
 	}
@@ -366,6 +368,8 @@ func (m *tuiModel) resumeSession(app *infra.Application) {
 				}
 				m.history.WriteString("\n")
 			}
+			// 同步到 viewport:否则恢复的会话历史在视图中不可见。
+			m.refreshViewport()
 			return
 		}
 	}
@@ -734,8 +738,8 @@ func (m tuiModel) submitQuery() (tea.Model, tea.Cmd) {
 		m.sessionTitle = trunc(query, 30)
 	}
 
-	// 展示用户消息
-	m.appendHistory(" " + styleUser.Render("▎"+lang.T("repl.you_label")+" ") + styleUser.Render(query) + "\n\n")
+	// 展示用户消息:标签加粗彩色,内容普通色,视觉层次更清晰
+	m.appendHistory(" " + styleUser.Render("▎"+lang.T("repl.you_label")+" ") + query + "\n\n")
 	if included != "" {
 		m.appendHistory(styleInfo.Render(included) + "\n")
 	}
