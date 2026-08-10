@@ -115,10 +115,16 @@ func (c *PromptCache) cleanupLoop() {
 
 func (c *PromptCache) cleanup(maxAge time.Duration) {
 	cutoff := time.Now().Add(-maxAge)
+	var expired []string
+	// Collect keys inside Range (holds RLock) and delete after releasing it —
+	// calling Delete (write lock) from within the callback would deadlock.
 	c.entries.Range(func(k string, e *cacheEntry) bool {
 		if e.CreatedAt.Before(cutoff) {
-			c.entries.Delete(k)
+			expired = append(expired, k)
 		}
 		return true
 	})
+	for _, k := range expired {
+		c.entries.Delete(k)
+	}
 }

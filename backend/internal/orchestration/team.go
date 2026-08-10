@@ -223,10 +223,10 @@ func (t *Team) buildAllChain(startRole string) *graph.Graph {
 
 // 通过图引擎执行，按拓扑序依次运行每个角色作为独立 sub-agent
 func (t *Team) executeGraph(ctx context.Context, query string, opts kernel.QueryOptions, g *graph.Graph) (*kernel.Response, error) {
-	slog.Debug("Team executeGraph start", "nodes", len(g.Nodes))
 	if g == nil || len(g.Nodes) == 0 {
 		return t.orchestrator.ProcessQuery(ctx, "", "", query, opts)
 	}
+	slog.Debug("Team executeGraph start", "nodes", len(g.Nodes))
 
 	order, err := g.TopoSort()
 	if err != nil {

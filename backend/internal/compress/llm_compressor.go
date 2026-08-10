@@ -187,30 +187,28 @@ Rules:
 
 // extractPendingQuestions 从历史消息中提取未解决的疑问
 func extractPendingQuestions(messages []kernel.Message) string {
-	// 检查最后几条 user 消息是否都得到了回答
-	var lastUserContent string
-	var answered bool
-
+	// 从后往前找到最后一条 user 消息,再检查它之后是否已有 assistant 回复。
+	// (反向单次遍历会因先见 assistant 后见 user 而误判,必须两步定位。)
 	for i := len(messages) - 1; i >= 0; i-- {
-		msg := messages[i]
-		if msg.Role == "user" && lastUserContent == "" {
-			lastUserContent = msg.Content
+		if messages[i].Role != "user" {
+			continue
 		}
-		if msg.Role == "assistant" && lastUserContent != "" {
-			answered = true
-			break
+		answered := false
+		for j := i + 1; j < len(messages); j++ {
+			if messages[j].Role == "assistant" {
+				answered = true
+				break
+			}
 		}
-		if msg.Role == "user" && lastUserContent != "" {
-			break
+		if !answered {
+			content := messages[i].Content
+			if len([]rune(content)) > 100 {
+				rs := []rune(content)
+				content = string(rs[:100]) + "..."
+			}
+			return content
 		}
-	}
-
-	if lastUserContent != "" && !answered {
-		if len([]rune(lastUserContent)) > 100 {
-			rs := []rune(lastUserContent)
-			lastUserContent = string(rs[:100]) + "..."
-		}
-		return lastUserContent
+		break
 	}
 
 	return ""

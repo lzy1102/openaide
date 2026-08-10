@@ -363,7 +363,11 @@ func (s *Server) handleSessionDetail(w http.ResponseWriter, r *http.Request) {
 	case http.MethodDelete:
 		// 删除前验证所有权
 		session, err := s.orchestrator.GetSession(r.Context(), sessionID)
-		if err == nil && userID != "" && session.UserID != userID {
+		if err != nil {
+			s.writeError(w, http.StatusNotFound, err)
+			return
+		}
+		if userID != "" && session.UserID != userID {
 			s.writeError(w, http.StatusForbidden, fmt.Errorf("access denied"))
 			return
 		}
