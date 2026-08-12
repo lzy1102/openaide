@@ -37,6 +37,7 @@ type MemoryItem struct {
 	ID        string    `json:"id"`
 	SessionID string    `json:"session_id"`
 	Content   string    `json:"content"`
+	Role      string    `json:"role"` // user/assistant/system/tool — 历史恢复时保持原角色
 	Level     Level     `json:"level"`
 	CreatedAt time.Time `json:"created_at"`
 }
@@ -80,9 +81,12 @@ func (a *MemoryActor) migrate() {
 		id TEXT PRIMARY KEY,
 		session_id TEXT NOT NULL,
 		content TEXT NOT NULL DEFAULT '',
+		role TEXT NOT NULL DEFAULT 'assistant',
 		level INTEGER DEFAULT 0,
 		created_at TEXT NOT NULL DEFAULT ''
 	)`)
+	// 旧库升级:补 role 列(已有数据无角色信息,默认 assistant 与旧行为一致)
+	a.db.Exec(`ALTER TABLE memory_items ADD COLUMN role TEXT NOT NULL DEFAULT 'assistant'`)
 	a.db.Exec(`CREATE INDEX IF NOT EXISTS idx_memory_session ON memory_items(session_id)`)
 
 	// MemGPT-style archival storage
@@ -120,6 +124,7 @@ func (a *MemoryActor) Save(ctx context.Context, sessionID string, messages []ker
 			ID:        id,
 			SessionID: sessionID,
 			Content:   msg.Content,
+			Role:      msg.Role,
 			Level:     LevelWorking,
 		}
 		docs = append(docs, rag.Document{
@@ -138,27 +143,31 @@ func (a *MemoryActor) Save(ctx context.Context, sessionID string, messages []ker
 	a.super.Send(func() {
 		for _, item := range items {
 			a.db.ExecContext(ctx,
-				`INSERT INTO memory_items (id, session_id, content, level, created_at) VALUES (?, ?, ?, ?, datetime('now'))`,
-				item.ID, item.SessionID, item.Content, int(item.Level))
+				`INSERT INTO memory_items (id, session_id, content, role, level, created_at) VALUES (?, ?, ?, ?, ?, datetime('now'))`,
+				item.ID, item.SessionID, item.Content, item.Role, int(item.Level))
 		}
 	})
 	return nil
 }
 
 // Load loads messages for a session. Implements kernel.Memory.
+// 恢复消息时保留原始 role(旧库无 role 列时回退 assistant)。
 func (a *MemoryActor) Load(ctx context.Context, sessionID string, limit int) ([]kernel.Message, error) {
 	var messages []kernel.Message
 	a.super.Send(func() {
-		q := `SELECT content FROM memory_items WHERE session_id=? ORDER BY created_at DESC`
+		q := `SELECT content, role FROM memory_items WHERE session_id=? ORDER BY created_at DESC`
 		if limit > 0 {
 			q += ` LIMIT ?`
 			rows, _ := a.db.QueryContext(ctx, q, sessionID, limit)
 			if rows != nil {
 				defer rows.Close()
 				for rows.Next() {
-					var content string
-					rows.Scan(&content)
-					messages = append(messages, kernel.Message{Role: "assistant", Content: content})
+					var content, role string
+					rows.Scan(&content, &role)
+					if role == "" {
+						role = "assistant"
+					}
+					messages = append(messages, kernel.Message{Role: role, Content: content})
 				}
 			}
 		} else {
@@ -166,9 +175,12 @@ func (a *MemoryActor) Load(ctx context.Context, sessionID string, limit int) ([]
 			if rows != nil {
 				defer rows.Close()
 				for rows.Next() {
-					var content string
-					rows.Scan(&content)
-					messages = append(messages, kernel.Message{Role: "assistant", Content: content})
+					var content, role string
+					rows.Scan(&content, &role)
+					if role == "" {
+						role = "assistant"
+					}
+					messages = append(messages, kernel.Message{Role: role, Content: content})
 				}
 			}
 		}

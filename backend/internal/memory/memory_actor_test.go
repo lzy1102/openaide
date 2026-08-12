@@ -123,3 +123,40 @@ func TestMemoryActor_LoadLimit(t *testing.T) {
 		t.Errorf("expected max 3 with limit, got %d", len(msgs))
 	}
 }
+
+// TestMemoryActor_RolePreserved 验证 Save 保留消息角色,Load 恢复时角色不变。
+// 回归测试:此前 role 被丢弃,Load 硬编码为 assistant,导致会话恢复时
+// 用户消息被标成 assistant、系统提示词被当作回答渲染。
+func TestMemoryActor_RolePreserved(t *testing.T) {
+	a, _ := NewMemoryActor(t.TempDir() + "/memory.db")
+	defer a.Stop()
+
+	sid := "role-test-session"
+	err := a.Save(context.Background(), sid, []kernel.Message{
+		{Role: "user", Content: "用户的提问"},
+		{Role: "assistant", Content: "模型的回答"},
+		{Role: "system", Content: "系统提示"},
+	})
+	if err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	msgs, err := a.Load(context.Background(), sid, 10)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	byRole := map[string]bool{}
+	for _, m := range msgs {
+		byRole[m.Role] = true
+	}
+	if !byRole["user"] {
+		t.Error("expected a user message with preserved role")
+	}
+	if !byRole["assistant"] {
+		t.Error("expected an assistant message with preserved role")
+	}
+	if !byRole["system"] {
+		t.Error("expected a system message with preserved role")
+	}
+}
