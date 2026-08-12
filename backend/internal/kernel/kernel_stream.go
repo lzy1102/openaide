@@ -236,34 +236,47 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 			messages = append(messages, buildFinalMessage(fullContent.String(), reasoningContent.String(), lastToolCalls))
 			slog.Debug("ReAct stream LLM response", "round", round, "content_len", fullContent.Len(), "tool_calls", len(lastToolCalls), "reasoning_len", reasoningContent.Len(), "tokens", totalTokens)
 
-		// 无工具调用 -> 返回结果
-		if len(lastToolCalls) == 0 {
-			// Reflexion 回流：有工具错误且反思器可用时，同步反思并把教训注入重试
-			if toolErrors > 0 && k.reflection != nil && reflectRetries < maxReflectRetries {
-				reflectRetries++
-				record := ExecutionRecord{
-					Query:     query.Content,
-					Response:  fullContent.String(),
-					Success:   false,
-					Error:     fmt.Sprintf("%d tool errors", toolErrors),
-					Duration:  int64(time.Since(startTime).Milliseconds()),
-					Messages:  messages,
-					TaskType:  queryTaskType(analysis),
-					ToolCalls: lastToolCalls,
+			// 无工具调用 -> 返回结果
+			if len(lastToolCalls) == 0 {
+				// LLM 无内容返回(限流/静默失败):不要保存空 assistant 或标记成功。
+				// 发错误 chunk 让调用方感知,避免界面显示"完成"但无回复。
+				if fullContent.Len() == 0 && reasoningContent.Len() == 0 && toolErrors == 0 {
+					roundCancel()
+					err := fmt.Errorf("LLM returned no response (rate limit or empty reply)")
+					k.setState(StateError)
+					slog.Warn("LLM empty response, treating as failure", "session", session.ID[:min(8, len(session.ID))], "round", round)
+					select {
+					case resultChan <- StreamChunk{Type: ChunkTypeError, Error: err, Done: true}:
+					case <-ctx.Done():
+					}
+					return
 				}
-				result, rErr := k.reflection.Reflect(ctx, session.ID, record)
-				if rErr == nil && result != nil {
-					if lesson := reflectionLessonMessage(result); lesson != "" {
-						messages = append(messages, Message{Role: "system", Content: lesson})
-						slog.Info("Reflection retry injected",
-							"round", round, "retry", reflectRetries,
-							"quality", result.Quality, "tool_errors", toolErrors)
-						continue
+				// Reflexion 回流：有工具错误且反思器可用时，同步反思并把教训注入重试
+				if toolErrors > 0 && k.reflection != nil && reflectRetries < maxReflectRetries {
+					reflectRetries++
+					record := ExecutionRecord{
+						Query:     query.Content,
+						Response:  fullContent.String(),
+						Success:   false,
+						Error:     fmt.Sprintf("%d tool errors", toolErrors),
+						Duration:  int64(time.Since(startTime).Milliseconds()),
+						Messages:  messages,
+						TaskType:  queryTaskType(analysis),
+						ToolCalls: lastToolCalls,
+					}
+					result, rErr := k.reflection.Reflect(ctx, session.ID, record)
+					if rErr == nil && result != nil {
+						if lesson := reflectionLessonMessage(result); lesson != "" {
+							messages = append(messages, Message{Role: "system", Content: lesson})
+							slog.Info("Reflection retry injected",
+								"round", round, "retry", reflectRetries,
+								"quality", result.Quality, "tool_errors", toolErrors)
+							continue
+						}
 					}
 				}
-			}
 
-			if len(filesModified) > 0 && verifyAttempts < 3 {
+				if len(filesModified) > 0 && verifyAttempts < 3 {
 					verifyAttempts++
 					verifyMsg := runAutoVerify(ctx, ".")
 					if verifyMsg != "" {
