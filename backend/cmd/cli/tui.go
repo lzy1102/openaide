@@ -357,9 +357,9 @@ func (m *tuiModel) resumeSession(app *infra.Application) {
 				styleSuccess.Render(lang.T("repl.resume")), "", s.ID[:8], msgCount))
 			m.history.WriteString("\n")
 			// 完整渲染历史:与实时流相同的消息样式,无损恢复退出前的界面。
-			// 之前只取最近 3 条截断摘要,恢复后聊天记录几乎不可见。
-			history, _ := app.Orchestrator.GetSessionHistory(context.Background(), s.ID, 0)
-			m.renderSessionHistory(history)
+			// ListSessions 返回的 session 已含完整 Messages,无需再按 limit 截断
+			// (GetSessionHistory 的 limit=0 会返回空切片,不能表示"全部")。
+			m.renderSessionHistory(s.Messages)
 			// 同步到 viewport:否则恢复的会话历史在视图中不可见。
 			m.refreshViewport()
 			return
