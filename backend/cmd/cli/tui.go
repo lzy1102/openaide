@@ -355,19 +355,11 @@ func (m *tuiModel) resumeSession(app *infra.Application) {
 			msgCount := len(s.Messages)
 			m.history.WriteString(lang.T("repl.resume_row",
 				styleSuccess.Render(lang.T("repl.resume")), "", s.ID[:8], msgCount))
-			history, _ := app.Orchestrator.GetSessionHistory(context.Background(), s.ID, 3)
-			if len(history) > 0 {
-				m.history.WriteString("  " + styleInfo.Render(lang.T("repl.recent")+":") + "\n")
-				for _, msg := range history {
-					switch msg.Role {
-					case "user":
-						m.history.WriteString("    " + styleUser.Render("▸ "+trunc(oneLine(msg.Content), 80)) + "\n")
-					case "assistant":
-						m.history.WriteString("    " + styleToolDone.Render("✓ "+trunc(oneLine(msg.Content), 80)) + "\n")
-					}
-				}
-				m.history.WriteString("\n")
-			}
+			m.history.WriteString("\n")
+			// 完整渲染历史:与实时流相同的消息样式,无损恢复退出前的界面。
+			// 之前只取最近 3 条截断摘要,恢复后聊天记录几乎不可见。
+			history, _ := app.Orchestrator.GetSessionHistory(context.Background(), s.ID, 0)
+			m.renderSessionHistory(history)
 			// 同步到 viewport:否则恢复的会话历史在视图中不可见。
 			m.refreshViewport()
 			return
@@ -378,6 +370,23 @@ func (m *tuiModel) resumeSession(app *infra.Application) {
 		sess, _ := app.Orchestrator.CreateSession(context.Background(), m.projectID, "cli-user")
 		if sess != nil {
 			m.sessionID = sess.ID
+		}
+	}
+}
+
+// renderSessionHistory 以与实时流一致的方式渲染历史消息。
+// user 用「▎你」标签,assistant 用「▎OpenAIDE」标签 + markdown;
+// tool/system 等中间消息不展示(与流式显示策略一致)。
+func (m *tuiModel) renderSessionHistory(messages []kernel.Message) {
+	for _, msg := range messages {
+		switch msg.Role {
+		case "user":
+			m.history.WriteString(" " + styleUser.Render("▎"+lang.T("repl.you_label")+" ") + msg.Content + "\n\n")
+		case "assistant":
+			if msg.Content != "" {
+				m.history.WriteString(" " + styleSuccess.Render("▎"+lang.T("repl.assistant_label")+" ") + "\n")
+				m.history.WriteString(RenderMarkdown(msg.Content) + "\n")
+			}
 		}
 	}
 }
