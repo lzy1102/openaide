@@ -346,15 +346,17 @@ func (k *AgentKernel) buildMessages(ctx context.Context, session *Session, query
 
 	// History (adjacent to system, stable)
 	// 按 token 预算截断:历史约占上下文的 1/4,超过预算的旧消息丢弃。
-	// 无 MaxTokens 配置时回退到 20 条(原行为)。
+	// 无 MaxTokens 配置时用固定预算(约 6000 tokens),避免历史无限膨胀。
 	if k.memory != nil && len(session.Messages) > 0 {
 		limit := 20
+		budget := 6000
 		if k.maxTokens > 0 {
 			limit = 200
+			budget = k.maxTokens / 4
 		}
 		history, _ := k.memory.Load(ctx, session.ID, limit)
-		if k.maxTokens > 0 && len(history) > 2 {
-			history = trimHistoryToBudget(history, k.maxTokens/4)
+		if len(history) > 2 {
+			history = trimHistoryToBudget(history, budget)
 		}
 		messages = append(messages, history...)
 	}
@@ -499,6 +501,8 @@ const (
 
 // snipOldToolOutputsDynamic 根据上下文压力动态调整裁剪强度。
 // 压力越高,完整保留的条数越少、头尾保留长度越短。
+// 幂等性:已截断过的消息(含 "[chars snipped]" 标记)跳过,
+// 确保消息内容在进入轮次后不再变化 — provider 前缀缓存依赖前缀稳定。
 func snipOldToolOutputsDynamic(messages []Message, pressure contextPressure) {
 	var keepFull, headLen, tailLen int
 	switch pressure {
@@ -515,6 +519,11 @@ func snipOldToolOutputsDynamic(messages []Message, pressure contextPressure) {
 		if messages[i].Role == "tool" {
 			if toolIdx >= keepFull {
 				content := messages[i].Content
+				// 已截断过的消息内容固定,跳过 — 避免破坏缓存前缀
+				if strings.Contains(content, "[chars snipped]") || strings.Contains(content, "[chars truncated") {
+					toolIdx++
+					continue
+				}
 				if len(content) > headLen+tailLen+100 {
 					head := safeSliceHead(content, headLen)
 					tail := safeSliceTail(content, tailLen)

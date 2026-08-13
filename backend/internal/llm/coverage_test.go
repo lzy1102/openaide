@@ -977,8 +977,15 @@ func TestAnthropicProvider_BuildBody_SystemAndTools(t *testing.T) {
 		{Type: "function", Function: kernel.FunctionDef{Name: "search", Description: "find", Parameters: map[string]interface{}{"type": "object"}}},
 	}, map[string]interface{}{"temperature": 0.7, "max_tokens": 100})
 
-	if body["system"] != "be careful\n" {
-		t.Errorf("expected system prompt, got %v", body["system"])
+	sysBlocks, ok := body["system"].([]map[string]interface{})
+	if !ok || len(sysBlocks) != 1 {
+		t.Fatalf("expected system as block array, got %v", body["system"])
+	}
+	if sysBlocks[0]["text"] != "be careful\n" {
+		t.Errorf("expected system text, got %v", sysBlocks[0]["text"])
+	}
+	if _, ok := sysBlocks[0]["cache_control"]; !ok {
+		t.Error("expected cache_control on system block")
 	}
 	if body["max_tokens"] != 100 {
 		t.Errorf("expected max_tokens 100, got %v", body["max_tokens"])

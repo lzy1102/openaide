@@ -10,6 +10,10 @@ import (
 // directionCheckInterval 每隔多少轮执行一次方向检查。
 const directionCheckInterval = 5
 
+// progressStallThreshold 连续无实质产出的轮数阈值。
+// 达到该阈值时注入收敛提示,防止 agent 空转烧 token。
+const progressStallThreshold = 5
+
 // directionCheckPrompt 让 LLM 判断 agent 是否仍在朝原始需求前进。
 // 输入: 原始查询 + 最近工具调用活动;输出: 严格 on_track 或 off_track。
 const directionCheckPrompt = `You are monitoring an AI agent working on a user request.

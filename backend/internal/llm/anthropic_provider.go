@@ -274,7 +274,12 @@ func (p *AnthropicProvider) buildAnthropicBody(messages []kernel.Message, tools 
 	}
 
 	if systemPrompt != "" {
-		body["system"] = systemPrompt
+		// system 消息标记 cache_control:Anthropic 前缀缓存,多轮共享 system 前缀时降价
+		body["system"] = []map[string]interface{}{{
+			"type":          "text",
+			"text":          systemPrompt,
+			"cache_control": map[string]string{"type": "ephemeral"},
+		}}
 	}
 	body["messages"] = anthropicMessages
 

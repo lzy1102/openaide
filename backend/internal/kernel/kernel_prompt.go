@@ -237,9 +237,11 @@ func promptL1() string {
 	for _, f := range ruleFiles {
 		if data, err := os.ReadFile(filepath.Join(cwd, f)); err == nil && len(data) > 0 {
 			content := string(data)
-			if len(content) > 8000 {
-				content = content[:8000]
-				if lastPeriod := strings.LastIndex(content, "."); lastPeriod > 6000 {
+			// 规则文件注入上限 3000 字符(约 750 tokens):完整内容可 read_file
+			// 按需读取,避免每次 LLM 调用都携带大文件的固定开销。
+			if len(content) > 3000 {
+				content = content[:3000]
+				if lastPeriod := strings.LastIndex(content, "."); lastPeriod > 2000 {
 					content = content[:lastPeriod+1]
 				}
 				content += "\n(Full content available via read_file)"

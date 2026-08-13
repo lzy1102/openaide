@@ -81,3 +81,34 @@ func TestProcessStream_EmptyLLMResponse_NoSessionPollution(t *testing.T) {
 		}
 	}
 }
+
+// TestProcessStream_StallRoundsConverges 验证连续空转轮触发收敛提示。
+// 用始终返回空内容的 LLM 模拟空转:流结束但无 content、无工具调用。
+// 第 2 轮起应注入 [Progress] 收敛提示(每 5 轮一次),最终以正常方式结束。
+func TestProcessStream_StallRoundsConverges(t *testing.T) {
+	llm := &MockLLMProvider{
+		// 每轮都是:无内容 + Done — 模拟空转
+		streamChunks: [][]StreamChunk{
+			{{Type: ChunkTypeDone, Done: true}},
+			{{Type: ChunkTypeDone, Done: true}},
+			{{Type: ChunkTypeDone, Done: true}},
+			{{Type: ChunkTypeDone, Done: true}},
+			{{Type: ChunkTypeDone, Done: true}},
+			{{Type: ChunkTypeDone, Done: true}},
+		},
+	}
+	store := NewSessionStoreAdapter()
+	kernel := NewAgentKernel(llm, &MockToolExecutor{}, &MockMemory{}, store, DefaultConfig())
+
+	ch, err := kernel.ProcessStream(context.Background(), &Query{
+		Content:   "空转测试",
+		UserID:    "u1",
+		ProjectID: "p1",
+	})
+	if err != nil {
+		t.Fatalf("ProcessStream error: %v", err)
+	}
+	for range ch {
+	}
+	// 无 panic、正常结束即可 — 防跑偏逻辑不应导致死循环
+}

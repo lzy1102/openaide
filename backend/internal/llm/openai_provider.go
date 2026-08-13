@@ -336,6 +336,11 @@ func (p *OpenAIProvider) convertMessages(messages []kernel.Message) []map[string
 			"role":    msg.Role,
 			"content": content,
 		}
+		// 系统消息标记 cache_control:启用 provider 端前缀缓存
+		// (DeepSeek/OpenAI 兼容;同一会话多轮 ReAct 共享 system 前缀,命中后大幅降价)
+		if msg.Role == "system" {
+			m["cache_control"] = map[string]string{"type": "ephemeral"}
+		}
 		if msg.ReasoningContent != "" {
 			m["reasoning_content"] = msg.ReasoningContent
 		}

@@ -102,6 +102,7 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 		verifyAttempts := 0
 		stuckDetector := NewStuckDetector()
 		reflectRetries := 0
+		stallRounds := 0 // 连续无实质产出的轮数(防跑偏/防空转)
 
 		slog.Info("ReAct stream: entering loop", "query", query.Content[:min(80, len(query.Content))], "max_rounds", maxRounds, "tools", len(tools), "history_msgs", len(messages))
 		for round := 0; ; round++ {
@@ -120,6 +121,15 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 					messages = append(messages, Message{Role: "system", Content: pivot})
 					slog.Info("Direction pivot injected", "round", round)
 				}
+			}
+
+			// 无进展检查:连续多轮无实质产出(空回复/纯失败工具)时注入收敛提示。
+			// 比 direction check 更早兜底 — 即使没"偏离方向",空转也在烧 token。
+			if stallRounds >= progressStallThreshold {
+				stallRounds = 0
+				msg := fmt.Sprintf("[Progress] %d consecutive rounds produced no new output or successful tool results. Review what you have so far and give your final answer now — do NOT call more tools unless strictly necessary.", progressStallThreshold)
+				messages = append(messages, Message{Role: "system", Content: msg})
+				slog.Warn("No-progress rounds detected, injecting convergence hint", "round", round, "stall_rounds", progressStallThreshold)
 			}
 
 			// 发送 thinking 事件
@@ -238,6 +248,12 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 
 			// 无工具调用 -> 返回结果
 			if len(lastToolCalls) == 0 {
+				// assistant 输出了内容 → 视为实质进展,重置空转计数
+				if fullContent.Len() > 0 || reasoningContent.Len() > 0 {
+					stallRounds = 0
+				} else {
+					stallRounds++
+				}
 				// LLM 无内容返回(限流/静默失败):不要保存空 assistant 或标记成功。
 				// 发错误 chunk 让调用方感知,避免界面显示"完成"但无回复。
 				if fullContent.Len() == 0 && reasoningContent.Len() == 0 && toolErrors == 0 {
@@ -346,6 +362,13 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 			execResults, batchErrors := k.executeToolBatch(ctx, lastToolCalls, session.ID, round, &query.Options)
 			toolErrors += batchErrors
 			totalToolCalls += len(execResults)
+
+			// 工具执行:有成功结果 → 实质进展;全失败/全空 → 空转轮
+			if len(execResults) > 0 && batchErrors < len(execResults) {
+				stallRounds = 0
+			} else {
+				stallRounds++
+			}
 
 			for _, tc := range lastToolCalls {
 				if tc.Function.Name == "write_file" || tc.Function.Name == "diff_edit" {
