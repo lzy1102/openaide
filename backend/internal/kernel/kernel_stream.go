@@ -96,6 +96,8 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 		promptTokens := 0
 		totalToolCalls := 0
 		toolErrors := 0
+		cacheHitTokens := 0 // 前缀缓存命中 tokens(观测缓存效率)
+		cacheMissTokens := 0
 		startTime := time.Now()
 		filesModified := make(map[string]bool)
 		uniqueTools := make(map[string]bool)
@@ -224,6 +226,8 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 						lastUsage = chunk.Usage
 						totalTokens += chunk.Usage.TotalTokens
 						promptTokens = chunk.Usage.PromptTokens
+						cacheHitTokens += chunk.Usage.PromptCacheHitTokens
+						cacheMissTokens += chunk.Usage.PromptCacheMissTokens
 					}
 				case <-time.After(stallTimeout):
 					stalled = true
@@ -304,21 +308,23 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 
 				session.Messages = messages
 				k.RecordTaskMetrics(TaskMetrics{
-					SessionID:        session.ID,
-					StartedAt:        startTime,
-					EndedAt:          time.Now(),
-					Duration:         float64(time.Since(startTime).Milliseconds()),
-					TaskType:         queryTaskType(analysis),
-					Complexity:       queryComplexity(analysis),
-					Rounds:           round + 1,
-					PromptTokens:     promptTokens,
-					CompletionTokens: totalTokens - promptTokens,
-					TotalTokens:      totalTokens,
-					Model:            k.llmProvider.GetModelID(),
-					ToolCalls:        totalToolCalls,
-					ToolErrors:       toolErrors,
-					UniqueTools:      len(uniqueTools),
-					Success:          toolErrors == 0,
+					SessionID:             session.ID,
+					StartedAt:             startTime,
+					EndedAt:               time.Now(),
+					Duration:              float64(time.Since(startTime).Milliseconds()),
+					TaskType:              queryTaskType(analysis),
+					Complexity:            queryComplexity(analysis),
+					Rounds:                round + 1,
+					PromptTokens:          promptTokens,
+					CompletionTokens:      totalTokens - promptTokens,
+					TotalTokens:           totalTokens,
+					Model:                 k.llmProvider.GetModelID(),
+					PromptCacheHitTokens:  cacheHitTokens,
+					PromptCacheMissTokens: cacheMissTokens,
+					ToolCalls:             totalToolCalls,
+					ToolErrors:            toolErrors,
+					UniqueTools:           len(uniqueTools),
+					Success:               toolErrors == 0,
 				})
 				k.finalizeResponse(context.WithoutCancel(ctx), session, query, fullContent.String(), totalToolCalls, toolErrors, analysis)
 
@@ -468,21 +474,23 @@ func (k *AgentKernel) ProcessStream(ctx context.Context, query *Query) (<-chan S
 		messages = append(messages, buildFinalMessage(resp.Content, "", nil))
 		session.Messages = messages
 		k.RecordTaskMetrics(TaskMetrics{
-			SessionID:        session.ID,
-			StartedAt:        startTime,
-			EndedAt:          time.Now(),
-			Duration:         float64(time.Since(startTime).Milliseconds()),
-			TaskType:         queryTaskType(analysis),
-			Complexity:       queryComplexity(analysis),
-			Rounds:           maxRounds,
-			PromptTokens:     promptTokens,
-			CompletionTokens: totalTokens - promptTokens,
-			TotalTokens:      totalTokens,
-			Model:            k.llmProvider.GetModelID(),
-			ToolCalls:        totalToolCalls,
-			ToolErrors:       toolErrors,
-			UniqueTools:      len(uniqueTools),
-			Success:          toolErrors == 0,
+			SessionID:             session.ID,
+			StartedAt:             startTime,
+			EndedAt:               time.Now(),
+			Duration:              float64(time.Since(startTime).Milliseconds()),
+			TaskType:              queryTaskType(analysis),
+			Complexity:            queryComplexity(analysis),
+			Rounds:                maxRounds,
+			PromptTokens:          promptTokens,
+			CompletionTokens:      totalTokens - promptTokens,
+			TotalTokens:           totalTokens,
+			Model:                 k.llmProvider.GetModelID(),
+			PromptCacheHitTokens:  cacheHitTokens,
+			PromptCacheMissTokens: cacheMissTokens,
+			ToolCalls:             totalToolCalls,
+			ToolErrors:            toolErrors,
+			UniqueTools:           len(uniqueTools),
+			Success:               toolErrors == 0,
 		})
 		k.finalizeResponse(context.WithoutCancel(ctx), session, query, resp.Content, totalToolCalls, toolErrors, analysis)
 

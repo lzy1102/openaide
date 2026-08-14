@@ -360,6 +360,11 @@ func (k *AgentKernel) buildMessages(ctx context.Context, session *Session, query
 		}
 		messages = append(messages, history...)
 	}
+	// Skill prompt as standalone message: appended after system+history so the
+	// stable prefix stays byte-identical across queries with different skills.
+	if skillMsg := k.buildSkillMessage(ctx, query); skillMsg.Content != "" {
+		messages = append(messages, skillMsg)
+	}
 	// User query
 	messages = append(messages, Message{Role: "user", Content: query.Content})
 
@@ -463,6 +468,9 @@ func normalizeDedupeLine(line string) string {
 // buildSystemLayer assembles the prompt. L0 safety rules are always included;
 // custom prompts (config kernel.system_prompt / opencode instructions) are
 // appended as an additional layer — they never replace the built-in layers.
+// NOTE: skill prompt is NOT injected here — it is appended as a separate
+// system message (buildSkillMessage) so the L0+L1 prefix stays byte-identical
+// across different queries, keeping provider prefix caches (DeepSeek etc.) hot.
 func (k *AgentKernel) buildSystemLayer(ctx context.Context, query *Query) string {
 	// Layered build: L0 core rules + user prompts + L1 project context
 	sp := k.buildSystemPrompt(query)
@@ -472,11 +480,35 @@ func (k *AgentKernel) buildSystemLayer(ctx context.Context, query *Query) string
 		sp += "\n\n" + custom
 	}
 
-	if k.skillActor != nil {
-		sp = k.skillActor.InjectPrompt(ctx, query.Content, sp)
-	}
-
 	return sp
+}
+
+// buildSkillMessage returns the active skill prompt as a standalone system
+// message, or empty. Separating it from the system layer keeps the stable
+// prefix cacheable across queries with different skill matches.
+func (k *AgentKernel) buildSkillMessage(ctx context.Context, query *Query) Message {
+	if k.skillActor == nil {
+		return Message{}
+	}
+	skill := k.skillActor.DetectSkill(ctx, query.Content)
+	if skill == nil {
+		return Message{}
+	}
+	var sb strings.Builder
+	sb.WriteString("## Current Active Skill: ")
+	sb.WriteString(skill.Name)
+	sb.WriteString("\n")
+	sb.WriteString(skill.Prompt)
+	if len(skill.Scripts) > 0 {
+		sb.WriteString("\n### Available Scripts\n")
+		for _, s := range skill.Scripts {
+			sb.WriteString("- `")
+			sb.WriteString(s)
+			sb.WriteString("`\n")
+		}
+		sb.WriteString("Use execute_command to run these scripts with the full path above.")
+	}
+	return Message{Role: "system", Content: sb.String()}
 }
 
 func runGitCmd(args ...string) (string, error) {

@@ -29,6 +29,10 @@ type TaskMetrics struct {
 	TotalTokens      int    `json:"total_tokens"`
 	Model            string `json:"model"` // 使用的模型
 
+	// 前缀缓存命中(DeepSeek/OpenAI 等) — 用于观测缓存效率
+	PromptCacheHitTokens  int `json:"prompt_cache_hit_tokens"`
+	PromptCacheMissTokens int `json:"prompt_cache_miss_tokens"`
+
 	// 工具
 	ToolCalls   int `json:"tool_calls"`   // 工具调用次数
 	ToolErrors  int `json:"tool_errors"`  // 工具错误次数
