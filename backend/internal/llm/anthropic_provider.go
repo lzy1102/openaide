@@ -1,4 +1,4 @@
-package llm
+﻿package llm
 
 import (
 	"bufio"
@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 // AnthropicProvider Anthropic 原生 API 实现

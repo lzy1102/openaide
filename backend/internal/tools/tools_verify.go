@@ -1,4 +1,4 @@
-package tools
+﻿package tools
 
 import (
 	"bytes"
@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 func verifyToolDefs() []kernel.ToolDefinition {

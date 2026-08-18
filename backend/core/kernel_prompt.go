@@ -6,8 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"openaide/backend/internal/identity"
 )
 
 // ── Layered Prompt System ──────────────────────────────────
@@ -331,8 +329,8 @@ func scanSubdirRules(root string) []subdirRule {
 func detectProjectLangs(dir string) []string {
 	var langs []string
 	seen := map[string]bool{}
-	// 单文件锚点:与 identity 包共享同一张表,保持单一来源。
-	for _, a := range identity.ProjectAnchors {
+	// 单文件锚点:内核自持的 projectAnchors 表。
+	for _, a := range projectAnchors {
 		if seen[a.Lang] {
 			continue
 		}

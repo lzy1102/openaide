@@ -1,9 +1,9 @@
-package llm
+﻿package llm
 
 import (
 	"testing"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 func TestPromptCache_SetGet(t *testing.T) {

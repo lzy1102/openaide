@@ -1,11 +1,11 @@
-package orchestration
+﻿package orchestration
 
 import (
 	"context"
 	"strings"
 	"testing"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 // mockLLMForToT returns responses for tree-of-thoughts evaluation.

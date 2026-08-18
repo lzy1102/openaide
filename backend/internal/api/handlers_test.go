@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 	"openaide/backend/internal/orchestration"
 )
 

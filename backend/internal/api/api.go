@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"context"
@@ -18,7 +18,7 @@ import (
 
 	"openaide/backend/internal/auth"
 	"openaide/backend/internal/channel"
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 	"openaide/backend/internal/orchestration"
 )
 

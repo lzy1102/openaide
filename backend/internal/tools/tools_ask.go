@@ -1,11 +1,11 @@
-package tools
+﻿package tools
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 // ── User Clarification Tool ─────────────────────────────────

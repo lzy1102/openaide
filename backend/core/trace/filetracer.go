@@ -1,4 +1,4 @@
-package trace
+﻿package trace
 
 import (
 	"context"
@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"openaide/backend/internal/kernel"
-	"openaide/backend/internal/kernel/actor"
+	"openaide/backend/core"
+	"openaide/backend/core/actor"
 )
 
 // FileTracer 基于 JSONL 文件的跟踪器 — CSP actor

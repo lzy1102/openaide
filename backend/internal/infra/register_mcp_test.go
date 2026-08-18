@@ -1,4 +1,4 @@
-package infra
+﻿package infra
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 	"openaide/backend/internal/mcp"
 	"openaide/backend/internal/tools"
 )

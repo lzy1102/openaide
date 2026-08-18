@@ -1,4 +1,4 @@
-package eval
+﻿package eval
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 // mockKernel returns controlled responses for testing the eval framework.

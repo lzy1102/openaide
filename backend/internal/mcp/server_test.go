@@ -1,4 +1,4 @@
-package mcp
+﻿package mcp
 
 import (
 	"bufio"
@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 // mockExecutor implements kernel.ToolExecutor for protocol tests.

@@ -1,4 +1,4 @@
-// Package codeindex 提供基于外部向量库的项目代码索引。
+﻿// Package codeindex 提供基于外部向量库的项目代码索引。
 //
 // 设计原则:
 //   - 不参与 ReAct 工具调用,只在 prompt 阶段为 kernel 注入相关代码上下文
@@ -20,9 +20,9 @@ import (
 	"sync"
 	"time"
 
-	"openaide/backend/internal/kernel"
-	"openaide/backend/internal/kernel/actor"
-	"openaide/backend/internal/rag"
+	"openaide/backend/core"
+	"openaide/backend/core/actor"
+	"openaide/backend/rag"
 
 	_ "modernc.org/sqlite"
 )

@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 	"openaide/backend/internal/lang"
 )
 

@@ -1,11 +1,11 @@
-package compress
+﻿package compress
 
 import (
 	"context"
 	"fmt"
 	"strings"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 // NovelCompressor 小说式上下文压缩器

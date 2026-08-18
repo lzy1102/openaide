@@ -1,4 +1,4 @@
-package tools
+﻿package tools
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 func fileEditToolDefs() []kernel.ToolDefinition {

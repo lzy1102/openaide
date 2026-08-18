@@ -1,8 +1,9 @@
-package infra
+﻿package infra
 
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -11,15 +12,14 @@ import (
 	"time"
 
 	"openaide/backend/internal/codeindex"
-	"openaide/backend/internal/compress"
 	"openaide/backend/internal/config"
 	"openaide/backend/internal/event"
 	"openaide/backend/internal/identity"
-	"openaide/backend/internal/kernel"
-	"openaide/backend/internal/kernel/trace"
+	"openaide/backend/core"
+	"openaide/backend/core/trace"
 	"openaide/backend/internal/llm"
 	"openaide/backend/internal/plugin"
-	"openaide/backend/internal/rag"
+	"openaide/backend/rag"
 )
 
 func createKernel(cfg *config.Config, gateway *llm.Gateway, retriever rag.Retriever, toolRegistry kernel.ToolExecutor, memManager kernel.Memory, sessionStore kernel.SessionStore) (*kernel.AgentKernel, *plugin.Manager, *codeindex.Indexer, error) {
@@ -38,11 +38,9 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, retriever rag.Retrie
 
 	agentKernel := kernel.NewAgentKernel(gateway, toolRegistry, memManager, sessionStore, kernelConfig)
 
-	if cfg.Kernel.ReflectionEnabled != nil && !*cfg.Kernel.ReflectionEnabled {
-		agentKernel.SetReflection(&kernel.NoReflection{})
-		slog.Info("Reflection disabled by config")
-	} else {
-		agentKernel.SetReflection(kernel.NewLLMReflection(gateway))
+	// 内核可替换策略(反思/自适应轮数/规划/上下文压缩)按配置经注册表装配。
+	if err := kernelStrategyRegistry(agentKernel, gateway).Apply(cfg); err != nil {
+		return nil, nil, nil, fmt.Errorf("apply kernel strategies: %w", err)
 	}
 
 	// Skill actor (CSP, zero-lock)
@@ -74,20 +72,8 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, retriever rag.Retrie
 	}
 	agentKernel.SetSkillActor(skillActor)
 
-	minR := cfg.Kernel.MinRounds
-	maxR := cfg.Kernel.MaxRoundsCap
-	if minR <= 0 {
-		minR = 5
-	}
-	if maxR <= 0 {
-		maxR = 30
-	}
-	ar := kernel.NewAdaptiveRounds(minR, maxR)
-	ar.SetLLM(gateway)
-	agentKernel.SetAdaptiveRounds(ar)
-
 	// 任务规划器:复杂查询(complexity >= 15)在 ReAct 前分解为子任务
-	agentKernel.SetPlanner(kernel.NewPlanner(gateway))
+	// (规划/自适应轮数/上下文压缩/反思已由 kernelStrategyRegistry 装配)
 
 	if cp, err := trace.NewFileCheckpointer(trace.FileCheckpointerConfig{
 		Dir: cfg.Storage.DataDir + "/checkpoints",
@@ -128,7 +114,7 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, retriever rag.Retrie
 	} else {
 		slog.Info("Persistence disabled in config")
 	}
-	agentKernel.SetContextCompressor(compress.NewLLMCompressor(gateway, compress.NewNovelCompressor()))
+	// 上下文压缩器已由 kernelStrategyRegistry 装配。
 
 	// 代码索引:启动时异步全量索引 CWD,prompt 阶段注入相关代码 chunk。
 	// 检索完全外挂到 rag.Retriever,未配置时返回空结果。

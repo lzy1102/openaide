@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 
 	"openaide/backend/internal/config"
 	"openaide/backend/internal/infra"
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 // App is the Wails application backend.

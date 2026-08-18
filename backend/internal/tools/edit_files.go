@@ -1,4 +1,4 @@
-package tools
+﻿package tools
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 // ── edit_files: 多文件原子编辑 ────────────────────────────────

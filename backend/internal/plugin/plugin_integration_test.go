@@ -1,11 +1,11 @@
-package plugin_test
+﻿package plugin_test
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 	"openaide/backend/internal/plugin"
 )
 

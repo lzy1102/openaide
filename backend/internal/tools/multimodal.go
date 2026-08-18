@@ -1,4 +1,4 @@
-package tools
+﻿package tools
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 func multimodalToolDefs() []kernel.ToolDefinition {

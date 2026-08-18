@@ -1,10 +1,10 @@
-package tools
+﻿package tools
 
 import (
 	"fmt"
 	"path/filepath"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 // validateAndResolve combines validatePath + resolveSafePath.
@@ -41,21 +41,99 @@ func toolErrIO(operation string, err error) *kernel.ToolResult {
 }
 
 // RegisterBuiltins registers all built-in tools into the registry.
+// 由各按类注册方法聚合而成，便于后续按能力裁剪。
 func RegisterBuiltins(registry *Registry) error {
-	tools := BuiltinTools()
-	handlers := registry.BuiltinHandlers()
-	for _, tool := range tools {
-		name := tool.Function.Name
-		handler, ok := handlers[name]
-		if !ok {
-			continue
-		}
-		if err := registry.Register(tool, handler); err != nil {
+	for _, reg := range []func(*Registry) error{
+		(*Registry).RegisterFileTools,
+		(*Registry).RegisterEditTools,
+		(*Registry).RegisterGitTools,
+		(*Registry).RegisterWebTools,
+		(*Registry).RegisterBrowserTools,
+		(*Registry).RegisterDesktopTools,
+		(*Registry).RegisterAskTools,
+		(*Registry).RegisterMemoryTools,
+		(*Registry).RegisterLSPSymbolTools,
+		(*Registry).RegisterTodoTools,
+		(*Registry).RegisterVerifyTools,
+		(*Registry).RegisterMultimodalTools,
+	} {
+		if err := reg(registry); err != nil {
 			return err
 		}
 	}
 	return nil
 }
+
+// registerGroup 将一组工具定义及其匹配的 handler 注册进 Registry。
+// handler 的唯一来源是 BuiltinHandlers，按名字配对，缺失即跳过。
+func (r *Registry) registerGroup(defs []kernel.ToolDefinition) error {
+	handlers := r.BuiltinHandlers()
+	for _, tool := range defs {
+		name := tool.Function.Name
+		h, ok := handlers[name]
+		if !ok {
+			continue
+		}
+		if err := r.Register(tool, h); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// concatDefs 拼接多组工具定义。
+func concatDefs(groups ...[]kernel.ToolDefinition) []kernel.ToolDefinition {
+	var out []kernel.ToolDefinition
+	for _, g := range groups {
+		out = append(out, g...)
+	}
+	return out
+}
+
+// RegisterFileTools 注册文件系统类工具。
+func (r *Registry) RegisterFileTools() error { return r.registerGroup(fileSystemToolDefs()) }
+
+// RegisterEditTools 注册文件编辑与撤销类工具。
+func (r *Registry) RegisterEditTools() error {
+	return r.registerGroup(concatDefs(fileEditToolDefs(), multiFileEditToolDefs(), undoToolDefs()))
+}
+
+// RegisterGitTools 注册 Git 类工具。
+func (r *Registry) RegisterGitTools() error { return r.registerGroup(gitToolDefs()) }
+
+// RegisterWebTools 注册联网搜索与抓取类工具。
+func (r *Registry) RegisterWebTools() error { return r.registerGroup(webToolDefs()) }
+
+// RegisterBrowserTools 注册浏览器类工具（需 Chromium，未启用时跳过）。
+func (r *Registry) RegisterBrowserTools() error {
+	if !browserEnabled() {
+		return nil
+	}
+	return r.registerGroup(concatDefs(browserToolDefs(), browserExtendedDefs()))
+}
+
+// RegisterDesktopTools 注册桌面自动化类工具。
+func (r *Registry) RegisterDesktopTools() error { return r.registerGroup(desktopToolDefs()) }
+
+// RegisterAskTools 注册 ask_user 类工具。
+func (r *Registry) RegisterAskTools() error { return r.registerGroup(askToolDefs()) }
+
+// RegisterMemoryTools 注册记忆管理类工具。
+func (r *Registry) RegisterMemoryTools() error { return r.registerGroup(memoryToolDefs()) }
+
+// RegisterLSPSymbolTools 注册 LSP 与符号检索类工具。
+func (r *Registry) RegisterLSPSymbolTools() error {
+	return r.registerGroup(concatDefs(lspToolDefs(), symbolToolDefs()))
+}
+
+// RegisterTodoTools 注册待办类工具。
+func (r *Registry) RegisterTodoTools() error { return r.registerGroup(todoToolDefs()) }
+
+// RegisterVerifyTools 注册校验类工具。
+func (r *Registry) RegisterVerifyTools() error { return r.registerGroup(verifyToolDefs()) }
+
+// RegisterMultimodalTools 注册多模态类工具。
+func (r *Registry) RegisterMultimodalTools() error { return r.registerGroup(multimodalToolDefs()) }
 
 // BuiltinTools returns all built-in tool definitions.
 func BuiltinTools() []kernel.ToolDefinition {
@@ -104,10 +182,10 @@ func (r *Registry) BuiltinHandlers() map[string]kernel.ToolHandler {
 		"git_blame":             handleGitBlame,
 		"git_create_branch":     handleGitCreateBranch,
 		"git_commit":            handleGitCommit,
-		"web_search":            handleWebSearch,
+		"web_search":            r.handleWebSearch,
 		"web_fetch":             handleWebFetch,
-		"ai_search":             handleAISearch,
-		"manage_memory":         handleManageMemory,
+		"ai_search":             r.handleAISearch,
+		"manage_memory":         r.handleManageMemory,
 		"search_symbols":        handleSearchSymbols,
 		"lsp_definition":        handleLSPDefinition,
 		"lsp_references":        handleLSPReferences,

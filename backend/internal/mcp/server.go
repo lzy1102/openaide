@@ -1,4 +1,4 @@
-package mcp
+﻿package mcp
 
 import (
 	"bufio"
@@ -9,7 +9,7 @@ import (
 	"os"
 	"sync"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 // Server MCP Server — 通过 stdio 暴露内置工具

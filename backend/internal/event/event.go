@@ -1,4 +1,4 @@
-package event
+﻿package event
 
 import (
 	"context"
@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"openaide/backend/internal/kernel"
-	"openaide/backend/internal/kernel/actor"
+	"openaide/backend/core"
+	"openaide/backend/core/actor"
 )
 
 // Bus 事件总线

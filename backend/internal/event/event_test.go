@@ -1,11 +1,11 @@
-package event
+﻿package event
 
 import (
 	"sync"
 	"testing"
 	"time"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 func TestBus_SubscribeAndPublish(t *testing.T) {

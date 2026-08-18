@@ -1,4 +1,4 @@
-package mcp
+﻿package mcp
 
 import (
 	"bufio"
@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 // Transport abstracts the underlying MCP communication channel.

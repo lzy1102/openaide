@@ -1,10 +1,10 @@
-package main
+﻿package main
 
 import (
 	"strings"
 	"testing"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 // TestRenderSessionHistory_UserAssistant 验证恢复历史时 user/assistant 消息

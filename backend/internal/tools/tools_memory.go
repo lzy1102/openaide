@@ -1,11 +1,11 @@
-package tools
+﻿package tools
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 // MemoryManager interface for MemGPT-style memory operations.
@@ -16,10 +16,7 @@ type MemoryManager interface {
 	GetCoreFacts(ctx context.Context, query string, limit int) []string
 }
 
-var memoryManager MemoryManager
 
-// SetMemoryManager injects the memory manager for manage_memory tool.
-func SetMemoryManager(m MemoryManager) { memoryManager = m }
 
 func memoryToolDefs() []kernel.ToolDefinition {
 	return []kernel.ToolDefinition{{
@@ -50,8 +47,9 @@ func memoryToolDefs() []kernel.ToolDefinition {
 	}}
 }
 
-func handleManageMemory(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
-	if memoryManager == nil {
+// handleManageMemory 管理记忆。依赖通过 Registry.RegisterMemory 注入。
+func (r *Registry) handleManageMemory(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
+	if r.mem == nil {
 		return &kernel.ToolResult{Content: "Memory manager not available"}, nil
 	}
 
@@ -70,11 +68,11 @@ func handleManageMemory(ctx context.Context, arguments string) (*kernel.ToolResu
 	switch args.Action {
 	case "archive":
 		// Archive current conversation summary
-		memoryManager.ArchiveConversation(ctx, "global", args.Content, nil, args.Importance)
+		r.mem.ArchiveConversation(ctx, "global", args.Content, nil, args.Importance)
 		return &kernel.ToolResult{Content: fmt.Sprintf("Archived: %s", args.Content)}, nil
 
 	case "retrieve":
-		msgs, score, _ := memoryManager.RetrieveArchive(ctx, args.Content, 5)
+		msgs, score, _ := r.mem.RetrieveArchive(ctx, args.Content, 5)
 		if len(msgs) == 0 {
 			return &kernel.ToolResult{Content: "No relevant archived conversations found."}, nil
 		}
@@ -92,11 +90,11 @@ func handleManageMemory(ctx context.Context, arguments string) (*kernel.ToolResu
 		return &kernel.ToolResult{Content: result}, nil
 
 	case "remember":
-		memoryManager.StoreCoreFact(ctx, args.Content, args.Importance)
+		r.mem.StoreCoreFact(ctx, args.Content, args.Importance)
 		return &kernel.ToolResult{Content: fmt.Sprintf("Remembered: %s", args.Content)}, nil
 
 	case "recall":
-		facts := memoryManager.GetCoreFacts(ctx, args.Content, 5)
+		facts := r.mem.GetCoreFacts(ctx, args.Content, 5)
 		if len(facts) == 0 {
 			return &kernel.ToolResult{Content: "No relevant core facts found."}, nil
 		}

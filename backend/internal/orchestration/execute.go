@@ -1,4 +1,4 @@
-package orchestration
+﻿package orchestration
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 // Branch represents a diverged sub-task triggered by a discovery signal.

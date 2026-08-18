@@ -1,4 +1,4 @@
-package llm
+﻿package llm
 
 import (
 	"crypto/sha256"
@@ -7,8 +7,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"openaide/backend/internal/kernel"
-	"openaide/backend/internal/kernel/actor"
+	"openaide/backend/core"
+	"openaide/backend/core/actor"
 )
 
 const (

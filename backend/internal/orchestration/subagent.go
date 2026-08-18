@@ -1,4 +1,4 @@
-package orchestration
+﻿package orchestration
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 // subAgentCoreRules are the essential L0 constraints injected into every sub-agent.

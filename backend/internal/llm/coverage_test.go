@@ -1,4 +1,4 @@
-package llm
+﻿package llm
 
 import (
 	"context"
@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"openaide/backend/internal/kernel"
-	"openaide/backend/internal/kernel/actor"
+	"openaide/backend/core"
+	"openaide/backend/core/actor"
 )
 
 // mockProvider implements the llm.Provider interface with scripted responses.

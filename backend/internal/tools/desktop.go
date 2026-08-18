@@ -1,4 +1,4 @@
-package tools
+﻿package tools
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 // detectOS returns "linux", "darwin", or "windows"

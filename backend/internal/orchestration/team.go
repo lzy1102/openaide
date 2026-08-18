@@ -1,4 +1,4 @@
-package orchestration
+﻿package orchestration
 
 import (
 	"context"
@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"strings"
 
-	"openaide/backend/internal/kernel"
-	"openaide/backend/internal/kernel/graph"
+	"openaide/backend/core"
+	"openaide/backend/core/graph"
 )
 
 // TeamRole 团队角色

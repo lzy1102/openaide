@@ -1,4 +1,4 @@
-package eval
+﻿package eval
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 // Task is a benchmark task that tests agent capabilities.

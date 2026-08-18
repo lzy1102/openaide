@@ -1,4 +1,4 @@
-package orchestration
+﻿package orchestration
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"time"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 	"openaide/backend/internal/projectmind"
 )
 

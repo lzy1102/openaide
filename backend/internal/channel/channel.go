@@ -1,4 +1,4 @@
-// Package channel 提供外部消息渠道抽象层
+﻿// Package channel 提供外部消息渠道抽象层
 //
 // 架构：
 //
@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"time"
 
-	"openaide/backend/internal/kernel/actor"
+	"openaide/backend/core/actor"
 )
 
 // ChannelType 渠道类型

@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"encoding/json"
@@ -8,7 +8,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 var upgrader = websocket.Upgrader{

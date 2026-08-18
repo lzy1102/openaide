@@ -1,4 +1,4 @@
-package auth
+﻿package auth
 
 import (
 	"crypto/hmac"
@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"openaide/backend/internal/kernel/actor"
+	"openaide/backend/core/actor"
 )
 
 // Claims JWT 声明

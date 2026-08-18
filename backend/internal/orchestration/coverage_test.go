@@ -1,4 +1,4 @@
-package orchestration
+﻿package orchestration
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 // scriptedLLM returns canned responses in order, then falls back to a default.

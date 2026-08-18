@@ -1,4 +1,4 @@
-package orchestration
+﻿package orchestration
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"strings"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 // GenerateRoles asks the LLM to define custom roles for a task, then sets them on the Team.

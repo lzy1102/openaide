@@ -1,4 +1,4 @@
-package tools
+﻿package tools
 
 import (
 	"context"
@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"openaide/backend/internal/kernel"
-	"openaide/backend/internal/kernel/actor"
+	"openaide/backend/core"
+	"openaide/backend/core/actor"
 )
 
 // ── Agent Todo Management (Claude Code style) ───────────────

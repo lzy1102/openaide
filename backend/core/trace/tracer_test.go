@@ -1,10 +1,10 @@
-package trace
+﻿package trace
 
 import (
 	"context"
 	"testing"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 func TestFileTracer_RecordAndFlush(t *testing.T) {

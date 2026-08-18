@@ -1,4 +1,4 @@
-package infra
+﻿package infra
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 	"openaide/backend/internal/channel"
 	"openaide/backend/internal/codeindex"
 	"openaide/backend/internal/config"
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 	"openaide/backend/internal/llm"
 	"openaide/backend/internal/lsp"
 	"openaide/backend/internal/mcp"
@@ -22,7 +22,7 @@ import (
 	"openaide/backend/internal/orchestration"
 	"openaide/backend/internal/plugin"
 	"openaide/backend/internal/projectmind"
-	"openaide/backend/internal/rag"
+	"openaide/backend/rag"
 	"openaide/backend/internal/tools"
 )
 
@@ -75,11 +75,11 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 
 	// 3. 工具注册表 + MCP
 	tools.LoadIgnorePatterns(".")
-	tools.SetBrowserEnabled(cfg.Browser.Enabled)
-	if cfg.Search.SearXNGURL != "" {
-		tools.SetSearXNGURL(cfg.Search.SearXNGURL)
-	}
 	toolRegistry := tools.NewRegistry()
+	toolRegistry.EnableBrowser(cfg.Browser.Enabled)
+	if cfg.Search.SearXNGURL != "" {
+		toolRegistry.UseSearXNG(cfg.Search.SearXNGURL)
+	}
 	app.ToolRegistry = toolRegistry
 	if err := tools.RegisterBuiltins(toolRegistry); err != nil {
 		return nil, fmt.Errorf("register builtin tools failed: %w", err)
@@ -144,7 +144,7 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 		return nil, fmt.Errorf("memory actor: %w", err)
 	}
 	memManager.SetRetriever(retriever)
-	tools.SetMemoryManager(memManager)
+	toolRegistry.RegisterMemory(memManager)
 
 	// 5. 会话存储（CSP actor）
 	sessionStore, err := kernel.NewSessionActor(cfg.Storage.DataDir + "/sessions.db")
@@ -192,7 +192,7 @@ func NewApplication(cfg *config.Config) (*Application, error) {
 	}
 
 	// LSP: auto-start language servers for the current project
-	startLSPServers()
+	startLSPServers(toolRegistry)
 
 	// 7. 编排器
 	orch := orchestration.NewOrchestrator(agentKernel, gateway, toolRegistry, memManager, sessionStore)
@@ -287,7 +287,9 @@ func (app *Application) Stop(ctx context.Context) error {
 		app.LLMGateway.Shutdown()
 	}
 	tools.ShutdownBrowser()
-	tools.CloseAllLSPClients()
+	if app.ToolRegistry != nil {
+		app.ToolRegistry.ShutdownLSP()
+	}
 	if app.TaskQueue != nil {
 		if err := app.TaskQueue.Stop(ctx); err != nil {
 			slog.Error("Failed to stop task queue", "error", err)
@@ -307,7 +309,7 @@ func (app *Application) Stop(ctx context.Context) error {
 }
 
 // startLSPServers auto-starts language servers for the current project.
-func startLSPServers() {
+func startLSPServers(reg *tools.Registry) {
 	cwd, _ := os.Getwd()
 	entries, _ := os.ReadDir(cwd)
 
@@ -344,7 +346,7 @@ func startLSPServers() {
 		for indicator, lang := range detectors {
 			if name == indicator && !e.IsDir() && !started[lang] {
 				if c, err := lsp.Start(cwd, lang); err == nil {
-					tools.SetLSPClient(lang, c)
+					reg.AttachLSPClient(lang, c)
 					started[lang] = true
 				} else {
 					slog.Debug("LSP server not available", "lang", lang, "error", err)

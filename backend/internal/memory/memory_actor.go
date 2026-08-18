@@ -1,4 +1,4 @@
-package memory
+﻿package memory
 
 import (
 	"context"
@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"time"
 
-	"openaide/backend/internal/kernel"
-	"openaide/backend/internal/kernel/actor"
-	"openaide/backend/internal/rag"
+	"openaide/backend/core"
+	"openaide/backend/core/actor"
+	"openaide/backend/rag"
 
 	_ "modernc.org/sqlite"
 )

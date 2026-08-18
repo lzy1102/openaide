@@ -1,4 +1,4 @@
-package compress
+﻿package compress
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 // mockLLM implements kernel.LLMProvider with scripted responses.

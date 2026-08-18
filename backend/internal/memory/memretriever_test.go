@@ -1,11 +1,11 @@
-package memory
+﻿package memory
 
 import (
 	"context"
 	"strings"
 	"sync"
 
-	"openaide/backend/internal/rag"
+	"openaide/backend/rag"
 )
 
 // memRetriever 是测试用的内存 rag.Retriever 实现,按分词 AND 匹配内容。

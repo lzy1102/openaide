@@ -1,4 +1,4 @@
-package llm
+﻿package llm
 
 import (
 	"context"
@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"openaide/backend/internal/kernel"
-	"openaide/backend/internal/kernel/actor"
+	"openaide/backend/core"
+	"openaide/backend/core/actor"
 )
 
 // Gateway LLM 网关 - 统一接入所有提供商

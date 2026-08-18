@@ -1,10 +1,10 @@
-package compress
+﻿package compress
 
 import (
 	"context"
 	"testing"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 func TestNovelCompressor_Compress(t *testing.T) {

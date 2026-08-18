@@ -1,4 +1,4 @@
-package plugin
+﻿package plugin
 
 import (
 	"context"
@@ -9,8 +9,8 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"openaide/backend/internal/kernel"
-	"openaide/backend/internal/kernel/actor"
+	"openaide/backend/core"
+	"openaide/backend/core/actor"
 )
 
 // Plugin 可插拔扩展

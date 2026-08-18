@@ -1,4 +1,4 @@
-package orchestration
+﻿package orchestration
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 
 	"log/slog"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 // SubTask 子任务

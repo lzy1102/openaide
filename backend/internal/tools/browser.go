@@ -1,4 +1,4 @@
-package tools
+﻿package tools
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 
 	"github.com/chromedp/chromedp"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 func browserToolDefs() []kernel.ToolDefinition {
@@ -131,11 +131,6 @@ func autoInstallChromium() error {
 }
 
 var browserGlobalEnabled bool
-
-// SetBrowserEnabled 设置浏览器是否启用（由app.go根据配置调用）
-func SetBrowserEnabled(enabled bool) {
-	browserGlobalEnabled = enabled
-}
 
 // ShutdownBrowser 关闭浏览器，释放资源
 func ShutdownBrowser() {

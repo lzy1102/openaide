@@ -1,4 +1,4 @@
-package compress
+﻿package compress
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 // LLMCompressor 基于 LLM 的语义上下文压缩器

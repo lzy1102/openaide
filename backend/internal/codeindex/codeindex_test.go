@@ -1,4 +1,4 @@
-package codeindex
+﻿package codeindex
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"openaide/backend/internal/rag"
+	"openaide/backend/rag"
 )
 
 // memRetriever 是测试用的内存 rag.Retriever 实现,按子串匹配内容。

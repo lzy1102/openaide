@@ -1,4 +1,4 @@
-package kernel
+﻿package kernel
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"openaide/backend/internal/kernel/actor"
+	"openaide/backend/core/actor"
 )
 
 // Skill represents a registered skill/prompt template.

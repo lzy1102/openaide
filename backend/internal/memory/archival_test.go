@@ -1,11 +1,11 @@
-package memory
+﻿package memory
 
 import (
 	"context"
 	"testing"
 	"time"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 func TestArchiveConversation(t *testing.T) {

@@ -1,4 +1,4 @@
-package memory
+﻿package memory
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 func TestMemoryActor_SaveLoad(t *testing.T) {

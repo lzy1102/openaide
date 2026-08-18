@@ -1,11 +1,12 @@
-package tools
+﻿package tools
 
 import (
 	"context"
 	"fmt"
 	"sync/atomic"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
+	"openaide/backend/internal/lsp"
 )
 
 type registryData struct {
@@ -15,9 +16,42 @@ type registryData struct {
 
 // Registry is a lock-free tool registry using atomic.Value.
 // Writes are rare (init only), reads are on every query.
+//
+// Registry 同时是可注入依赖的作用域容器：各工具模块需要的运行期依赖
+// （内存管理器、检索地址等）写入字段，工具 handler 通过其持有者（Registry）
+// 读取，避免曾经的包级单例。
 type Registry struct {
 	data             atomic.Value // *registryData
 	pendingQuestions chan string  // questions from ask_user tool (buffered, non-blocking)
+
+	mem   MemoryManager // manage_memory 依赖（按 Registry 作用域注入）
+	searx string        // web 搜索依赖的 SearXNG 实例地址（按 Registry 作用域注入）
+}
+
+// RegisterMemory 注入 memory manager（作用于本 Registry，取代全局 setter）。
+func (r *Registry) RegisterMemory(m MemoryManager) { r.mem = m }
+
+// UseSearXNG 设置 SearXNG 实例地址（作用于本 Registry，取代全局 setter）。
+func (r *Registry) UseSearXNG(url string) { r.searx = url }
+
+// EnableBrowser 控制浏览器工具是否可用（取代全局 setter）。
+func (r *Registry) EnableBrowser(enabled bool) { browserGlobalEnabled = enabled }
+
+// AttachLSPClient 注册一个 LSP 客户端（取代全局 setter）。
+func (r *Registry) AttachLSPClient(language string, c *lsp.Client) {
+	activeLSPClientsMu.Lock()
+	defer activeLSPClientsMu.Unlock()
+	activeLSPClients[language] = c
+}
+
+// ShutdownLSP 关闭所有 LSP 客户端（取代全局 CloseAllLSPClients）。
+func (r *Registry) ShutdownLSP() {
+	activeLSPClientsMu.Lock()
+	defer activeLSPClientsMu.Unlock()
+	for lang, c := range activeLSPClients {
+		c.Close()
+		delete(activeLSPClients, lang)
+	}
 }
 
 // GetPendingQuestions drains and returns all pending user questions.

@@ -1,4 +1,4 @@
-package tools
+﻿package tools
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 func TestAtomicWriteFile_Basic(t *testing.T) {

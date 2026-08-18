@@ -1,4 +1,4 @@
-package tools
+﻿package tools
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"openaide/backend/internal/git"
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 func gitToolDefs() []kernel.ToolDefinition {

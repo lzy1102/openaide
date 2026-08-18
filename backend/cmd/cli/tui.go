@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"context"
@@ -20,7 +20,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"openaide/backend/internal/infra"
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 	"openaide/backend/internal/lang"
 )
 

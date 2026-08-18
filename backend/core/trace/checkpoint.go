@@ -1,4 +1,4 @@
-package trace
+﻿package trace
 
 import (
 	"context"
@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"openaide/backend/internal/kernel"
-	"openaide/backend/internal/kernel/actor"
+	"openaide/backend/core"
+	"openaide/backend/core/actor"
 )
 
 // FileCheckpointer saves ReAct loop snapshots to disk for crash recovery.

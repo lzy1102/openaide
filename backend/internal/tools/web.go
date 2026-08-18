@@ -1,4 +1,4 @@
-package tools
+﻿package tools
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 func webToolDefs() []kernel.ToolDefinition {
@@ -65,7 +65,7 @@ func webToolDefs() []kernel.ToolDefinition {
 }
 
 // handleWebSearch 联网搜索
-func handleWebSearch(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
+func (r *Registry) handleWebSearch(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
 	var args struct {
 		Query  string `json:"query"`
 		Limit  int    `json:"limit,omitempty"`
@@ -82,12 +82,12 @@ func handleWebSearch(ctx context.Context, arguments string) (*kernel.ToolResult,
 	}
 	if args.Engine == "" {
 		args.Engine = "duckduckgo"
-		if searXNGURL != "" {
+		if r.searx != "" {
 			args.Engine = "searxng"
 		}
 	}
 
-	results, err := searchWeb(ctx, args.Query, args.Limit, args.Engine)
+	results, err := r.searchWeb(ctx, args.Query, args.Limit, args.Engine)
 	if err != nil {
 		return &kernel.ToolResult{Error: err.Error()}, nil
 	}
@@ -150,7 +150,7 @@ func handleWebFetch(ctx context.Context, arguments string) (*kernel.ToolResult, 
 }
 
 // handleAISearch AI驱动的智能搜索 — 搜索+抓取+AI分析
-func handleAISearch(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
+func (r *Registry) handleAISearch(ctx context.Context, arguments string) (*kernel.ToolResult, error) {
 	var args struct {
 		Query      string `json:"query"`
 		FetchPages bool   `json:"fetch_pages,omitempty"`
@@ -164,10 +164,10 @@ func handleAISearch(ctx context.Context, arguments string) (*kernel.ToolResult, 
 
 	// 1. 搜索
 	engine := "duckduckgo"
-	if searXNGURL != "" {
+	if r.searx != "" {
 		engine = "searxng"
 	}
-	results, err := searchWeb(ctx, args.Query, 5, engine)
+	results, err := r.searchWeb(ctx, args.Query, 5, engine)
 	if err != nil {
 		return &kernel.ToolResult{Error: err.Error()}, nil
 	}
@@ -201,16 +201,12 @@ type searchResult struct {
 	Snippet string
 }
 
-var searXNGURL string // 由 infra/app 注入
-
-// SetSearXNGURL 设置 SearXNG 实例地址
-func SetSearXNGURL(url string) { searXNGURL = url }
-
-func searchWeb(ctx context.Context, query string, limit int, engine string) ([]searchResult, error) {
+// searchWeb 按引擎分发搜索。SearXNG 地址自 Registry 传入。
+func (r *Registry) searchWeb(ctx context.Context, query string, limit int, engine string) ([]searchResult, error) {
 	switch engine {
 	case "searxng":
-		if searXNGURL != "" {
-			return searchSearXNG(ctx, query, limit)
+		if r.searx != "" {
+			return searchSearXNG(ctx, query, limit, r.searx)
 		}
 		return searchDuckDuckGo(ctx, query, limit)
 	case "duckduckgo":
@@ -284,9 +280,9 @@ type searxngResponse struct {
 	Results []searxngResult `json:"results"`
 }
 
-// searchSearXNG 通过 SearXNG 实例搜索（免费、自部署、无 API Key）
-func searchSearXNG(ctx context.Context, query string, limit int) ([]searchResult, error) {
-	url := fmt.Sprintf("%s/search?q=%s&format=json&categories=general", searXNGURL, strings.ReplaceAll(query, " ", "+"))
+// searchSearXNG 通过 SearXNG 实例搜索（免费、自部署、无 API Key）。baseURL 由调用方传入。
+func searchSearXNG(ctx context.Context, query string, limit int, baseURL string) ([]searchResult, error) {
+	url := fmt.Sprintf("%s/search?q=%s&format=json&categories=general", baseURL, strings.ReplaceAll(query, " ", "+"))
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)

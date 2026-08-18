@@ -1,11 +1,11 @@
-package orchestration
+﻿package orchestration
 
 import (
 	"context"
 	"testing"
 	"time"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 // blockingLLM 挂起的 LLM:ChatStream 阻塞直到 ctx 取消。

@@ -1,4 +1,4 @@
-package infra
+﻿package infra
 
 import (
 	"log/slog"
@@ -8,7 +8,7 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"openaide/backend/internal/config"
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 // ConfigReloader watches config file and hot-reloads mutable settings
@@ -124,7 +124,7 @@ func (r *ConfigReloader) doReload() {
 
 		// Tool settings (browser, searxng)
 		if cfg.Search.SearXNGURL != r.app.Config.Search.SearXNGURL {
-			// tools.SetSearXNGURL is set at startup, update if available
+			// SearXNG 地址在启动时经 toolRegistry.UseSearXNG 注入，热重载仅提示重启生效
 			slog.Info("Search config changed (restart recommended)", "searxng_url", cfg.Search.SearXNGURL)
 		}
 	}

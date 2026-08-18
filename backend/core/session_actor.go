@@ -1,4 +1,4 @@
-package kernel
+﻿package kernel
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"openaide/backend/internal/kernel/actor"
+	"openaide/backend/core/actor"
 )
 
 // SessionActor is a CSP-style session store backed by SQLite.

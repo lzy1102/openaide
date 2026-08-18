@@ -1,4 +1,4 @@
-package tools
+﻿package tools
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 	"openaide/backend/internal/lsp"
 )
 
@@ -18,23 +18,6 @@ var (
 	activeLSPClients   = make(map[string]*lsp.Client)
 	activeLSPClientsMu sync.RWMutex
 )
-
-// SetLSPClient registers an LSP client (called from infra on startup).
-func SetLSPClient(language string, c *lsp.Client) {
-	activeLSPClientsMu.Lock()
-	activeLSPClients[language] = c
-	activeLSPClientsMu.Unlock()
-}
-
-// CloseAllLSPClients shuts down all running language servers (called from infra on shutdown).
-func CloseAllLSPClients() {
-	activeLSPClientsMu.Lock()
-	defer activeLSPClientsMu.Unlock()
-	for lang, c := range activeLSPClients {
-		c.Close()
-		delete(activeLSPClients, lang)
-	}
-}
 
 // NotifyFileChanged pushes a didChange to the language server for the file's
 // language, keeping diagnostics fresh after edits. Safe no-op when no server

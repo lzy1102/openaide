@@ -1,10 +1,10 @@
-package orchestration
+﻿package orchestration
 
 import (
 	"context"
 	"testing"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 type mockKernel struct {

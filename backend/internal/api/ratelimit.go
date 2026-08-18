@@ -1,10 +1,10 @@
-package api
+﻿package api
 
 import (
 	"net/http"
 	"time"
 
-	"openaide/backend/internal/kernel/actor"
+	"openaide/backend/core/actor"
 )
 
 // RateLimiter implements the token bucket algorithm for per-IP rate limiting.

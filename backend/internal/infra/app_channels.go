@@ -1,4 +1,4 @@
-package infra
+﻿package infra
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 
 	"openaide/backend/internal/channel"
 	"openaide/backend/internal/config"
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 	"openaide/backend/internal/orchestration"
 	"openaide/backend/internal/plugin"
 )

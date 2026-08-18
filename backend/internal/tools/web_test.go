@@ -8,16 +8,17 @@ import (
 
 func TestWebHandlersArgValidation(t *testing.T) {
 	ctx := context.Background()
+	reg := NewRegistry()
 
 	cases := []struct {
 		name string
 		call func() string
 		want string
 	}{
-		{"search_missing_query", func() string { r, _ := handleWebSearch(ctx, `{}`); return r.Error }, "query is required"},
+		{"search_missing_query", func() string { r, _ := reg.handleWebSearch(ctx, `{}`); return r.Error }, "query is required"},
 		{"fetch_missing_url", func() string { r, _ := handleWebFetch(ctx, `{}`); return r.Error }, "url is required"},
-		{"ai_search_missing_query", func() string { r, _ := handleAISearch(ctx, `{}`); return r.Error }, "query is required"},
-		{"search_bad_json", func() string { r, _ := handleWebSearch(ctx, `{oops`); return r.Error }, ""},
+		{"ai_search_missing_query", func() string { r, _ := reg.handleAISearch(ctx, `{}`); return r.Error }, "query is required"},
+		{"search_bad_json", func() string { r, _ := reg.handleWebSearch(ctx, `{oops`); return r.Error }, ""},
 		{"fetch_bad_json", func() string { r, _ := handleWebFetch(ctx, `{oops`); return r.Error }, ""},
 	}
 	for _, c := range cases {

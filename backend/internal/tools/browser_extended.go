@@ -1,4 +1,4 @@
-package tools
+﻿package tools
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"math"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 
 	"github.com/chromedp/chromedp"
 )

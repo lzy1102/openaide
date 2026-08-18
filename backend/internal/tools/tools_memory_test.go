@@ -1,11 +1,11 @@
-package tools
+﻿package tools
 
 import (
 	"context"
 	"strings"
 	"testing"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 type mockMemoryManager struct {
@@ -37,10 +37,11 @@ func (m *mockMemoryManager) GetCoreFacts(ctx context.Context, query string, limi
 }
 
 func TestHandleManageMemory_Archive(t *testing.T) {
+	r := NewRegistry()
 	mm := &mockMemoryManager{}
-	SetMemoryManager(mm)
+	r.RegisterMemory(mm)
 
-	result, err := handleManageMemory(context.Background(), `{"action":"archive","content":"Fixed login bug in auth module","importance":0.9}`)
+	result, err := r.handleManageMemory(context.Background(), `{"action":"archive","content":"Fixed login bug in auth module","importance":0.9}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,10 +54,11 @@ func TestHandleManageMemory_Archive(t *testing.T) {
 }
 
 func TestHandleManageMemory_Retrieve(t *testing.T) {
+	r := NewRegistry()
 	mm := &mockMemoryManager{}
-	SetMemoryManager(mm)
+	r.RegisterMemory(mm)
 
-	result, _ := handleManageMemory(context.Background(), `{"action":"retrieve","content":"login bug"}`)
+	result, _ := r.handleManageMemory(context.Background(), `{"action":"retrieve","content":"login bug"}`)
 	if result.Error != "" {
 		t.Fatal(result.Error)
 	}
@@ -66,10 +68,11 @@ func TestHandleManageMemory_Retrieve(t *testing.T) {
 }
 
 func TestHandleManageMemory_Remember(t *testing.T) {
+	r := NewRegistry()
 	mm := &mockMemoryManager{}
-	SetMemoryManager(mm)
+	r.RegisterMemory(mm)
 
-	result, _ := handleManageMemory(context.Background(), `{"action":"remember","content":"Token validation is in middleware/token.go","importance":0.8}`)
+	result, _ := r.handleManageMemory(context.Background(), `{"action":"remember","content":"Token validation is in middleware/token.go","importance":0.8}`)
 	if result.Error != "" {
 		t.Fatal(result.Error)
 	}
@@ -79,11 +82,12 @@ func TestHandleManageMemory_Remember(t *testing.T) {
 }
 
 func TestHandleManageMemory_Recall(t *testing.T) {
+	r := NewRegistry()
 	mm := &mockMemoryManager{}
-	SetMemoryManager(mm)
+	r.RegisterMemory(mm)
 	mm.StoreCoreFact(context.Background(), "Important: always check middleware first", 0.9)
 
-	result, _ := handleManageMemory(context.Background(), `{"action":"recall","content":"middleware"}`)
+	result, _ := r.handleManageMemory(context.Background(), `{"action":"recall","content":"middleware"}`)
 	if result.Error != "" {
 		t.Fatal(result.Error)
 	}
@@ -93,8 +97,8 @@ func TestHandleManageMemory_Recall(t *testing.T) {
 }
 
 func TestHandleManageMemory_NoManager(t *testing.T) {
-	memoryManager = nil
-	result, _ := handleManageMemory(context.Background(), `{"action":"archive","content":"test"}`)
+	r := NewRegistry() // 未注入 memory manager
+	result, _ := r.handleManageMemory(context.Background(), `{"action":"archive","content":"test"}`)
 	if result.Error != "" {
 		t.Fatal(result.Error)
 	}

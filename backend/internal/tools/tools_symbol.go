@@ -1,4 +1,4 @@
-package tools
+﻿package tools
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"openaide/backend/internal/index"
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 func symbolToolDefs() []kernel.ToolDefinition {

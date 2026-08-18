@@ -1,4 +1,4 @@
-package llm
+﻿package llm
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"openaide/backend/internal/kernel"
+	"openaide/backend/core"
 )
 
 func TestOpenAIProvider_ChatStream_Basic(t *testing.T) {
