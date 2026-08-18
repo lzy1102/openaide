@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"openaide/backend/core"
-	"openaide/backend/internal/projectmind"
+	"openaide/backend/projectmind"
 )
 
 // PlanApprover 规划审批回调：返回 true 表示批准执行

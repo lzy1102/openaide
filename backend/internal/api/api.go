@@ -19,7 +19,7 @@ import (
 	"openaide/backend/internal/auth"
 	"openaide/backend/internal/channel"
 	"openaide/backend/core"
-	"openaide/backend/internal/orchestration"
+	"openaide/backend/orchestration"
 )
 
 // Server API 服务器

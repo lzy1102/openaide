@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"openaide/backend/core"
-	"openaide/backend/internal/orchestration"
+	"openaide/backend/orchestration"
 )
 
 // ============ Mock implementations (same pattern as orchestration tests) ============

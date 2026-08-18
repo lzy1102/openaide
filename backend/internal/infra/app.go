@@ -19,9 +19,9 @@ import (
 	"openaide/backend/internal/lsp"
 	"openaide/backend/internal/mcp"
 	"openaide/backend/internal/memory"
-	"openaide/backend/internal/orchestration"
+	"openaide/backend/orchestration"
 	"openaide/backend/internal/plugin"
-	"openaide/backend/internal/projectmind"
+	"openaide/backend/projectmind"
 	"openaide/backend/rag"
 	"openaide/backend/internal/tools"
 )

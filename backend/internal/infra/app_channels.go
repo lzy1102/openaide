@@ -8,7 +8,7 @@ import (
 	"openaide/backend/internal/channel"
 	"openaide/backend/internal/config"
 	"openaide/backend/core"
-	"openaide/backend/internal/orchestration"
+	"openaide/backend/orchestration"
 	"openaide/backend/internal/plugin"
 )
 
