@@ -1,4 +1,4 @@
-package infra_test
+﻿package infra_test
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"openaide/backend/internal/config"
+	"openaide/backend/config"
 	"openaide/backend/internal/infra"
 )
 

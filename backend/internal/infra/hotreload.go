@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
-	"openaide/backend/internal/config"
+	"openaide/backend/config"
 	"openaide/backend/core"
 )
 

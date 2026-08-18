@@ -11,7 +11,7 @@ import (
 	"sync"
 
 	"openaide/backend/core"
-	"openaide/backend/internal/lsp"
+	"openaide/backend/lsp"
 )
 
 var (

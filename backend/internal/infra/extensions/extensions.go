@@ -1,4 +1,4 @@
-// Package extensions 定义"按配置门控、可替换"的内核策略扩展接缝。
+﻿// Package extensions 定义"按配置门控、可替换"的内核策略扩展接缝。
 //
 // 阶段 0 的目标是让内核算盘可裁剪:凡是"由配置段名选择实现"的策略
 // (反思/规划/上下文压缩/自适应轮数,乃至后续的检索、记忆)都应登记到
@@ -6,7 +6,7 @@
 // 这是一个稳定的加载期契约 —— 第三方能力正是挂在这样一个接缝上。
 package extensions
 
-import "openaide/backend/internal/config"
+import "openaide/backend/config"
 
 // StrategyFactory 由具体实现提供:给定配置,自行判断是否启用并完成装配。
 // 返回 error 表示装配失败;是否启用由工厂内部依据 cfg 决定。

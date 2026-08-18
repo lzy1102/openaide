@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"openaide/backend/internal/index"
+	"openaide/backend/index"
 	"openaide/backend/core"
 )
 

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"openaide/backend/internal/infra"
 	"openaide/backend/core"
-	"openaide/backend/internal/lang"
+	"openaide/backend/lang"
 	"openaide/backend/orchestration"
 	"strconv"
 	"strings"

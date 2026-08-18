@@ -13,7 +13,7 @@ import (
 
 	"openaide/backend/internal/infra"
 	"openaide/backend/core"
-	"openaide/backend/internal/lang"
+	"openaide/backend/lang"
 )
 
 // handleTUICommand 斜杠命令分发

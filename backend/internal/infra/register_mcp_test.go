@@ -11,7 +11,7 @@ import (
 
 	"openaide/backend/core"
 	"openaide/backend/internal/mcp"
-	"openaide/backend/internal/tools"
+	"openaide/backend/tools"
 )
 
 // fakeMCPHTTPServer implements just enough of MCP Streamable HTTP

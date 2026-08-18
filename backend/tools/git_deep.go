@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"openaide/backend/internal/git"
+	"openaide/backend/git"
 	"openaide/backend/core"
 )
 

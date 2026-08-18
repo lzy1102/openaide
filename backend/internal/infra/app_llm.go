@@ -1,10 +1,10 @@
-package infra
+﻿package infra
 
 import (
 	"log/slog"
 
-	"openaide/backend/internal/config"
-	"openaide/backend/internal/llm"
+	"openaide/backend/config"
+	"openaide/backend/llm"
 )
 
 func createLLMGateway(cfg *config.Config) *llm.Gateway {

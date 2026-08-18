@@ -3,11 +3,11 @@
 import (
 	"log/slog"
 
-	"openaide/backend/internal/config"
+	"openaide/backend/config"
 	"openaide/backend/internal/compress"
 	"openaide/backend/internal/infra/extensions"
 	"openaide/backend/core"
-	"openaide/backend/internal/llm"
+	"openaide/backend/llm"
 )
 
 // kernelStrategyRegistry 汇聚内核可替换策略的装配工厂。

@@ -10,7 +10,7 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 
-	"openaide/backend/internal/config"
+	"openaide/backend/config"
 	"openaide/backend/internal/infra"
 	"openaide/backend/core"
 )

@@ -21,7 +21,7 @@ import (
 
 	"openaide/backend/internal/infra"
 	"openaide/backend/core"
-	"openaide/backend/internal/lang"
+	"openaide/backend/lang"
 )
 
 // ── Styles ─────────────────────────────────────────────────

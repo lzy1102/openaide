@@ -1,10 +1,10 @@
-package main
+﻿package main
 
 import (
 	"fmt"
 	"os"
 
-	"openaide/backend/internal/config"
+	"openaide/backend/config"
 )
 
 type onboardText struct {

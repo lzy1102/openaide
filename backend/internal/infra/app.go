@@ -13,17 +13,17 @@ import (
 	"openaide/backend/internal/auth"
 	"openaide/backend/internal/channel"
 	"openaide/backend/internal/codeindex"
-	"openaide/backend/internal/config"
+	"openaide/backend/config"
 	"openaide/backend/core"
-	"openaide/backend/internal/llm"
-	"openaide/backend/internal/lsp"
+	"openaide/backend/llm"
+	"openaide/backend/lsp"
 	"openaide/backend/internal/mcp"
 	"openaide/backend/internal/memory"
 	"openaide/backend/orchestration"
 	"openaide/backend/internal/plugin"
 	"openaide/backend/projectmind"
 	"openaide/backend/rag"
-	"openaide/backend/internal/tools"
+	"openaide/backend/tools"
 )
 
 // Application 应用容器

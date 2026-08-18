@@ -1,11 +1,11 @@
-package main
+﻿package main
 
 import (
 	"strings"
 	"testing"
 	"time"
 
-	"openaide/backend/internal/lang"
+	"openaide/backend/lang"
 )
 
 // 模拟流式执行中的完整 View() 渲染，验证驾驶舱布局完整性

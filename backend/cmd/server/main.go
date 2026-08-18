@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"time"
 
-	"openaide/backend/internal/config"
+	"openaide/backend/config"
 	"openaide/backend/internal/infra"
 	"openaide/backend/internal/webfront"
 )

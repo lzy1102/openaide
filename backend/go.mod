@@ -7,7 +7,6 @@ require (
 	github.com/charmbracelet/bubbletea v1.3.5
 	github.com/charmbracelet/glamour v0.9.1
 	github.com/charmbracelet/lipgloss v1.1.0
-	github.com/chromedp/chromedp v0.15.1
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
@@ -19,6 +18,7 @@ require (
 
 require (
 	github.com/amikos-tech/chroma-go v0.4.1 // indirect
+	github.com/chromedp/chromedp v0.15.1 // indirect
 	github.com/lib/pq v1.12.3 // indirect
 	github.com/milvus-io/milvus/client/v2 v2.6.5 // indirect
 	github.com/qdrant/go-client v1.19.0 // indirect
@@ -206,10 +206,17 @@ require (
 	modernc.org/libc v1.74.4 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
+	openaide/backend/config v0.0.0
 	openaide/backend/core v0.0.0
+	openaide/backend/git v0.0.0 // indirect
+	openaide/backend/index v0.0.0 // indirect
+	openaide/backend/lang v0.0.0
+	openaide/backend/llm v0.0.0
+	openaide/backend/lsp v0.0.0
 	openaide/backend/orchestration v0.0.0
 	openaide/backend/projectmind v0.0.0
 	openaide/backend/rag v0.0.0
+	openaide/backend/tools v0.0.0
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
@@ -220,3 +227,17 @@ replace openaide/backend/rag => ./rag
 replace openaide/backend/orchestration => ./orchestration
 
 replace openaide/backend/projectmind => ./projectmind
+
+replace openaide/backend/lang => ./lang
+
+replace openaide/backend/git => ./git
+
+replace openaide/backend/lsp => ./lsp
+
+replace openaide/backend/index => ./index
+
+replace openaide/backend/llm => ./llm
+
+replace openaide/backend/config => ./config
+
+replace openaide/backend/tools => ./tools

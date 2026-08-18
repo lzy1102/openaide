@@ -12,12 +12,12 @@ import (
 	"time"
 
 	"openaide/backend/internal/codeindex"
-	"openaide/backend/internal/config"
+	"openaide/backend/config"
 	"openaide/backend/internal/event"
 	"openaide/backend/internal/identity"
 	"openaide/backend/core"
 	"openaide/backend/core/trace"
-	"openaide/backend/internal/llm"
+	"openaide/backend/llm"
 	"openaide/backend/internal/plugin"
 	"openaide/backend/rag"
 )

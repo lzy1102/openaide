@@ -1,4 +1,4 @@
-package config
+﻿package config
 
 import (
 	"encoding/json"
@@ -10,7 +10,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"openaide/backend/internal/llm"
+	"openaide/backend/llm"
 )
 
 // Config 应用配置

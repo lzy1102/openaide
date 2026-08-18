@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"openaide/backend/internal/lang"
+	"openaide/backend/lang"
 )
 
 func (m *tuiModel) applySubProgress(msg subProgressMsg) {

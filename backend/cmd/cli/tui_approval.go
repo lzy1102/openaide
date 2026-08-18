@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"encoding/json"
@@ -8,7 +8,7 @@ import (
 
 	"github.com/charmbracelet/bubbletea"
 
-	"openaide/backend/internal/lang"
+	"openaide/backend/lang"
 )
 
 // approvalRequest 内核同步回调与 TUI 之间的审批请求

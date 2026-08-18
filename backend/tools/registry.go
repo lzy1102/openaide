@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 
 	"openaide/backend/core"
-	"openaide/backend/internal/lsp"
+	"openaide/backend/lsp"
 )
 
 type registryData struct {

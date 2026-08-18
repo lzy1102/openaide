@@ -1,9 +1,9 @@
-package main
+﻿package main
 
 import (
 	"fmt"
 	"github.com/charmbracelet/lipgloss"
-	"openaide/backend/internal/lang"
+	"openaide/backend/lang"
 	"strings"
 	"time"
 )

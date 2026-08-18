@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"openaide/backend/internal/config"
+	"openaide/backend/config"
 	"openaide/backend/internal/eval"
 	"openaide/backend/internal/infra"
 )

@@ -9,7 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"openaide/backend/core"
-	"openaide/backend/internal/lang"
+	"openaide/backend/lang"
 )
 
 // streamMsg 包装一个 kernel.StreamChunk

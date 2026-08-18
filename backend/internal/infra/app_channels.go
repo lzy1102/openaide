@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"openaide/backend/internal/channel"
-	"openaide/backend/internal/config"
+	"openaide/backend/config"
 	"openaide/backend/core"
 	"openaide/backend/orchestration"
 	"openaide/backend/internal/plugin"

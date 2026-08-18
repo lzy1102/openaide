@@ -14,10 +14,10 @@ import (
 	"syscall"
 	"time"
 
-	"openaide/backend/internal/config"
+	"openaide/backend/config"
 	"openaide/backend/internal/infra"
 	"openaide/backend/core"
-	"openaide/backend/internal/lang"
+	"openaide/backend/lang"
 	"openaide/backend/internal/webfront"
 )
 
