@@ -1,4 +1,4 @@
-﻿package config
+package config
 
 import (
 	"encoding/json"
@@ -127,6 +127,8 @@ type KernelConfig struct {
 	MaxRoundsCap      int    `json:"max_rounds_cap" yaml:"max_rounds_cap"`
 	SystemPrompt      string `json:"system_prompt" yaml:"system_prompt"`
 	ReflectionEnabled *bool  `json:"reflection_enabled" yaml:"reflection_enabled"` // toggle reflection on/off (default true)
+	// Persona 激活的人格/能力集 id(如 coder/architect)。为空时使用内核默认人格。
+	Persona string `json:"persona,omitempty" yaml:"persona,omitempty"`
 }
 
 // CodeIndexConfig 代码索引配置。

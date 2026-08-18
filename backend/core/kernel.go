@@ -47,6 +47,9 @@ type AgentKernel struct {
 	// 代码索引(prompt 阶段注入相关代码,可选)
 	codeIndexer CodeIndexer
 
+	// 人格/能力集(prompt 阶段提供 L0 层,可选)
+	persona PersonaProvider
+
 	// 事件系统
 	handlerSeq    atomic.Uint64 // monotonic ID counter for tracked handlers
 	eventHandlers atomic.Value  // []trackedHandler — lock-free reads
@@ -182,6 +185,11 @@ func (k *AgentKernel) SetPlanner(p *Planner) { k.planner = p }
 // SetCodeIndexer 设置代码索引器(可选)。
 // 设置后,coding/debugging 任务会在 prompt 中注入与 query 语义相关的代码 chunk。
 func (k *AgentKernel) SetCodeIndexer(ci CodeIndexer) { k.codeIndexer = ci }
+
+// SetPersona 设置人格/能力集提供者(可选)。
+// 设置后,系统提示词 L0 层改用激活 persona 的提示词;未设置或未激活时
+// 回退到内置默认 L0,行为保持不变。
+func (k *AgentKernel) SetPersona(p PersonaProvider) { k.persona = p }
 
 // SetResearchTimeout 覆盖研究子循环超时(0 = 默认 60s)。
 func (k *AgentKernel) SetResearchTimeout(d time.Duration) { k.researchTimeout = d }

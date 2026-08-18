@@ -215,6 +215,7 @@ require (
 	openaide/backend/lsp v0.0.0
 	openaide/backend/orchestration v0.0.0
 	openaide/backend/projectmind v0.0.0
+	openaide/backend/prompts v0.0.0
 	openaide/backend/rag v0.0.0
 	openaide/backend/tools v0.0.0
 	sigs.k8s.io/yaml v1.4.0 // indirect
@@ -241,3 +242,5 @@ replace openaide/backend/llm => ./llm
 replace openaide/backend/config => ./config
 
 replace openaide/backend/tools => ./tools
+
+replace openaide/backend/prompts => ./prompts

@@ -179,6 +179,39 @@ func TestBuildSystemLayer_FileOverride(t *testing.T) {
 	}
 }
 
+// mockPersonaProvider is a test double for PersonaProvider.
+type mockPersonaProvider struct{ prompt string }
+
+func (m *mockPersonaProvider) ActiveSystemPrompt() string { return m.prompt }
+
+func TestActiveL0_FallsBackToDefault(t *testing.T) {
+	k := NewAgentKernel(&MockLLMProvider{}, &MockToolExecutor{}, &MockMemory{}, NewSessionStoreAdapter(), DefaultConfig())
+	if got := k.activeL0(); got == "" {
+		t.Fatal("expected non-empty default L0 when no persona provider")
+	}
+	// Provider present but no active persona -> fall back to default.
+	k.SetPersona(&mockPersonaProvider{prompt: ""})
+	if got := k.activeL0(); got == "" {
+		t.Fatal("expected fallback to default L0 when persona inactive")
+	}
+}
+
+func TestActiveL0_UsesPersonaPrompt(t *testing.T) {
+	k := NewAgentKernel(&MockLLMProvider{}, &MockToolExecutor{}, &MockMemory{}, NewSessionStoreAdapter(), DefaultConfig())
+	persona := "You are the Architect. Design-focused."
+	k.SetPersona(&mockPersonaProvider{prompt: persona})
+
+	query := &Query{Content: "design the module", Options: QueryOptions{}}
+	result := k.buildSystemPrompt(query)
+	if !strings.Contains(result, persona) {
+		t.Fatalf("expected persona L0 in system prompt, got: %q", result[:min(200, len(result))])
+	}
+	// Persona replaces the default L0 identity.
+	if strings.Contains(result, "一个全能的 AI 编码助手") || strings.Contains(result, "versatile AI coding assistant") {
+		t.Error("persona prompt should replace the default L0, not append to it")
+	}
+}
+
 func TestDetectProjectLangs_SharedAnchors(t *testing.T) {
 	dir := t.TempDir()
 	// 盲区补齐:go.work / setup.py / requirements.txt 应被识别

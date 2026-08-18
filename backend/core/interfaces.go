@@ -178,3 +178,13 @@ type ReflectionResult struct {
 	Suggestions []string `json:"suggestions"` // 改进建议
 	Learned     string   `json:"learned"`     // 学到的经验
 }
+
+// PersonaProvider 提供当前激活的"人格/能力集"。
+// 不同 persona 携带不同的系统提示词（L0 层），从而改变内核行为。
+// 内核只依赖该接口，具体实现由外部（prompts 模块）注入。
+// 未激活任何 persona 时返回空，内核回退到内置默认 L0。
+type PersonaProvider interface {
+	// Active returns the currently active persona's system prompt, or "" if
+	// no persona is selected.
+	ActiveSystemPrompt() string
+}

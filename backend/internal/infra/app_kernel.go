@@ -19,6 +19,7 @@ import (
 	"openaide/backend/core/trace"
 	"openaide/backend/llm"
 	"openaide/backend/internal/plugin"
+	"openaide/backend/prompts"
 	"openaide/backend/rag"
 )
 
@@ -71,6 +72,18 @@ func createKernel(cfg *config.Config, gateway *llm.Gateway, retriever rag.Retrie
 		}
 	}
 	agentKernel.SetSkillActor(skillActor)
+
+	// 人格/能力集插件:按 config 激活的 persona 提供 L0 层系统提示词。
+	// 未配置 persona 时内核回退到内置默认 L0,行为不变。
+	personaStore := prompts.NewStore(cfg.Storage.DataDir + "/prompts/personas")
+	if cfg.Kernel.Persona != "" {
+		if p, err := personaStore.SetActive(cfg.Kernel.Persona); err != nil {
+			slog.Warn("Persona activation failed, using default", "persona", cfg.Kernel.Persona, "error", err)
+		} else {
+			agentKernel.SetPersona(personaStore)
+			slog.Info("Persona activated", "persona", p.Name, "desc", p.Description)
+		}
+	}
 
 	// 任务规划器:复杂查询(complexity >= 15)在 ReAct 前分解为子任务
 	// (规划/自适应轮数/上下文压缩/反思已由 kernelStrategyRegistry 装配)

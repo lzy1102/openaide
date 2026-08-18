@@ -511,7 +511,7 @@ func (k *AgentKernel) buildSystemPrompt(query *Query) string {
 	dir := os.Getenv("HOME") + "/.openaide/data/prompts"
 	var sb strings.Builder
 
-	sb.WriteString(promptL0())
+	sb.WriteString(k.activeL0())
 
 	// User custom prompts: appended after system layers, never overwritten on upgrade
 	if userPrompt := loadUserPrompts(dir); userPrompt != "" {
@@ -525,6 +525,19 @@ func (k *AgentKernel) buildSystemPrompt(query *Query) string {
 	}
 
 	return sb.String()
+}
+
+// activeL0 returns the L0 core-rules layer. When a persona provider is
+// configured and has an active persona, its system prompt replaces the
+// built-in default. Otherwise the built-in default L0 is used, preserving
+// historical behavior.
+func (k *AgentKernel) activeL0() string {
+	if k.persona != nil {
+		if p := k.persona.ActiveSystemPrompt(); p != "" {
+			return p
+		}
+	}
+	return promptL0()
 }
 
 // promptL3 returns the task adapter for the current query.
