@@ -191,11 +191,31 @@ OPENAIDE_PLUGINS_DIR=examples/plugins openaide
 | `packages/api/` | HTTP/WS 服务 |
 | `docs/ARCHITECTURE.md` | 内核-插件契约（开发必读） |
 
-### 2.4 发布/分发（可选）
+### 2.4 发布与分发
+
+发布形态：**源码包 + tsx 运行时**。各包 `main`/`exports` 指向 `src/*.ts`，cli 的 `bin`（`packages/cli/bin/openaide.js`）经 `import('tsx')` 运行时加载，**无需预编译**，本地全局 link 与 npm 全局安装行为一致（已用 tarball 隔离安装验证）。
+
+一键发布全部 `@openaide/*` 包（按依赖顺序）+ 打 tag：
 
 ```bash
-npm run build
-npm publish --workspace @openaide/cli --access public
+node scripts/publish.mjs               # 发布 + git tag v<version> + push tag
+node scripts/publish.mjs --no-tag      # 仅发布（CI 用）
+node scripts/publish.mjs --tag=v0.3.0  # 发布 + 指定 tag
 ```
 
-发布后使用者 `npm install -g @openaide/cli` 即可，无需 clone 仓库。
+发布顺序：`core → config/llm/plugins/memory → tools/api → cli`。打 tag 后 GitHub Actions 的 `release` job 会自动再次发布并创建 GitHub Release。
+
+**别人怎么安装（最终用户）**
+
+```bash
+# 方式 A：全局安装（推荐，安装后命令行直接可用）
+npm install -g @openaide/cli
+openaide            # 交互式
+openaide "问题"      # 一次性问答
+openaide serve      # API 服务
+
+# 方式 B：源码/自托管（无需 npm registry）
+git clone https://github.com/lzy1102/openaide.git
+cd openaide
+node scripts/install.mjs    # npm install + 全局 link openaide
+```
