@@ -10,26 +10,65 @@
 
 ---
 
-## 快速开始
+## 安装
+
+需要 Node.js ≥ 18。
 
 ```bash
+# 安装依赖 + 全局 link openaide 命令（推荐）
+node scripts/install.mjs
+
+# 或仅开发模式：只装依赖，不生成全局命令
 npm install
-npm run dev            # 交互式 REPL（默认）
-npm run dev -- plugins # 列出已加载插件与工具
-npm run dev -- serve   # 启动 HTTP/WS API 服务
 ```
 
-## 使用
+全局安装后可用 `openaide` 命令。卸载全局命令：
 
 ```bash
-openaide                # 交互式 REPL
-openaide "修复这个 bug"  # 一次性问答
-openaide plugins        # 列出已加载插件与工具
-openaide sessions       # 列出持久化会话
-openaide serve          # 启动 HTTP/WS API 服务（端口经 OPENAIDE_PORT）
-openaide setup          # 配置向导
+npm unlink -g openaide
+```
+
+## 编译与运行
+
+```bash
+npm run dev            # tsx 直接运行（免编译，默认）
+npm run build          # 编译所有包到 dist/
+npm run typecheck      # 全部包类型检查
+npm test               # 运行全部测试
+
+openaide               # 交互式 REPL
+openaide "修复这个 bug" # 一次性问答
 openaide --version
 ```
+
+## 配置
+
+配置文件位于 `~/.openaide/config.yaml`（自动创建；模板见 [config.example.yaml](config.example.yaml)，也可运行 `openaide setup` 向导）。所有字段均可被环境变量覆盖。
+
+```bash
+openaide setup         # 交互式配置向导
+```
+
+```yaml
+llm:
+  api_key: sk-xxx
+  model: deepseek-v4-pro
+  base_url: https://api.deepseek.com/v1
+kernel:
+  max_rounds: 10
+  max_tokens: 4000
+```
+
+环境变量覆盖：
+
+| 变量 | 覆盖项 |
+|---|---|
+| `OPENAIDE_API_KEY` | `llm.api_key` |
+| `OPENAIDE_MODEL` | `llm.model` |
+| `OPENAIDE_BASE_URL` | `llm.base_url` |
+| `OPENAIDE_DATA_DIR` | `data_dir`（默认 `~/.openaide`） |
+| `OPENAIDE_PLUGINS_DIR` | `plugins_dir`（默认 `<data_dir>/plugins`） |
+| `OPENAIDE_PORT` | `serve` 命令端口（默认 8080） |
 
 ## 架构
 
@@ -78,20 +117,6 @@ const plugin: OpenAIDePlugin = {
 };
 
 export default plugin;
-```
-
-## 配置
-
-`~/.openaide/config.yaml`（可经环境变量覆盖：`OPENAIDE_DATA_DIR`、`OPENAIDE_PLUGINS_DIR`、`OPENAIDE_API_KEY`、`OPENAIDE_MODEL`、`OPENAIDE_BASE_URL`、`OPENAIDE_PORT`）：
-
-```yaml
-llm:
-  api_key: sk-xxx
-  model: deepseek-v4-pro
-  base_url: https://api.deepseek.com/v1
-kernel:
-  max_rounds: 10
-  max_tokens: 4000
 ```
 
 ## 开发

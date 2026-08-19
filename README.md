@@ -10,26 +10,65 @@
 
 ---
 
-## Quick Start
+## Install
+
+Requires Node.js ≥ 18.
 
 ```bash
+# install deps + link global `openaide` command (recommended)
+node scripts/install.mjs
+
+# or dev mode only: install deps, run without a global command
 npm install
-npm run dev            # interactive REPL (default)
-npm run dev -- plugins # list loaded plugins & tools
-npm run dev -- serve   # start HTTP/WS API server
 ```
 
-## Usage
+Global install links the `openaide` command. To remove it:
 
 ```bash
-openaide                # interactive REPL
+npm unlink -g openaide
+```
+
+## Compile & Run
+
+```bash
+npm run dev            # run directly via tsx (no build step, default)
+npm run build          # compile all packages to dist/
+npm run typecheck      # typecheck all packages
+npm test               # run all tests
+
+openaide               # interactive REPL
 openaide "fix this bug" # one-shot query
-openaide plugins        # list loaded plugins and tools
-openaide sessions       # list persisted sessions
-openaide serve          # start HTTP/WS API server (port via OPENAIDE_PORT)
-openaide setup          # config wizard
 openaide --version
 ```
+
+## Configure
+
+Config lives at `~/.openaide/config.yaml` (auto-created; see [config.example.yaml](config.example.yaml) and `openaide setup`). Every field can be overridden by an environment variable.
+
+```bash
+openaide setup         # interactive config wizard
+```
+
+```yaml
+llm:
+  api_key: sk-xxx
+  model: deepseek-v4-pro
+  base_url: https://api.deepseek.com/v1
+kernel:
+  max_rounds: 10
+  max_tokens: 4000
+```
+
+Env overrides:
+
+| Variable | Overrides |
+|---|---|
+| `OPENAIDE_API_KEY` | `llm.api_key` |
+| `OPENAIDE_MODEL` | `llm.model` |
+| `OPENAIDE_BASE_URL` | `llm.base_url` |
+| `OPENAIDE_DATA_DIR` | `data_dir` (default `~/.openaide`) |
+| `OPENAIDE_PLUGINS_DIR` | `plugins_dir` (default `<data_dir>/plugins`) |
+| `OPENAIDE_PORT` | `serve` command port (default 8080) |
 
 ## Architecture
 
@@ -78,20 +117,6 @@ const plugin: OpenAIDePlugin = {
 };
 
 export default plugin;
-```
-
-## Configuration
-
-`~/.openaide/config.yaml` (overridable by env: `OPENAIDE_DATA_DIR`, `OPENAIDE_PLUGINS_DIR`, `OPENAIDE_API_KEY`, `OPENAIDE_MODEL`, `OPENAIDE_BASE_URL`, `OPENAIDE_PORT`):
-
-```yaml
-llm:
-  api_key: sk-xxx
-  model: deepseek-v4-pro
-  base_url: https://api.deepseek.com/v1
-kernel:
-  max_rounds: 10
-  max_tokens: 4000
 ```
 
 ## Development
