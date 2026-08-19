@@ -72,6 +72,8 @@ kernel:
 
 ## 架构
 
+> 文档：[USAGE.md](docs/USAGE.md)（使用者 + 开发者指南）· [ARCHITECTURE.md](docs/ARCHITECTURE.md)（内核-插件契约）· [config.example.yaml](config.example.yaml)
+
 Monorepo（npm workspaces）：
 
 ```

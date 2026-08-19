@@ -72,6 +72,8 @@ Env overrides:
 
 ## Architecture
 
+> Docs: [USAGE.md](docs/USAGE.md) (user + developer guide) · [ARCHITECTURE.md](docs/ARCHITECTURE.md) (kernel–plugin contract) · [config.example.yaml](config.example.yaml)
+
 Monorepo (npm workspaces):
 
 ```
