@@ -45,6 +45,8 @@ cli (REPL + 命令)          api (HTTP/WS + SSE)
    tools (内置, 以插件形态)  config (yaml + env)
 ```
 
+> 内核与插件的完整契约（原则、seam、暴露信息、生命周期、扩展点）→ [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+
 ## 核心概念
 
 - **一切皆插件**：内核的工具、人格、钩子全部经插件体系注入——内置与用户插件走同一套注册逻辑

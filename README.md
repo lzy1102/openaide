@@ -45,6 +45,8 @@ cli (REPL + commands)     api (HTTP/WS + SSE)
    tools (builtin, as a plugin)   config (yaml + env)
 ```
 
+> Full contract between kernel and plugins (principles, seams, exposed info, lifecycle, extension points) → [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+
 ## Key Concepts
 
 - **Everything is a plugin**: kernel tools, personas and hooks all enter through the plugin system — builtin and user plugins share the same registration path
