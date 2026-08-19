@@ -72,6 +72,7 @@ TUI 顶部显示会话 ID / 工具数 / 插件；对话流实时显示思考、�
 | `/new` | 开新会话（清上下文） |
 | `/sessions` | 列出历史会话 |
 | `/use <id>` | 恢复历史会话继续聊 |
+| `/model <id>` | 运行时切换模型（无参显示当前） |
 | `/plugins` | 查看已加载插件与工具 |
 | `/persona` | 查看可用人格 |
 | `/exit` `/quit` | 退出 |
@@ -83,6 +84,20 @@ TUI 顶部显示会话 ID / 工具数 / 插件；对话流实时显示思考、�
 ```bash
 openaide "把项目里所有 README 标题改成大写"
 openaide "看看当前目录有什么文件"     # 会自动调用 builtin 读文件/列目录/执行命令
+```
+
+高级参数（可任意组合）：
+
+```bash
+# 指定模型
+openaide --model deepseek-v4 "解释这个 bug"
+
+# 文件作为上下文注入 prompt
+openaide src/main.ts "找这个文件里的 bug"
+
+# JSON 输出（脚本/管道友好）
+openaide --output json "1+1=?"
+# → {"content":"...","sessionId":"..."}
 ```
 
 ### 1.5 API 服务（给前端/远程使用）

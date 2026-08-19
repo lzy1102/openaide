@@ -1,13 +1,18 @@
 /**
  * OpenAIDE 入口 —— TS 版。
  * 用法：
- *   openaide "query"     一次性问答
- *   openaide repl        交互式 REPL
- *   openaide plugins     列出已加载插件与工具
- *   openaide sessions    列出已持久化的历史会话
- *   openaide setup       配置向导（写入 ~/.openaide/config.yaml）
- *   openaide --version   版本
- *   openaide --help      帮助
+ *   openaide "query"            一次性问答
+ *   openaide file.go "prompt"   文件作为上下文 + 问答
+ *   openaide repl               交互式 REPL（默认）
+ *   openaide -c                 恢复最近一次会话续聊
+ *   openaide plugins            列出已加载插件与工具
+ *   openaide sessions           列出已持久化的历史会话
+ *   openaide serve              启动 HTTP/WS API 服务
+ *   openaide setup              配置向导
+ *   openaide --model <id>       运行时指定模型（可配子命令/问答）
+ *   openaide --output json      一次性问答输出 JSON
+ *   openaide --version          版本
+ *   openaide --help             帮助
  */
 import { buildApp, printToolInventory } from './app.js';
 import type { App } from './app.js';
@@ -16,6 +21,7 @@ import { runTui } from './tui.js';
 import { runServe } from './serve.js';
 import { loadConfig, saveConfig } from '@openaide/config';
 import { readFileSync } from 'node:fs';
+import { parseArgs, buildPrompt } from './args.js';
 
 const version = (
   JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }
@@ -26,12 +32,16 @@ OpenAIDE — everything is a plugin.
 
 Usage:
   openaide <query>        one-shot: run a single query
+  openaide <file...> <query>
+                          include files as context, then query
   openaide repl           interactive REPL (default)
   openaide -c             continue the most recent session
   openaide plugins        list loaded plugins and tools
   openaide sessions       list persisted sessions
   openaide serve          start HTTP/WS API server (OPENAIDE_PORT, default 8080)
   openaide setup          config wizard
+  openaide --model <id>   override model (works with any command)
+  openaide --output json  one-shot output as JSON
   openaide --version      print version
   openaide --help         show this help
 `;
@@ -64,15 +74,15 @@ async function runInteractive(app: App, initialSessionId?: string): Promise<void
 }
 
 async function main(): Promise<void> {
-  const args = process.argv.slice(2);
-  const cmd = args[0];
+  const cli = parseArgs(process.argv.slice(2));
+  const cmd = cli.cmd;
 
-  if (cmd === '--version' || cmd === '-v') {
-    console.log(`openaide ${version}`);
-    return;
-  }
   if (cmd === '--help' || cmd === '-h' || cmd === 'help') {
     console.log(HELP);
+    return;
+  }
+  if (cmd === '--version' || cmd === '-v' || cmd === 'version') {
+    console.log(`openaide ${version}`);
     return;
   }
   if (cmd === 'setup') {
@@ -80,7 +90,11 @@ async function main(): Promise<void> {
     return;
   }
 
-  const app = await buildApp();
+  // --model 覆盖：加载配置并改模型
+  const cfg = loadConfig();
+  if (cli.model) cfg.llm.model = cli.model;
+
+  const app = await buildApp(cfg);
 
   // -c / --continue：恢复最近一次会话并进入交互（续聊）
   if (cmd === '-c' || cmd === '--continue') {
@@ -123,9 +137,13 @@ async function main(): Promise<void> {
     return;
   }
 
-  // one-shot：以首个非命令参数作为查询
-  if (cmd && !cmd.startsWith('-')) {
-    await runQuery(app, cmd);
+  // one-shot：有 prompt 或上下文文件即执行
+  if (cli.prompt || cli.contextFiles.length > 0) {
+    const content = buildPrompt(cli.contextFiles, cli.prompt);
+    const r = await runQuery(app, content);
+    if (cli.outputJson) {
+      console.log(JSON.stringify({ content: r.content, sessionId: r.sessionId }));
+    }
     return;
   }
 

@@ -19,13 +19,21 @@ export interface QueryContext {
   projectId?: string;
 }
 
+/** 一次查询的结果（One-shot 与 REPL 共用） */
+export interface QueryResult {
+  sessionId: string;
+  /** 助手输出的纯文本（不含工具调用，供 --output json 使用） */
+  content: string;
+}
+
 /**
  * 流式处理一条查询并输出（One-shot 与 REPL 共用）。
- * 返回实际使用的 sessionId（未传入时自动新建并复用）。
+ * 返回实际使用的 sessionId 与累计的助手文本。
  */
-export async function runQuery(app: App, content: string, ctx: QueryContext = {}): Promise<string> {
+export async function runQuery(app: App, content: string, ctx: QueryContext = {}): Promise<QueryResult> {
   const projectId = ctx.projectId ?? 'default';
   const sessionId = ctx.sessionId ?? newId();
+  let full = '';
   process.stdout.write('\n');
   for await (const chunk of app.kernel.processStream(
     { sessionId, projectId, userId: 'local', content, options: {} },
@@ -35,7 +43,10 @@ export async function runQuery(app: App, content: string, ctx: QueryContext = {}
         if (chunk.reasoningContent) process.stdout.write(`\x1b[90m${chunk.reasoningContent}\x1b[0m`);
         break;
       case StreamChunkType.Content:
-        if (chunk.content) process.stdout.write(chunk.content);
+        if (chunk.content) {
+          process.stdout.write(chunk.content);
+          full += chunk.content;
+        }
         break;
       case StreamChunkType.ToolCall:
         process.stdout.write(`\n\x1b[36m  ⚡ ${chunk.toolName}(${chunk.toolArgs})\x1b[0m\n`);
@@ -53,7 +64,7 @@ export async function runQuery(app: App, content: string, ctx: QueryContext = {}
     }
   }
   process.stdout.write('\n\n');
-  return sessionId;
+  return { sessionId, content: full };
 }
 
 const HISTORY_LIMIT = 500;
@@ -83,6 +94,7 @@ Commands:
   /new                   start a new session (context reset)
   /sessions              list recent sessions
   /use <id>              resume a session by id
+  /model <id>            switch model at runtime (no arg = show current)
   /plugins               list active plugins and tools
   /persona               list available personas
   /exit, /quit           quit
@@ -134,6 +146,15 @@ export async function runRepl(app: App, initialSessionId?: string): Promise<void
           sessionId = undefined;
           console.log('  new session started.');
           continue;
+        case '/model':
+          if (!arg) {
+            console.log(`  current model: ${app.llm.getModelId()}`);
+            console.log('  usage: /model <model-id>');
+          } else {
+            app.llm.setModelId(arg);
+            console.log(`  model switched to: ${arg}`);
+          }
+          continue;
         case '/sessions': {
           const sessions = await app.sessions.list();
           if (sessions.length === 0) {
@@ -178,6 +199,7 @@ export async function runRepl(app: App, initialSessionId?: string): Promise<void
       }
     }
 
-    sessionId = await runQuery(app, line, { sessionId });
+    const r = await runQuery(app, line, { sessionId });
+    sessionId = r.sessionId;
   }
 }

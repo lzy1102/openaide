@@ -27,6 +27,7 @@ const HELP_TEXT = [
   '  /new                   start a new session (context reset)',
   '  /sessions              list recent sessions',
   '  /use <id>              resume a session by id',
+  '  /model <id>            switch model at runtime',
   '  /plugins               list active plugins and tools',
   '  /persona               list available personas',
   '  /exit, /quit           quit',
@@ -106,6 +107,14 @@ export function Tui({ app, initialSessionId }: { app: App; initialSessionId?: st
           }
           return;
         }
+        case '/model':
+          if (!arg) {
+            push({ kind: 'info', content: `current model: ${app.llm.getModelId()}\nusage: /model <model-id>` });
+          } else {
+            app.llm.setModelId(arg);
+            push({ kind: 'info', content: `model switched to: ${arg}` });
+          }
+          return;
         case '/plugins':
           push({
             kind: 'info',
