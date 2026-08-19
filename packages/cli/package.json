@@ -1,0 +1,28 @@
+{
+  "name": "@openaide/cli",
+  "version": "0.3.0",
+  "type": "module",
+  "main": "./src/main.ts",
+  "types": "./src/main.ts",
+  "exports": {
+    ".": "./src/main.ts"
+  },
+  "bin": {
+    "openaide": "./src/main.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.build.json --noEmit",
+    "dev": "tsx src/main.ts"
+  },
+  "dependencies": {
+    "@openaide/api": "*",
+    "@openaide/config": "*",
+    "@openaide/core": "*",
+    "@openaide/llm": "*",
+    "@openaide/memory": "*",
+    "@openaide/plugins": "*",
+    "@openaide/tools": "*"
+  },
+  "license": "MIT"
+}

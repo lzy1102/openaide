@@ -1,37 +1,22 @@
 # OpenAIDE — AI Agent 内核
 
-[![Build](https://github.com/lzy1102/openaide/actions/workflows/build-deploy.yml/badge.svg)](https://github.com/lzy1102/openaide/actions)
-[![npm](https://img.shields.io/npm/v/@lzy1102/openaide)](https://www.npmjs.com/package/@lzy1102/openaide)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Go 1.26](https://img.shields.io/badge/Go-1.26-00ADD8.svg)](https://go.dev/)
 
 [English](README.md) | [中文](#)
 
-**Go 实现的 AI Agent 内核——反思进化、记忆积累、每次任务都在变聪明。** SQLite · 向量记忆 · 39–47 工具 · 24 语言 LSP
+**TypeScript 实现的 AI Agent 内核——一切皆插件。** ReAct 循环 · 插件动态加载 · SQLite 持久化 · OpenAI 兼容网关
 
-> 反思 → 技能反馈 → MemGPT 记忆 —— 越用越聪明。
+> 同进程动态加载插件（无子进程）——插件通过统一接口注册工具、钩子与人格。
 
 ---
 
 ## 快速开始
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/lzy1102/openaide/master/install.sh | bash
-openaide setup
-openaide
-```
-
-## 安装
-
-```bash
-# curl
-curl -fsSL https://raw.githubusercontent.com/lzy1102/openaide/master/install.sh | bash
-
-# npm
-npm install -g @lzy1102/openaide
-
-# Windows
-curl -o install.bat https://raw.githubusercontent.com/lzy1102/openaide/master/install.bat && install.bat
+npm install
+npm run dev            # 交互式 REPL（默认）
+npm run dev -- plugins # 列出已加载插件与工具
+npm run dev -- serve   # 启动 HTTP/WS API 服务
 ```
 
 ## 使用
@@ -39,51 +24,80 @@ curl -o install.bat https://raw.githubusercontent.com/lzy1102/openaide/master/in
 ```bash
 openaide                # 交互式 REPL
 openaide "修复这个 bug"  # 一次性问答
-openaide -c             # 恢复上次会话
+openaide plugins        # 列出已加载插件与工具
+openaide sessions       # 列出持久化会话
+openaide serve          # 启动 HTTP/WS API 服务（端口经 OPENAIDE_PORT）
 openaide setup          # 配置向导
-openaide server         # 启动 API 服务
+openaide --version
 ```
 
 ## 架构
 
+Monorepo（npm workspaces）：
+
 ```
-openaide server (API)    openaide (REPL)
-         ↓                     ↓
-    orchestration/         agent/kernel/
-    Plan → Execute         ReAct 循环
-         ↓                     ↓
-    llm/   tools/   memory/
-    39–47 工具 · 向量记忆 · SQLite
+cli (REPL + 命令)          api (HTTP/WS + SSE)
+        ↓                        ↓
+      core ── AgentKernel (ReAct 循环, 事件总线, 会话)
+        ↓                        ↓
+   plugins (动态加载)      memory (SQLite)   llm (OpenAI 网关)
+        ↓
+   tools (内置, 以插件形态)  config (yaml + env)
 ```
 
-## 核心能力
+## 核心概念
 
-- **自主学习**: 每次任务后反思、调整技能置信度、积累项目记忆——越用越聪明
-- **多 Agent 协作**: 分析师 → 编码 → 审查 → 执行，会话隔离
-- **深度规划**: 研究 → 提案 → 选择 → 计划 → 执行——多轮深度思考
-- **MemGPT 记忆**: Agent 主动管理记忆——归档、检索、核心事实
-- **Claude 插件兼容**: 直接使用 Claude Code 生态的 skills、MCP、hooks
-- **39–47 内置工具**: 文件、Git、Web、浏览器、LSP、桌面控制
-- **命令安全**: 危险命令被黑名单拦截，安全命令直接执行，写工具受 Undo 保护
+- **一切皆插件**：内核的工具、人格、钩子全部经插件体系注入——内置与用户插件走同一套注册逻辑
+- **同进程动态加载**：插件经 `import()` 加载，无子进程；破坏模块缓存即可热重载
+- **ReAct 循环**：思考 → 工具调用 → 观察 → 循环，支持流式响应
+- **SQLite 持久化**：会话重启不丢，REPL 可恢复历史会话
+- **OpenAI 兼容网关**：纯 `fetch` 实现，支持流式，无重依赖
+- **插件接口**：`OpenAIDePlugin` —— `tools`（注册为 `<插件>__<工具>`）、`hooks`（订阅内核事件）、`persona`（L0 系统提示词）
 
-> **浏览器工具**（8 个：`browser_navigate` / `browser_extract` / `browser_screenshot` / `browser_click` / `browser_fill` / `browser_click_at` / `browser_scroll` / `browser_type`）为**可选开启**：需要本地 Chromium（约 500 MB），仅在启用时注册。通过 `~/.openaide/config.yaml` 中 `browser.enabled: true` 或 `OPENAIDE_BROWSER=true` 开启。Chromium 自动安装仅在 root 下可用——否则请自行安装 Chrome/Chromium，例如 `sudo apt-get install chromium-browser`。
+## 插件示例
 
-> **有意不提供删除/移动工具**：OpenAIDE 刻意不暴露 `delete_file` / `move_file` / `rename_file`——破坏性文件操作不对 Agent 开放，确保它永远不会摧毁你的工作。需要时请在终端自行执行。
+见 [examples/plugins/example-plugin](examples/plugins/example-plugin) —— 一个导出工具、钩子、人格的 TypeScript 插件。
+
+```ts
+import type { OpenAIDePlugin } from '@openaide/plugins';
+
+const plugin: OpenAIDePlugin = {
+  name: 'example',
+  version: '0.1.0',
+  tools: [
+    {
+      name: 'upper',
+      description: '把 text 转为大写',
+      handler: async (args) => ({ content: String(args.text).toUpperCase() }),
+    },
+  ],
+  hooks: [{ event: 'tool.call.ended', handler: async (e) => console.log('工具执行完毕') }],
+  persona: { name: 'example', description: '示例人格', systemPrompt: '...' },
+};
+
+export default plugin;
+```
 
 ## 配置
 
-`~/.openaide/config.yaml`:
+`~/.openaide/config.yaml`（可经环境变量覆盖：`OPENAIDE_DATA_DIR`、`OPENAIDE_PLUGINS_DIR`、`OPENAIDE_API_KEY`、`OPENAIDE_MODEL`、`OPENAIDE_BASE_URL`、`OPENAIDE_PORT`）：
 
 ```yaml
 llm:
   api_key: sk-xxx
   model: deepseek-v4-pro
-  execution_model: deepseek-v4-flash
+  base_url: https://api.deepseek.com/v1
+kernel:
+  max_rounds: 10
+  max_tokens: 4000
 ```
 
-## 参与贡献
+## 开发
 
-见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+```bash
+npm run typecheck  # 全部包类型检查
+npm test           # 运行全部测试
+```
 
 ## License
 

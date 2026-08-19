@@ -1,89 +1,103 @@
 # OpenAIDE — AI Agent Kernel
 
-[![Build](https://github.com/lzy1102/openaide/actions/workflows/build-deploy.yml/badge.svg)](https://github.com/lzy1102/openaide/actions)
-[![npm](https://img.shields.io/npm/v/@lzy1102/openaide)](https://www.npmjs.com/package/@lzy1102/openaide)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Go 1.26](https://img.shields.io/badge/Go-1.26-00ADD8.svg)](https://go.dev/)
 
 [English](#) | [中文](README.zh.md)
 
-**Go-based AI agent kernel that learns from every task.** SQLite · Vector ANN · 39–47 tools · 24-language LSP
+**TypeScript AI agent kernel — everything is a plugin.** ReAct loop · dynamic plugin loading · SQLite persistence · OpenAI-compatible gateway
 
-> Reflection → Skill Feedback → MemGPT Memory — gets smarter with every use.
+> Dynamic plugin loading in-process (no subprocess) — plugins register tools, hooks and personas via a unified interface.
 
 ---
 
 ## Quick Start
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/lzy1102/openaide/master/install.sh | bash
-openaide setup
-openaide
-```
-
-## Install
-
-```bash
-# curl
-curl -fsSL https://raw.githubusercontent.com/lzy1102/openaide/master/install.sh | bash
-
-# npm
-npm install -g @lzy1102/openaide
-
-# Windows
-curl -o install.bat https://raw.githubusercontent.com/lzy1102/openaide/master/install.bat && install.bat
+npm install
+npm run dev            # interactive REPL (default)
+npm run dev -- plugins # list loaded plugins & tools
+npm run dev -- serve   # start HTTP/WS API server
 ```
 
 ## Usage
 
 ```bash
-openaide                # Interactive REPL
-openaide "fix this bug" # One-shot query
-openaide -c             # Resume last session
-openaide setup          # Setup wizard
-openaide server         # Start API server
+openaide                # interactive REPL
+openaide "fix this bug" # one-shot query
+openaide plugins        # list loaded plugins and tools
+openaide sessions       # list persisted sessions
+openaide serve          # start HTTP/WS API server (port via OPENAIDE_PORT)
+openaide setup          # config wizard
+openaide --version
 ```
 
 ## Architecture
 
+Monorepo (npm workspaces):
+
 ```
-openaide server (REST+SSE)  openaide (REPL)
-         ↓                        ↓
-    orchestration/          agent/kernel/
-    Plan → Execute          ReAct loop
-         ↓                        ↓
-    llm/   tools/   memory/
-    39–47 tools · Vector memory · SQLite
+cli (REPL + commands)     api (HTTP/WS + SSE)
+        ↓                      ↓
+      core ── AgentKernel (ReAct loop, event bus, session)
+        ↓                      ↓
+   plugins (dynamic load)   memory (SQLite)   llm (OpenAI gateway)
+        ↓
+   tools (builtin, as a plugin)   config (yaml + env)
 ```
 
-## Key Features
+## Key Concepts
 
-- **Self-Learning**: Reflects on each task, adjusts skill confidence, accumulates project memory — gets smarter over time
-- **Multi-Agent Team**: Analyst → Coder → Reviewer → Executor with isolated sessions
-- **DeepPlan**: Research → Propose → Select → Plan → Execute — multi-round deep thinking
-- **MemGPT Memory**: Agent manages its own memory — archive, retrieve, core facts
-- **Claude Plugin Compatible**: Drop-in skills, MCP servers, hooks from Claude Code ecosystem
-- **39–47 Built-in Tools**: Filesystem, Git, Web, Browser, LSP, Desktop control
-- **Command Safety**: Dangerous commands blocked by blacklist, safe commands run directly, write tools protected by Undo
+- **Everything is a plugin**: kernel tools, personas and hooks all enter through the plugin system — builtin and user plugins share the same registration path
+- **Dynamic loading in-process**: plugins are loaded via `import()`, no subprocess; hot-reload by busting the module cache
+- **ReAct loop**: think → tool call → observe → loop, with streaming responses
+- **SQLite persistence**: sessions survive restarts; REPL can resume past conversations
+- **OpenAI-compatible gateway**: plain `fetch`, streaming, no heavy dependencies
+- **Plugin interface**: `OpenAIDePlugin` — `tools` (registered as `<plugin>__<tool>`), `hooks` (subscribe kernel events), `persona` (L0 system prompt)
 
-> **Browser tools** (8 tools: `browser_navigate` / `browser_extract` / `browser_screenshot` / `browser_click` / `browser_fill` / `browser_click_at` / `browser_scroll` / `browser_type`) are **opt-in**: they require a local Chromium install (~500 MB) and are only registered when enabled. Enable via `browser.enabled: true` in `~/.openaide/config.yaml` or `OPENAIDE_BROWSER=true`. Auto-install of Chromium works only when running as root — otherwise install Chrome/Chromium yourself, e.g. `sudo apt-get install chromium-browser`.
+## Plugin Example
 
-> **No delete/move tools by design**: OpenAIDE intentionally has no `delete_file` / `move_file` / `rename_file` tools — destructive file operations are not exposed to the agent, so it can never destroy work. Do destructive ops yourself in your terminal when needed.
+See [examples/plugins/example-plugin](examples/plugins/example-plugin) — a TypeScript plugin exporting tools, a hook and a persona.
+
+```ts
+import type { OpenAIDePlugin } from '@openaide/plugins';
+
+const plugin: OpenAIDePlugin = {
+  name: 'example',
+  version: '0.1.0',
+  tools: [
+    {
+      name: 'upper',
+      description: 'uppercase a text',
+      handler: async (args) => ({ content: String(args.text).toUpperCase() }),
+    },
+  ],
+  hooks: [{ event: 'tool.call.ended', handler: async (e) => console.log('tool done') }],
+  persona: { name: 'example', description: 'example persona', systemPrompt: '...' },
+};
+
+export default plugin;
+```
 
 ## Configuration
 
-`~/.openaide/config.yaml`:
+`~/.openaide/config.yaml` (overridable by env: `OPENAIDE_DATA_DIR`, `OPENAIDE_PLUGINS_DIR`, `OPENAIDE_API_KEY`, `OPENAIDE_MODEL`, `OPENAIDE_BASE_URL`, `OPENAIDE_PORT`):
 
 ```yaml
 llm:
   api_key: sk-xxx
   model: deepseek-v4-pro
-  execution_model: deepseek-v4-flash
+  base_url: https://api.deepseek.com/v1
+kernel:
+  max_rounds: 10
+  max_tokens: 4000
 ```
 
-## Contributing
+## Development
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+```bash
+npm run typecheck  # typecheck all packages
+npm test           # run all tests
+```
 
 ## License
 

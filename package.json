@@ -1,0 +1,26 @@
+{
+  "name": "openaide",
+  "version": "0.3.0",
+  "private": true,
+  "description": "AI Agent kernel platform — TypeScript, plugin-driven, everything is a plugin",
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "tsx packages/cli/src/main.ts",
+    "dev:repl": "tsx packages/cli/src/main.ts repl",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "node scripts/test.mjs"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0"
+  },
+  "license": "MIT"
+}

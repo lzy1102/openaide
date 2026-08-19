@@ -1,0 +1,17 @@
+{
+  "name": "@openaide/core",
+  "version": "0.3.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.build.json --noEmit",
+    "test": "node ../../scripts/test.mjs core"
+  },
+  "dependencies": {},
+  "license": "MIT"
+}

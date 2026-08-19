@@ -1,108 +1,11 @@
-# 环境变量和密钥
-.env
-.env.*
-.openaide
-
-# 数据库
-*.db
-*.sqlite
-*.sqlite3
-
-# 编译产物
-openaide
-openaide-*
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-backend/cli
-backend/assistant
-backend/openaide-*
-backend/openaide[0-9]*
-backend/src/openaide-*
-backend/src/openaide[0-9]*
-terminal/assistant
-terminal/openaide-*
-deploy/
-
-# 临时文件
-tmp_*.txt
-*.tmp
-test_*.json
-config.json
-model.json
-backend/src/*.py
-backend/src/*.log
-backend/src/*.err
-backend/config.server.json
-
-# 日志
+node_modules/
+dist/
 *.log
-logs/
-backend/logs/
-
-# 测试备份文件
-*.disabled
-*.bak
-
-# 部署脚本 (根目录下的旧脚本)
-deploy*.sh
-fix_config.py
-update_config.py
-test*.sh
-test*.py
-
-# 敏感配置（包含 API Key、密码等）
-server_config.json
-server-openrouter-config.json
-openrouter-free-config.json
-config.json
-model.json
-.openaide
-!.openaide.example
-!**/config.example.json
-!*example*.json
-
-# 编译二进制
-backend/cli
-backend/server
-
-# Go
-vendor/
-*.test
-*.test.exe
-*.out
-*.prof
-*.cov
-coverage.*
-profile.*
-go.work
-go.work.sum
-**/go.work
-**/go.work.sum
-
-# 运行时数据
-backend/data/
+.DS_Store
+plugins/installed/
 data/
 
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
-.omo/
+# local tool state
 .claude/
-.trae/
-
-# OS
-.DS_Store
-Thumbs.db
-
-# 文档临时文件
-docs/FlowServer/
-docs/server.cs
-docs/*.exe
-bin/
-~/..openaide/
+.omo/
+.smoke/
