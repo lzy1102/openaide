@@ -24,6 +24,7 @@ export const builtinToolsPlugin: OpenAIDePlugin = {
   name: 'builtin',
   version: '0.3.0',
   description: '内置文件/命令工具',
+  category: 'capability',
   tools: [
     {
       name: 'read_file',

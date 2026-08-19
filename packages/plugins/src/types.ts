@@ -41,6 +41,8 @@ export interface PluginManifest {
   version?: string;
   description?: string;
   author?: string;
+  /** 插件分类（轻量元数据，仅供展示/检索；缺省 'uncategorized'） */
+  category?: string;
   /** 该插件提供的人格名（与 persona 字段互斥使用场景） */
   persona?: string;
   /** manifest 声明的工具入口（实现仍为 TS 模块） */
@@ -58,6 +60,8 @@ export interface OpenAIDePlugin {
   name: string;
   version?: string;
   description?: string;
+  /** 插件分类（轻量元数据，供展示/检索；也可由 openaide.yaml 的 category 声明，缺省 'uncategorized'） */
+  category?: string;
   /** 激活：注册工具/钩子/人格（可选） */
   activate?(ctx: PluginContext): void | Promise<void>;
   /** 卸载钩子（可选） */
@@ -77,4 +81,19 @@ export interface LoadedPlugin {
   dir: string;
   /** 加载时间戳（热重载缓存破坏用） */
   loadedAt: number;
+}
+
+/** 插件信息快照（含分类，供展示/检索） */
+export interface PluginInfo {
+  name: string;
+  version?: string;
+  description?: string;
+  /** 分类：代码声明 > manifest > 'uncategorized' */
+  category: string;
+  /** 已注册工具全名（<插件名>__<工具名>） */
+  tools: string[];
+  /** 已挂载钩子数 */
+  hooks: number;
+  /** 是否提供人格 */
+  persona: boolean;
 }

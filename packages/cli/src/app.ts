@@ -82,8 +82,27 @@ export async function buildApp(config?: Config): Promise<App> {
 /** 打印装配后的工具清单（诊断用） */
 export function printToolInventory(app: App): void {
   const defs = app.registry.definitions();
-  console.log(`[app] ${defs.length} tools registered:`);
+  const plugins = app.plugins.list();
+  console.log(`[app] ${plugins.length} plugins, ${defs.length} tools registered:`);
+
+  // 按分类分组（保持加载顺序）
+  const groups = new Map<string, typeof plugins>();
+  for (const p of plugins) {
+    const key = p.category;
+    const arr = groups.get(key) ?? [];
+    arr.push(p);
+    groups.set(key, arr);
+  }
+  for (const [category, list] of groups) {
+    console.log(`  [${category}]`);
+    for (const p of list) {
+      console.log(
+        `    ${p.name}@${p.version ?? '0.0.0'} — ${p.description ?? ''} (tools: ${p.tools.length}, hooks: ${p.hooks}, persona: ${p.persona ? 'yes' : 'no'})`,
+      );
+    }
+  }
+  console.log('  tools:');
   for (const d of defs) {
-    console.log(`  - ${d.function.name}: ${d.function.description}`);
+    console.log(`    - ${d.function.name}: ${d.function.description}`);
   }
 }

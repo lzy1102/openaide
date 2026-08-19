@@ -169,6 +169,7 @@ interface OpenAIDePlugin {
   name: string;
   version?: string;
   description?: string;
+  category?: string;                                 // 分类（轻量元数据，供展示/检索）
   activate?(ctx: PluginContext): void | Promise<void>;   // 激活：注册工具/钩子/人格
   deactivate?(): void | Promise<void>;                   // 卸载
   tools?: PluginTool[];                                  // 工具集
@@ -177,7 +178,31 @@ interface OpenAIDePlugin {
 }
 ```
 
-### 5.2 生命周期（`PluginManager`）
+### 5.2 插件分类
+
+分类是**轻量元数据**：给人和工具看的标签，**不是内核的运行时开关**——加载、执行、生命周期完全不受分类影响。
+
+- 来源优先级：代码声明 `category` > `openaide.yaml` 的 `category` > 缺省 `uncategorized`
+- 解析实现：`resolveCategory()`（`packages/plugins/src/manager.ts`）
+- 消费方：`PluginManager.list()` → `openaide plugins` 命令按分类分组展示
+- 建议维度：按 **seam 类型** 而非功能域（与架构 7 类 seam 一一对应）
+
+| 建议值 | 对接层 | 示例 |
+|---|---|---|
+| `kernel` | 内核/装配 | 扩展内核策略、新接口实现 |
+| `capability` | 能力（工具组） | 文件、web、浏览器、MCP 工具集 |
+| `infrastructure` | 基础设施 | LLM、记忆、鉴权、压缩器 |
+| `ui/entry` | 入口/体验 | 人格、工作流预设、前端入口 |
+
+```yaml
+# ~/.openaide/plugins/<插件名>/openaide.yaml
+name: mytool
+category: capability      # 可选；缺省 'uncategorized'
+```
+
+> 注意：目录保持**扁平**（插件直接放在 `pluginsDir` 一级子目录）。分类只作为元数据声明，不改变目录结构——`discover` 只扫描一级子目录，放入嵌套目录将不会被发现。
+
+### 5.3 生命周期（`PluginManager`）
 
 ```
 load(dir) ──▶ loadPlugin(dir)    动态 import() 插件入口
@@ -192,15 +217,15 @@ unload(name) ──▶ 注销工具 → 退订钩子 → 调 deactivate
 - **热重载**：`reload(name)` 破坏模块缓存重新 import
 - **内置插件同路**：`builtinToolsPlugin` 经 `plugins.add()` 注册，与用户插件一致
 
-### 5.3 插件目录约定
+### 5.4 插件目录约定
 
 ```
 ~/.openaide/plugins/            # 默认插件目录（启动自动创建）
-├── <插件名>/                   # 每个插件一个子目录
-│   ├── index.ts               # 必需：导出 OpenAIDePlugin
-│   ├── openaide.yaml          # 可选：name/version/description/persona
-│   ├── SYSTEM.md              # 可选：人格系统提示词
-│   └── package.json           # 可选：插件自身依赖
+└── <插件名>/                   # 每个插件一个一级子目录（扁平，不按类别嵌套）
+    ├── index.ts               # 必需：导出 OpenAIDePlugin
+    ├── openaide.yaml          # 可选：name/version/description/category/persona
+    ├── SYSTEM.md              # 可选：人格系统提示词
+    └── package.json           # 可选：插件自身依赖
 ```
 
 覆盖方式（优先级从高到低）：

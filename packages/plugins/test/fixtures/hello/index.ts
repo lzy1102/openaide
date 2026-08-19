@@ -16,6 +16,7 @@ const plugin: OpenAIDePlugin = {
   name: 'hello',
   version: '1.0.0',
   description: '测试插件：工具/钩子/人格',
+  category: 'capability',
   tools: [
     {
       name: 'greet',

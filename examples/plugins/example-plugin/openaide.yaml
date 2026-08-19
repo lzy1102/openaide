@@ -1,4 +1,5 @@
 name: example-plugin
 version: 0.1.0
 description: 示例 TS 插件 —— 演示同进程动态加载
+category: capability
 persona: example

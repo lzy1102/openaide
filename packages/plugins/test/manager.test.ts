@@ -68,6 +68,14 @@ test('动态加载插件：注册命名空间工具 + 收集人格 + 钩子接�
   // 工具以 <插件名>__<工具名> 注册
   assert.ok(executor.has('hello__greet'), '工具应注册为 hello__greet');
 
+  // 信息列表含分类（代码声明 category）
+  const info = manager.list();
+  assert.equal(info.length, 1);
+  assert.equal(info[0]?.name, 'hello');
+  assert.equal(info[0]?.category, 'capability');
+  assert.deepEqual(info[0]?.tools, ['hello__greet']);
+  assert.equal(info[0]?.persona, true);
+
   // 工具执行
   const result = await executor.execute(
     { id: 't1', type: 'function', function: { name: 'hello__greet', arguments: JSON.stringify({ name: 'world' }) } },

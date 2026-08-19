@@ -11,8 +11,15 @@ import {
   ToolDefinition,
   ToolExecutor,
 } from '@openaide/core';
-import { discover, loadPlugin, readPersonaFile } from './loader.js';
-import type { LoadedPlugin, OpenAIDePlugin, PluginContext, PluginHook } from './types.js';
+import { discover, loadPlugin, loadManifest, readPersonaFile } from './loader.js';
+import type {
+  LoadedPlugin,
+  OpenAIDePlugin,
+  PluginContext,
+  PluginHook,
+  PluginInfo,
+  PluginManifest,
+} from './types.js';
 
 export interface PluginManagerOptions {
   /** 插件目录 */
@@ -215,6 +222,22 @@ export class PluginManager {
     return [...this.active.keys()];
   }
 
+  /** 已激活插件信息列表（含分类，供展示/检索） */
+  list(): PluginInfo[] {
+    return [...this.active.values()].map((a) => {
+      const p = a.loaded.plugin;
+      return {
+        name: p.name,
+        version: p.version,
+        description: p.description,
+        category: resolveCategory(p, a.loaded.dir),
+        tools: a.registeredTools,
+        hooks: a.hooks.length,
+        persona: this.personas.some((x) => x.name === p.name),
+      };
+    });
+  }
+
   /** 已收集的人格列表（供 PersonaProvider 使用） */
   getPersonas(): Persona[] {
     return [...this.personas];
@@ -224,6 +247,13 @@ export class PluginManager {
   getPersona(name: string): Persona | undefined {
     return this.personas.find((p) => p.name === name);
   }
+}
+
+/** 插件分类解析：代码声明优先，其次 manifest，缺省 'uncategorized' */
+export function resolveCategory(plugin: OpenAIDePlugin, dir: string): string {
+  if (plugin.category) return plugin.category;
+  const manifest: PluginManifest | undefined = loadManifest(dir);
+  return manifest?.category ?? 'uncategorized';
 }
 
 /**
