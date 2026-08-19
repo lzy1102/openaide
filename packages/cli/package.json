@@ -13,7 +13,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
-    "dev": "tsx src/main.ts"
+    "dev": "tsx src/main.ts",
+    "test": "node ../../scripts/test.mjs cli"
   },
   "dependencies": {
     "@openaide/api": "*",
@@ -22,7 +23,15 @@
     "@openaide/llm": "*",
     "@openaide/memory": "*",
     "@openaide/plugins": "*",
-    "@openaide/tools": "*"
+    "@openaide/tools": "*",
+    "ink": "^5.2.1",
+    "ink-spinner": "^5.0.0",
+    "ink-text-input": "^6.0.0",
+    "react": "18"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "@types/react": "^18.3.31",
+    "ink-testing-library": "^4.0.0"
+  }
 }

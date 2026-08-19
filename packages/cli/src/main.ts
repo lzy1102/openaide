@@ -10,7 +10,9 @@
  *   openaide --help      帮助
  */
 import { buildApp, printToolInventory } from './app.js';
+import type { App } from './app.js';
 import { runQuery, runRepl } from './repl.js';
+import { runTui } from './tui.js';
 import { runServe } from './serve.js';
 import { loadConfig, saveConfig } from '@openaide/config';
 import { readFileSync } from 'node:fs';
@@ -48,6 +50,15 @@ async function setup(): Promise<void> {
   console.log(`Config written to ${config.dataDir}/config.yaml`);
   if (!apiKey) {
     console.log('\nNote: no API key set. Set OPENAIDE_API_KEY env or edit the config file.');
+  }
+}
+
+/** 交互式入口：TTY 用 Ink TUI，非 TTY（管道/脚本）降级为 readline REPL */
+async function runInteractive(app: App): Promise<void> {
+  if (process.stdin.isTTY && process.stdout.isTTY) {
+    await runTui(app);
+  } else {
+    await runRepl(app);
   }
 }
 
@@ -89,7 +100,7 @@ async function main(): Promise<void> {
     return;
   }
   if (cmd === 'repl') {
-    await runRepl(app);
+    await runInteractive(app);
     return;
   }
   if (cmd === 'serve') {
@@ -103,7 +114,8 @@ async function main(): Promise<void> {
     return;
   }
 
-  await runRepl(app);
+  // 默认：交互式（TTY → Ink TUI，非 TTY → readline）
+  await runInteractive(app);
 }
 
 main().catch((err) => {
