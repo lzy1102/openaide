@@ -23,7 +23,7 @@ examples/
 OPENAIDE_PLUGINS_DIR=examples/plugins openaide repl
 
 # 方式 B：复制到默认插件目录
-cp -r examples/plugins/example-plugin ~/.openaide/data/plugins/
+cp -r examples/plugins/example-plugin ~/.openaide/plugins/
 openaide repl
 ```
 
