@@ -1,7 +1,0 @@
-{
-  "ping": {
-    "type": "stdio",
-    "command": "echo",
-    "args": ["{\"jsonrpc\":\"2.0\",\"method\":\"tools/call\",\"params\":{\"name\":\"ping\",\"arguments\":{}}}"]
-  }
-}

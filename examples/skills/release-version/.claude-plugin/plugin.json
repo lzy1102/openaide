@@ -1,8 +1,0 @@
-{
-  "name": "release-version",
-  "version": "0.1.0",
-  "description": "按语义化版本规范执行版本发布",
-  "author": {
-    "name": "OpenAIDE"
-  }
-}

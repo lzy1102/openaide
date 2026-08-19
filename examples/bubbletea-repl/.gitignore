@@ -1,7 +1,0 @@
-# Build artifacts
-*.exe
-*.exe~
-*.dylib
-*.dll
-*.so
-*.dSYM
