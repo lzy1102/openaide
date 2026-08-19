@@ -40,13 +40,13 @@ let seq = 0;
 const nextId = (): number => ++seq;
 
 /** TUI 根组件 */
-export function Tui({ app }: { app: App }): React.ReactElement {
+export function Tui({ app, initialSessionId }: { app: App; initialSessionId?: string }): React.ReactElement {
   const { exit } = useApp();
   const [history, setHistory] = useState<TuiMessage[]>([]);
   const [streaming, setStreaming] = useState('');
   const [status, setStatus] = useState<string>('ready');
   const [input, setInput] = useState('');
-  const [sessionId, setSessionId] = useState<string | undefined>();
+  const [sessionId, setSessionId] = useState<string | undefined>(initialSessionId);
   const [busy, setBusy] = useState(false);
 
   // 输入历史（上/下键）
@@ -294,8 +294,8 @@ export function Tui({ app }: { app: App }): React.ReactElement {
 }
 
 /** 启动 Ink TUI（非 TTY 环境由调用方降级，见 runTui） */
-export async function runTui(app: App): Promise<void> {
+export async function runTui(app: App, initialSessionId?: string): Promise<void> {
   const { render } = await import('ink');
-  const { waitUntilExit } = render(<Tui app={app} />);
+  const { waitUntilExit } = render(<Tui app={app} initialSessionId={initialSessionId} />);
   await waitUntilExit();
 }

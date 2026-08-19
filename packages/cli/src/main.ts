@@ -27,6 +27,7 @@ OpenAIDE — everything is a plugin.
 Usage:
   openaide <query>        one-shot: run a single query
   openaide repl           interactive REPL (default)
+  openaide -c             continue the most recent session
   openaide plugins        list loaded plugins and tools
   openaide sessions       list persisted sessions
   openaide serve          start HTTP/WS API server (OPENAIDE_PORT, default 8080)
@@ -54,11 +55,11 @@ async function setup(): Promise<void> {
 }
 
 /** 交互式入口：TTY 用 Ink TUI，非 TTY（管道/脚本）降级为 readline REPL */
-async function runInteractive(app: App): Promise<void> {
+async function runInteractive(app: App, initialSessionId?: string): Promise<void> {
   if (process.stdin.isTTY && process.stdout.isTTY) {
-    await runTui(app);
+    await runTui(app, initialSessionId);
   } else {
-    await runRepl(app);
+    await runRepl(app, initialSessionId);
   }
 }
 
@@ -80,6 +81,20 @@ async function main(): Promise<void> {
   }
 
   const app = await buildApp();
+
+  // -c / --continue：恢复最近一次会话并进入交互（续聊）
+  if (cmd === '-c' || cmd === '--continue') {
+    const sessions = await app.sessions.list();
+    const last = sessions[0];
+    if (last) {
+      console.log(`\x1b[36m[resume] continuing session ${last.id} (${last.messages.length} messages)\x1b[0m`);
+      await runInteractive(app, last.id);
+    } else {
+      console.log('(no previous session — starting a new one)');
+      await runInteractive(app);
+    }
+    return;
+  }
 
   if (cmd === 'plugins') {
     printToolInventory(app);

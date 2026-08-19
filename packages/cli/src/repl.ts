@@ -90,8 +90,11 @@ Commands:
 `;
 
 /** 交互式 REPL */
-export async function runRepl(app: App): Promise<void> {
+export async function runRepl(app: App, initialSessionId?: string): Promise<void> {
   console.log('\x1b[35mOpenAIDE\x1b[0m — everything is a plugin. Type /help for commands, /exit to quit.');
+  if (initialSessionId) {
+    console.log(`\x1b[36m  resuming session ${initialSessionId}\x1b[0m`);
+  }
 
   const rl = createInterface({ input, output, historySize: HISTORY_LIMIT });
   // readline 的 history 属性在 @types/node 中未声明（运行时存在），此处类型断言访问
@@ -108,8 +111,8 @@ export async function runRepl(app: App): Promise<void> {
     }
   });
 
-  // 当前会话：undefined 时每条消息新建
-  let sessionId: string | undefined;
+  // 当前会话：undefined 时每条消息新建；-c 续聊时用传入的 initialSessionId
+  let sessionId: string | undefined = initialSessionId;
 
   for (;;) {
     const line = (await question('> ')).trim();
