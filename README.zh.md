@@ -10,9 +10,24 @@
 
 ---
 
-## 安装
+## 快速开始
 
 需要 Node.js ≥ 18。
+
+```bash
+# 1. 安装（装依赖 + 全局 openaide 命令）
+node scripts/install.mjs
+
+# 2. 配置（交互式向导，或复制 config.example.yaml）
+openaide setup
+
+# 3. 运行
+openaide "你好"          # 一次性问答
+openaide                  # 交互式 TUI / REPL
+openaide serve            # HTTP/WS API 服务
+```
+
+## 安装
 
 ```bash
 # 安装依赖 + 全局 link openaide 命令（推荐）
@@ -22,32 +37,33 @@ node scripts/install.mjs
 npm install
 ```
 
-全局安装后可用 `openaide` 命令。卸载全局命令：
+卸载全局命令：
 
 ```bash
 npm unlink -g openaide
 ```
 
-## 编译与运行
+## 用法
 
 ```bash
-npm run dev            # tsx 直接运行（免编译，默认）
-npm run build          # 编译所有包到 dist/
-npm run typecheck      # 全部包类型检查
-npm test               # 运行全部测试
-
-openaide               # 交互式 REPL
-openaide "修复这个 bug" # 一次性问答
-openaide --version
+openaide "问题"             # 一次性问答
+openaide file.ts "问题"     # 文件作为上下文注入，再问答
+openaide --model <id> ...   # 任意命令指定模型
+openaide --output json "q"  # 一次性问答输出 JSON
+openaide -c                 # 恢复最近一次会话续聊
+openaide                    # 交互式 TUI（Ink）/ readline REPL
+openaide serve              # HTTP/WS + SSE 服务（默认 :8080）
+openaide plugins            # 查看已加载插件与工具
+openaide sessions           # 查看历史会话
+openaide setup              # 配置向导
+openaide --version | --help
 ```
+
+完整使用指南 → [docs/USAGE.md](docs/USAGE.md)。
 
 ## 配置
 
 配置文件位于 `~/.openaide/config.yaml`（自动创建；模板见 [config.example.yaml](config.example.yaml)，也可运行 `openaide setup` 向导）。所有字段均可被环境变量覆盖。
-
-```bash
-openaide setup         # 交互式配置向导
-```
 
 ```yaml
 llm:
@@ -72,12 +88,12 @@ kernel:
 
 ## 架构
 
-> 文档：[USAGE.md](docs/USAGE.md)（使用者 + 开发者指南）· [ARCHITECTURE.md](docs/ARCHITECTURE.md)（内核-插件契约）· [config.example.yaml](config.example.yaml)
+> 文档：[USAGE.md](docs/USAGE.md)（使用者 + 开发者指南）· [ARCHITECTURE.md](docs/ARCHITECTURE.md)（内核-插件契约）· [examples/README.md](examples/README.md)（示例插件）
 
 Monorepo（npm workspaces）：
 
 ```
-cli (REPL + 命令)          api (HTTP/WS + SSE)
+cli (TUI + REPL + 命令)      api (HTTP/WS + SSE)
         ↓                        ↓
       core ── AgentKernel (ReAct 循环, 事件总线, 会话)
         ↓                        ↓
@@ -124,9 +140,25 @@ export default plugin;
 ## 开发
 
 ```bash
-npm run typecheck  # 全部包类型检查
-npm test           # 运行全部测试
+npm run dev            # tsx 直接运行（免编译，默认）
+npm run build          # 编译所有包到 dist/
+npm run typecheck      # 全部包类型检查
+npm test               # 运行全部测试
 ```
+
+## GitHub 搜索与 Topics
+
+GitHub 会索引 README 文本，并依据 **topics** 匹配仓库——关键词丰富的标题加上若干 topics，可让项目在 [仓库搜索](https://github.com/search?q=topic%3Aai-agent+language%3ATypeScript&type=repositories) 中更容易被发现。
+
+推荐 topics——在仓库 **Settings → Topics** 一次性添加，或运行（需 [GitHub CLI](https://cli.github.com/)）：
+
+```bash
+gh repo edit lzy1102/openaide --add-topic ai-agent --add-topic agent --add-topic llm --add-topic typescript --add-topic plugin --add-topic plugin-system --add-topic openai --add-topic nodejs --add-topic cli --add-topic monorepo
+```
+
+同时设置简洁的仓库描述（Settings → About）：
+
+> TypeScript AI agent kernel — everything is a plugin. ReAct loop, in-process plugin loading, SQLite persistence, OpenAI-compatible gateway.
 
 ## License
 

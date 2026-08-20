@@ -6,7 +6,46 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>OpenAIDE</title>
+
+    <!-- ── SEO ── -->
+    <title>OpenAIDE — TypeScript AI Agent 内核｜一切皆插件</title>
+    <meta name="description" content="OpenAIDE 是 TypeScript 实现的 AI Agent 内核：ReAct 循环、插件同进程动态加载、SQLite 会话持久化、OpenAI 兼容网关。一切皆插件——工具、人格、钩子经统一接口注入。">
+    <meta name="keywords" content="OpenAIDE, AI Agent, AI Agent 内核, TypeScript, ReAct, LLM, 插件系统, plugin, 动态加载, OpenAI 兼容, Agent 框架, AI 助手">
+    <meta name="author" content="OpenAIDE">
+    <meta name="robots" content="index, follow">
+    <meta name="theme-color" content="#6c5ce7">
+    <link rel="canonical" href="https://github.com/lzy1102/openaide">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236c5ce7' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 6V12L16 14'/%3E%3C/svg%3E">
+
+    <!-- Open Graph（社交分享 / 爬虫摘要） -->
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="OpenAIDE">
+    <meta property="og:title" content="OpenAIDE — TypeScript AI Agent 内核｜一切皆插件">
+    <meta property="og:description" content="ReAct 循环 · 插件同进程动态加载 · SQLite 持久化 · OpenAI 兼容网关。一切皆插件。">
+    <meta property="og:url" content="https://github.com/lzy1102/openaide">
+    <meta property="og:locale" content="zh_CN">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="OpenAIDE — TypeScript AI Agent 内核">
+    <meta name="twitter:description" content="ReAct 循环 · 插件同进程动态加载 · SQLite 持久化 · OpenAI 兼容网关。一切皆插件。">
+
+    <!-- JSON-LD 结构化数据 -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "OpenAIDE",
+      "alternateName": "OpenAIDE AI Agent",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "Windows, macOS, Linux",
+      "description": "TypeScript AI agent kernel: ReAct loop, in-process dynamic plugin loading, SQLite session persistence, OpenAI-compatible gateway. Everything is a plugin.",
+      "url": "https://github.com/lzy1102/openaide",
+      "softwareVersion": "0.3.0",
+      "license": "https://opensource.org/licenses/MIT"
+    }
+    </script>
+
     <link rel="stylesheet" href="./src/styles/theme.css?v=2">
     <link rel="stylesheet" href="./src/styles/components.css?v=2">
     <!-- Markdown 渲染 + 代码高亮 + YAML 解析 -->
@@ -16,6 +55,16 @@
     <script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
 </head>
 <body>
+    <!-- SPA 内容由 JS 渲染；无 JS 时提供可索引的静态说明 -->
+    <noscript>
+        <div style="max-width:720px;margin:4rem auto;font-family:system-ui,sans-serif;line-height:1.7;padding:0 1rem;">
+            <h1>OpenAIDE — TypeScript AI Agent 内核</h1>
+            <p>OpenAIDE 是一个 TypeScript 实现的 AI Agent 内核：ReAct 循环、插件同进程动态加载（无子进程）、SQLite 会话持久化、OpenAI 兼容网关。一切皆插件——工具、人格、钩子经统一接口注入。</p>
+            <p>请启用 JavaScript 以使用交互式界面。命令行使用方式：<code>openaide "你好"</code>（一次性问答）、<code>openaide</code>（交互式 TUI）、<code>openaide serve</code>（API 服务）。</p>
+            <p>文档：<a href="https://github.com/lzy1102/openaide">GitHub 仓库</a></p>
+        </div>
+    </noscript>
+
     <!-- 应用头部 -->
     <header class="app-header">
         <div class="app-header-content">

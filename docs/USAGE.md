@@ -4,6 +4,21 @@
 
 > 版本：v0.3.0（TypeScript monorepo）｜插件同进程动态加载，无多进程。
 
+## 目录
+
+- [一、使用者（User）](#一使用者user)
+  - [1.1 安装](#11-安装)
+  - [1.2 配置](#12-配置)
+  - [1.3 交互式使用](#13-交互式使用)
+  - [1.4 一次性问答](#14-一次性问答)
+  - [1.5 API 服务](#15-api-服务)
+  - [1.6 插件的使用](#16-插件的使用)
+- [二、开发者（Developer）](#二开发者developer)
+  - [2.1 在仓库内开发](#21-在仓库内开发)
+  - [2.2 写一个插件](#22-写一个插件)
+  - [2.3 目录速览](#23-目录速览)
+  - [2.4 发布与分发](#24-发布与分发)
+
 ---
 
 ## 一、使用者（User）
@@ -127,12 +142,22 @@ curl -X POST http://127.0.0.1:8080/v1/chat \
 默认从 `~/.openaide/plugins/` 自动发现加载，放一个含 `index.ts` 的目录即生效：
 
 ```bash
-# 用示例插件演示
+# macOS / Linux（bash）
 OPENAIDE_PLUGINS_DIR=examples/plugins openaide
 # 输入 "upper hello" → 调用 example__upper 工具
 
-# 或复制到默认目录
+# Windows（PowerShell）
+$env:OPENAIDE_PLUGINS_DIR="examples/plugins"; openaide
+```
+
+或复制到默认目录：
+
+```bash
+# macOS / Linux
 cp -r examples/plugins/example-plugin ~/.openaide/plugins/
+
+# Windows（PowerShell）
+Copy-Item -Recurse examples/plugins/example-plugin "$HOME\.openaide\plugins\"
 openaide
 ```
 

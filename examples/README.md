@@ -20,11 +20,17 @@ examples/
 
 ```bash
 # 方式 A：运行时指向 example 目录
-OPENAIDE_PLUGINS_DIR=examples/plugins openaide repl
+#   macOS / Linux（bash）
+OPENAIDE_PLUGINS_DIR=examples/plugins openaide
+#   Windows（PowerShell）
+$env:OPENAIDE_PLUGINS_DIR="examples/plugins"; openaide
 
 # 方式 B：复制到默认插件目录
+#   macOS / Linux
 cp -r examples/plugins/example-plugin ~/.openaide/plugins/
-openaide repl
+#   Windows（PowerShell）
+Copy-Item -Recurse examples/plugins/example-plugin "$HOME\.openaide\plugins\"
+openaide
 ```
 
 启动后发送 `upper hello`，即可看到工具调用（`example__upper`）、钩子触发与人格注入。

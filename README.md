@@ -10,9 +10,24 @@
 
 ---
 
-## Install
+## Quick Start
 
 Requires Node.js ≥ 18.
+
+```bash
+# 1. install (deps + global `openaide` command)
+node scripts/install.mjs
+
+# 2. configure (interactive wizard, or copy config.example.yaml)
+openaide setup
+
+# 3. run
+openaide "hello"          # one-shot query
+openaide                  # interactive TUI / REPL
+openaide serve            # HTTP/WS API server
+```
+
+## Install
 
 ```bash
 # install deps + link global `openaide` command (recommended)
@@ -22,32 +37,33 @@ node scripts/install.mjs
 npm install
 ```
 
-Global install links the `openaide` command. To remove it:
+Remove the global command:
 
 ```bash
 npm unlink -g openaide
 ```
 
-## Compile & Run
+## Usage
 
 ```bash
-npm run dev            # run directly via tsx (no build step, default)
-npm run build          # compile all packages to dist/
-npm run typecheck      # typecheck all packages
-npm test               # run all tests
-
-openaide               # interactive REPL
-openaide "fix this bug" # one-shot query
-openaide --version
+openaide "query"             # one-shot query
+openaide file.ts "query"     # inject files as context, then query
+openaide --model <id> ...    # override model for any command
+openaide --output json "q"   # one-shot output as JSON
+openaide -c                  # continue the most recent session
+openaide                     # interactive TUI (Ink) / readline REPL
+openaide serve               # HTTP/WS + SSE server (default :8080)
+openaide plugins             # list loaded plugins and tools
+openaide sessions            # list persisted sessions
+openaide setup               # config wizard
+openaide --version | --help
 ```
+
+Full user guide → [docs/USAGE.md](docs/USAGE.md).
 
 ## Configure
 
 Config lives at `~/.openaide/config.yaml` (auto-created; see [config.example.yaml](config.example.yaml) and `openaide setup`). Every field can be overridden by an environment variable.
-
-```bash
-openaide setup         # interactive config wizard
-```
 
 ```yaml
 llm:
@@ -72,15 +88,15 @@ Env overrides:
 
 ## Architecture
 
-> Docs: [USAGE.md](docs/USAGE.md) (user + developer guide) · [ARCHITECTURE.md](docs/ARCHITECTURE.md) (kernel–plugin contract) · [config.example.yaml](config.example.yaml)
+> Docs: [USAGE.md](docs/USAGE.md) (user + developer guide) · [ARCHITECTURE.md](docs/ARCHITECTURE.md) (kernel–plugin contract) · [examples/README.md](examples/README.md) (example plugin)
 
 Monorepo (npm workspaces):
 
 ```
-cli (REPL + commands)     api (HTTP/WS + SSE)
-        ↓                      ↓
+cli (TUI + REPL + commands)   api (HTTP/WS + SSE)
+        ↓                        ↓
       core ── AgentKernel (ReAct loop, event bus, session)
-        ↓                      ↓
+        ↓                        ↓
    plugins (dynamic load)   memory (SQLite)   llm (OpenAI gateway)
         ↓
    tools (builtin, as a plugin)   config (yaml + env)
@@ -124,9 +140,25 @@ export default plugin;
 ## Development
 
 ```bash
-npm run typecheck  # typecheck all packages
-npm test           # run all tests
+npm run dev            # run directly via tsx (no build step, default)
+npm run build          # compile all packages to dist/
+npm run typecheck      # typecheck all packages
+npm test               # run all tests
 ```
+
+## GitHub Search & Topics
+
+GitHub indexes the README text and matches repos by **topics**, so keyword-rich headings plus a few topics make this project easy to find on [repo search](https://github.com/search?q=topic%3Aai-agent+language%3ATypeScript&type=repositories).
+
+Recommended topics — add them once in the repo **Settings → Topics**, or run (requires [GitHub CLI](https://cli.github.com/)):
+
+```bash
+gh repo edit lzy1102/openaide --add-topic ai-agent --add-topic agent --add-topic llm --add-topic typescript --add-topic plugin --add-topic plugin-system --add-topic openai --add-topic nodejs --add-topic cli --add-topic monorepo
+```
+
+Also set a concise repo description (Settings → About):
+
+> TypeScript AI agent kernel — everything is a plugin. ReAct loop, in-process plugin loading, SQLite persistence, OpenAI-compatible gateway.
 
 ## License
 
