@@ -56,7 +56,7 @@ llm:
   base_url: https://api.deepseek.com/v1
 kernel:
   max_rounds: 10
-  max_tokens: 4000
+  max_tokens: 200000    # 上下文 token 预算(压缩/历史裁剪阈值),非单次输出上限
 ```
 
 环境变量覆盖（优先级高于配置文件）：
@@ -69,6 +69,12 @@ kernel:
 | `OPENAIDE_DATA_DIR` | `data_dir`（默认 `~/.openaide`） |
 | `OPENAIDE_PLUGINS_DIR` | `plugins_dir`（默认 `<data_dir>/plugins`） |
 | `OPENAIDE_PORT` | `serve` 命令端口（默认 8080） |
+
+### 1.2.1 内核运行时行为
+
+- **上下文预算**：`kernel.max_tokens` 是上下文 token 预算（默认 200000），用于历史裁剪与压缩阈值——不是单次回复的输出上限。历史按条数（20）与 token 预算双重裁剪，防止长会话上下文膨胀。
+- **前缀缓存友好**：system 层（L0 人格 + 项目规则）跨查询字节级稳定；技能提示作为独立消息注入；system 消息携带 `cache_control`。使用 DeepSeek 等 provider 时，多轮对话与跨查询都能命中前缀缓存，prompt 成本大幅降低。
+- **空回复即失败**：LLM 返回空内容（限流/静默失败）视为错误——不会显示"完成"却无回复，也不会把空消息写入会话。
 
 ### 1.3 交互式使用
 

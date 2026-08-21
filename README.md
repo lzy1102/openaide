@@ -72,7 +72,7 @@ llm:
   base_url: https://api.deepseek.com/v1
 kernel:
   max_rounds: 10
-  max_tokens: 4000
+  max_tokens: 200000   # context budget (compression / history trim), not per-reply cap
 ```
 
 Env overrides:
@@ -111,6 +111,7 @@ cli (TUI + REPL + commands)   api (HTTP/WS + SSE)
 - **ReAct loop**: think → tool call → observe → loop, with streaming responses
 - **SQLite persistence**: sessions survive restarts; REPL can resume past conversations
 - **OpenAI-compatible gateway**: plain `fetch`, streaming, no heavy dependencies
+- **Token-efficient by design**: stable system prefix + `cache_control` for provider prompt caching, history trimmed by token budget, empty LLM replies treated as failures
 - **Plugin interface**: `OpenAIDePlugin` — `tools` (registered as `<plugin>__<tool>`), `hooks` (subscribe kernel events), `persona` (L0 system prompt)
 
 ## Plugin Example

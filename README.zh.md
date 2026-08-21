@@ -72,7 +72,7 @@ llm:
   base_url: https://api.deepseek.com/v1
 kernel:
   max_rounds: 10
-  max_tokens: 4000
+  max_tokens: 200000   # 上下文 token 预算（压缩/历史裁剪阈值），非单次输出上限
 ```
 
 环境变量覆盖：
@@ -111,6 +111,7 @@ cli (TUI + REPL + 命令)      api (HTTP/WS + SSE)
 - **ReAct 循环**：思考 → 工具调用 → 观察 → 循环，支持流式响应
 - **SQLite 持久化**：会话重启不丢，REPL 可恢复历史会话
 - **OpenAI 兼容网关**：纯 `fetch` 实现，支持流式，无重依赖
+- **Token 效率设计**：稳定的 system 前缀 + `cache_control` 命中 provider 缓存；历史按 token 预算裁剪；LLM 空回复视为失败
 - **插件接口**：`OpenAIDePlugin` —— `tools`（注册为 `<插件>__<工具>`）、`hooks`（订阅内核事件）、`persona`（L0 系统提示词）
 
 ## 插件示例
