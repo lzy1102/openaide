@@ -90,6 +90,12 @@ export async function* reactLoop(ctx: ReactContext, config: ReactConfig): AsyncG
     // 2. 无工具调用 → 结束
     if (!resp.toolCalls || resp.toolCalls.length === 0) {
       finalContent = resp.content ?? '';
+      // LLM 空回复(限流/静默失败)按错误处理,避免"完成但无回复"和保存空消息
+      if (!finalContent && !resp.reasoningContent) {
+        const err = new Error('LLM returned no response (rate limit or empty reply)');
+        yield { type: StreamChunkType.Error, error: err };
+        throw err;
+      }
       if (finalContent) {
         yield { type: StreamChunkType.Content, content: finalContent, round };
       }

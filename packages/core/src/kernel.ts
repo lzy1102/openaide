@@ -76,7 +76,8 @@ export class AgentKernel {
     this.eventBus = deps.eventBus ?? new EventBus();
     this.systemPrompt = deps.config?.systemPrompt ?? '';
     this.maxRounds = deps.config?.maxRounds ?? 10;
-    this.maxTokens = deps.config?.maxTokens ?? 4000;
+    // 上下文 token 预算(用于压缩阈值/历史裁剪),非单次输出上限;默认对齐主流 200K 窗口
+    this.maxTokens = deps.config?.maxTokens ?? 200_000;
   }
 
   // ── 状态 / 事件 ──────────────────────────────────────────

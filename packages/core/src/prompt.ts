@@ -70,14 +70,15 @@ export function buildMessages(
   history: Message[],
   query: Query,
   ctx: PromptContext,
-  options: { maxHistory?: number } = {},
+  options: { maxHistory?: number; historyTokenBudget?: number } = {},
 ): Message[] {
   const messages: Message[] = [];
   if (systemLayer) messages.push({ role: 'system', content: systemLayer });
 
-  // 历史（紧邻 system，稳定前缀）
+  // 历史（紧邻 system，稳定前缀）— 条数与 token 双重预算,防止上下文膨胀
   const limit = options.maxHistory ?? 20;
-  const historySlice = history.slice(-limit);
+  const budget = options.historyTokenBudget ?? 6000;
+  const historySlice = trimHistoryToBudget(history.slice(-limit), budget);
   for (const m of historySlice) {
     messages.push({ ...m });
   }
@@ -106,6 +107,28 @@ export function buildMessages(
   }
 
   return messages;
+}
+
+/** 粗估文本 token 数(中英混合 ~4 字符/token) */
+export function estimateTextTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+/** 按 token 预算截断历史:从旧到新累积,超预算丢弃更旧的消息,至少保留最近 2 条 */
+export function trimHistoryToBudget(history: Message[], budget: number): Message[] {
+  if (history.length <= 2) return history;
+  let total = 0;
+  let keep = 0;
+  for (let i = 0; i < history.length; i++) {
+    const msg = history[i];
+    if (!msg) break;
+    total += estimateTextTokens(msg.content ?? '') + 4;
+    if (total > budget && i >= 2) {
+      break;
+    }
+    keep = i + 1;
+  }
+  return keep < history.length ? history.slice(history.length - keep) : history;
 }
 
 /** 按任务类型生成适配提示（L3） */

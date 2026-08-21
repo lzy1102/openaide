@@ -89,6 +89,10 @@ export class OpenAICompatibleProvider implements LLMProvider {
         role: m.role,
         content: m.content ?? '',
       };
+      // system 消息标记前缀缓存(DeepSeek/OpenAI 兼容):多轮共享 system 前缀时大幅降价
+      if (m.role === 'system') {
+        (wire as unknown as Record<string, unknown>)['cache_control'] = { type: 'ephemeral' };
+      }
       if (m.reasoningContent) wire.reasoning_content = m.reasoningContent;
       if (m.name) wire.name = m.name;
       if (m.toolCallId) wire.tool_call_id = m.toolCallId;
@@ -156,6 +160,9 @@ export class OpenAICompatibleProvider implements LLMProvider {
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.config.timeoutMs ?? 120_000);
+    // 工具调用增量累积:OpenAI 流式把参数拆进多个 delta(按 index 分片),
+    // 必须跨 chunk 合并,否则拿到的是残缺的调用。
+    const pendingToolCalls = new Map<number, { id: string; name: string; arguments: string }>();
     try {
       const res = await fetch(this.url(), {
         method: 'POST',
@@ -180,14 +187,39 @@ export class OpenAICompatibleProvider implements LLMProvider {
         const lines = buffer.split('\n');
         buffer = lines.pop() ?? '';
         for (const line of lines) {
-          const chunk = parseSSELine(line);
-          if (!chunk) continue;
-          yield* emitSseChunk(chunk);
+          const data = parseSSELine(line);
+          if (!data) continue;
+          const delta = sseDelta(data);
+          if (delta.content) {
+            yield { type: StreamChunkType.Content, content: delta.content };
+          }
+          if (delta.reasoning) {
+            yield { type: StreamChunkType.Thinking, reasoningContent: delta.reasoning };
+          }
+          if (delta.toolCalls) {
+            accumulateToolCalls(pendingToolCalls, delta.toolCalls);
+            // 每个增量都产出当前合并后的完整列表,消费方可实时展示
+            for (const tc of pendingToolCalls.values()) {
+              yield {
+                type: StreamChunkType.ToolCall,
+                toolCallId: tc.id,
+                toolName: tc.name,
+                toolArgs: tc.arguments,
+              };
+            }
+          }
         }
       }
       if (buffer.trim()) {
-        const chunk = parseSSELine(buffer);
-        if (chunk) yield* emitSseChunk(chunk);
+        const data = parseSSELine(buffer);
+        if (data) {
+          const delta = sseDelta(data);
+          if (delta.content) yield { type: StreamChunkType.Content, content: delta.content };
+          if (delta.reasoning) {
+            yield { type: StreamChunkType.Thinking, reasoningContent: delta.reasoning };
+          }
+          if (delta.toolCalls) accumulateToolCalls(pendingToolCalls, delta.toolCalls);
+        }
       }
     } finally {
       clearTimeout(timer);
@@ -207,24 +239,37 @@ function parseSSELine(line: string): Record<string, unknown> | undefined {
   }
 }
 
-function* emitSseChunk(data: Record<string, unknown>): Generator<StreamChunk, void> {
+/** 从 SSE data 中提取本轮 delta */
+function sseDelta(data: Record<string, unknown>): {  content?: string;
+  reasoning?: string;
+  toolCalls?: Array<{ index?: number; id?: string; function?: { name?: string; arguments?: string } }>;
+} {
   const choices = data['choices'] as Array<Record<string, unknown>> | undefined;
-  if (!choices || choices.length === 0) return;
+  if (!choices || choices.length === 0) return {};
   const delta = (choices[0]?.['delta'] ?? {}) as Record<string, unknown>;
-  const content = (delta['content'] as string | undefined) ?? '';
-  const reasoning = (delta['reasoning_content'] as string | undefined) ?? '';
-  if (content) yield { type: StreamChunkType.Content, content };
-  if (reasoning) yield { type: StreamChunkType.Thinking, reasoningContent: reasoning };
-  // 工具调用增量（OpenAI 流式增量格式）
-  const toolCalls = delta['tool_calls'] as Array<{ index?: number; id?: string; type?: string; function?: { name?: string; arguments?: string } }> | undefined;
-  if (toolCalls && toolCalls.length > 0) {
-    const first = toolCalls[0];
-    yield {
-      type: StreamChunkType.ToolCall,
-      toolCallId: first?.id,
-      toolName: first?.function?.name,
-      toolArgs: first?.function?.arguments,
-    };
+  return {
+    content: (delta['content'] as string | undefined) || undefined,
+    reasoning: (delta['reasoning_content'] as string | undefined) || undefined,
+    toolCalls: delta['tool_calls'] as Array<{
+      index?: number;
+      id?: string;
+      function?: { name?: string; arguments?: string };
+    }> | undefined,
+  };
+}
+
+/** 把流式增量合并进累积表:index 相同的分片追加 arguments、补齐 id/name */
+function accumulateToolCalls(
+  pending: Map<number, { id: string; name: string; arguments: string }>,
+  deltas: Array<{ index?: number; id?: string; function?: { name?: string; arguments?: string } }>,
+): void {
+  for (const d of deltas) {
+    const idx = d.index ?? 0;
+    const existing = pending.get(idx) ?? { id: '', name: '', arguments: '' };
+    if (d.id) existing.id = d.id;
+    if (d.function?.name) existing.name = d.function.name;
+    if (d.function?.arguments) existing.arguments += d.function.arguments;
+    pending.set(idx, existing);
   }
 }
 
