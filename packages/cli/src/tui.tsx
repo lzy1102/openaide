@@ -153,7 +153,9 @@ export function Tui({ app, initialSessionId }: { app: App; initialSessionId?: st
       setStatus('thinking…');
       pushUser(line);
       let text = '';
+      let dbgN = 0;
       try {
+        process.stderr.write('[dbg] stream start\n');
         for await (const chunk of app.kernel.processStream({
           sessionId: sid,
           projectId: 'default',
@@ -161,6 +163,8 @@ export function Tui({ app, initialSessionId }: { app: App; initialSessionId?: st
           content: line,
           options: {},
         })) {
+          dbgN++;
+          if (dbgN <= 3) process.stderr.write(`[dbg] chunk ${dbgN}: ${chunk.type}\n`);
           switch (chunk.type) {
             case StreamChunkType.Thinking:
               if (chunk.reasoningContent) {
@@ -191,8 +195,12 @@ export function Tui({ app, initialSessionId }: { app: App; initialSessionId?: st
             default:
               break;
           }
+          // 让出事件循环一拍:Ink 的 setState 批处理需要事件循环间隙提交渲染,
+          // 否则连续到达的 chunk 会合并成一次渲染甚至全部丢帧(实测表现为界面卡死)
+          await new Promise((r) => setImmediate(r));
         }
       } finally {
+        process.stderr.write(`[dbg] stream end, chunks=${dbgN}\n`);
         if (text) {
           push({ kind: 'assistant', content: text });
         }
