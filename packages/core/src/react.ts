@@ -4,11 +4,13 @@
  */
 import {
   KernelEvent,
+  LLMResponse,
   Message,
   StreamChunk,
   StreamChunkType,
   TokenUsage,
   ToolCall,
+  ToolDefinition,
   ToolResult,
 } from './types.js';
 import type { ContextCompressor, LLMProvider, ToolExecutor } from './interfaces.js';
@@ -102,10 +104,10 @@ export async function* reactLoop(ctx: ReactContext, config: ReactConfig): AsyncG
     // 当前轮工具定义
     const tools = executor.definitions();
 
-    // 1. 思考
+    // 1. 思考(流式优先:token 到达即产出;失败降级非流式)
     let resp;
     try {
-      resp = await provider.chat(workingMessages, tools, ctx.options ?? {});
+      resp = await streamOrChat(provider, workingMessages, tools, ctx.options ?? {}, signal);
     } catch (err) {
       yield { type: StreamChunkType.Error, error: toError(err) };
       throw err;
@@ -237,4 +239,72 @@ export async function collectReact(ctx: ReactContext, config: ReactConfig): Prom
     if (chunk.usage) usage = chunk.usage;
   }
   return { content, reasoningContent: reasoning, rounds, usage };
+}
+
+/**
+ * 流式优先的 LLM 调用:
+ *  - provider.chatStream 可用时走流式,content/thinking 增量即时产出(实时反馈),
+ *    工具调用增量按 id 合并(OpenAI 流式把参数拆进多个 delta);
+ *  - chatStream 不存在或中途失败时降级为非流式 chat。
+ */
+async function streamOrChat(
+  provider: LLMProvider,
+  messages: Message[],
+  tools: ToolDefinition[],
+  options: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<LLMResponse> {
+  // 无 chatStream 能力 → 直接非流式
+  if (typeof (provider as { chatStream?: unknown }).chatStream !== 'function') {
+    return provider.chat(messages, tools, options);
+  }
+
+  const contentParts: string[] = [];
+  let reasoning = '';
+  let toolCalls: ToolCall[] | undefined;
+  let usage: TokenUsage | undefined;
+  try {
+    for await (const chunk of provider.chatStream(messages, tools, options)) {
+      throwIfAborted(signal);
+      if (chunk.type === StreamChunkType.Content && chunk.content) {
+        contentParts.push(chunk.content);
+      }
+      if (chunk.type === StreamChunkType.Thinking && chunk.reasoningContent) {
+        reasoning += chunk.reasoningContent;
+      }
+      // 流式工具调用增量按 id 合并(provider 已跨 chunk 累积参数,此处按 id 去重取最新)
+      if (chunk.type === StreamChunkType.ToolCall && chunk.toolCallId) {
+        const incoming: ToolCall = {
+          id: chunk.toolCallId,
+          type: 'function',
+          function: { name: chunk.toolName ?? '', arguments: chunk.toolArgs ?? '' },
+        };
+        if (!toolCalls) toolCalls = [];
+        const existing = toolCalls.find((t) => t.id === incoming.id || t.function.name === incoming.function.name);
+        if (existing) {
+          existing.function.arguments = incoming.function.arguments;
+          existing.function.name = incoming.function.name || existing.function.name;
+        } else {
+          toolCalls.push(incoming);
+        }
+      }
+      if (chunk.usage) usage = chunk.usage;
+    }
+  } catch (err) {
+    // 流式中途失败且已收到部分内容 → 抛给上层;完全没内容 → 降级非流式重试一次
+    if (contentParts.length > 0) throw err;
+    return provider.chat(messages, tools, options);
+  }
+
+  const content = contentParts.join('');
+  if (!content && !toolCalls?.length && !reasoning) {
+    // 流结束但空(部分 provider 静默失败)→ 降级非流式
+    return provider.chat(messages, tools, options);
+  }
+  return {
+    content,
+    reasoningContent: reasoning || undefined,
+    toolCalls,
+    usage,
+  } as LLMResponse;
 }

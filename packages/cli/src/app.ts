@@ -8,7 +8,7 @@ import { loadConfig, Config } from '@openaide/config';
 import { OpenAICompatibleProvider } from '@openaide/llm';
 import { PluginManager, PluginPersonaProvider } from '@openaide/plugins';
 import { ToolRegistry, builtinToolsPlugin, fileToolsPlugin } from '@openaide/tools';
-import { SQLiteSessionStore } from '@openaide/memory';
+import { SQLiteSessionStore, SqliteMemory } from '@openaide/memory';
 import { join } from 'node:path';
 
 export interface App {
@@ -20,6 +20,7 @@ export interface App {
   persona: PluginPersonaProvider;
   bus: EventBus;
   sessions: SessionStore;
+  memory: SqliteMemory;
 }
 
 /** 装配完整应用：内置插件 + 用户插件动态加载 + 内核 */
@@ -58,8 +59,11 @@ export async function buildApp(config?: Config): Promise<App> {
     timeoutMs: cfg.llm.timeoutMs,
   });
 
-  // 会话存储：SQLite 持久化（重启不丢）
+  // 会话存储:SQLite 持久化（重启不丢）
   const sessions = new SQLiteSessionStore(join(cfg.dataDir, 'sessions.db'));
+
+  // 记忆存储:内核构建历史消息的来源(role 保留,跨轮上下文)
+  const memory = new SqliteMemory(join(cfg.dataDir, 'memory.db'));
 
   // 人格提供者（插件收集的 persona 供内核 L0 层使用）
   const persona = new PluginPersonaProvider(plugins, () => cfg.kernel.persona);
@@ -68,6 +72,7 @@ export async function buildApp(config?: Config): Promise<App> {
   const kernel = new AgentKernel({
     llm,
     tools: registry,
+    memory,
     sessions,
     persona,
     eventBus: bus,
@@ -78,7 +83,7 @@ export async function buildApp(config?: Config): Promise<App> {
     },
   });
 
-  return { config: cfg, kernel, registry, llm, plugins, persona, bus, sessions };
+  return { config: cfg, kernel, registry, llm, plugins, persona, bus, sessions, memory };
 }
 
 /** 打印装配后的工具清单（诊断用） */
