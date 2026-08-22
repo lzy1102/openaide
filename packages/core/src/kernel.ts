@@ -144,6 +144,8 @@ export class AgentKernel {
       publish: (e) => this.publish(e),
       signal,
       options: buildOptions(query.options),
+      compressor: this.compressor,
+      maxTokens: this.maxTokens,
     };
     const reactConfig: ReactConfig = { maxRounds: this.maxRounds };
 
@@ -200,6 +202,8 @@ export class AgentKernel {
       publish: (e) => this.publish(e),
       signal,
       options: buildOptions(query.options),
+      compressor: this.compressor,
+      maxTokens: this.maxTokens,
     };
 
     let finalContent = '';

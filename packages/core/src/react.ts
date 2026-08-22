@@ -11,9 +11,10 @@ import {
   ToolCall,
   ToolResult,
 } from './types.js';
-import type { LLMProvider, ToolExecutor } from './interfaces.js';
+import type { ContextCompressor, LLMProvider, ToolExecutor } from './interfaces.js';
 import { EventTypes } from './types.js';
 import { truncateToolResult } from './prompt.js';
+import { compressToBudget, estimateMessagesTokens } from './compress.js';
 
 export interface ReactConfig {
   maxRounds: number;
@@ -30,6 +31,10 @@ export interface ReactContext {
   signal?: AbortSignal;
   /** 覆盖 provider 的调用选项（如 temperature/route） */
   options?: Record<string, unknown>;
+  /** 可选上下文压缩器:消息总量超过 maxTokens 90% 时渐进式压缩 */
+  compressor?: ContextCompressor;
+  /** 上下文 token 预算(压缩阈值 = maxTokens * 0.9),默认 200000 */
+  maxTokens?: number;
 }
 
 /** 单轮工具执行结果 */
@@ -54,6 +59,9 @@ export async function* reactLoop(ctx: ReactContext, config: ReactConfig): AsyncG
   const { provider, executor, messages, sessionId, publish, signal } = ctx;
   const maxToolChars = config.maxToolResultChars ?? 20_000;
   const maxRounds = config.maxRounds > 0 ? config.maxRounds : 10;
+  // 上下文预算:压缩阈值 = 预算 * 0.9(对齐 Claude Code 的 92% 附近)
+  const tokenBudget = ctx.maxTokens && ctx.maxTokens > 0 ? ctx.maxTokens : 200_000;
+  const compressThreshold = (tokenBudget * 9) / 10;
 
   let finalContent = '';
   let finalReasoning = '';
@@ -65,6 +73,30 @@ export async function* reactLoop(ctx: ReactContext, config: ReactConfig): AsyncG
   for (let round = 1; round <= maxRounds; round++) {
     rounds = round;
     throwIfAborted(signal);
+
+    // 上下文压缩:超过预算 90% 时渐进式压缩,防止长会话上下文爆炸
+    if (ctx.compressor) {
+      const total = estimateMessagesTokens(workingMessages);
+      if (total > compressThreshold) {
+        try {
+          const { messages: compressed, compressed: didCompress } =
+            await compressToBudget(ctx.compressor, workingMessages, tokenBudget);
+          if (didCompress) {
+            workingMessages.length = 0;
+            workingMessages.push(...compressed);
+            publish({
+              type: EventTypes.ContextCompressed,
+              source: 'react',
+              data: { round, tokensBefore: total, tokensAfter: estimateMessagesTokens(compressed) },
+              timestamp: Date.now(),
+            });
+          }
+        } catch {
+          // 压缩失败不阻断主流程 — 下轮重试
+        }
+      }
+    }
+
     publish({ type: EventTypes.RoundStart, source: 'react', data: { round }, timestamp: Date.now() });
 
     // 当前轮工具定义

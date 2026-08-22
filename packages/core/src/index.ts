@@ -5,4 +5,5 @@ export * from './interfaces.js';
 export * from './session.js';
 export * from './prompt.js';
 export * from './react.js';
+export * from './compress.js';
 export * from './kernel.js';

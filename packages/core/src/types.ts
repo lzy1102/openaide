@@ -167,5 +167,6 @@ export const EventTypes = {
   QueryStart: 'query.start',
   QueryEnd: 'query.end',
   StateChanged: 'state.changed',
+  ContextCompressed: 'context.compressed',
   Error: 'error',
 } as const;
