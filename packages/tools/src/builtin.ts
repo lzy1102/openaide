@@ -78,8 +78,40 @@ export const builtinToolsPlugin: OpenAIDePlugin = {
       },
     },
     {
+      name: 'write_file',
+      description:
+        '将完整内容写入文件（覆盖）。content 为文件的完整最终内容——不要用 shell echo/heredoc 写文件,直接用本工具避免转义错误。',
+      parameters: {
+        type: 'object',
+        properties: {
+          file_path: { type: 'string', description: '要写入的文件路径' },
+          content: { type: 'string', description: '文件的完整最终内容' },
+        },
+        required: ['file_path', 'content'],
+      },
+      async handler(args) {
+        const filePath = args.file_path as string;
+        const content = args.content as string;
+        if (!filePath || content === undefined || content === null) {
+          return { content: '', error: 'file_path and content required', errorCode: 'INVALID_ARGS' };
+        }
+        try {
+          await writeFile(filePath, content, 'utf8');
+          // 写后回读验证(ACI):确认落盘内容与预期一致
+          const back = await readFile(filePath, 'utf8');
+          if (back !== content) {
+            return { content: '', error: 'write verification failed: content mismatch', errorCode: 'VERIFY_FAILED' };
+          }
+          const lines = content.split('\n').length;
+          return { content: `✓ wrote ${filePath} (${content.length} chars, ${lines} lines)` };
+        } catch (err) {
+          return { content: '', error: (err as Error).message, errorCode: 'WRITE_FAILED' };
+        }
+      },
+    },
+    {
       name: 'execute_command',
-      description: '执行 shell 命令并返回 stdout/stderr。危险命令会被黑名单拦截。',
+      description: '执行 shell 命令并返回 stdout/stderr。危险命令会被黑名单拦截。注意:写文件请用 write_file 工具,不要用 echo/重定向(转义易错)。',
       parameters: {
         type: 'object',
         properties: {
