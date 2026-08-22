@@ -265,3 +265,18 @@ git clone https://github.com/lzy1102/openaide.git
 cd openaide
 node scripts/install.mjs    # npm install + 全局 link openaide
 ```
+## 基准测试
+
+内置两套 agent 能力基准:
+
+```bash
+# 通用能力 8 题(工具调用/代码理解/多步任务)
+npx tsx scripts/eval.ts            # 全量
+npx tsx scripts/eval.ts --quick    # 仅 easy
+
+# Aider polyglot 编程题 pass@1(10 道 Exercism 练习)
+npx tsx scripts/polyglot-eval.ts           # 全量
+npx tsx scripts/polyglot-eval.ts proverb   # 指定题
+```
+
+polyglot harness 流程:每题在独立工作目录放置 stub + 官方 unittest,agent 自主实现并可用 pytest 迭代,最终以官方测试判定 pass/fail。当前成绩 (DeepSeek):**pass@1 = 8/10 (80%)**。
