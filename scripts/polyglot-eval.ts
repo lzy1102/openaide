@@ -20,17 +20,17 @@ const WORKSPACE = join(process.cwd(), 'eval-workspace');
 const TSX = 'npx tsx packages/cli/src/main.ts';
 
 /** 10 道选题:覆盖字符串/类/逻辑/随机等不同能力 */
+/** 全量 34 题(Exercism Python practice)。--quick 只跑核心 10 道 */
 const EXERCISES = [
-  'proverb',
-  'wordy',
-  'grade-school',
-  'phone-number',
-  'beer-song',
-  'robot-name',
-  'list-ops',
-  'pig-latin',
-  'hangman',
-  'scale-generator',
+  // 核心 10(原基准集)
+  'proverb', 'wordy', 'grade-school', 'phone-number', 'beer-song',
+  'robot-name', 'list-ops', 'pig-latin', 'hangman', 'scale-generator',
+  // 扩充 24
+  'affine-cipher', 'book-store', 'bottle-song', 'bowling', 'connect',
+  'dominoes', 'dot-dsl', 'food-chain', 'forth', 'go-counting',
+  'grep', 'paasio', 'poker', 'pov', 'react',
+  'rest-api', 'simple-linked-list', 'transpose', 'tree-building', 'two-bucket',
+  'variable-length-quantity', 'zebra-puzzle', 'zipper',
 ];
 
 interface TaskResult {
@@ -83,7 +83,11 @@ function runPytest(dir: string, module: string): { passed: boolean; output: stri
 
 async function main() {
   const requested = process.argv.slice(2);
-  const exercises = requested.length > 0 ? requested : EXERCISES;
+  const quick = process.argv.includes('--quick');
+  const CORE = EXERCISES.slice(0, 10);
+  const exercises = requested.length > 0
+    ? requested.filter((r) => r !== '--quick')
+    : quick ? CORE : EXERCISES;
 
   mkdirSync(WORKSPACE, { recursive: true });
   console.log(`Polyglot benchmark — ${exercises.length} exercises\n${'='.repeat(60)}`);
