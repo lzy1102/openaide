@@ -6,11 +6,13 @@
 import {
   EventBus,
   KernelEvent,
-  EventHandler,
+  LLMResponse,
+  Message,
   Persona,
   ToolDefinition,
   ToolExecutor,
 } from '@openaide/core';
+import type { PluginLLM, PluginSessions, ProgressReporter } from './types.js';
 import { discover, loadPlugin, loadManifest, readPersonaFile } from './loader.js';
 import type {
   LoadedPlugin,
@@ -32,6 +34,10 @@ export interface PluginManagerOptions {
   eventBus?: EventBus;
   /** 加载后自动激活 */
   autoActivate?: boolean;
+  /** 受限 LLM 访问(注入插件上下文,可选) */
+  llm?: PluginLLM;
+  /** 只读会话访问(注入插件上下文,可选) */
+  sessions?: PluginSessions;
 }
 
 /** 已激活插件的运行时状态 */
@@ -61,6 +67,10 @@ export class PluginManager {
   readonly dataDir: string;
   readonly executor?: ToolExecutor;
   readonly eventBus?: EventBus;
+  readonly llm?: PluginLLM;
+  readonly sessions?: PluginSessions;
+  /** 进度上报通道:装配层注入(把 note/percent 包装成事件发布) */
+  reportProgress?: ProgressReporter['report'];
 
   private active = new Map<string, ActivePlugin>();
   private personas: Persona[] = [];
@@ -71,6 +81,16 @@ export class PluginManager {
     this.dataDir = options.dataDir ?? options.pluginsDir;
     this.executor = options.executor;
     this.eventBus = options.eventBus;
+    this.llm = options.llm;
+    this.sessions = options.sessions;
+    this.reportProgress = (note: string, percent?: number) => {
+      this.eventBus?.publish({
+        type: 'context.progress',
+        source: 'plugin',
+        data: { note, percent },
+        timestamp: Date.now(),
+      });
+    };
     if (options.autoActivate !== false) {
       void this.loadAll();
     }
@@ -156,7 +176,16 @@ export class PluginManager {
   /** 激活插件：注册工具/钩子/人格 */
   private async activate(loaded: LoadedPlugin): Promise<void> {
     const { plugin, dir } = loaded;
-    const ctx: PluginContext = { dir, dataDir: this.dataDir };
+    const reporter: ProgressReporter | undefined = this.reportProgress
+      ? { report: (note: string, percent?: number) => this.reportProgress!(note, percent) }
+      : undefined;
+    const ctx: PluginContext = {
+      dir,
+      dataDir: this.dataDir,
+      llm: this.llm,
+      sessions: this.sessions,
+      reportProgress: reporter?.report,
+    };
 
     await plugin.activate?.(ctx);
 
@@ -169,13 +198,27 @@ export class PluginManager {
           type: 'function',
           function: {
             name: fullName,
-            description: tool.description,
+            // dangerous 工具在描述里显式标注,让 LLM 谨慎使用
+            description: tool.dangerous
+              ? `[dangerous — side effects, use with care] ${tool.description}`
+              : tool.description,
             parameters: tool.parameters ?? { type: 'object', properties: {} },
           },
         };
-        this.executor.register(def, (args, sessionId, signal) =>
-          tool.handler(JSON.parse(args) as Record<string, unknown>, sessionId, signal),
-        );
+        const runHandler = (args: string, sessionId: string, signal?: AbortSignal) =>
+          tool.handler(JSON.parse(args) as Record<string, unknown>, sessionId, signal);
+        this.executor.register(def, (args, sessionId, signal) => {
+          // dangerous 工具执行前发提示事件(可观测;装配层可据此接审批)
+          if (tool.dangerous) {
+            this.eventBus?.publishSync({
+              type: 'tool.permission',
+              source: 'plugin',
+              data: { plugin: plugin.name, tool: tool.name, sessionId },
+              timestamp: Date.now(),
+            });
+          }
+          return runHandler(args, sessionId, signal);
+        });
         registeredTools.push(fullName);
       }
     }

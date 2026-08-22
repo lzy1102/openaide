@@ -168,5 +168,7 @@ export const EventTypes = {
   QueryEnd: 'query.end',
   StateChanged: 'state.changed',
   ContextCompressed: 'context.compressed',
+  ToolPermission: 'tool.permission',
+  ContextProgress: 'context.progress',
   Error: 'error',
 } as const;

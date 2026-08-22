@@ -1,14 +1,14 @@
 /**
  * 示例 TS 插件 —— 同进程动态加载（无子进程）。
- * 导出 OpenAIDePlugin：工具 + 钩子 + 人格。
+ * 导出 OpenAIDePlugin：工具 + 钩子 + 人格 + 受限上下文(LLM/会话/进度)。
  */
 import type { OpenAIDePlugin } from '@openaide/plugins';
 import type { KernelEvent } from '@openaide/core';
 
 const plugin: OpenAIDePlugin = {
   name: 'example',
-  version: '0.1.0',
-  description: '示例插件：演示动态加载、工具注册、事件钩子、人格注入',
+  version: '0.2.0',
+  description: '示例插件：动态加载、工具注册、dangerous 标记、事件钩子、人格注入、LLM/进度访问',
 
   // 工具集：注册为 example__upper / example__random / example__time
   tools: [
@@ -33,6 +33,18 @@ const plugin: OpenAIDePlugin = {
         return { content: `random: ${Math.floor(Math.random() * 100) + 1}` };
       },
     },
+    {
+      // dangerous 标记示例:执行前内核会发布 tool.permission 提示事件,
+      // 且工具描述会被加上 [dangerous] 前缀让 LLM 谨慎使用
+      name: 'cleanup',
+      description: '清理临时缓存(演示 dangerous 标记)',
+      dangerous: true,
+      parameters: { type: 'object', properties: {} },
+      handler: async (_args, _sessionId, signal) => {
+        // 长任务可用 activate 注入的 reportProgress 上报进展
+        return { content: 'cleaned (demo — nothing was actually removed)' };
+      },
+    },
   ],
 
   // 事件钩子：每次工具调用结束打印一条
@@ -55,6 +67,17 @@ const plugin: OpenAIDePlugin = {
 
   activate: async (ctx) => {
     console.log(`[example-plugin] activated in ${ctx.dir}`);
+
+    // 新扩展点演示:
+    // ctx.llm     — 受限 LLM 访问(摘要/自检类插件用)
+    // ctx.sessions— 只读会话查询
+    // ctx.reportProgress — 长任务进度上报(发布 context.progress 事件)
+    if (ctx.llm) {
+      console.log(`[example-plugin] llm available, model: ${ctx.llm.model()}`);
+    }
+    if (ctx.reportProgress) {
+      ctx.reportProgress('example plugin activated', 100);
+    }
   },
 };
 

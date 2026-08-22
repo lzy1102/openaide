@@ -18,13 +18,32 @@ export interface PluginTool {
   parameters: Record<string, unknown>;
   /** 执行器：入参为解析后的参数对象 */
   handler: (args: Record<string, unknown>, sessionId: string, signal?: AbortSignal) => Promise<ToolResult> | ToolResult;
+  /**
+   * 危险标记:声明本工具有副作用/不可逆(如删数据、外发请求)。
+   * 内核在执行前会发布 tool.permission 提示事件,装配层可据此接审批;
+   * 未标记的工具默认可直接执行。
+   */
+  dangerous?: boolean;
 }
 
-/** 插件事件钩子 */
-export interface PluginHook {
-  /** 监听的事件类型（与内核 EventTypes 对齐） */
-  event: string;
-  handler: (event: KernelEvent) => void | Promise<void>;
+/** 长任务进度上报(插件 → 内核事件总线) */
+export interface ProgressReporter {
+  /** 上报一条进度;note 为人类可读的进展描述 */
+  report(note: string, percent?: number): void;
+}
+
+/** 受限 LLM 访问 —— 插件可调 LLM 但不触碰网关配置/路由 */
+export interface PluginLLM {
+  /** 发送一次补全请求 */
+  chat(messages: Array<{ role: string; content: string }>, options?: Record<string, unknown>): Promise<string>;
+  /** 当前模型 ID(只读) */
+  model(): string;
+}
+
+/** 只读会话访问 —— 插件可查询历史但不可修改 */
+export interface PluginSessions {
+  get(sessionId: string): Promise<{ id: string; messages: Array<{ role: string; content: string }> } | undefined>;
+  list(projectId?: string): Promise<Array<{ id: string; projectId: string; messageCount: number; updatedAt: number }>>;
 }
 
 /** 插件运行时上下文（激活时注入） */
@@ -33,6 +52,12 @@ export interface PluginContext {
   dir: string;
   /** 可访问的应用数据目录 */
   dataDir: string;
+  /** 受限 LLM 访问(摘要/自检类插件用) */
+  llm?: PluginLLM;
+  /** 只读会话访问 */
+  sessions?: PluginSessions;
+  /** 长任务进度上报 → 发布 context.progress 事件 */
+  reportProgress?: ProgressReporter['report'];
 }
 
 /** 插件 manifest（可选 openaide.yaml） */
@@ -53,6 +78,13 @@ export interface PluginManifest {
     module?: string;
     schema?: Record<string, unknown>;
   }>;
+}
+
+/** 插件事件钩子 */
+export interface PluginHook {
+  /** 监听的事件类型（与内核 EventTypes 对齐） */
+  event: string;
+  handler: (event: KernelEvent) => void | Promise<void>;
 }
 
 /** 统一插件接口 —— 一切能力皆插件 */
