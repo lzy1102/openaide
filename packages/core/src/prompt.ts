@@ -131,9 +131,21 @@ export function trimHistoryToBudget(history: Message[], budget: number): Message
   return keep < history.length ? history.slice(history.length - keep) : history;
 }
 
+/**
+ * 规则式任务类型检测(零 LLM 调用)。
+ * 供 L3 任务适配器选择提示;识别不出返回 general。
+ */
+export function detectTaskType(query: string): string {
+  const q = query.toLowerCase();
+  if (/\b(review|审查|评审|code review)\b/.test(q)) return 'review';
+  if (/\b(bug|error|fail|crash|exception|debug|修复|报错|崩溃|排错|排查)\b/.test(q)) return 'debugging';
+  if (/\b(implement|add|create|write|refactor|fix|实现|添加|新建|编写|重构)\b/.test(q)) return 'coding';
+  if (/\b(explain|how does|what is|why|compare|解释|为什么|是什么|对比|区别)\b/.test(q)) return 'think';
+  return 'general';
+}
+
 /** 按任务类型生成适配提示（L3） */
-export function taskAdapterPrompt(taskType: string): string {
-  const adapters: Record<string, string> = {
+export function taskAdapterPrompt(taskType: string): string {  const adapters: Record<string, string> = {
     coding:
       '[Task: coding]\nInspect the relevant code first (read_file / search_files), then make minimal, focused edits. Verify with tests/build when appropriate.',
     review:

@@ -28,7 +28,7 @@ import type {
 } from './interfaces.js';
 import { EventBus } from './events.js';
 import { appendMessages, MemorySessionStore, newId } from './session.js';
-import { buildMessages, buildSystemLayer } from './prompt.js';
+import { buildMessages, buildSystemLayer, detectTaskType } from './prompt.js';
 import { collectReact, reactLoop, ReactContext, ReactConfig } from './react.js';
 
 export interface KernelConfig {
@@ -129,6 +129,7 @@ export class AgentKernel {
       persona,
       customSystemPrompt: this.systemPrompt,
       projectContext: query.options.projectContext,
+      taskType: detectTaskType(query.content),
     });
 
     // 持久化用户消息
@@ -188,6 +189,7 @@ export class AgentKernel {
       persona,
       customSystemPrompt: this.systemPrompt,
       projectContext: query.options.projectContext,
+      taskType: detectTaskType(query.content),
     });
 
     appendMessages(session, [{ role: 'user', content: query.content }]);

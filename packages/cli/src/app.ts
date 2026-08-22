@@ -7,7 +7,7 @@ import type { SessionStore } from '@openaide/core';
 import { loadConfig, Config } from '@openaide/config';
 import { OpenAICompatibleProvider } from '@openaide/llm';
 import { PluginManager, PluginPersonaProvider } from '@openaide/plugins';
-import { ToolRegistry, builtinToolsPlugin } from '@openaide/tools';
+import { ToolRegistry, builtinToolsPlugin, fileToolsPlugin } from '@openaide/tools';
 import { SQLiteSessionStore } from '@openaide/memory';
 import { join } from 'node:path';
 
@@ -41,6 +41,8 @@ export async function buildApp(config?: Config): Promise<App> {
 
   // 内置插件（文件工具/命令工具，以插件形态）
   await plugins.add(builtinToolsPlugin, process.cwd());
+  // 文件检索与精确编辑插件(grep_search / diff_edit)
+  await plugins.add(fileToolsPlugin, process.cwd());
 
   // 用户插件：动态加载（同进程，无子进程）
   const loadedUserPlugins = await plugins.loadAll();
