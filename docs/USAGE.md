@@ -95,10 +95,39 @@ TUI 顶部显示会话 ID / 工具数 / 插件；对话流实时显示思考、�
 | `/use <id>` | 恢复历史会话继续聊 |
 | `/model <id>` | 运行时切换模型（无参显示当前） |
 | `/plugins` | 查看已加载插件与工具 |
-| `/persona` | 查看可用人格 |
+| `/persona` | 列出可用人格 + 当前激活 |
+| `/persona <name>` | **运行时切换人格**（下一条消息即以新身份响应；`default` 回到内置） |
 | `/exit` `/quit` | 退出 |
 
 > 不用手选工具——内核 ReAct 循环自动判断何时调用哪个工具（`builtin__*` 或插件注册的 `<插件>__<工具>`）。会话默认持久化到 `~/.openaide/sessions.db`，重启不丢。
+
+### 任务变身：一个 SYSTEM.md 变成任意领域 agent
+
+把 OpenAIDE 从编程助手变成任何领域的 agent,只需两个文件（零代码）：
+
+```bash
+mkdir -p ~/.openaide/plugins/travel-planner
+cat > ~/.openaide/plugins/travel-planner/SYSTEM.md << 'EOF'
+You are Voyager, an expert travel planning agent. You are NOT a coding assistant.
+Design detailed itineraries, estimate budgets, advise on visas and seasons.
+EOF
+cat > ~/.openaide/plugins/travel-planner/openaide.yaml << 'EOF'
+name: travel-planner
+version: 1.0.0
+description: 旅行规划师
+persona: voyager
+toolAllowlist:          # 可选:变身后暴露的工具白名单
+  - builtin__read_file
+  - builtin__list_directory
+EOF
+
+openaide repl
+# /persona voyager   ← 热切换,下一条消息即以旅行规划师身份响应
+```
+
+- `SYSTEM.md` **整体替换**系统提示词(L0)——身份、规则、能力边界全由它定义
+- `toolAllowlist` 联动:激活后内核只暴露白名单内的工具(不写则暴露全部)
+- `/persona default` 随时切回内置编码助手
 
 ### 1.4 一次性问答
 

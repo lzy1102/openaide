@@ -107,6 +107,7 @@ cli (TUI + REPL + commands)   api (HTTP/WS + SSE)
 ## Key Concepts
 
 - **Everything is a plugin**: kernel tools, personas and hooks all enter through the plugin system — builtin and user plugins share the same registration path
+- **Become any agent**: one `SYSTEM.md` file transforms OpenAIDE into a different domain agent (travel planner, contract analyst, …) — declarative persona plugins with optional tool allowlists, hot-switchable via `/persona <name>`
 - **Dynamic loading in-process**: plugins are loaded via `import()`, no subprocess; hot-reload by busting the module cache
 - **ReAct loop**: think → tool call → observe → loop, with streaming responses
 - **SQLite persistence**: sessions survive restarts; REPL can resume past conversations

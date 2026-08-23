@@ -144,10 +144,11 @@ interface KernelEvent {
 
 ### 4.4 人格
 
-人格可经三种方式提供，统一归一化为 `Persona`：
+人格可经四种方式提供，统一归一化为 `Persona`：
 1. 插件静态字段 `persona`
 2. `persona` 为函数（异步返回）
 3. `SYSTEM.md` 外置文件（`readPersonaFile`）
+4. **声明式 persona 插件**——目录只有 `openaide.yaml` + `SYSTEM.md`，无代码入口；loader 生成虚拟插件（人格即全部内容，支持"任务变身"）
 
 ```ts
 interface Persona {
@@ -157,6 +158,10 @@ interface Persona {
   toolAllowlist?: string[];  // 工具白名单
 }
 ```
+
+**任务变身**：激活 persona 后，内核把 `toolAllowlist` 应用到 ReactContext——工具集跟随人格变化。
+例如旅行规划师 persona 声明 `toolAllowlist: [builtin__read_file, builtin__list_directory, builtin__write_file]`,
+激活后 agent 只见这三个工具，完全脱离编程助手身份。切换通过 `/persona <name>` 运行时热切换。
 
 ---
 
