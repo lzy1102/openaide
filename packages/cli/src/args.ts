@@ -8,6 +8,8 @@ import { readFileSync, existsSync, statSync } from 'node:fs';
 export interface CliArgs {
   /** 子命令（repl/plugins/sessions/serve/setup/-c/--continue） */
   cmd?: string;
+  /** plugins 子命令的剩余参数（list/enable/disable/reload 及插件名） */
+  pluginArgs: string[];
   /** --model <id> 覆盖 */
   model?: string;
   /** --output json */
@@ -18,7 +20,7 @@ export interface CliArgs {
 }
 
 export function parseArgs(args: string[]): CliArgs {
-  const out: CliArgs = { outputJson: false, contextFiles: [], prompt: '' };
+  const out: CliArgs = { pluginArgs: [], outputJson: false, contextFiles: [], prompt: '' };
   const positional: string[] = [];
 
   for (let i = 0; i < args.length; i++) {
@@ -51,6 +53,12 @@ export function parseArgs(args: string[]): CliArgs {
       continue;
     }
     positional.push(a);
+  }
+
+  // plugins 子命令：剩余位置参数归 pluginArgs（不当作 prompt/文件）
+  if (out.cmd === 'plugins') {
+    out.pluginArgs = positional;
+    return out;
   }
 
   // 位置参数：存在的文件 → 上下文；其余 → prompt

@@ -5,7 +5,7 @@
  *   openaide file.go "prompt"   文件作为上下文 + 问答
  *   openaide repl               交互式 REPL（默认）
  *   openaide -c                 恢复最近一次会话续聊
- *   openaide plugins            列出已加载插件与工具
+ *   openaide plugins            列出全部插件（三态）与工具；search/install/uninstall 管理市场插件
  *   openaide sessions           列出已持久化的历史会话
  *   openaide serve              启动 HTTP/WS API 服务
  *   openaide setup              配置向导
@@ -20,7 +20,15 @@ import { runQuery, runRepl } from './repl.js';
 import { runTui } from './tui.js';
 import { runServe } from './serve.js';
 import { loadConfig, saveConfig } from '@openaide/config';
-import { readFileSync } from 'node:fs';
+import {
+  DEFAULT_REGISTRY_URL,
+  fetchRegistry,
+  installEntry,
+  readPluginState,
+  searchRegistry,
+  writePluginState,
+} from '@openaide/plugins';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { parseArgs, buildPrompt } from './args.js';
 
 const version = (
@@ -36,7 +44,17 @@ Usage:
                           include files as context, then query
   openaide repl           interactive REPL (default)
   openaide -c             continue the most recent session
-  openaide plugins        list loaded plugins and tools
+  openaide plugins        list all plugins (active/disabled/failed) + tools
+  openaide plugins search <keyword>
+                          search the plugin registry
+  openaide plugins install <name>
+                          install a plugin from the registry (git-based)
+  openaide plugins uninstall <name>
+                          remove an installed plugin
+  openaide plugins enable|disable <name>
+                          toggle a plugin (persisted to plugin-state.json)
+  openaide plugins reload <name>
+                          hot-reload a plugin (bust module cache)
   openaide sessions       list persisted sessions
   openaide serve          start HTTP/WS API server (OPENAIDE_PORT, default 8080)
   openaide setup          config wizard
@@ -111,7 +129,103 @@ async function main(): Promise<void> {
   }
 
   if (cmd === 'plugins') {
-    printToolInventory(app);
+    const [sub, name] = cli.pluginArgs;
+    if (!sub || sub === 'list') {
+      printToolInventory(app);
+      return;
+    }
+    if (sub === 'enable') {
+      if (!name) {
+        console.log('usage: openaide plugins enable <name>');
+        return;
+      }
+      const ok = await app.plugins.enable(name);
+      console.log(ok ? `[plugins] enabled ${name}` : `[plugins] not found (or directory missing): ${name}`);
+      return;
+    }
+    if (sub === 'disable') {
+      if (!name) {
+        console.log('usage: openaide plugins disable <name>');
+        return;
+      }
+      await app.plugins.disable(name);
+      console.log(`[plugins] disabled ${name} (unloaded now; skipped on startup)`);
+      return;
+    }
+    if (sub === 'search') {
+      const kw = cli.pluginArgs.slice(1).join(' ');
+      const reg = await fetchRegistry(cfg.registryUrl ?? DEFAULT_REGISTRY_URL);
+      const hits = searchRegistry(reg, kw);
+      if (hits.length === 0) {
+        console.log(`[plugins] no matches${kw ? ` for "${kw}"` : ''} (${reg.plugins.length} in registry)`);
+        return;
+      }
+      console.log(`[plugins] ${hits.length} match(es) in registry:`);
+      for (const e of hits) {
+        console.log(
+          `  ${e.name}@${e.version ?? '0.0.0'}${e.category ? ` [${e.category}]` : ''} — ${e.description ?? ''}${e.author ? ` (by ${e.author})` : ''}`,
+        );
+      }
+      console.log('install: openaide plugins install <name>');
+      return;
+    }
+    if (sub === 'install') {
+      if (!name) {
+        console.log('usage: openaide plugins install <name>');
+        return;
+      }
+      const reg = await fetchRegistry(cfg.registryUrl ?? DEFAULT_REGISTRY_URL);
+      const entry = reg.plugins.find((p) => p.name === name);
+      if (!entry) {
+        console.log(`[plugins] not in registry: ${name}  (try: openaide plugins search ${name})`);
+        return;
+      }
+      console.log(`[plugins] installing ${entry.name}@${entry.version ?? '?'} from ${entry.source.url}...`);
+      const res = await installEntry(entry, { pluginsDir: cfg.pluginsDir });
+      await app.plugins.load(res.dir);
+      const info = app.plugins.list().find((p) => p.name === res.name);
+      console.log(
+        `[plugins] installed ${res.name} → ${res.dir} (tools: ${info?.tools.length ?? 0}, persona: ${info?.persona ? 'yes' : 'no'})`,
+      );
+      return;
+    }
+    if (sub === 'uninstall') {
+      if (!name) {
+        console.log('usage: openaide plugins uninstall <name>');
+        return;
+      }
+      const dir = app.plugins.dirOf(name);
+      if (!dir || !existsSync(dir)) {
+        console.log(`[plugins] not installed: ${name}`);
+        return;
+      }
+      await app.plugins.unload(name);
+      rmSync(dir, { recursive: true, force: true });
+      // 若在禁用名单里，一并清除（目录已删，记录已无意义）
+      const st = readPluginState(cfg.dataDir);
+      if (st.disabled.includes(name)) {
+        st.disabled = st.disabled.filter((n) => n !== name);
+        writePluginState(cfg.dataDir, st);
+      }
+      console.log(`[plugins] uninstalled ${name} (removed ${dir})`);
+      return;
+    }
+    if (sub === 'reload') {
+      if (!name) {
+        console.log('usage: openaide plugins reload <name>');
+        return;
+      }
+      try {
+        await app.plugins.reload(name);
+        console.log(`[plugins] reloaded ${name}`);
+      } catch (err) {
+        console.error(`[plugins] reload failed: ${(err as Error).message}`);
+      }
+      return;
+    }
+    console.log(
+      `unknown plugins subcommand: ${sub}  (list | search <kw> | install <name> | uninstall <name> | enable/disable/reload <name>)`,
+    );
     return;
   }
   if (cmd === 'sessions') {
