@@ -78,6 +78,27 @@ kernel:
 - **前缀缓存友好**：system 层（L0 人格 + 项目规则）跨查询字节级稳定；技能提示作为独立消息注入；system 消息携带 `cache_control`。使用 DeepSeek 等 provider 时，多轮对话与跨查询都能命中前缀缓存，prompt 成本大幅降低。
 - **空回复即失败**：LLM 返回空内容（限流/静默失败）视为错误——不会显示"完成"却无回复，也不会把空消息写入会话。
 
+### 1.2.1 跨设备续聊：会话随仓库走
+
+默认会话存在全局 `~/.openaide/`（SQLite）。想让对话跟着项目走、换电脑不丢：
+
+```bash
+cd your-project
+openaide init        # 创建 .openaide/ 工作区（含说明 README）
+git add .openaide && git commit -m "chore: openaide workspace"
+```
+
+之后该目录（含子目录）下运行 openaide，会话与跨轮记忆自动写入 `.openaide/`：
+
+```
+.openaide/
+├── README.md              # 说明 + 敏感性提示
+├── sessions/<id>.json     # 会话快照（人类可读、可 diff，按内容 updatedAt 排序）
+└── memory/<id>.jsonl      # 逐条消息流水（append-only）
+```
+
+换机器：`git pull` → `openaide -c` 即恢复最近会话继续聊。选择文件而非 SQLite 正是为了 git 友好；按会话分文件把合并冲突面缩到单个会话。**注意：对话内容会进版本历史，涉密项目请把 `.openaide/` 加入 .gitignore。**
+
 ### 1.3 交互式使用
 
 ```bash

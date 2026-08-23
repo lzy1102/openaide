@@ -1,9 +1,9 @@
 /**
  * 配置加载 —— yaml + 环境变量覆盖。
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import YAML from 'yaml';
 
 export interface LLMConfigOptions {
@@ -38,6 +38,25 @@ export interface Config {
 /** 默认配置目录（OPENAIDE_DATA_DIR 优先，保证数据与配置随目录整体迁移） */
 export function defaultDataDir(): string {
   return process.env.OPENAIDE_DATA_DIR ?? join(homedir(), '.openaide');
+}
+
+/** 项目工作区标记目录名（openaide init 创建；存在即启用"会话随项目走"） */
+export const WORKSPACE_DIRNAME = '.openaide';
+
+/**
+ * 从 startDir（默认 cwd）向上查找项目工作区。
+ * 显式 opt-in：只有目录树里真的存在 .openaide/ 才启用，绝不悄悄写进用户的仓库。
+ * @returns 工作区绝对路径（…/<project>/.openaide），未找到返回 null
+ */
+export function findProjectWorkspace(startDir?: string): string | null {
+  let dir = startDir ? resolve(startDir) : process.cwd();
+  const home = homedir();
+  for (;;) {
+    const candidate = join(dir, WORKSPACE_DIRNAME);
+    if (existsSync(candidate) && statSync(candidate).isDirectory()) return candidate;
+    if (dir === home || dirname(dir) === dir) return null; // 到家目录/根为止
+    dir = dirname(dir);
+  }
 }
 
 /** 默认配置路径 */

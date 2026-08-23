@@ -67,6 +67,7 @@ Usage:
                           hot-reload a plugin (bust module cache)
   openaide sessions       list persisted sessions
   openaide serve          start HTTP/WS API server (OPENAIDE_PORT, default 8080)
+  openaide init           create .openaide/ workspace — sessions travel with the repo
   openaide setup          config wizard
   openaide --model <id>   override model (works with any command)
   openaide --output json  one-shot output as JSON
@@ -115,6 +116,33 @@ async function main(): Promise<void> {
   }
   if (cmd === 'setup') {
     await setup();
+    return;
+  }
+
+  // init：在当前目录创建项目工作区（.openaide/）——会话随仓库走，换机器 git pull 后无缝续聊
+  if (cmd === 'init') {
+    const { mkdirSync, writeFileSync, existsSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const dir = join(process.cwd(), '.openaide');
+    mkdirSync(dir, { recursive: true });
+    const keep = join(dir, 'README.md');
+    if (!existsSync(keep)) {
+      writeFileSync(
+        keep,
+        [
+          '# OpenAIDE 项目工作区',
+          '',
+          '本目录存放该项目的 agent 会话（sessions/）与跨轮记忆（memory/）。',
+          '**建议提交进 git**——换一台电脑 clone/pull 后，`openaide -c` 即可继续之前的对话。',
+          '',
+          '敏感提示：会话内容会进入版本历史；若对话涉密请将本目录加入 .gitignore。',
+        ].join('\n'),
+        'utf8',
+      );
+    }
+    console.log(`[init] project workspace ready: ${dir}`);
+    console.log('[init] commit it to git — sessions now travel with the repo.');
+    console.log('[init] next machine: git pull && openaide -c');
     return;
   }
 

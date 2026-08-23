@@ -44,7 +44,7 @@ export function parseArgs(args: string[]): CliArgs {
       out.outputJson = true;
       continue;
     }
-    if (a === 'repl' || a === 'plugins' || a === 'sessions' || a === 'serve' || a === 'setup' || a === '-c' || a === '--continue') {
+    if (a === 'repl' || a === 'plugins' || a === 'sessions' || a === 'serve' || a === 'setup' || a === 'init' || a === '-c' || a === '--continue') {
       out.cmd = a;
       continue;
     }

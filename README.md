@@ -111,6 +111,7 @@ cli (TUI + REPL + commands)   api (HTTP/WS + SSE)
 ## Key Concepts
 
 - **Everything is a plugin**: kernel tools, personas and hooks all enter through the plugin system — builtin and user plugins share the same registration path
+- **Sessions travel with the repo**: run `openaide init` and conversations live in `.openaide/` as readable JSON — commit them, pull on another machine, `openaide -c` continues where you left off
 - **Policy as plugin**: interceptor chain can veto/rewrite LLM requests and tool calls — approval gates, PII redaction, budget guards are all just plugins
 - **Pluggable brain**: plugins can register LLM providers (Anthropic, Ollama, …); `config.llm.provider` picks one at startup
 - **Become any agent**: one `SYSTEM.md` file transforms OpenAIDE into a different domain agent (travel planner, contract analyst, …) — declarative persona plugins with optional tool allowlists, hot-switchable via `/persona <name>`

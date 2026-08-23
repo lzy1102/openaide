@@ -4,11 +4,12 @@
  */
 import { AgentKernel, EventBus } from '@openaide/core';
 import type { LLMProvider, ModelSwitcher, SessionStore } from '@openaide/core';
-import { loadConfig, Config } from '@openaide/config';
+import { findProjectWorkspace, loadConfig, Config } from '@openaide/config';
 import { OpenAICompatibleProvider } from '@openaide/llm';
 import { PluginManager, PluginPersonaProvider } from '@openaide/plugins';
 import { ToolRegistry, builtinToolsPlugin, fileToolsPlugin } from '@openaide/tools';
-import { SQLiteSessionStore, SqliteMemory } from '@openaide/memory';
+import { FileMemory, FileSessionStore, SQLiteSessionStore, SqliteMemory } from '@openaide/memory';
+import type { Memory } from '@openaide/core';
 import { join } from 'node:path';
 import { createApprovalInterceptor } from './approval.js';
 import type { ApprovalHandler } from './approval.js';
@@ -23,7 +24,7 @@ export interface App {
   persona: PluginPersonaProvider;
   bus: EventBus;
   sessions: SessionStore;
-  memory: SqliteMemory;
+  memory: Memory;
   /** 运行时切换激活人格(undefined = 回到内置默认 L0);立即生效于下一次查询 */
   setActivePersona(name: string | undefined): void;
   /** 当前激活人格名 */
@@ -40,11 +41,21 @@ export async function buildApp(config?: Config): Promise<App> {
   // 共享事件总线：内核发布 → 插件钩子订阅（同进程）
   const bus = new EventBus();
 
-  // 会话存储:SQLite 持久化（重启不丢）
-  const sessions = new SQLiteSessionStore(join(cfg.dataDir, 'sessions.db'));
-
-  // 记忆存储:内核构建历史消息的来源(role 保留,跨轮上下文)
-  const memory = new SqliteMemory(join(cfg.dataDir, 'memory.db'));
+  // ── 存储选路：项目工作区（.openaide/ 存在）→ 会话随项目走（git 同步即跨机器）；
+  //    否则回退全局 ~/.openaide SQLite。显式 data_dir/env 配置仍优先于探测。
+  const workspace = findProjectWorkspace();
+  let sessionStore: SessionStore;
+  let memoryStore: Memory;
+  if (workspace) {
+    sessionStore = new FileSessionStore(workspace);
+    memoryStore = new FileMemory(workspace);
+    console.log(`[app] project workspace: ${workspace} (sessions travel with the repo)`);
+  } else {
+    sessionStore = new SQLiteSessionStore(join(cfg.dataDir, 'sessions.db'));
+    memoryStore = new SqliteMemory(join(cfg.dataDir, 'memory.db'));
+  }
+  const sessions = sessionStore;
+  const memory = memoryStore;
 
   // ── Provider 委托：先造默认实现占位，插件加载后按 config.llm.provider 热替换 ──
   let currentProvider: LLMProvider & Partial<ModelSwitcher> = new OpenAICompatibleProvider({
