@@ -52,8 +52,12 @@ openaide --model <id> ...   # 任意命令指定模型
 openaide --output json "q"  # 一次性问答输出 JSON
 openaide -c                 # 恢复最近一次会话续聊
 openaide                    # 交互式 TUI（Ink）/ readline REPL
-openaide serve              # HTTP/WS + SSE 服务（默认 :8080）
-openaide plugins            # 查看已加载插件与工具
+openaide serve              # HTTP/WS + SSE 服务（默认 :8080）— 自动托管 frontend/dist 内置 WebUI
+openaide plugins            # 查看全部插件（active / disabled / failed 三态）与工具
+openaide plugins search <kw>      # 搜索插件市场
+openaide plugins install <name>   # 从市场安装（git 拉取）
+openaide plugins disable <name>   # 立即卸载 + 重启后不再加载（持久化）
+openaide plugins enable <name>    # 移出禁用名单并立即重新加载
 openaide sessions           # 查看历史会话
 openaide setup              # 配置向导
 openaide --version | --help
@@ -107,6 +111,8 @@ cli (TUI + REPL + 命令)      api (HTTP/WS + SSE)
 ## 核心概念
 
 - **一切皆插件**：内核的工具、人格、钩子全部经插件体系注入——内置与用户插件走同一套注册逻辑
+- **策略即插件**：拦截链可否决/改写 LLM 请求与工具调用——审批门、PII 脱敏、预算熔断统统只是插件
+- **大脑可插拔**：插件可注册 LLM Provider（Anthropic/Ollama/…），`config.llm.provider` 一行切换
 - **一键变身任意 agent**：一个 `SYSTEM.md` 文件即可把 OpenAIDE 变成其他领域 agent（旅行规划师、合同分析师……）——声明式人格插件 + 可选工具白名单，`/persona <名字>` 热切换
 - **同进程动态加载**：插件经 `import()` 加载，无子进程；破坏模块缓存即可热重载
 - **ReAct 循环**：思考 → 工具调用 → 观察 → 循环，支持流式响应

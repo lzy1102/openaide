@@ -52,8 +52,12 @@ openaide --model <id> ...    # override model for any command
 openaide --output json "q"   # one-shot output as JSON
 openaide -c                  # continue the most recent session
 openaide                     # interactive TUI (Ink) / readline REPL
-openaide serve               # HTTP/WS + SSE server (default :8080)
-openaide plugins             # list loaded plugins and tools
+openaide serve               # HTTP/WS + SSE server (default :8080) — serves built-in WebUI from frontend/dist
+openaide plugins             # list all plugins (active/disabled/failed) + tools
+openaide plugins search <kw>      # search the plugin registry
+openaide plugins install <name>   # install from the registry (git-based)
+openaide plugins disable <name>   # unload now + skip on startup (persisted)
+openaide plugins enable <name>    # remove from disabled list and load again
 openaide sessions            # list persisted sessions
 openaide setup               # config wizard
 openaide --version | --help
@@ -107,6 +111,8 @@ cli (TUI + REPL + commands)   api (HTTP/WS + SSE)
 ## Key Concepts
 
 - **Everything is a plugin**: kernel tools, personas and hooks all enter through the plugin system — builtin and user plugins share the same registration path
+- **Policy as plugin**: interceptor chain can veto/rewrite LLM requests and tool calls — approval gates, PII redaction, budget guards are all just plugins
+- **Pluggable brain**: plugins can register LLM providers (Anthropic, Ollama, …); `config.llm.provider` picks one at startup
 - **Become any agent**: one `SYSTEM.md` file transforms OpenAIDE into a different domain agent (travel planner, contract analyst, …) — declarative persona plugins with optional tool allowlists, hot-switchable via `/persona <name>`
 - **Dynamic loading in-process**: plugins are loaded via `import()`, no subprocess; hot-reload by busting the module cache
 - **ReAct loop**: think → tool call → observe → loop, with streaming responses

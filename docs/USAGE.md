@@ -54,9 +54,11 @@ llm:
   api_key: sk-xxx                 # 也可是环境变量 OPENAIDE_API_KEY
   model: deepseek-v4-pro
   base_url: https://api.deepseek.com/v1
+  # provider: acme               # 插件注册的 LLM 后端（缺省内置 openai-compatible）
 kernel:
   max_rounds: 10
   max_tokens: 200000    # 上下文 token 预算(压缩/历史裁剪阈值),非单次输出上限
+  approval: dangerous   # 工具审批：off(默认)/dangerous(危险工具需确认)/always(全部确认)
 ```
 
 环境变量覆盖（优先级高于配置文件）：
@@ -82,9 +84,23 @@ kernel:
 openaide    # TTY 下为 Ink TUI；非 TTY（管道/脚本）自动降级为 readline REPL
 ```
 
-TUI 顶部显示会话 ID / 工具数 / 插件；对话流实时显示思考、工具调用、回答。底部直接打字回车即发送。
+TUI 布局（Claude Code / Gemini CLI 风格）：
 
-- **键盘**：`↑/↓` 翻输入历史，`Ctrl+C` 退出
+```
+◆ OpenAIDE                        ← Banner（品牌/模型/提示，只渲染一次）
+❯ you                             ← 用户消息（加粗）
+  你好，有什么可以帮你？
+● agent                           ← 助手回答（markdown 渲染：标题/列表/**粗体**/`行内码`/代码块）
+  ⚡ builtin__read_file({"path":…}) ← 工具调用（青色一行）
+╭─ ❯ Send a message or type / … ─╮ ← 圆角输入框
+ model · session a1b2c3d4… · plugins: 3 · tools: 6   ← 状态栏（常驻）
+```
+
+- 输入 `/` 即弹出**命令补全菜单**（继续输入过滤；`↑/↓` 选择、`Tab` 补全）
+- 处理中显示动态 spinner 状态：Thinking → Reasoning → Running <tool> → Responding
+- 助手的思考流（reasoning）以暗色斜体实时展示，与正文分离
+
+- **键盘**：`↑/↓` 翻输入历史（弹层打开时切换补全项），`Tab` 补全命令，`Esc` 清空输入框，`Ctrl+C` 退出
 - **斜杠命令**（TUI 与 REPL 通用）：
 
 | 命令 | 作用 |
@@ -94,7 +110,9 @@ TUI 顶部显示会话 ID / 工具数 / 插件；对话流实时显示思考、�
 | `/sessions` | 列出历史会话 |
 | `/use <id>` | 恢复历史会话继续聊 |
 | `/model <id>` | 运行时切换模型（无参显示当前） |
-| `/plugins` | 查看已加载插件与工具 |
+| `/plugins` | 列出全部插件（active / disabled / failed 三态）与工具 |
+| `/plugins enable\|disable <name>` | 启停插件（写入 `plugin-state.json`，重启仍生效；disable 立即卸载） |
+| `/plugins reload <name>` | 热重载插件（破坏模块缓存重新 import） |
 | `/persona` | 列出可用人格 + 当前激活 |
 | `/persona <name>` | **运行时切换人格**（下一条消息即以新身份响应；`default` 回到内置） |
 | `/exit` `/quit` | 退出 |
@@ -150,11 +168,25 @@ openaide --output json "1+1=?"
 # → {"content":"...","sessionId":"..."}
 ```
 
-### 1.5 API 服务（给前端/远程使用）
+### 1.5 API 服务与 WebUI
 
 ```bash
 openaide serve                      # 默认 http://127.0.0.1:8080
 OPENAIDE_PORT=9000 openaide serve
+```
+
+`serve` 会自动托管 `frontend/dist`（存在时）——浏览器打开 `http://127.0.0.1:8080` 即得内置 WebUI（Vite + React SPA）：
+
+- 会话列表：新建 / 恢复历史 / 删除
+- 聊天流：SSE 实时渲染 markdown，思考过程折叠块，工具调用卡片（running/ok/failed）
+- 顶栏连接状态 + 当前模型；生成中可随时 Stop 中断
+
+前端开发模式：
+
+```bash
+npm install                 # frontend 已纳入 workspaces
+npm run dev --workspace frontend   # Vite dev server :5173，代理 API 到 :8080
+npm run build --workspace frontend # 构建到 frontend/dist（serve 自动托管）
 ```
 
 端点：
@@ -162,8 +194,10 @@ OPENAIDE_PORT=9000 openaide serve
 | 端点 | 说明 |
 |---|---|
 | `GET /health` | 健康检查与服务信息 |
+| `GET/POST /sessions` | 会话列表 / 创建 |
+| `GET/DELETE /sessions/:id` | 会话详情（含消息）/ 删除 |
 | `POST /v1/chat` | 非流式问答 `{content, session_id?, project_id?}` |
-| `POST /v1/chat/stream` | 流式问答（SSE） |
+| `POST /v1/chat/stream` | 流式问答（SSE: ready/chunk/error/done 帧） |
 | `WS /ws` | 双向流式对话 |
 
 ```bash
@@ -196,6 +230,30 @@ Copy-Item -Recurse examples/plugins/example-plugin "$HOME\.openaide\plugins\"
 openaide
 ```
 
+启停管理（CLI 与 REPL/TUI 斜杠命令等价）：
+
+```bash
+openaide plugins                  # 列出全部插件（active / disabled / failed 三态）与工具
+openaide plugins disable travel   # 立即卸载 + 写入 <data_dir>/plugin-state.json，重启后不再加载
+openaide plugins enable travel    # 从名单移除并立即重新加载（目录仍存在时）
+openaide plugins reload travel    # 热重载单个插件
+```
+
+- 禁用按**插件名**记录；内置插件（`builtin`、`file-tools`）同样可禁用，启动时跳过注册
+- 名单文件 `<data_dir>/plugin-state.json` 可手改，损坏时自动回退为空状态
+
+插件市场（静态 JSON 索引 + git 安装，无服务器）：
+
+```bash
+openaide plugins search            # 列出市场全部插件；加关键词过滤（匹配名称/描述/分类/关键词）
+openaide plugins install example-plugin   # git clone 浅克隆 → 拷入 pluginsDir → 立即加载
+openaide plugins uninstall example-plugin # 卸载并删除目录（含清理禁用名单残留）
+```
+
+- 默认索引：本仓库 `registry/plugins.json` 的 raw 地址；`config.yaml` 的 `registry_url` 或环境变量 `OPENAIDE_REGISTRY_URL` 可覆盖（支持 `http(s)://` 与 `file://` 自建/离线索引）
+- 自建市场：fork 本仓库 → 编辑 `registry/plugins.json`（条目含 name/version/description/keywords/source.git url+subdir）→ 推送即生效
+- REPL/TUI 内等价命令：`/plugins search <kw>`、`/plugins install|uninstall <name>`
+
 ---
 
 ## 二、开发者（Developer）
@@ -213,12 +271,14 @@ npm run dev            # tsx 免编译运行，改代码即时生效
 
 | 命令 | 用途 |
 |---|---|
-| `npm run dev` | 开发运行（免编译） |
-| `npm run build` | 编译所有包到 `dist/` |
-| `npm run typecheck` | 全部包类型检查 |
-| `npm test` | 全部测试（Node 18 `node --test`） |
-| `npm test --workspace @openaide/<包名>` | 单包测试 |
+| `npm run dev` / `npm run dev:repl` / `npm run dev:serve` | 开发运行（免编译；serve = API+WebUI） |
+| `npm run build` | 编译所有包到 `dist/`（frontend 走 vite build） |
+| `npm run typecheck` | 全部包类型检查（含 frontend） |
+| `npm test` | 全部测试：node --test（packages）+ vitest（frontend） |
+| `node scripts/test.mjs <包名>` | 只跑某个包的测试 |
 | `npm run dev -- plugins` | 查看插件/工具清单 |
+
+> 注意：`npm run dev -- serve` 中 `--` 与子命令之间必须有空格，否则参数被 npm 吞掉。
 
 ### 2.2 写一个插件
 
@@ -240,9 +300,36 @@ const plugin: OpenAIDePlugin = {
       handler: async () => ({ content: 'pong' }),
     },
   ],
+
+  // 拦截器（策略）：可否决/改写工具调用与 LLM 请求
+  interceptors: [
+    {
+      name: 'my-guard',
+      beforeToolCall(info) {
+        if (/rm\s+-rf/i.test(info.argsJson)) return { action: 'deny', reason: 'destructive' };
+        if (info.tool === 'builtin__write_file') {
+          // modify：改写参数（如统一编码风格）
+          return { action: 'modify', payload: info.argsJson.replace(/\r\n/g, '\n') };
+        }
+        return { action: 'allow' };
+      },
+    },
+  ],
+
+  // LLM Provider 注册：config.llm.provider: 'acme' 即切换大脑
+  providers: [
+    {
+      name: 'acme',
+      create: (cfg) => new MyAcmeProvider(cfg),
+    },
+  ],
 };
 export default plugin;
 ```
+
+拦截器判定语义：`allow` 放行 → `deny`（带 reason，回给模型自行调整）→ `modify` 替换载荷后继续向后传递。三个挂点：`beforeLLM`（脱敏/预算熔断）、`beforeToolCall`（审批门/参数改写）、`afterToolCall`（结果过滤/脱敏）。
+
+工具审批：配置 `kernel.approval: dangerous`（危险工具需确认）或 `always`；TUI 弹出黄色确认卡按 y/n，REPL 行内输入 y/N，API 服务未接 UI 时 fail-closed 默认拒绝。
 
 调试：
 

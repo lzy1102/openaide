@@ -222,6 +222,12 @@ unload(name) ──▶ 注销工具 → 退订钩子 → 调 deactivate
 - **热重载**：`reload(name)` 破坏模块缓存重新 import
 - **内置插件同路**：`builtinToolsPlugin` 经 `plugins.add()` 注册，与用户插件一致
 
+启停管理（`state.ts` + `manager.disable/enable/isDisabled`）：
+- 禁用名单持久化在 `<data_dir>/plugin-state.json`（按插件名）；构造时读入，`loadAll` 跳过名单内目录
+- `disable(name)` = 立即卸载 + 写盘；`enable(name)` = 移出名单 + 目录仍存在则立即重载
+- `list()` 返回三态快照：`active`（已激活）/ `disabled`（被禁用）/ `failed`（加载失败，含错误信息）
+- 内置插件同样可禁用：装配层注册前检查 `isDisabled(name)`
+
 ### 5.4 插件目录约定
 
 ```
@@ -265,11 +271,15 @@ unload(name) ──▶ 注销工具 → 退订钩子 → 调 deactivate
 |---|---|
 | `ToolExecutor` | 任意工具（文件/Git/Web/浏览器/MCP…）；MCP 可封装为插件包 |
 | `EventBus` + 事件类型 | 插件响应任意生命周期：审批、通知、遥测、自动重试 |
+| `Interceptor`（拦截链） | **策略插件**：可否决/改写 LLM 请求与工具调用——审批门（`kernel.approval`）、PII 脱敏、预算熔断、结果过滤；链式按序执行，deny 短路，modify 载荷向后传递 |
+| `PluginProvider`（Provider 注册表） | 插件注册任意 LLM 后端（Anthropic 原生/Ollama/vLLM…），`config.llm.provider` 一行切换 |
 | `PersonaProvider` | 人格 / 角色 / 工作流预设全部可插拔 |
 | `ContextCompressor` | 上下文压缩策略插件化 |
-| `PermissionChecker` | 权限鉴权策略插件化 |
+| `PermissionChecker` | 布尔鉴权（简单场景）；需要改写能力时用 Interceptor |
 | `LLMProvider` / `ModelSwitcher` | 多模型提供方（本地 Ollama、路由） |
 | 非 TS 插件 | `PluginManifest.tools[].module` 已为任意语言插件预留（未来子进程桥接） |
+
+> 拦截链执行顺序：数组序 = 插件加载顺序 + 内置插件在前；装配层会把审批拦截器 unshift 到链首。
 
 ---
 

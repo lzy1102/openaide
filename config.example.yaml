@@ -12,13 +12,19 @@ llm:
   model: "deepseek-v4-pro"              # 模型 ID（OpenAI 兼容）
   base_url: "https://api.deepseek.com/v1"  # OpenAI 兼容端点
   timeout_ms: 60000                     # 可选：请求超时（毫秒）
+  # provider: "acme"                    # 可选：插件注册的 LLM 后端名（缺省内置 openai-compatible）
 
 # ── 内核 ─────────────────────────────────
 kernel:
   max_rounds: 10                        # ReAct 最大轮数
   max_tokens: 200000                    # 上下文 token 预算(压缩/历史裁剪阈值),非单次输出上限
+  approval: off                         # 工具审批：off(默认) / dangerous(危险工具需确认) / always(全部确认)
   # system_prompt: "自定义系统提示词（可选，缺省用内置）"
   # persona: "coder"                    # 激活的人格名（插件提供，可选）
+
+# ── 插件市场（可选）──────────────────────
+# registry_url: "https://raw.githubusercontent.com/lzy1102/openaide/master/registry/plugins.json"
+                                        # 自建/离线索引可指向 file:// 路径
 
 # ── 目录（可选，缺省用默认值）────────────
 # data_dir: "~/.openaide"               # 数据目录（会话 db/历史）

@@ -41,6 +41,8 @@ openaide
 |---|---|---|
 | tools | `index.ts > tools` | 工具定义，注册为 `<插件名>__<工具名>`，handler 与内核同进程执行 |
 | hooks | `index.ts > hooks` | 事件钩子，订阅内核事件（如 `tool.call.ended`） |
+| interceptors | `index.ts > interceptors` | 拦截器（策略）：可否决/改写 LLM 请求与工具调用——审批门、脱敏、限流等 |
+| providers | `index.ts > providers` | 注册 LLM 后端工厂；`config.llm.provider: <name>` 即切换大脑 |
 | persona | `index.ts > persona` 或 `SYSTEM.md` | 人格定义（L0 系统提示词） |
-| manifest | `openaide.yaml` | 可选元信息：name/version/description/category/persona |
+| manifest | `openaide.yaml` | 可选元信息：name/version/description/category/persona/toolAllowlist |
 | category | `index.ts` 或 `openaide.yaml` | 分类（轻量元数据，`openaide plugins` 按此分组展示；缺省 uncategorized） |
