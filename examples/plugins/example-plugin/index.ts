@@ -7,8 +7,8 @@ import type { KernelEvent } from '@openaide/core';
 
 const plugin: OpenAIDePlugin = {
   name: 'example',
-  version: '0.2.0',
-  description: '示例插件：动态加载、工具注册、dangerous 标记、事件钩子、人格注入、LLM/进度访问',
+  version: '0.3.0',
+  description: '示例插件：动态加载、工具注册、dangerous 标记、事件钩子、拦截器、人格注入、LLM/进度访问',
 
   // 工具集：注册为 example__upper / example__random / example__time
   tools: [
@@ -53,6 +53,23 @@ const plugin: OpenAIDePlugin = {
       event: 'tool.call.ended',
       handler: async (event: Event) => {
         console.log(`\x1b[33m[hook:example] tool "${String(event.data?.tool)}" finished\x1b[0m`);
+      },
+    },
+  ],
+
+  // 拦截器：可否决/改写工具调用与 LLM 请求（策略插件示例）
+  // 这里演示：拦下任何试图执行 rm -rf / Remove-Item -Recurse 的调用
+  interceptors: [
+    {
+      name: 'rm-rf-guard',
+      beforeToolCall(info) {
+        if (/rm\s+-rf|Remove-Item\s+-Recurse/i.test(info.argsJson)) {
+          return {
+            action: 'deny',
+            reason: 'destructive command blocked by rm-rf-guard (example policy)',
+          };
+        }
+        return { action: 'allow' };
       },
     },
   ],

@@ -7,7 +7,7 @@
  * 可选 openaide.yaml 声明元信息（name/version/persona/入口），
  * 也可纯代码声明 —— 二选一或并存。
  */
-import type { KernelEvent, Persona, ToolResult } from '@openaide/core';
+import type { Interceptor, KernelEvent, LLMProvider, Persona, ToolResult } from '@openaide/core';
 
 /** 插件工具规范：handler 与内核同进程执行 */
 export interface PluginTool {
@@ -89,6 +89,21 @@ export interface PluginHook {
   handler: (event: KernelEvent) => void | Promise<void>;
 }
 
+/** LLM Provider 工厂 —— 插件可注册新的模型后端（内核按 config.llm.provider 选择） */
+export interface PluginProvider {
+  /** Provider 名（config.llm.provider 引用此名） */
+  name: string;
+  /** 由 llm 配置段创建 provider 实例 */
+  create(config: {
+    apiKey: string;
+    model: string;
+    baseUrl: string;
+    timeoutMs?: number;
+    /** 透传其余配置（各 provider 自行解释） */
+    [key: string]: unknown;
+  }): LLMProvider;
+}
+
 /** 统一插件接口 —— 一切能力皆插件 */
 export interface OpenAIDePlugin {
   name: string;
@@ -102,8 +117,12 @@ export interface OpenAIDePlugin {
   deactivate?(): void | Promise<void>;
   /** 工具集（也可在 activate 里注册到 ctx） */
   tools?: PluginTool[];
-  /** 事件钩子 */
+  /** 事件钩子（只读旁听） */
   hooks?: PluginHook[];
+  /** 拦截器（可否决/改写工具调用与 LLM 请求 —— 审批/脱敏/限流等策略） */
+  interceptors?: Interceptor[];
+  /** LLM Provider 注册（内核按 config.llm.provider 选择其一） */
+  providers?: PluginProvider[];
   /** 人格：可静态提供，或异步返回 */
   persona?: Persona | (() => Persona | undefined | Promise<Persona | undefined>);
 }
@@ -117,17 +136,24 @@ export interface LoadedPlugin {
   loadedAt: number;
 }
 
-/** 插件信息快照（含分类，供展示/检索） */
+/** 插件运行状态：active=已激活；disabled=被禁用未加载；failed=加载失败 */
+export type PluginStatus = 'active' | 'disabled' | 'failed';
+
+/** 插件信息快照（含分类与状态，供展示/检索/管理） */
 export interface PluginInfo {
   name: string;
   version?: string;
   description?: string;
   /** 分类：代码声明 > manifest > 'uncategorized' */
   category: string;
-  /** 已注册工具全名（<插件名>__<工具名>） */
+  /** 运行状态 */
+  status: PluginStatus;
+  /** 已注册工具全名（<插件名>__<工具名>）；仅 active 有值 */
   tools: string[];
-  /** 已挂载钩子数 */
+  /** 已挂载钩子数；仅 active 有值 */
   hooks: number;
   /** 是否提供人格 */
   persona: boolean;
+  /** 加载失败原因；仅 failed 有值 */
+  error?: string;
 }

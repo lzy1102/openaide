@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "updatedAt": "2026-08-23",
+  "plugins": [
+    {
+      "name": "example-plugin",
+      "version": "0.1.0",
+      "description": "示例 TS 插件 —— 演示同进程动态加载（tools + hook + persona 全扩展点）",
+      "category": "capability",
+      "author": "lzy1102",
+      "keywords": ["example", "demo", "plugin"],
+      "source": {
+        "type": "git",
+        "url": "https://github.com/lzy1102/openaide.git",
+        "subdir": "examples/plugins/example-plugin"
+      }
+    }
+  ]
+}

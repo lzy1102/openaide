@@ -11,6 +11,8 @@ export interface LLMConfigOptions {
   model: string;
   baseUrl: string;
   timeoutMs?: number;
+  /** Provider 名（插件注册的自定义后端；缺省内置 openai-compatible） */
+  provider?: string;
 }
 
 export interface Config {
@@ -22,16 +24,20 @@ export interface Config {
     maxTokens: number;
     systemPrompt?: string;
     persona?: string;
+    /** 工具审批模式：off=不审批（默认）；dangerous=危险工具需确认；always=所有工具需确认 */
+    approval?: 'off' | 'dangerous' | 'always';
   };
   /** 数据目录（会话/记忆/插件） */
   dataDir: string;
   /** 插件目录 */
   pluginsDir: string;
+  /** 插件市场索引 URL（未设时由调用方使用内置默认） */
+  registryUrl?: string;
 }
 
-/** 默认配置目录 */
+/** 默认配置目录（OPENAIDE_DATA_DIR 优先，保证数据与配置随目录整体迁移） */
 export function defaultDataDir(): string {
-  return join(homedir(), '.openaide');
+  return process.env.OPENAIDE_DATA_DIR ?? join(homedir(), '.openaide');
 }
 
 /** 默认配置路径 */
@@ -45,15 +51,18 @@ interface RawConfig {
     model?: string;
     base_url?: string;
     timeout_ms?: number;
+    provider?: string;
   };
   kernel?: {
     max_rounds?: number;
     max_tokens?: number;
     system_prompt?: string;
     persona?: string;
+    approval?: 'off' | 'dangerous' | 'always';
   };
   data_dir?: string;
   plugins_dir?: string;
+  registry_url?: string;
 }
 
 /**
@@ -79,18 +88,21 @@ export function loadConfig(configPath?: string): Config {
       model: process.env.OPENAIDE_MODEL ?? raw.llm?.model ?? 'deepseek-v4-pro',
       baseUrl: process.env.OPENAIDE_BASE_URL ?? raw.llm?.base_url ?? 'https://api.deepseek.com/v1',
       timeoutMs: raw.llm?.timeout_ms,
+      provider: process.env.OPENAIDE_PROVIDER ?? raw.llm?.provider,
     },
     kernel: {
       maxRounds: raw.kernel?.max_rounds ?? 10,
       maxTokens: raw.kernel?.max_tokens ?? 4000,
       systemPrompt: raw.kernel?.system_prompt,
       persona: raw.kernel?.persona,
+      approval: raw.kernel?.approval ?? 'off',
     },
     dataDir,
     pluginsDir:
       process.env.OPENAIDE_PLUGINS_DIR ??
       raw.plugins_dir ??
       join(dataDir, 'plugins'),
+    registryUrl: process.env.OPENAIDE_REGISTRY_URL ?? raw.registry_url,
   };
 
   mkdirSync(dataDir, { recursive: true });
@@ -107,15 +119,18 @@ export function saveConfig(config: Config, path?: string): void {
       model: config.llm.model,
       base_url: config.llm.baseUrl,
       timeout_ms: config.llm.timeoutMs,
+      provider: config.llm.provider,
     },
     kernel: {
       max_rounds: config.kernel.maxRounds,
       max_tokens: config.kernel.maxTokens,
       system_prompt: config.kernel.systemPrompt,
       persona: config.kernel.persona,
+      approval: config.kernel.approval ?? 'off',
     },
     data_dir: config.dataDir,
     plugins_dir: config.pluginsDir,
+    registry_url: config.registryUrl,
   };
   const dir = target.replace(/[\\/][^\\/]*$/, '');
   mkdirSync(dir, { recursive: true });

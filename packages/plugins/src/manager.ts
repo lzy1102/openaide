@@ -5,6 +5,7 @@
  */
 import {
   EventBus,
+  Interceptor,
   KernelEvent,
   LLMResponse,
   Message,
@@ -12,8 +13,10 @@ import {
   ToolDefinition,
   ToolExecutor,
 } from '@openaide/core';
-import type { PluginLLM, PluginSessions, ProgressReporter } from './types.js';
+import { basename } from 'node:path';
+import type { PluginLLM, PluginProvider, PluginSessions, ProgressReporter } from './types.js';
 import { discover, loadPlugin, loadManifest, readPersonaFile } from './loader.js';
+import { readPluginState, writePluginState } from './state.js';
 import type {
   LoadedPlugin,
   OpenAIDePlugin,
@@ -46,6 +49,8 @@ interface ActivePlugin {
   registeredTools: string[]; // 注册到 executor 的工具全名
   hooks: PluginHook[];
   hookIds: number[]; // 事件总线订阅 id（卸载时注销）
+  providerNames: string[]; // 本插件注册的 Provider 名
+  interceptorsAdded: Interceptor[]; // 本插件加入的拦截器（卸载时按身份移除）
 }
 
 /** 人格的宽松形态（插件静态/函数/SYSTEM.md 三来源统一为 Persona 前的中间类型） */
@@ -71,10 +76,23 @@ export class PluginManager {
   readonly sessions?: PluginSessions;
   /** 进度上报通道:装配层注入(把 note/percent 包装成事件发布) */
   reportProgress?: ProgressReporter['report'];
+  /**
+   * 拦截器活数组 —— 原地变更（同一引用），内核持有后无需重建即可感知插件启停。
+   * 装配层把它注入 AgentKernel 的 interceptors。
+   */
+  readonly interceptors: Interceptor[] = [];
+  /** 已注册的 LLM Provider 工厂（按名取用） */
+  private providersMap = new Map<string, PluginProvider>();
 
   private active = new Map<string, ActivePlugin>();
   private personas: Persona[] = [];
   private loadedManifestNames = new Map<string, string>(); // dir -> plugin name
+  /** 禁用名单（构造时从 plugin-state.json 读入；disable/enable 同步维护） */
+  private disabledNames = new Set<string>();
+  /** 已知插件目录：插件名/候选名 -> 目录（enable 时重新加载用） */
+  private knownDirs = new Map<string, string>();
+  /** 加载失败记录：候选名 -> 错误信息（list 展示 failed 态） */
+  private failures = new Map<string, string>();
 
   constructor(options: PluginManagerOptions) {
     this.pluginsDir = options.pluginsDir;
@@ -83,6 +101,7 @@ export class PluginManager {
     this.eventBus = options.eventBus;
     this.llm = options.llm;
     this.sessions = options.sessions;
+    this.disabledNames = new Set(readPluginState(this.dataDir).disabled);
     this.reportProgress = (note: string, percent?: number) => {
       this.eventBus?.publish({
         type: 'context.progress',
@@ -96,19 +115,28 @@ export class PluginManager {
     }
   }
 
-  /** 扫描并加载目录下所有插件（顺序执行，单个失败不阻塞其余） */
+  /** 扫描并加载目录下所有插件（顺序执行；禁用名单内跳过，单个失败不阻塞其余） */
   async loadAll(): Promise<string[]> {
     const dirs = discover(this.pluginsDir);
     const names: string[] = [];
+    this.failures.clear();
     for (const dir of dirs) {
+      this.knownDirs.set(this.candidateName(dir), dir);
+      if (this.isDisabled(this.candidateName(dir)) || this.disabledNames.has(basename(dir))) continue;
       try {
         const name = await this.load(dir);
         names.push(name);
       } catch (err) {
+        this.failures.set(this.candidateName(dir), (err as Error).message ?? String(err));
         console.warn(`[plugins] failed to load ${dir}:`, err);
       }
     }
     return names;
+  }
+
+  /** 加载前的候选名探测：manifest.name > 目录名（禁用匹配/enable 回查用） */
+  private candidateName(dir: string): string {
+    return loadManifest(dir)?.name ?? basename(dir);
   }
 
   /** 加载并激活单个插件目录 */
@@ -118,6 +146,7 @@ export class PluginManager {
       await this.unload(loaded.plugin.name);
     }
     this.loadedManifestNames.set(dir, loaded.plugin.name);
+    this.knownDirs.set(loaded.plugin.name, dir);
     await this.activate(loaded);
     return loaded.plugin.name;
   }
@@ -168,6 +197,12 @@ export class PluginManager {
       await existing.loaded.plugin.deactivate?.();
     } catch (err) {
       console.warn(`[plugins] deactivate ${name}:`, err);
+    }
+    // 反注册 Provider 与拦截器
+    for (const pn of existing.providerNames) this.providersMap.delete(pn);
+    for (const ix of existing.interceptorsAdded) {
+      const idx = this.interceptors.indexOf(ix);
+      if (idx >= 0) this.interceptors.splice(idx, 1);
     }
     this.active.delete(name);
     this.personas = this.personas.filter((p) => p.name !== name);
@@ -235,7 +270,18 @@ export class PluginManager {
         hookIds.push(id);
       }
     }
-    this.active.set(plugin.name, { loaded, registeredTools, hooks, hookIds });
+    // LLM Provider 注册（同名后者覆盖；内核按 config.llm.provider 取用）
+    const providerNames: string[] = [];
+    for (const p of plugin.providers ?? []) {
+      this.providersMap.set(p.name, p);
+      providerNames.push(p.name);
+    }
+
+    // 拦截器加入活数组（原地 push，内核持引用即时生效）
+    const interceptorsAdded: Interceptor[] = [...(plugin.interceptors ?? [])];
+    for (const ix of interceptorsAdded) this.interceptors.push(ix);
+
+    this.active.set(plugin.name, { loaded, registeredTools, hooks, hookIds, providerNames, interceptorsAdded });
 
     // 人格收集：静态 persona / 函数 / SYSTEM.md 外置文件 → 统一归一化为 Persona
     const candidate: PersonaLike | undefined =
@@ -265,20 +311,109 @@ export class PluginManager {
     return [...this.active.keys()];
   }
 
-  /** 已激活插件信息列表（含分类，供展示/检索） */
+  /** 插件是否在禁用名单 */
+  isDisabled(name: string): boolean {
+    return this.disabledNames.has(name);
+  }
+
+  /** 插件所在目录（激活中取运行时目录，否则回查已知目录；未知返回 undefined） */
+  dirOf(name: string): string | undefined {
+    return this.active.get(name)?.loaded.dir ?? this.knownDirs.get(name);
+  }
+
+  /** 取已注册的 LLM Provider 工厂 */
+  getProvider(name: string): PluginProvider | undefined {
+    return this.providersMap.get(name);
+  }
+
+  /** 已注册的 Provider 名列表 */
+  providerNames(): string[] {
+    return [...this.providersMap.keys()];
+  }
+
+  /**
+   * 禁用插件：立即卸载（若在跑）+ 持久化到 plugin-state.json（重启后不再加载）。
+   * 对不在目录里的插件（如内置）同样生效——只影响持久化状态与本次卸载。
+   */
+  async disable(name: string): Promise<void> {
+    await this.unload(name);
+    const state = readPluginState(this.dataDir);
+    if (!state.disabled.includes(name)) state.disabled.push(name);
+    writePluginState(this.dataDir, state);
+    this.disabledNames.add(name);
+    this.failures.delete(name);
+  }
+
+  /**
+   * 启用插件：从禁用名单移除；若插件目录仍存在则立即重新加载。
+   * @returns 是否成功加载（名单移除总是发生；目录缺失时返回 false）
+   */
+  async enable(name: string): Promise<boolean> {
+    const state = readPluginState(this.dataDir);
+    state.disabled = state.disabled.filter((n) => n !== name);
+    writePluginState(this.dataDir, state);
+    this.disabledNames.delete(name);
+    this.failures.delete(name);
+    const dir =
+      this.knownDirs.get(name) ??
+      discover(this.pluginsDir).find((d) => this.candidateName(d) === name || basename(d) === name);
+    if (!dir) return false;
+    try {
+      await this.load(dir);
+      return true;
+    } catch (err) {
+      this.failures.set(name, (err as Error).message ?? String(err));
+      return false;
+    }
+  }
+
+  /** 全部已知插件信息（active + disabled + failed 三态，供展示/管理） */
   list(): PluginInfo[] {
-    return [...this.active.values()].map((a) => {
+    const infos: PluginInfo[] = [];
+    for (const a of this.active.values()) {
       const p = a.loaded.plugin;
-      return {
+      infos.push({
         name: p.name,
         version: p.version,
         description: p.description,
         category: resolveCategory(p, a.loaded.dir),
+        status: 'active',
         tools: a.registeredTools,
         hooks: a.hooks.length,
         persona: this.personas.some((x) => x.name === p.name),
-      };
-    });
+      });
+    }
+    for (const name of this.disabledNames) {
+      if ([...this.active.values()].some((a) => a.loaded.plugin.name === name)) continue;
+      const dir = this.knownDirs.get(name);
+      const manifest = dir ? loadManifest(dir) : undefined;
+      infos.push({
+        name,
+        version: manifest?.version,
+        description: manifest?.description ?? '(disabled)',
+        category: manifest?.category ?? 'uncategorized',
+        status: 'disabled',
+        tools: [],
+        hooks: 0,
+        persona: false,
+      });
+    }
+    for (const [name, error] of this.failures) {
+      const dir = this.knownDirs.get(name);
+      const manifest = dir ? loadManifest(dir) : undefined;
+      infos.push({
+        name,
+        version: manifest?.version,
+        description: manifest?.description ?? '(failed to load)',
+        category: manifest?.category ?? 'uncategorized',
+        status: 'failed',
+        tools: [],
+        hooks: 0,
+        persona: false,
+        error,
+      });
+    }
+    return infos;
   }
 
   /** 已收集的人格列表（供 PersonaProvider 使用） */
