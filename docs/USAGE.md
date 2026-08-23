@@ -271,6 +271,7 @@ npm run dev            # tsx 免编译运行，改代码即时生效
 
 | 命令 | 用途 |
 |---|---|
+| `make build` / `make test` / `make serve` … | Makefile 统一入口（npm 脚本的薄封装；Windows 无 make 时用下述 npm 等价命令） |
 | `npm run dev` / `npm run dev:repl` / `npm run dev:serve` | 开发运行（免编译；serve = API+WebUI） |
 | `npm run build` | 编译所有包到 `dist/`（frontend 走 vite build） |
 | `npm run typecheck` | 全部包类型检查（含 frontend） |
