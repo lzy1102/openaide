@@ -97,7 +97,9 @@ git add .openaide && git commit -m "chore: openaide workspace"
 └── memory/<id>.jsonl      # 逐条消息流水（append-only）
 ```
 
-换机器：`git pull` → `openaide -c` 即恢复最近会话继续聊。选择文件而非 SQLite 正是为了 git 友好；按会话分文件把合并冲突面缩到单个会话。**注意：对话内容会进版本历史，涉密项目请把 `.openaide/` 加入 .gitignore。**
+换机器：`git pull` → `openaide -c` 即恢复最近会话继续聊。按会话分文件把合并冲突面缩到单个会话。**注意：对话内容会进版本历史，涉密项目请把 `.openaide/` 加入 .gitignore。**
+
+> **为什么是文件（JSON/JSONL）而不是数据库？** 因为约束是 git 同步：文本可 diff 可审查（`git log -p` 直看对话增量）、可三方合并；updatedAt 写在内容里，克隆到新机器排序依然正确；零解析依赖。SQLite 的查询/索引能力在这个场景（列出+按时间排序）用不上——它仍是未启用工作区时的全局存储，两实现随时按需切换（`SessionStore` 接口）。
 
 ### 1.3 交互式使用
 

@@ -253,13 +253,33 @@ unload(name) ──▶ 注销工具 → 退订钩子 → 调 deactivate
 ```
 创建 ToolRegistry（工具注册表）
 创建共享 EventBus（内核发布 → 插件订阅）
-创建 PluginManager（pluginsDir + executor + eventBus）
-  ├── add(builtinToolsPlugin)    内置工具（插件形态）
-  └── loadAll()                  动态加载用户插件
-创建 LLMProvider / SQLiteSessionStore
-创建 PluginPersonaProvider（active 人格）
-创建 AgentKernel（llm + tools + sessions + persona + eventBus）
+创建 PluginManager（pluginsDir + executor + eventBus + 拦截器活数组）
+  ├── add(builtinToolsPlugin)    内置工具（插件形态，受 plugin-state 禁用约束）
+  └── loadAll()                  动态加载用户插件（跳过禁用名单）
+解析 LLM Provider（config.llm.provider → 插件注册表；缺省内置网关）
+存储选路（见下）
+创建 PluginPersonaProvider（active 人格，可运行时切换）
+创建 AgentKernel（llm + tools + sessions + memory + persona + interceptors + eventBus）
 ```
+
+### 6.1 存储选路与格式取舍
+
+```
+findProjectWorkspace(): cwd 向上探测 .openaide/
+  ├── 命中 → FileSessionStore + FileMemory（会话随仓库走，git 同步即跨机器）
+  └── 未命中 → SQLiteSessionStore + SqliteMemory（全局 ~/.openaide/，大规模场景）
+显式 data_dir / OPENAIDE_DATA_DIR 配置仍优先于自动探测。
+```
+
+项目工作区选**文件而非数据库**的理由（约束 = git 同步）：
+- 可 diff 可审查：`git log -p` 直接看每轮对话增量
+- 一个会话一个文件：merge 冲突面缩到单会话；坏文件只丢一个会话不殃及全库
+- updatedAt 写进内容而非 mtime：克隆到新机器排序依然正确
+- sessions 用 JSON（整体快照、全量重写），memory 用 JSONL（append-only 匹配增量写入）——两种访问模式各取所长
+
+SQLite 驱动经 `memory/sqlite-driver.ts` 适配双形态：Node 走 better-sqlite3，
+Bun 单文件二进制走内置 bun:sqlite（better-sqlite3 的 bindings 运行时探测在
+编译产物虚拟 FS 中必然失败）。
 
 ---
 
