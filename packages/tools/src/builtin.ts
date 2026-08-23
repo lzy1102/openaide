@@ -10,6 +10,24 @@ import type { OpenAIDePlugin } from '@openaide/plugins';
 
 const execFileAsync = promisify(execFile);
 
+/**
+ * 控制台输出智能解码：严格 UTF-8 校验失败即按 GBK 解码（Windows 中文环境 cmd/powershell
+ * 的管道输出默认 GBK；chcp 65001 对部分内建命令不生效，实测 echo 即是）。
+ */
+function decodeConsoleOutput(buf: unknown): string {
+  if (!buf) return '';
+  const bytes = Buffer.isBuffer(buf) ? buf : Buffer.from(String(buf), 'utf8');
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    try {
+      return new TextDecoder('gbk').decode(bytes);
+    } catch {
+      return bytes.toString('utf8'); // 无 ICU 时兜底
+    }
+  }
+}
+
 /** 危险命令黑名单 —— 阻止 Agent 执行破坏性/危险操作 */
 const BLOCKED_CMDS = new Set([
   'rm', 'rmdir', 'del', 'erase', // 删除
@@ -126,18 +144,28 @@ export const builtinToolsPlugin: OpenAIDePlugin = {
         if (isBlocked(command)) {
           return { content: '', error: `command blocked by safety blacklist: ${command}`, errorCode: 'PERMISSION_DENIED' };
         }
-        // Windows 下用 shell 解析；Unix 用 sh -c
         const isWin = process.platform === 'win32';
+        const finalCommand = isWin ? `chcp 65001>nul && ${command}` : command;
         try {
-          const { stdout, stderr } = await execFileAsync(isWin ? 'cmd.exe' : 'sh', isWin ? ['/d', '/s', '/c', command] : ['-c', command], {
-            cwd: (args.cwd as string) || undefined,
-            maxBuffer: 4 * 1024 * 1024,
-          });
-          const out = [stdout, stderr].filter(Boolean).join('\n');
+          // 以 buffer 捕获后智能解码：Windows 控制台输出可能是 GBK（chcp 对部分内建命令不生效），
+          // 严格 UTF-8 校验失败即回退 GBK，双保险覆盖中英文环境。
+          // windowsVerbatimArguments：Node 默认把内层 " 转义成 \"（Unix 约定），cmd.exe 不认，
+          // 导致含双引号的命令（powershell -Command "..." 等）被拆坏——改为整体手工加引号直传。
+          const { stdout, stderr } = await execFileAsync(
+            isWin ? 'cmd.exe' : 'sh',
+            isWin ? ['/d', '/s', '/c', `"${finalCommand}"`] : ['-c', command],
+            {
+              cwd: (args.cwd as string) || undefined,
+              maxBuffer: 4 * 1024 * 1024,
+              encoding: 'buffer' as never,
+              windowsVerbatimArguments: isWin,
+            },
+          );
+          const out = [decodeConsoleOutput(stdout), decodeConsoleOutput(stderr)].filter(Boolean).join('\n');
           return { content: out || '(no output)' };
         } catch (err) {
-          const e = err as { stdout?: string; stderr?: string; message: string };
-          const detail = [e.stdout, e.stderr].filter(Boolean).join('\n');
+          const e = err as { stdout?: Buffer; stderr?: Buffer; message: string };
+          const detail = [decodeConsoleOutput(e.stdout), decodeConsoleOutput(e.stderr)].filter(Boolean).join('\n');
           return { content: detail || '', error: `exit error: ${e.message}`, errorCode: 'EXEC_FAILED' };
         }
       },

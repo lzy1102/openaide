@@ -48,7 +48,7 @@ export interface PromptContext {
   skillMessage?: Message;
 }
 
-/** 组装系统层（L0 + L1 + L2） */
+/** 组装系统层（L0 + L1 + L2 + 运行环境注记） */
 export function buildSystemLayer(ctx: PromptContext): string {
   const parts: string[] = [];
 
@@ -60,6 +60,14 @@ export function buildSystemLayer(ctx: PromptContext): string {
   if (ctx.customSystemPrompt) {
     parts.push(ctx.customSystemPrompt);
   }
+
+  // 运行环境注记放最后：前缀字节稳定利于 prompt cache，动态信息只在尾部变化
+  // （否则模型在 Windows 上第一枪总打向 pwd/ls，浪费一轮试错）
+  const isWin = process.platform === 'win32';
+  const shellHint = isWin
+    ? 'shell=cmd.exe (Unix 命令 pwd/ls/grep 不可用,改用 cd/dir/git/powershell -Command)'
+    : 'shell=bash';
+  parts.push(`[Environment] os=${process.platform} · ${shellHint} · cwd=${process.cwd()}`);
 
   return parts.join('\n\n');
 }
