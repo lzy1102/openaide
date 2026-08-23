@@ -147,6 +147,8 @@ export class AgentKernel {
       options: buildOptions(query.options),
       compressor: this.compressor,
       maxTokens: this.maxTokens,
+      permission: this.permission,
+      toolAllowlist: persona?.toolAllowlist,
     };
     const reactConfig: ReactConfig = { maxRounds: this.maxRounds };
 
@@ -206,6 +208,8 @@ export class AgentKernel {
       options: buildOptions(query.options),
       compressor: this.compressor,
       maxTokens: this.maxTokens,
+      permission: this.permission,
+      toolAllowlist: persona?.toolAllowlist,
     };
 
     let finalContent = '';

@@ -70,6 +70,8 @@ export interface PluginManifest {
   category?: string;
   /** 该插件提供的人格名（与 persona 字段互斥使用场景） */
   persona?: string;
+  /** 任务变身的工具白名单:激活该 persona 时内核只暴露名单内的工具(匹配 <插件>__<工具> 或工具名) */
+  toolAllowlist?: string[];
   /** manifest 声明的工具入口（实现仍为 TS 模块） */
   tools?: Array<{
     name: string;

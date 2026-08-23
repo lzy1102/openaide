@@ -13,7 +13,7 @@ import {
   ToolDefinition,
   ToolResult,
 } from './types.js';
-import type { ContextCompressor, LLMProvider, ToolExecutor } from './interfaces.js';
+import type { ContextCompressor, LLMProvider, PermissionChecker, ToolExecutor } from './interfaces.js';
 import { EventTypes } from './types.js';
 import { truncateToolResult } from './prompt.js';
 import { compressToBudget, estimateMessagesTokens } from './compress.js';
@@ -37,6 +37,10 @@ export interface ReactContext {
   compressor?: ContextCompressor;
   /** 上下文 token 预算(压缩阈值 = maxTokens * 0.9),默认 200000 */
   maxTokens?: number;
+  /** 可选权限检查器:工具执行前鉴权,拒绝时把原因作为错误结果回给模型 */
+  permission?: PermissionChecker;
+  /** 工具白名单(persona 声明):只暴露名单内的工具,支持"任务变身" */
+  toolAllowlist?: string[];
 }
 
 /** 单轮工具执行结果 */
@@ -58,7 +62,7 @@ export interface ReactResult {
  * 生成顺序：content/thinking → tool_call → tool_done → … → done
  */
 export async function* reactLoop(ctx: ReactContext, config: ReactConfig): AsyncGenerator<StreamChunk> {
-  const { provider, executor, messages, sessionId, publish, signal } = ctx;
+  const { provider, executor, messages, sessionId, publish, signal, permission, toolAllowlist } = ctx;
   const maxToolChars = config.maxToolResultChars ?? 20_000;
   const maxRounds = config.maxRounds > 0 ? config.maxRounds : 10;
   // 上下文预算:压缩阈值 = 预算 * 0.9(对齐 Claude Code 的 92% 附近)
@@ -101,8 +105,14 @@ export async function* reactLoop(ctx: ReactContext, config: ReactConfig): AsyncG
 
     publish({ type: EventTypes.RoundStart, source: 'react', data: { round }, timestamp: Date.now() });
 
-    // 当前轮工具定义
-    const tools = executor.definitions();
+    // 当前轮工具定义(persona 白名单过滤:变身后的 agent 只见自己该用的工具)
+    const allTools = executor.definitions();
+    const tools = toolAllowlist && toolAllowlist.length > 0
+      ? allTools.filter((t) => {
+          const name = t.function.name;
+          return toolAllowlist.some((allowed) => name === allowed || name.endsWith(`__${allowed}`) || name.startsWith(`${allowed}__`));
+        })
+      : allTools;
 
     // 1. 思考(流式优先:token 到达即产出;失败降级非流式)
     let resp;
@@ -167,6 +177,28 @@ export async function* reactLoop(ctx: ReactContext, config: ReactConfig): AsyncG
     for (const tc of resp.toolCalls) {
       throwIfAborted(signal);
       let result: ToolResult;
+      // 权限检查:拒绝时不执行工具,把原因作为结果返回给模型自行调整
+      if (permission) {
+        const verdict = permission.check(sessionId, tc.function.name, tc.function.name, {
+          args: tc.function.arguments,
+          round,
+        });
+        if (!verdict.allowed) {
+          outcomes.push({ call: tc, result: { content: '', error: `permission denied: ${verdict.reason}`, errorCode: 'PERMISSION_DENIED' } });
+          yield {
+            type: StreamChunkType.ToolDone,
+            toolCallId: tc.id,
+            toolName: tc.function.name,
+            round,
+          };
+          workingMessages.push({
+            role: 'tool',
+            toolCallId: tc.id,
+            content: `Permission denied: ${verdict.reason}. Choose a different approach.`,
+          });
+          continue;
+        }
+      }
       try {
         result = await executor.execute(tc, sessionId, signal);
       } catch (err) {

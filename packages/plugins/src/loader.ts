@@ -97,7 +97,27 @@ export async function loadPlugin(entry: string, fresh = false): Promise<LoadedPl
 
   if (existsSync(entry) && statSync(entry).isDirectory()) {
     const found = findEntry(entry);
-    if (!found) throw new Error(`plugin entry not found in ${entry}`);
+    if (!found) {
+      // 纯声明式 persona 插件:openaide.yaml + SYSTEM.md,无代码入口。
+      // 生成虚拟插件 —— 人格即全部内容(支持"任务变身":提示词整体替换)。
+      const manifest = loadManifest(entry);
+      const personaFile = readPersonaFile(entry);
+      if (manifest && personaFile) {
+        const virtual: OpenAIDePlugin = {
+          name: manifest.name ?? basename(entry),
+          version: manifest.version ?? '1.0.0',
+          description: manifest.description ?? personaFile.description ?? 'declarative persona plugin',
+          persona: {
+            name: manifest.persona ?? personaFile.name,
+            description: personaFile.description ?? manifest.description ?? '',
+            systemPrompt: personaFile.systemPrompt,
+            toolAllowlist: manifest.toolAllowlist,
+          },
+        };
+        return { plugin: virtual, dir: entry, loadedAt: Date.now() };
+      }
+      throw new Error(`plugin entry not found in ${entry}`);
+    }
     file = found;
     dir = entry;
   } else {
