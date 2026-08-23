@@ -31,9 +31,19 @@ import {
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { parseArgs, buildPrompt } from './args.js';
 
-const version = (
-  JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }
-).version ?? '0.0.0';
+// 版本号：优先从 package.json 读取（源码/npm 形态）；二进制形态下虚拟路径不存在，
+// 回退到编译期由 `bun build --define` 注入的常量（见 Makefile binary 目标）
+declare const OPENAIDE_VERSION: string | undefined;
+const version = (() => {
+  try {
+    return (
+      (JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version?: string })
+        .version ?? '0.0.0'
+    );
+  } catch {
+    return typeof OPENAIDE_VERSION !== 'undefined' ? OPENAIDE_VERSION : '0.0.0';
+  }
+})();
 
 const HELP = `
 OpenAIDE — everything is a plugin.

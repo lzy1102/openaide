@@ -10,3 +10,4 @@ data/
 .omo/
 .smoke/
 eval-workspace/
+dist-bun/

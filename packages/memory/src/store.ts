@@ -1,9 +1,10 @@
 /**
- * SQLite 会话存储 —— 基于 better-sqlite3 的持久化 SessionStore 实现。
+ * SQLite 会话存储 —— 基于 sqlite-driver 的持久化 SessionStore 实现。
  * 会话与消息整体序列化（JSON）存储，满足 core 的 SessionStore 契约。
  * 使用同步驱动但以 async 包装，接口签名与内存实现保持一致。
  */
-import Database from 'better-sqlite3';
+import { openSqliteDatabase } from './sqlite-driver.js';
+import type { SqliteDatabase, SqliteStatement } from './sqlite-driver.js';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { Message, Session, SessionStore } from '@openaide/core';
@@ -50,20 +51,20 @@ function parseRow(row: SessionRow): Session {
  * @param dbPath 数据库文件路径；':memory:' 表示纯内存（测试用）
  */
 export class SQLiteSessionStore implements SessionStore {
-  private db: Database.Database;
-  private getStmt: Database.Statement;
-  private listStmt: Database.Statement;
-  private listByProjectStmt: Database.Statement;
-  private insertStmt: Database.Statement;
-  private updateStmt: Database.Statement;
-  private deleteStmt: Database.Statement;
+  private db: SqliteDatabase;
+  private getStmt: SqliteStatement;
+  private listStmt: SqliteStatement;
+  private listByProjectStmt: SqliteStatement;
+  private insertStmt: SqliteStatement;
+  private updateStmt: SqliteStatement;
+  private deleteStmt: SqliteStatement;
 
   constructor(dbPath: string) {
     if (dbPath !== ':memory:') {
       mkdirSync(dirname(dbPath), { recursive: true });
     }
-    this.db = new Database(dbPath);
-    this.db.pragma('journal_mode = WAL');
+    this.db = openSqliteDatabase(dbPath);
+    this.db.exec('PRAGMA journal_mode = WAL;');
     this.db.exec(SCHEMA);
     this.getStmt = this.db.prepare('SELECT * FROM sessions WHERE id = ?');
     this.listStmt = this.db.prepare('SELECT * FROM sessions ORDER BY updated_at DESC');

@@ -41,7 +41,21 @@ test-pkg:
 	node scripts/test.mjs $(P)
 
 clean:
-	node -e "const fs=require('fs'),p=require('path');const rm=d=>fs.rmSync(d,{recursive:true,force:true});rm('frontend/dist');for(const e of fs.readdirSync('packages',{withFileTypes:true})){if(e.isDirectory())rm(p.join('packages',e.name,'dist'))}console.log('dist cleaned')"
+	node -e "const fs=require('fs'),p=require('path');const rm=d=>fs.rmSync(d,{recursive:true,force:true});rm('frontend/dist');rm('dist-bun');for(const e of fs.readdirSync('packages',{withFileTypes:true})){if(e.isDirectory())rm(p.join('packages',e.name,'dist'))}console.log('dist cleaned')"
 
 publish:
 	node scripts/publish.mjs
+
+# ── 单文件二进制（需 bun ≥1.1；前置验证已通过：bun:sqlite 驱动 + 外部插件动态加载）──
+VERSION ?= $(shell node -p "require('./package.json').version")
+
+binary:
+	bun build packages/cli/src/main.ts --compile \
+	  --define "OPENAIDE_VERSION=\"$(VERSION)\"" \
+	  --outfile dist-bun/openaide
+
+binary-all: binary
+	bun build packages/cli/src/main.ts --compile --target=bun-linux-x64 \
+	  --define "OPENAIDE_VERSION=\"$(VERSION)\"" --outfile dist-bun/openaide-linux
+	bun build packages/cli/src/main.ts --compile --target=bun-darwin-arm64 \
+	  --define "OPENAIDE_VERSION=\"$(VERSION)\"" --outfile dist-bun/openaide-darwin
