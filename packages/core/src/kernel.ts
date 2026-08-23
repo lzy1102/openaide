@@ -18,6 +18,7 @@ import {
 } from './types.js';
 import type {
   ContextCompressor,
+  Interceptor,
   EventHandler,
   LLMProvider,
   Memory,
@@ -45,6 +46,8 @@ export interface KernelDeps {
   persona?: PersonaProvider;
   compressor?: ContextCompressor;
   permission?: PermissionChecker;
+  /** 拦截器链（策略插件：审批/脱敏/限流） */
+  interceptors?: Interceptor[];
   config?: KernelConfig;
   /** 外部注入的事件总线（默认内部新建）。与插件管理器共享同一总线时传入 */
   eventBus?: EventBus;
@@ -58,6 +61,7 @@ export class AgentKernel {
   readonly persona?: PersonaProvider;
   readonly compressor?: ContextCompressor;
   readonly permission?: PermissionChecker;
+  readonly interceptors?: Interceptor[];
 
   private readonly eventBus: EventBus;
   private state: KernelState = StateIdle;
@@ -73,6 +77,7 @@ export class AgentKernel {
     this.persona = deps.persona;
     this.compressor = deps.compressor;
     this.permission = deps.permission;
+    this.interceptors = deps.interceptors;
     this.eventBus = deps.eventBus ?? new EventBus();
     this.systemPrompt = deps.config?.systemPrompt ?? '';
     this.maxRounds = deps.config?.maxRounds ?? 10;
@@ -148,6 +153,7 @@ export class AgentKernel {
       compressor: this.compressor,
       maxTokens: this.maxTokens,
       permission: this.permission,
+      interceptors: this.interceptors,
       toolAllowlist: persona?.toolAllowlist,
     };
     const reactConfig: ReactConfig = { maxRounds: this.maxRounds };
@@ -209,6 +215,7 @@ export class AgentKernel {
       compressor: this.compressor,
       maxTokens: this.maxTokens,
       permission: this.permission,
+      interceptors: this.interceptors,
       toolAllowlist: persona?.toolAllowlist,
     };
 

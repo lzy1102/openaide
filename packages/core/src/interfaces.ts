@@ -83,6 +83,40 @@ export interface PermissionChecker {
   ): { allowed: boolean; reason: string };
 }
 
+/** 拦截判定：放行 / 否决 / 替换载荷 */
+export interface Verdict<T> {
+  action: 'allow' | 'deny' | 'modify';
+  /** deny 时的原因（回传给模型与用户） */
+  reason?: string;
+  /** modify 时的替换载荷 */
+  payload?: T;
+}
+
+/** 工具调用拦截信息（argsJson 为前一拦截器改写后的最新值） */
+export interface ToolCallInfo {
+  sessionId: string;
+  tool: string;
+  argsJson: string;
+}
+
+/**
+ * 拦截器 —— 策略插件接缝：可否决/改写工具调用与 LLM 请求。
+ * 与 PermissionChecker 的区别：PermissionChecker 只能 allow/deny；
+ * Interceptor 链式执行、按序传递可修改的载荷，支持审批/脱敏/限流/审计等一切策略。
+ */
+export interface Interceptor {
+  /** 拦截器名（事件与日志标识） */
+  name: string;
+  /** LLM 请求前：可否决整轮或替换消息数组（如 PII 脱敏） */
+  beforeLLM?(info: { sessionId: string; messages: Message[] }): Verdict<Message[]> | Promise<Verdict<Message[]>>;
+  /** 工具执行前：可否决或替换调用参数 */
+  beforeToolCall?(info: ToolCallInfo): Verdict<string> | Promise<Verdict<string>>;
+  /** 工具执行后：可否决（结果改为错误）或替换结果 */
+  afterToolCall?(
+    info: ToolCallInfo & { result: ToolResult },
+  ): Verdict<ToolResult> | Promise<Verdict<ToolResult>>;
+}
+
 /** 人格/能力集提供者 —— L0 系统提示词来源 */
 export interface PersonaProvider {
   /** 当前激活的人格；未设置时返回 undefined 走内置 L0 */

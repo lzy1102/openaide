@@ -2,6 +2,7 @@
 export * from './types.js';
 export * from './events.js';
 export * from './interfaces.js';
+export * from './intercept.js';
 export * from './session.js';
 export * from './prompt.js';
 export * from './react.js';

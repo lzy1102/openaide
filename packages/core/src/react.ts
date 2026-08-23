@@ -13,7 +13,8 @@ import {
   ToolDefinition,
   ToolResult,
 } from './types.js';
-import type { ContextCompressor, LLMProvider, PermissionChecker, ToolExecutor } from './interfaces.js';
+import type { ContextCompressor, Interceptor, LLMProvider, PermissionChecker, ToolExecutor } from './interfaces.js';
+import { runAfterToolCall, runBeforeLLM, runBeforeToolCall } from './intercept.js';
 import { EventTypes } from './types.js';
 import { truncateToolResult } from './prompt.js';
 import { compressToBudget, estimateMessagesTokens } from './compress.js';
@@ -39,6 +40,8 @@ export interface ReactContext {
   maxTokens?: number;
   /** 可选权限检查器:工具执行前鉴权,拒绝时把原因作为错误结果回给模型 */
   permission?: PermissionChecker;
+  /** 拦截器链:可否决/改写 LLM 请求与工具调用(审批/脱敏/限流等策略) */
+  interceptors?: Interceptor[];
   /** 工具白名单(persona 声明):只暴露名单内的工具,支持"任务变身" */
   toolAllowlist?: string[];
 }
@@ -117,7 +120,18 @@ export async function* reactLoop(ctx: ReactContext, config: ReactConfig): AsyncG
     // 1. 思考(流式优先:token 到达即产出;失败降级非流式)
     let resp;
     try {
-      resp = await streamOrChat(provider, workingMessages, tools, ctx.options ?? {}, signal);
+      // LLM 请求前拦截链(可脱敏/成本否决);deny 视为策略终止本轮查询
+      let llmMessages: Message[] = workingMessages;
+      if (ctx.interceptors && ctx.interceptors.length > 0) {
+        const gate = await runBeforeLLM(ctx.interceptors, { sessionId, messages: [...workingMessages] });
+        if (!gate.ok) {
+          const err = new Error(`blocked by policy: ${gate.reason}`);
+          yield { type: StreamChunkType.Error, error: err };
+          throw err;
+        }
+        llmMessages = gate.payload;
+      }
+      resp = await streamOrChat(provider, llmMessages, tools, ctx.options ?? {}, signal);
     } catch (err) {
       yield { type: StreamChunkType.Error, error: toError(err) };
       throw err;
@@ -172,37 +186,67 @@ export async function* reactLoop(ctx: ReactContext, config: ReactConfig): AsyncG
       });
     }
 
-    // 4. 执行工具（串行）
+    // 4. 执行工具（串行；PermissionChecker → 拦截链 → executor）
     const outcomes: ToolOutcome[] = [];
     for (const tc of resp.toolCalls) {
       throwIfAborted(signal);
-      let result: ToolResult;
+      let argsJson = tc.function.arguments;
+      let denied: string | null = null;
+
       // 权限检查:拒绝时不执行工具,把原因作为结果返回给模型自行调整
-      if (permission) {
+      if (permission && !denied) {
         const verdict = permission.check(sessionId, tc.function.name, tc.function.name, {
-          args: tc.function.arguments,
+          args: argsJson,
           round,
         });
-        if (!verdict.allowed) {
-          outcomes.push({ call: tc, result: { content: '', error: `permission denied: ${verdict.reason}`, errorCode: 'PERMISSION_DENIED' } });
-          yield {
-            type: StreamChunkType.ToolDone,
-            toolCallId: tc.id,
-            toolName: tc.function.name,
-            round,
-          };
-          workingMessages.push({
-            role: 'tool',
-            toolCallId: tc.id,
-            content: `Permission denied: ${verdict.reason}. Choose a different approach.`,
-          });
-          continue;
-        }
+        if (!verdict.allowed) denied = verdict.reason;
       }
+      // 拦截链(可否决或改写参数)
+      if (!denied && ctx.interceptors && ctx.interceptors.length > 0) {
+        const gate = await runBeforeToolCall(ctx.interceptors, {
+          sessionId,
+          tool: tc.function.name,
+          argsJson,
+        });
+        if (!gate.ok) denied = gate.reason;
+        else argsJson = gate.payload;
+      }
+
+      let result: ToolResult;
+      if (denied !== null) {
+        result = { content: '', error: `permission denied: ${denied}`, errorCode: 'PERMISSION_DENIED' };
+        yield {
+          type: StreamChunkType.ToolDone,
+          toolCallId: tc.id,
+          toolName: tc.function.name,
+          round,
+        };
+        workingMessages.push({
+          role: 'tool',
+          toolCallId: tc.id,
+          content: `Permission denied: ${denied}. Choose a different approach.`,
+        });
+        outcomes.push({ call: tc, result });
+        continue;
+      }
+
+      // 参数被拦截器改写时以新参数构造调用
+      const call: ToolCall =
+        argsJson === tc.function.arguments
+          ? tc
+          : { id: tc.id, type: tc.type, function: { name: tc.function.name, arguments: argsJson } };
       try {
-        result = await executor.execute(tc, sessionId, signal);
+        result = await executor.execute(call, sessionId, signal);
       } catch (err) {
         result = { content: '', error: toError(err).message, errorCode: 'EXEC_FAILED' };
+      }
+      // 执行后拦截链(可否决/脱敏结果)
+      if (ctx.interceptors && ctx.interceptors.length > 0) {
+        result = await runAfterToolCall(
+          ctx.interceptors,
+          { sessionId, tool: tc.function.name, argsJson },
+          result,
+        );
       }
       // 截断超大输出
       if (typeof result.content === 'string' && result.content.length > maxToolChars) {
