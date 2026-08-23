@@ -21,6 +21,10 @@ export interface App {
   bus: EventBus;
   sessions: SessionStore;
   memory: SqliteMemory;
+  /** 运行时切换激活人格(undefined = 回到内置默认 L0);立即生效于下一次查询 */
+  setActivePersona(name: string | undefined): void;
+  /** 当前激活人格名 */
+  getActivePersona(): string | undefined;
 }
 
 /** 装配完整应用：内置插件 + 用户插件动态加载 + 内核 */
@@ -103,7 +107,12 @@ export async function buildApp(config?: Config): Promise<App> {
   }
 
   // 人格提供者（插件收集的 persona 供内核 L0 层使用）
-  const persona = new PluginPersonaProvider(plugins, () => cfg.kernel.persona);
+  // 激活状态是可变的:/persona <name> 运行时切换,无需改配置重启
+  const personaState: { active: string | undefined } = { active: cfg.kernel.persona };
+  const persona = new PluginPersonaProvider(plugins, () => personaState.active);
+  const setActivePersona = (name: string | undefined) => {
+    personaState.active = name;
+  };
 
   // 内核
   const kernel = new AgentKernel({
@@ -120,7 +129,19 @@ export async function buildApp(config?: Config): Promise<App> {
     },
   });
 
-  return { config: cfg, kernel, registry, llm, plugins, persona, bus, sessions, memory };
+  return {
+    config: cfg,
+    kernel,
+    registry,
+    llm,
+    plugins,
+    persona,
+    bus,
+    sessions,
+    memory,
+    setActivePersona,
+    getActivePersona: () => personaState.active,
+  };
 }
 
 /** 打印装配后的工具清单（诊断用） */

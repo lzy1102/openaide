@@ -123,12 +123,29 @@ export function Tui({ app, initialSessionId }: { app: App; initialSessionId?: st
               `tools: ${app.registry.definitions().map((d) => d.function.name).join(', ')}`,
           });
           return;
-        case '/persona':
+        case '/persona': {
+          const names = app.plugins.getPersonas().map((p) => p.name);
+          if (!arg) {
+            push({
+              kind: 'info',
+              content: `personas: ${names.join(', ') || '(builtin only)'}\ncurrent: ${app.getActivePersona() ?? '(default)'}\nswitch: /persona <name>  |  reset: /persona default`,
+            });
+            return;
+          }
+          const target = arg === 'default' ? undefined : arg;
+          if (target && !names.includes(target)) {
+            push({ kind: 'error', content: `persona not found: ${arg}  (available: ${names.join(', ')})` });
+            return;
+          }
+          app.setActivePersona(target);
           push({
             kind: 'info',
-            content: `available personas: ${app.plugins.getPersonas().map((p) => p.name).join(', ') || '(builtin only)'}`,
+            content: target
+              ? `persona switched to: ${target} (takes effect on next message)`
+              : 'persona reset to built-in default',
           });
           return;
+        }
         default:
           push({ kind: 'error', content: `unknown command: ${cmd}  (try /help)` });
       }

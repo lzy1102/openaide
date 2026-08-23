@@ -190,7 +190,18 @@ export async function runRepl(app: App, initialSessionId?: string): Promise<void
           continue;
         case '/persona': {
           const personas = app.plugins.getPersonas().map((p) => p.name);
-          console.log(`  available personas: ${personas.join(', ') || '(builtin only)'}`);
+          if (!arg) {
+            console.log(`  personas: ${personas.join(', ') || '(builtin only)'}`);
+            console.log(`  current: ${app.getActivePersona() ?? '(default)'}`);
+            continue;
+          }
+          const target: string | undefined = arg === 'default' ? undefined : arg;
+          if (target && !personas.includes(target)) {
+            console.log(`  persona not found: ${arg}  (available: ${personas.join(', ')})`);
+            continue;
+          }
+          app.setActivePersona(target);
+          console.log(`  persona switched to: ${target ?? 'built-in default'} (next message)`);
           continue;
         }
         default:
