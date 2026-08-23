@@ -8,6 +8,9 @@
  */
 import { createServer, IncomingMessage, Server, ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import { dirname, extname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
 import {
   AgentKernel,
@@ -60,6 +63,42 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
 function getPath(req: IncomingMessage): string {
   const url = req.url ?? '/';
   return url.split('?')[0]!;
+}
+
+/* ── 静态托管 frontend/dist（openaide serve 内置 WebUI；目录不存在时自动跳过） ── */
+const DIST_DIR =
+  process.env.OPENAIDE_FRONTEND_DIR ??
+  join(dirname(fileURLToPath(import.meta.url)), '../../../frontend/dist');
+
+const MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript',
+  '.css': 'text/css',
+  '.svg': 'image/svg+xml',
+  '.json': 'application/json',
+  '.png': 'image/png',
+  '.ico': 'image/x-icon',
+  '.map': 'application/json',
+};
+
+/** 返回 true 表示已响应（命中静态文件或 SPA fallback） */
+function serveStatic(res: ServerResponse, path: string): boolean {
+  if (!existsSync(DIST_DIR)) return false;
+  let file = join(DIST_DIR, path === '/' ? 'index.html' : path);
+  // 路径穿越防护：解析后必须仍在 dist 内
+  if (!file.startsWith(DIST_DIR)) return false;
+  if (!existsSync(file) || statSync(file).isDirectory()) {
+    file = join(DIST_DIR, 'index.html'); // SPA fallback
+    if (!existsSync(file)) return false;
+  }
+  const body = readFileSync(file);
+  res.writeHead(200, {
+    'content-type': MIME[extname(file)] ?? 'application/octet-stream',
+    'content-length': body.length,
+    'cache-control': file.endsWith('index.html') ? 'no-cache' : 'public, max-age=86400',
+  });
+  res.end(body);
+  return true;
 }
 
 function sseSend(res: ServerResponse, event: string, data: unknown): void {
@@ -242,6 +281,11 @@ export function createApiServer(ctx: ApiContext): Server {
         },
       });
       sendJson(res, 200, { sessionId: response.sessionId, content: response.content, usage: response.usage });
+      return;
+    }
+
+    // ── 静态资源（frontend 构建产物；API 路由未命中时兜底） ──
+    if (method === 'GET' && serveStatic(res, path)) {
       return;
     }
 

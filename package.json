@@ -5,14 +5,16 @@
   "description": "AI Agent kernel platform — TypeScript, plugin-driven, everything is a plugin",
   "type": "module",
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "frontend"
   ],
   "scripts": {
     "dev": "tsx packages/cli/src/main.ts",
     "dev:repl": "tsx packages/cli/src/main.ts repl",
+    "dev:serve": "tsx packages/cli/src/main.ts serve",
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "node scripts/test.mjs"
+    "test": "node scripts/test.mjs && npm run test --workspace frontend"
   },
   "engines": {
     "node": ">=18.0.0"
