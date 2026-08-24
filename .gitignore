@@ -11,3 +11,6 @@ data/
 .smoke/
 eval-workspace/
 dist-bun/
+
+# local project sessions (runtime data)
+.openaide/
