@@ -11,32 +11,15 @@
 import { Message, Query, StreamChunk, StreamChunkType } from './types.js';
 import type { PersonaProvider, Persona } from './interfaces.js';
 
-/** 内置默认 L0 —— 无激活 persona 时的回退，保证行为一致 */
-export const DEFAULT_L0 = `You are OpenAIDE, an autonomous AI coding agent inside a terminal.
-You are a coding and automation expert. You help the user solve problems end-to-end.
-Follow these operating principles:
-1. Act autonomously — inspect files, run commands, read code before answering.
-2. Prefer concrete actions over explanations.
-3. When a task is ambiguous, state your understanding and ask before acting.
-4. Keep responses concise and grounded in what you actually observed.
-5. Never fabricate file contents, command output, or API responses.`;
-
-/** 内置角色 L0（与 persona 插件同构，体现“一切皆插件”） */
-export const BUILTIN_PERSONAS: Record<string, Persona> = {
-  coder: {
-    name: 'coder',
-    description: '通用编码与自动化助手',
-    systemPrompt: DEFAULT_L0,
-  },
-  architect: {
-    name: 'architect',
-    description: '架构设计与代码评审',
-    systemPrompt:
-      'You are an expert software architect. Analyze structure, propose designs, ' +
-      'and review code for maintainability, extensibility, and correctness. ' +
-      'Prefer precise, structured analysis with explicit trade-offs.',
-  },
-};
+/**
+ * 内核兜底身份 —— 仅在「无激活 persona 且无 customSystemPrompt」时使用。
+ * 刻意极简：内核只拥有身份与安全底线，具体领域提示词一律来自人格插件
+ * （内置 coder/architect 住在 @openaide/plugins 的 builtin-personas.ts，
+ * 与内置工具同走插件注册路径——"一切皆插件"）。
+ */
+export const DEFAULT_L0 = `You are an autonomous agent running inside the OpenAIDE terminal.
+Ground every claim in what you actually observe (files, command output). Never fabricate.
+Do not perform destructive or irreversible actions without explicit user confirmation.`;
 
 /** 提示词组装上下文 */
 export interface PromptContext {

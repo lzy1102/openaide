@@ -4,3 +4,5 @@ export * from './loader.js';
 export * from './manager.js';
 export * from './state.js';
 export * from './market.js';
+export * from './scope.js';
+export * from './builtin-personas.js';

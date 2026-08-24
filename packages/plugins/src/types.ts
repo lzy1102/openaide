@@ -125,6 +125,8 @@ export interface OpenAIDePlugin {
   providers?: PluginProvider[];
   /** 人格：可静态提供，或异步返回 */
   persona?: Persona | (() => Persona | undefined | Promise<Persona | undefined>);
+  /** 多人格包（人格包插件用；与 persona 字段并存时合并收集） */
+  personas?: Persona[];
 }
 
 /** 插件加载结果 */

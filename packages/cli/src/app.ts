@@ -6,7 +6,7 @@ import { AgentKernel, EventBus } from '@openaide/core';
 import type { LLMProvider, ModelSwitcher, SessionStore } from '@openaide/core';
 import { findProjectWorkspace, loadConfig, Config } from '@openaide/config';
 import { OpenAICompatibleProvider } from '@openaide/llm';
-import { PluginManager, PluginPersonaProvider } from '@openaide/plugins';
+import { PluginManager, PluginPersonaProvider, builtinPersonasPlugin } from '@openaide/plugins';
 import { ToolRegistry, builtinToolsPlugin, fileToolsPlugin } from '@openaide/tools';
 import { FileMemory, FileSessionStore, SQLiteSessionStore, SqliteMemory } from '@openaide/memory';
 import type { Memory } from '@openaide/core';
@@ -129,6 +129,12 @@ export async function buildApp(config?: Config): Promise<App> {
   } else {
     await plugins.add(fileToolsPlugin, process.cwd());
   }
+  // 内置人格包（coder/architect）——提示词内容住插件，不住内核
+  if (plugins.isDisabled(builtinPersonasPlugin.name)) {
+    console.log(`[app] plugin disabled by state: ${builtinPersonasPlugin.name}`);
+  } else {
+    await plugins.add(builtinPersonasPlugin, process.cwd());
+  }
 
   // 用户插件：动态加载（同进程，无子进程）
   const loadedUserPlugins = await plugins.loadAll();
@@ -155,7 +161,11 @@ export async function buildApp(config?: Config): Promise<App> {
 
   // 人格提供者（插件收集的 persona 供内核 L0 层使用）
   // 激活状态是可变的:/persona <name> 运行时切换,无需改配置重启
-  const personaState: { active: string | undefined } = { active: cfg.kernel.persona };
+  // 缺省激活 coder（内置人格包提供）——保持"开箱即编码助手"的行为；
+  // /persona default 回到内核极简安全底线（不再是完整 coder 提示词）
+  const personaState: { active: string | undefined } = {
+    active: cfg.kernel.persona ?? (plugins.getPersona('coder') ? 'coder' : undefined),
+  };
   const persona = new PluginPersonaProvider(plugins, () => personaState.active);
   const setActivePersona = (name: string | undefined) => {
     personaState.active = name;

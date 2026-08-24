@@ -211,10 +211,16 @@ category: capability      # 可选；缺省 'uncategorized'
 
 ```
 load(dir) ──▶ loadPlugin(dir)    动态 import() 插件入口
-        └──▶ activate(loaded)    注册工具(<插件>__<工具>) → 挂钩子到 EventBus → 收集人格
+        └──▶ activate(loaded)    各扩展面在收集点就地 scope.add(tag, name, dispose)
 reload(name) ──▶ unload + 重新 import（URL 加时间戳破坏模块缓存 = 热重载）
-unload(name) ──▶ 注销工具 → 退订钩子 → 调 deactivate
+unload(name) ──▶ scope.dispose()（逆序回收全部已登记资源）→ 调 deactivate
 ```
+
+**通用资源账本（`Scope`）**：激活期间申请的一切可回收资源——工具注册、事件订阅、
+Provider/拦截器/人格条目——都在收集点登记回收闭包；卸载只是释放整个作用域。
+安装与回收逻辑同点共存，新增扩展面不再需要成对维护 activate/unload
+（历史上按面手写反向清理曾导致人格残留 bug）。单项回收失败不阻断其余，
+错误经 onError 上报日志。
 
 关键行为（`packages/plugins/src/manager.ts`）：
 - **加载顺序**：扫描 `pluginsDir` 一级子目录，判定含 `openaide.yaml` 或入口文件即为插件（`discover`）

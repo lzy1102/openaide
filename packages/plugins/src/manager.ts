@@ -17,6 +17,7 @@ import { basename } from 'node:path';
 import type { PluginLLM, PluginProvider, PluginSessions, ProgressReporter } from './types.js';
 import { discover, loadPlugin, loadManifest, readPersonaFile } from './loader.js';
 import { readPluginState, writePluginState } from './state.js';
+import { Scope } from './scope.js';
 import type {
   LoadedPlugin,
   OpenAIDePlugin,
@@ -43,14 +44,10 @@ export interface PluginManagerOptions {
   sessions?: PluginSessions;
 }
 
-/** 已激活插件的运行时状态 */
+/** 已激活插件的运行时状态 —— 全部可回收资源收敛进一个作用域账本 */
 interface ActivePlugin {
   loaded: LoadedPlugin;
-  registeredTools: string[]; // 注册到 executor 的工具全名
-  hooks: PluginHook[];
-  hookIds: number[]; // 事件总线订阅 id（卸载时注销）
-  providerNames: string[]; // 本插件注册的 Provider 名
-  interceptorsAdded: Interceptor[]; // 本插件加入的拦截器（卸载时按身份移除）
+  scope: Scope;
 }
 
 /** 人格的宽松形态（插件静态/函数/SYSTEM.md 三来源统一为 Persona 前的中间类型） */
@@ -174,38 +171,22 @@ export class PluginManager {
     await this.activate(fresh);
   }
 
-  /** 卸载插件：注销工具、移除钩子、调用 deactivate */
+  /**
+   * 卸载插件：释放作用域内全部资源（工具/钩子/Provider/拦截器/人格——
+   * 各自的回收闭包在激活时登记），随后调用插件 deactivate。
+   */
   async unload(name: string): Promise<void> {
     const existing = this.active.get(name);
     if (!existing) return;
-    const { registeredTools, hooks, hookIds } = existing;
-    for (const toolName of registeredTools) {
-      try {
-        this.executor?.unregister?.(toolName);
-      } catch (err) {
-        console.warn(`[plugins] unregister ${toolName}:`, err);
-      }
-    }
-    for (const id of hookIds) {
-      try {
-        this.eventBus?.unsubscribe(id);
-      } catch (err) {
-        console.warn(`[plugins] unsubscribe hook ${id}:`, err);
-      }
-    }
+    existing.scope.dispose((err, item) => {
+      console.warn(`[plugins] release ${item.tag}:${String(item.name)} failed:`, err);
+    });
     try {
       await existing.loaded.plugin.deactivate?.();
     } catch (err) {
       console.warn(`[plugins] deactivate ${name}:`, err);
     }
-    // 反注册 Provider 与拦截器
-    for (const pn of existing.providerNames) this.providersMap.delete(pn);
-    for (const ix of existing.interceptorsAdded) {
-      const idx = this.interceptors.indexOf(ix);
-      if (idx >= 0) this.interceptors.splice(idx, 1);
-    }
     this.active.delete(name);
-    this.personas = this.personas.filter((p) => p.name !== name);
   }
 
   /** 激活插件：注册工具/钩子/人格 */
@@ -224,7 +205,10 @@ export class PluginManager {
 
     await plugin.activate?.(ctx);
 
-    const registeredTools: string[] = [];
+    // 作用域账本：以下每种资源的回收闭包都在收集点就地登记，
+    // unload 只需 scope.dispose()——新增扩展面不再需要成对维护反向逻辑
+    const scope = new Scope();
+
     if (this.executor) {
       const tools = plugin.tools ?? [];
       for (const tool of tools) {
@@ -254,55 +238,77 @@ export class PluginManager {
           }
           return runHandler(args, sessionId, signal);
         });
-        registeredTools.push(fullName);
+        scope.add('tool', fullName, () => {
+          try {
+            this.executor?.unregister?.(fullName);
+          } catch (err) {
+            console.warn(`[plugins] unregister ${fullName}:`, err);
+          }
+        });
       }
     }
 
-    const hooks = plugin.hooks ?? [];
-    const hookIds: number[] = [];
     if (this.eventBus) {
-      for (const hook of hooks) {
+      for (const hook of plugin.hooks ?? []) {
         const id = this.eventBus.subscribe((event: KernelEvent) => {
           if (event.type === hook.event) {
             void hook.handler(event);
           }
         });
-        hookIds.push(id);
+        scope.add('hook', hook.event, () => {
+          try {
+            this.eventBus?.unsubscribe(id);
+          } catch (err) {
+            console.warn(`[plugins] unsubscribe hook ${id}:`, err);
+          }
+        });
       }
     }
+
     // LLM Provider 注册（同名后者覆盖；内核按 config.llm.provider 取用）
-    const providerNames: string[] = [];
     for (const p of plugin.providers ?? []) {
       this.providersMap.set(p.name, p);
-      providerNames.push(p.name);
+      scope.add('provider', p.name, () => void this.providersMap.delete(p.name));
     }
 
     // 拦截器加入活数组（原地 push，内核持引用即时生效）
-    const interceptorsAdded: Interceptor[] = [...(plugin.interceptors ?? [])];
-    for (const ix of interceptorsAdded) this.interceptors.push(ix);
+    for (const ix of plugin.interceptors ?? []) {
+      this.interceptors.push(ix);
+      scope.add('interceptor', ix.name, () => {
+        const idx = this.interceptors.indexOf(ix);
+        if (idx >= 0) this.interceptors.splice(idx, 1);
+      });
+    }
 
-    this.active.set(plugin.name, { loaded, registeredTools, hooks, hookIds, providerNames, interceptorsAdded });
-
-    // 人格收集：静态 persona / 函数 / SYSTEM.md 外置文件 → 统一归一化为 Persona
+    // 人格收集：静态 persona / personas 包 / 函数 / SYSTEM.md 外置文件 → 统一归一化
     const candidate: PersonaLike | undefined =
       plugin.persona
         ? typeof plugin.persona === 'function'
           ? await plugin.persona()
           : plugin.persona
         : readPersonaFile(dir);
-    if (candidate && candidate.name && candidate.systemPrompt) {
+    const candidates: PersonaLike[] = [...(plugin.personas ?? [])];
+    if (candidate && candidate.name && candidate.systemPrompt) candidates.push(candidate);
+    for (const c of candidates) {
+      if (!c.name || !c.systemPrompt) continue;
       const persona: Persona = {
-        name: candidate.name,
-        description: candidate.description ?? '',
-        systemPrompt: candidate.systemPrompt,
-        toolAllowlist: candidate.toolAllowlist,
+        name: c.name,
+        description: c.description ?? '',
+        systemPrompt: c.systemPrompt,
+        toolAllowlist: c.toolAllowlist,
       };
       this.personas = this.personas.filter((p) => p.name !== persona.name);
       this.personas.push(persona);
+      // 人格名≠插件名（如声明式插件 manifest.persona），按收集到的名字精确回收
+      scope.add('persona', persona.name, () => {
+        this.personas = this.personas.filter((p) => p.name !== persona.name);
+      });
     }
 
+    this.active.set(plugin.name, { loaded, scope });
+
     console.log(
-      `[plugins] loaded ${plugin.name}@${plugin.version ?? '0.0.0'} (tools: ${registeredTools.length}, hooks: ${hooks.length}, persona: ${candidate ? 'yes' : 'no'})`,
+      `[plugins] loaded ${plugin.name}@${plugin.version ?? '0.0.0'} (tools: ${scope.count('tool')}, hooks: ${scope.count('hook')}, personas: ${scope.count('persona')})`,
     );
   }
 
@@ -378,8 +384,8 @@ export class PluginManager {
         description: p.description,
         category: resolveCategory(p, a.loaded.dir),
         status: 'active',
-        tools: a.registeredTools,
-        hooks: a.hooks.length,
+        tools: a.scope.names('tool'),
+        hooks: a.scope.count('hook'),
         persona: this.personas.some((x) => x.name === p.name),
       });
     }
