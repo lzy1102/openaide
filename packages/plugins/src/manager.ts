@@ -15,7 +15,7 @@ import {
 } from '@openaide/core';
 import { basename } from 'node:path';
 import type { PluginLLM, PluginProvider, PluginSessions, PluginUi, ProgressReporter } from './types.js';
-import { discover, loadPlugin, loadManifest, readPersonaFile } from './loader.js';
+import { discover, loadManifest, loadPlugin, readDeclarativePersona } from './loader.js';
 import { readPluginState, writePluginState } from './state.js';
 import { Scope } from './scope.js';
 import type {
@@ -294,7 +294,7 @@ export class PluginManager {
         ? typeof plugin.persona === 'function'
           ? await plugin.persona()
           : plugin.persona
-        : readPersonaFile(dir);
+        : readDeclarativePersona(dir);
     const candidates: PersonaLike[] = [...(plugin.personas ?? [])];
     if (candidate && candidate.name && candidate.systemPrompt) candidates.push(candidate);
     for (const c of candidates) {

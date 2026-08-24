@@ -51,7 +51,13 @@ export function discover(dir: string, options: PluginLoaderOptions = {}): string
     const full = join(dir, name);
     if (!statSync(full).isDirectory()) continue;
     if (name.startsWith('.')) continue;
-    if (existsSync(join(full, 'openaide.yaml')) || findEntry(full, entries)) {
+    // 声明式插件三形态：openaide.yaml / 代码入口 / 纯 Markdown（SYSTEM.md、SKILL.md）
+    if (
+      existsSync(join(full, 'openaide.yaml')) ||
+      existsSync(join(full, 'SYSTEM.md')) ||
+      existsSync(join(full, 'SKILL.md')) ||
+      findEntry(full, entries)
+    ) {
       found.push(full);
     }
   }
@@ -87,6 +93,45 @@ export function readPersonaFile(
 }
 
 /**
+ * 读取 SKILL.md（可选）—— 兼容 dsh / agent-skills 生态的可移植技能格式：
+ * 可选 YAML frontmatter（name/description），正文即提示词/知识内容。
+ * 无 frontmatter 时人格名回退为目录名，实现"丢一个文件夹就是插件"。
+ */
+export function readSkillFile(
+  dir: string,
+): { name: string; description?: string; systemPrompt: string } | undefined {
+  const p = join(dir, 'SKILL.md');
+  if (!existsSync(p)) return undefined;
+  const raw = readFileSync(p, 'utf8');
+  let name = basename(dir);
+  let description: string | undefined;
+  let body = raw.trim();
+  const fm = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(raw);
+  if (fm) {
+    try {
+      const meta = YAML.parse(fm[1] ?? '') as { name?: string; description?: string } | null;
+      if (meta && typeof meta.name === 'string' && meta.name.trim()) name = meta.name.trim();
+      if (meta && typeof meta.description === 'string') description = meta.description;
+    } catch {
+      /* 坏 frontmatter 按纯 Markdown 处理 */
+    }
+    body = raw.slice(fm[0].length).trim();
+  }
+  if (!body) return undefined;
+  return { name, description, systemPrompt: body };
+}
+
+/**
+ * 声明式人格来源统一入口：SYSTEM.md（原生格式，优先）→ SKILL.md（生态兼容格式）。
+ * loader 的虚拟插件与 manager 的人格兜底共用，保证两处语义一致。
+ */
+export function readDeclarativePersona(
+  dir: string,
+): { name: string; description?: string; systemPrompt: string } | undefined {
+  return readPersonaFile(dir) ?? readSkillFile(dir);
+}
+
+/**
  * 动态加载一个插件模块（同进程）。
  * - entry 可以是目录（自动探测入口）或直接是文件路径
  * - fresh=true 时破坏模块缓存实现热重载（追加时间戳 query）
@@ -98,20 +143,21 @@ export async function loadPlugin(entry: string, fresh = false): Promise<LoadedPl
   if (existsSync(entry) && statSync(entry).isDirectory()) {
     const found = findEntry(entry);
     if (!found) {
-      // 纯声明式 persona 插件:openaide.yaml + SYSTEM.md,无代码入口。
-      // 生成虚拟插件 —— 人格即全部内容(支持"任务变身":提示词整体替换)。
+      // 纯声明式插件：人格文件（SYSTEM.md / SKILL.md）即全部内容，openaide.yaml 可选补充元数据。
+      // 仅 manifest 而无人格来源视为残缺插件（多半是写了一半的目录），保持加载失败语义。
       const manifest = loadManifest(entry);
-      const personaFile = readPersonaFile(entry);
-      if (manifest && personaFile) {
+      const personaSource = readDeclarativePersona(entry);
+      if (personaSource) {
         const virtual: OpenAIDePlugin = {
-          name: manifest.name ?? basename(entry),
-          version: manifest.version ?? '1.0.0',
-          description: manifest.description ?? personaFile.description ?? 'declarative persona plugin',
+          name: manifest?.name ?? personaSource?.name ?? basename(entry),
+          version: manifest?.version ?? '1.0.0',
+          description:
+            manifest?.description ?? personaSource?.description ?? 'declarative persona plugin',
           persona: {
-            name: manifest.persona ?? personaFile.name,
-            description: personaFile.description ?? manifest.description ?? '',
-            systemPrompt: personaFile.systemPrompt,
-            toolAllowlist: manifest.toolAllowlist,
+            name: manifest?.persona ?? personaSource?.name ?? basename(entry),
+            description: personaSource?.description ?? manifest?.description ?? '',
+            systemPrompt: personaSource?.systemPrompt ?? '',
+            toolAllowlist: manifest?.toolAllowlist,
           },
         };
         return { plugin: virtual, dir: entry, loadedAt: Date.now() };

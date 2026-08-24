@@ -170,6 +170,10 @@ openaide repl
 - `toolAllowlist` 联动:激活后内核只暴露白名单内的工具(不写则暴露全部)
 - `/persona default` 随时切回内置编码助手
 
+**SKILL.md 生态兼容**：目录里放一个 `SKILL.md`（dsh / agent-skills 可移植技能格式，
+支持 YAML frontmatter 的 name/description）同样会被识别为声明式人格插件——
+零配置投喂：把任何 SKILL.md 文件夹丢进 pluginsDir 即生效。SYSTEM.md 与之并存时优先。
+
 ### 1.4 一次性问答
 
 ```bash

@@ -148,7 +148,8 @@ interface KernelEvent {
 1. 插件静态字段 `persona`
 2. `persona` 为函数（异步返回）
 3. `SYSTEM.md` 外置文件（`readPersonaFile`）
-4. **声明式 persona 插件**——目录只有 `openaide.yaml` + `SYSTEM.md`，无代码入口；loader 生成虚拟插件（人格即全部内容，支持"任务变身"）
+4. `SKILL.md` 技能格式（生态兼容：dsh / agent-skills；frontmatter 提供 name/description）
+5. **声明式 persona 插件**——目录只有人格 Markdown（SYSTEM.md/SKILL.md）+ 可选 openaide.yaml，无代码入口；loader 生成虚拟插件（人格即全部内容，支持"任务变身"）
 
 ```ts
 interface Persona {
