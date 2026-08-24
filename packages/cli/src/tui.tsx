@@ -9,13 +9,13 @@
  */
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Box, Text, Static, useApp, useInput } from 'ink';
-import TextInput from 'ink-text-input';
 import Spinner from 'ink-spinner';
 import { StreamChunkType, newId } from '@openaide/core';
 import { DEFAULT_REGISTRY_URL, fetchRegistry, installEntry, readPluginState, searchRegistry, writePluginState } from '@openaide/plugins';
 import { existsSync, rmSync } from 'node:fs';
 import type { App } from './app.js';
 import type { ApprovalRequest } from './approval.js';
+import { PasteInput } from './components/PasteInput.js';
 
 /** 渲染用消息（历史列表项；kind=banner 仅作 Static 首项占位） */
 interface TuiMessage {
@@ -194,6 +194,12 @@ export function Tui({ app, initialSessionId }: { app: App; initialSessionId?: st
     : [];
   const [suggestIndex, setSuggestIndex] = useState(-1);
   useEffect(() => setSuggestIndex(-1), [input]);
+
+  // 终端括号化粘贴模式：粘贴以 ESC[200~…ESC[201~ 成块到达，才能整体识别
+  useEffect(() => {
+    process.stdout.write('[?2004h');
+    return () => { process.stdout.write('[?2004l'); };
+  }, []);
   const activeSuggest = suggestIndex < 0 ? 0 : Math.min(suggestIndex, suggestionMatch.length - 1);
   const showSuggestions = !busy && suggestionMatch.length > 0;
 
@@ -636,12 +642,11 @@ export function Tui({ app, initialSessionId }: { app: App; initialSessionId?: st
           flexGrow={1}
         >
           <Text color="magenta">❯ </Text>
-          <TextInput
-            focus={!busy}
-            placeholder="Send a message or type / for commands…"
+          <PasteInput
+            busy={busy}
             value={input}
             onChange={setInput}
-            onSubmit={onSubmit}
+            onSubmit={(finalText) => void onSubmit(finalText)}
           />
         </Box>
       </Box>

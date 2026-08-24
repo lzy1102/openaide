@@ -98,3 +98,37 @@ test('TUI：工具失败时展示输出摘要（↳ 行）', async () => {
   assert.ok(frame?.includes('cannot find module'), '应展示 stdout/stderr 摘要');
   unmount();
 });
+
+test('TUI：多行粘贴折叠为占位符，提交时还原全文', async () => {
+  const sent: string[] = [];
+  const kernel = {
+    async *processStream(q: { content: string }): AsyncGenerator<StreamChunk> {
+      sent.push(q.content);
+      yield { type: StreamChunkType.Content, content: 'ok' };
+      yield { type: StreamChunkType.Done, done: true, round: 1, totalRounds: 1 };
+    },
+    subscribe: () => 0,
+  };
+  const app = makeFakeApp() as unknown as Record<string, unknown>;
+  app.kernel = kernel;
+  const { lastFrame, stdin, unmount } = render(
+    React.createElement(Tui, { app: app as unknown as App }),
+  );
+  await mount();
+
+  // 括号化粘贴：两行内容成块到达
+  stdin.write('\x1b[200~第一行粘贴\n第二行粘贴\x1b[201~');
+  await flush();
+  assert.ok(lastFrame()?.includes('[粘贴#1 +2行]'), '应折叠为占位符');
+
+  // 补一句话并提交
+  stdin.write(' 看看这个');
+  await flush();
+  stdin.write('\r');
+  await flush(200);
+
+  // 用户消息应为还原后的完整内容（占位符位置展开）
+  assert.ok(sent[0]?.includes('第一行粘贴'), '粘贴内容应随消息发出');
+  assert.ok(sent[0]?.includes('看看这个'), '手打部分保留');
+  unmount();
+});
