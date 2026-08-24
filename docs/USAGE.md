@@ -290,16 +290,18 @@ openaide plugins reload travel    # 热重载单个插件
 - 禁用按**插件名**记录；内置插件（`builtin`、`file-tools`）同样可禁用，启动时跳过注册
 - 名单文件 `<data_dir>/plugin-state.json` 可手改，损坏时自动回退为空状态
 
-插件市场（静态 JSON 索引 + git 安装，无服务器）：
+插件市场 = **GitHub 实时生态 ∪ 静态种子索引**：
 
 ```bash
-openaide plugins search            # 列出市场全部插件；加关键词过滤（匹配名称/描述/分类/关键词）
-openaide plugins install example-plugin   # git clone 浅克隆 → 拷入 pluginsDir → 立即加载
-openaide plugins uninstall example-plugin # 卸载并删除目录（含清理禁用名单残留）
+openaide plugins search            # GitHub(topic:openaide-plugin) + 种子索引 全域搜索
+openaide plugins search travel     # 关键词追加进 GitHub 查询（匹配名称/描述/README）
+openaide plugins install <name>    # git clone 浅克隆 → 拷入 pluginsDir → 立即加载
+openaide plugins uninstall <name>  # 卸载并删除目录（含清理禁用名单残留）
 ```
 
-- 默认索引：本仓库 `registry/plugins.json` 的 raw 地址；`config.yaml` 的 `registry_url` 或环境变量 `OPENAIDE_REGISTRY_URL` 可覆盖（支持 `http(s)://` 与 `file://` 自建/离线索引）
-- 自建市场：fork 本仓库 → 编辑 `registry/plugins.json`（条目含 name/version/description/keywords/source.git url+subdir）→ 推送即生效
+- 搜索结果带来源徽标：`[gh★42]`（GitHub 实时，按星排序）/ `[registry]`（静态索引）；两来源自动去重合并，任一失败另一个兜底
+- **发布零门槛**：GitHub 建仓库 → 打 topic `openaide-plugin` → 根目录放 `openaide.yaml`（推荐，含 name/version；纯人格插件放 SYSTEM.md 即可）→ 即可被全生态搜到。设置 `GITHUB_TOKEN` 环境变量可提升搜索配额（匿名 10 次/分钟）
+- 静态种子索引：本仓库 `registry/plugins.json`（`registry_url` / `OPENAIDE_REGISTRY_URL` 覆盖，支持 `file://` 离线索引），作为 GitHub 的离线兜底与精选位
 - REPL/TUI 内等价命令：`/plugins search <kw>`、`/plugins install|uninstall <name>`
 
 ---

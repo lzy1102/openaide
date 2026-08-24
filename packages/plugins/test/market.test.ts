@@ -126,3 +126,69 @@ test('installEntry：无 subdir 时整个仓库即插件；clone 失败报错清
     rmSync(workspace, { recursive: true, force: true });
   }
 });
+
+/* ────────────── GitHub 生态搜索 ────────────── */
+import { afterEach } from 'node:test';
+import { searchGithubPlugins, GITHUB_PLUGIN_TOPIC } from '../src/market.js';
+
+const ghResponse = {
+  items: [
+    {
+      full_name: 'alice/openaide-travel',
+      name: 'openaide-travel',
+      description: '旅行规划师人格',
+      clone_url: 'https://github.com/alice/openaide-travel.git',
+      default_branch: 'main',
+      stargazers_count: 42,
+      topics: ['openaide-plugin', 'persona'],
+      owner: { login: 'alice' },
+    },
+  ],
+};
+
+afterEach(() => { delete process.env.GITHUB_TOKEN; });
+
+test('searchGithubPlugins：topic 查询 + 关键词、字段映射、token 鉴权', async () => {
+  let captured: { url: string; headers: Record<string, string> } | null = null;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: string | URL, init?: { headers?: Record<string, string> }) => {
+    captured = { url: String(url), headers: init?.headers ?? {} };
+    return new Response(JSON.stringify(ghResponse), { status: 200 });
+  }) as typeof fetch;
+
+  try {
+    const entries = await searchGithubPlugins('travel persona', { token: 'gh-test-token' });
+    assert.match(captured!.url, /topic%3Aopenaide-plugin/);
+    assert.match(captured!.url, /travel(\+|%2B| )persona/i);
+    assert.equal(captured!.headers.authorization, 'Bearer gh-test-token');
+
+    assert.equal(entries.length, 1);
+    const e = entries[0]!;
+    assert.equal(e.name, 'openaide-travel');
+    assert.equal(e.origin, 'github');
+    assert.equal(e.stars, 42);
+    assert.deepEqual(e.keywords, ['persona'], '生态约定 topic 本身应从关键词中剔除');
+    assert.equal(e.source.url, 'https://github.com/alice/openaide-travel.git');
+    assert.equal(e.source.ref, 'main');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('searchGithubPlugins：403 时给出限流提示', async () => {
+  delete process.env.GITHUB_TOKEN;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response('rate limited', { status: 403 })) as typeof fetch;
+  try {
+    await assert.rejects(
+      () => searchGithubPlugins(),
+      /rate limited — set GITHUB_TOKEN/,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('GITHUB_PLUGIN_TOPIC 常量符合生态约定', () => {
+  assert.equal(GITHUB_PLUGIN_TOPIC, 'openaide-plugin');
+});

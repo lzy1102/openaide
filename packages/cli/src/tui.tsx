@@ -11,7 +11,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Box, Text, Static, useApp, useInput } from 'ink';
 import Spinner from 'ink-spinner';
 import { StreamChunkType, newId } from '@openaide/core';
-import { DEFAULT_REGISTRY_URL, fetchRegistry, installEntry, readPluginState, searchRegistry, writePluginState } from '@openaide/plugins';
+import { DEFAULT_REGISTRY_URL, fetchRegistry, GITHUB_PLUGIN_TOPIC, installEntry, readPluginState, searchEverywhere, writePluginState } from '@openaide/plugins';
 import { existsSync, rmSync } from 'node:fs';
 import type { App } from './app.js';
 import type { ApprovalRequest } from './approval.js';
@@ -282,20 +282,21 @@ export function Tui({ app, initialSessionId }: { app: App; initialSessionId?: st
           }
           if (sub === 'search') {
             try {
-              const reg = await fetchRegistry(app.config?.registryUrl ?? DEFAULT_REGISTRY_URL);
-              const hits = searchRegistry(reg, kw);
+              const hits = await searchEverywhere(kw, { registryUrl: app.config?.registryUrl });
               if (hits.length === 0) {
-                push({ kind: 'info', content: `no matches${kw ? ` for "${kw}"` : ''} (${reg.plugins.length} in registry)` });
+                push({ kind: 'info', content: `no matches on GitHub (topic:${GITHUB_PLUGIN_TOPIC}) or registry${kw ? ` for "${kw}"` : ''}` });
               } else {
                 push({
                   kind: 'info',
                   content:
-                    hits.map((e) => `${e.name}@${e.version ?? '0.0.0'} — ${e.description ?? ''}`).join('\n') +
-                    '\ninstall: /plugins install <name>',
+                    hits
+                      .map((e) => `${e.from.includes('github') ? `[gh★${e.stars ?? 0}]` : '[registry]'} ${e.name}${e.version ? `@${e.version}` : ''} — ${e.description ?? ''}`)
+                      .join('\n') +
+                    `\npublish: repo + topic ${GITHUB_PLUGIN_TOPIC} · install: /plugins install <name>`,
                 });
               }
             } catch (err) {
-              push({ kind: 'error', content: `registry error: ${(err as Error).message}` });
+              push({ kind: 'error', content: `search error: ${(err as Error).message}` });
             }
             return;
           }

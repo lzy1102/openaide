@@ -23,9 +23,10 @@ import { loadConfig, saveConfig } from '@openaide/config';
 import {
   DEFAULT_REGISTRY_URL,
   fetchRegistry,
+  GITHUB_PLUGIN_TOPIC,
   installEntry,
   readPluginState,
-  searchRegistry,
+  searchEverywhere,
   writePluginState,
 } from '@openaide/plugins';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
@@ -199,19 +200,19 @@ async function main(): Promise<void> {
     }
     if (sub === 'search') {
       const kw = cli.pluginArgs.slice(1).join(' ');
-      const reg = await fetchRegistry(cfg.registryUrl ?? DEFAULT_REGISTRY_URL);
-      const hits = searchRegistry(reg, kw);
+      const hits = await searchEverywhere(kw, { registryUrl: cfg.registryUrl });
       if (hits.length === 0) {
-        console.log(`[plugins] no matches${kw ? ` for "${kw}"` : ''} (${reg.plugins.length} in registry)`);
+        console.log(`[plugins] no matches on GitHub (topic:${GITHUB_PLUGIN_TOPIC}) or registry${kw ? ` for "${kw}"` : ''}`);
         return;
       }
-      console.log(`[plugins] ${hits.length} match(es) in registry:`);
+      console.log(`[plugins] ${hits.length} match(es) — GitHub topic:${GITHUB_PLUGIN_TOPIC} + registry:`);
       for (const e of hits) {
+        const badge = e.from.includes('github') ? `[gh★${e.stars ?? 0}]` : '[registry]';
         console.log(
-          `  ${e.name}@${e.version ?? '0.0.0'}${e.category ? ` [${e.category}]` : ''} — ${e.description ?? ''}${e.author ? ` (by ${e.author})` : ''}`,
+          `  ${badge} ${e.name}${e.version ? `@${e.version}` : ''}${e.category ? ` [${e.category}]` : ''} — ${e.description ?? ''}${e.author ? ` (by ${e.author})` : ''}`,
         );
       }
-      console.log('install: openaide plugins install <name>');
+      console.log('publish: create a GitHub repo with topic openaide-plugin · install: openaide plugins install <name>');
       return;
     }
     if (sub === 'install') {

@@ -11,7 +11,7 @@ import { stdin as input, stdout as output } from 'node:process';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { StreamChunkType, newId } from '@openaide/core';
-import { DEFAULT_REGISTRY_URL, fetchRegistry, installEntry, readPluginState, searchRegistry, writePluginState } from '@openaide/plugins';
+import { DEFAULT_REGISTRY_URL, fetchRegistry, GITHUB_PLUGIN_TOPIC, installEntry, readPluginState, searchEverywhere, writePluginState } from '@openaide/plugins';
 import type { App } from './app.js';
 
 /** 一次性行内读取（审批 y/N 用；与 readline 共存，读到换行为止） */
@@ -231,18 +231,18 @@ export async function runRepl(app: App, initialSessionId?: string): Promise<void
           }
           if (sub === 'search') {
             try {
-              const reg = await fetchRegistry(app.config.registryUrl ?? DEFAULT_REGISTRY_URL);
-              const hits = searchRegistry(reg, kw);
+              const hits = await searchEverywhere(kw, { registryUrl: app.config.registryUrl });
               if (hits.length === 0) {
-                console.log(`  no matches${kw ? ` for "${kw}"` : ''} (${reg.plugins.length} in registry)`);
+                console.log(`  no matches on GitHub (topic:${GITHUB_PLUGIN_TOPIC}) or registry${kw ? ` for "${kw}"` : ''}`);
               } else {
                 for (const e of hits) {
-                  console.log(`  ${e.name}@${e.version ?? '0.0.0'} — ${e.description ?? ''}`);
+                  const badge = e.from.includes('github') ? `[gh★${e.stars ?? 0}]` : '[registry]';
+                  console.log(`  ${badge} ${e.name}${e.version ? `@${e.version}` : ''} — ${e.description ?? ''}`);
                 }
-                console.log('  install: /plugins install <name>');
+                console.log('  publish: repo + topic openaide-plugin · install: /plugins install <name>');
               }
             } catch (err) {
-              console.log(`  registry error: ${(err as Error).message}`);
+              console.log(`  search error: ${(err as Error).message}`);
             }
             continue;
           }

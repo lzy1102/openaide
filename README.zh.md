@@ -111,7 +111,8 @@ cli (TUI + REPL + 命令)      api (HTTP/WS + SSE)
 ## 核心概念
 
 - **一切皆插件**：内核的工具、人格、钩子全部经插件体系注入——内置与用户插件走同一套注册逻辑
-- **会话随仓库走**：`openaide init` 后对话以可读 JSON 存进 `.openaide/`——提交进 git，换电脑 pull 下来 `openaide -c` 无缝续聊
+- **生态即 GitHub**：仓库打上 `openaide-plugin` topic 即进入插件市场——实时搜索、星标排序、git 直装，无服务器无审核
+- **会话随仓库走：`openaide init` 后对话以可读 JSON 存进 `.openaide/`——提交进 git，换电脑 pull 下来 `openaide -c` 无缝续聊
 - **策略即插件**：拦截链可否决/改写 LLM 请求与工具调用——审批门、PII 脱敏、预算熔断统统只是插件
 - **大脑可插拔**：插件可注册 LLM Provider（Anthropic/Ollama/…），`config.llm.provider` 一行切换
 - **一键变身任意 agent**：一个 `SYSTEM.md` 文件即可把 OpenAIDE 变成其他领域 agent（旅行规划师、合同分析师……）——声明式人格插件 + 可选工具白名单，`/persona <名字>` 热切换

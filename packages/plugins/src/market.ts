@@ -32,6 +32,10 @@ export interface RegistryEntry {
   author?: string;
   keywords?: string[];
   source: RegistrySource;
+  /** 条目来源（展示用）：github=实时搜索命中；registry=静态索引 */
+  origin?: 'github' | 'registry';
+  /** GitHub 星数（仅 github 来源时携带，排序参考） */
+  stars?: number;
 }
 
 export interface Registry {
@@ -100,6 +104,105 @@ export function searchRegistry(registry: Registry, keyword = ''): RegistryEntry[
       .toLowerCase()
       .includes(kw),
   );
+}
+
+/* ────────────────────────── GitHub 生态搜索 ────────────────────────── */
+
+/** 生态约定：仓库打上该 topic 即进入插件生态（发布零门槛：建仓库 + 打标签） */
+export const GITHUB_PLUGIN_TOPIC = 'openaide-plugin';
+
+interface GithubRepoItem {
+  full_name: string;
+  name: string;
+  description: string | null;
+  clone_url: string;
+  default_branch: string;
+  stargazers_count: number;
+  topics?: string[];
+  owner?: { login?: string };
+}
+
+/**
+ * 实时搜索 GitHub 上的 openaide 插件（Search API，topic 约定 + 关键词）。
+ * - 关键词追加到查询中，GitHub 会匹配名称/描述/README
+ * - GITHUB_TOKEN 存在时自动携带（提升限流配额：匿名 10 次/分钟 → 认证 30 次/分钟）
+ * - 结果映射为 RegistryEntry，安装复用同一 git 管道
+ */
+export async function searchGithubPlugins(
+  keyword = '',
+  opts: { token?: string; perPage?: number; timeoutMs?: number } = {},
+): Promise<RegistryEntry[]> {
+  const terms = [`topic:${GITHUB_PLUGIN_TOPIC}`];
+  for (const t of keyword.trim().split(/\s+/)) if (t) terms.push(t);
+  const url =
+    `https://api.github.com/search/repositories?q=${encodeURIComponent(terms.join('+'))}` +
+    `&sort=updated&per_page=${opts.perPage ?? 20}`;
+  const headers: Record<string, string> = {
+    accept: 'application/vnd.github+json',
+    'user-agent': 'openaide-cli',
+    'x-github-api-version': '2022-11-28',
+  };
+  const token = opts.token ?? process.env.GITHUB_TOKEN;
+  if (token) headers.authorization = `Bearer ${token}`;
+
+  const res = await fetch(url, {
+    headers,
+    signal: AbortSignal.timeout(opts.timeoutMs ?? 10_000),
+  });
+  if (!res.ok) {
+    const hint = res.status === 403 ? ' (rate limited — set GITHUB_TOKEN to raise the quota)' : '';
+    throw new Error(`github search failed: ${res.status}${hint}`);
+  }
+  const data = (await res.json()) as { items?: GithubRepoItem[] };
+  return (data.items ?? []).map((it) => ({
+    name: it.name,
+    description: it.description ?? undefined,
+    author: it.owner?.login,
+    keywords: (it.topics ?? []).filter((t) => t !== GITHUB_PLUGIN_TOPIC),
+    stars: it.stargazers_count,
+    origin: 'github' as const,
+    source: { type: 'git' as const, url: it.clone_url, ref: it.default_branch },
+  }));
+}
+
+export interface EverywhereOptions {
+  /** 静态索引 URL（可 file://）；拉取失败静默跳过 */
+  registryUrl?: string;
+  githubToken?: string;
+}
+
+export interface SearchResultEntry extends RegistryEntry {
+  from: ('github' | 'registry')[];
+}
+
+/**
+ * 全域搜索 = GitHub 实时生态 ∪ 静态索引，按 source.url 去重合并。
+ * 任一来源失败不影响另一个（GitHub 挂了/限流时静态索引兜底，反之亦然）。
+ */
+export async function searchEverywhere(keyword = '', opts: EverywhereOptions = {}): Promise<SearchResultEntry[]> {
+  const jobs = await Promise.allSettled([
+    searchGithubPlugins(keyword, { token: opts.githubToken }),
+    opts.registryUrl
+      ? fetchRegistry(opts.registryUrl).then((r) =>
+          searchRegistry(r, keyword).map((e) => ({ ...e, origin: 'registry' as const })),
+        )
+      : Promise.resolve([] as RegistryEntry[]),
+  ]);
+  const merged = new Map<string, SearchResultEntry>();
+  for (const job of jobs) {
+    if (job.status !== 'fulfilled') continue;
+    for (const e of job.value) {
+      const key = e.source.url.replace(/\.git$/, '');
+      const existing = merged.get(key);
+      if (existing) {
+        existing.from.push(...(e.origin ? [e.origin] : []));
+      } else {
+        merged.set(key, { ...e, from: e.origin ? [e.origin] : [] });
+      }
+    }
+  }
+  // GitHub 来源按星数降序在前，其余保持原顺序
+  return [...merged.values()].sort((a, b) => (b.stars ?? 0) - (a.stars ?? 0));
 }
 
 export interface InstallOptions {
