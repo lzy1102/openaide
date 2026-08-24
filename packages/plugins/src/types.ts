@@ -7,7 +7,7 @@
  * 可选 openaide.yaml 声明元信息（name/version/persona/入口），
  * 也可纯代码声明 —— 二选一或并存。
  */
-import type { Interceptor, KernelEvent, LLMProvider, Persona, ToolResult } from '@openaide/core';
+import type { Interceptor, KernelEvent, LLMProvider, Persona, ToolDefinition, ToolHandler, ToolResult } from '@openaide/core';
 
 /** 插件工具规范：handler 与内核同进程执行 */
 export interface PluginTool {
@@ -58,6 +58,13 @@ export interface PluginContext {
   sessions?: PluginSessions;
   /** 长任务进度上报 → 发布 context.progress 事件 */
   reportProgress?: ProgressReporter['report'];
+  /** 宿主日志通道（可选；缺省实现打 console） */
+  log?(msg: string): void;
+  /**
+   * 动态注册工具（activate 阶段调用）——用于运行时才知道工具清单的场景
+   * （如 MCP 桥按服务器枚举）。回收由 manager 的 Scope 账本统一处理。
+   */
+  registerTool?(def: ToolDefinition, handler: ToolHandler): void;
 }
 
 /** 插件 manifest（可选 openaide.yaml） */

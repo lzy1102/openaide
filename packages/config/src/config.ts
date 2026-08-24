@@ -35,6 +35,13 @@ export interface Config {
   registryUrl?: string;
   /** 交互界面名（插件 uis 注册；缺省 TTY→ink / 非 TTY→readline） */
   ui?: string;
+  /** MCP 服务器映射（schema 与 Claude mcpServers 兼容：command/args/env/timeoutMs） */
+  mcpServers?: Record<string, {
+    command: string;
+    args?: string[];
+    env?: Record<string, string>;
+    timeoutMs?: number;
+  }>;
 }
 
 /** 默认配置目录（OPENAIDE_DATA_DIR 优先，保证数据与配置随目录整体迁移） */
@@ -85,6 +92,7 @@ interface RawConfig {
   plugins_dir?: string;
   registry_url?: string;
   ui?: string;
+  mcp_servers?: Record<string, { command: string; args?: string[]; env?: Record<string, string>; timeout_ms?: number }>;
 }
 
 /**
@@ -126,6 +134,14 @@ export function loadConfig(configPath?: string): Config {
       join(dataDir, 'plugins'),
     registryUrl: process.env.OPENAIDE_REGISTRY_URL ?? raw.registry_url,
     ui: process.env.OPENAIDE_UI ?? raw.ui,
+    mcpServers: raw.mcp_servers
+      ? Object.fromEntries(
+          Object.entries(raw.mcp_servers).map(([k, v]) => [
+            k,
+            { command: v.command, args: v.args, env: v.env, timeoutMs: v.timeout_ms },
+          ]),
+        )
+      : undefined,
   };
 
   mkdirSync(dataDir, { recursive: true });
@@ -155,6 +171,14 @@ export function saveConfig(config: Config, path?: string): void {
     plugins_dir: config.pluginsDir,
     registry_url: config.registryUrl,
     ui: config.ui,
+    mcp_servers: config.mcpServers
+      ? Object.fromEntries(
+          Object.entries(config.mcpServers).map(([k, v]) => [
+            k,
+            { command: v.command, args: v.args, env: v.env, timeout_ms: v.timeoutMs },
+          ]),
+        )
+      : undefined,
   };
   const dir = target.replace(/[\\/][^\\/]*$/, '');
   mkdirSync(dir, { recursive: true });

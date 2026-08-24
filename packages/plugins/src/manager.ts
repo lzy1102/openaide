@@ -197,19 +197,31 @@ export class PluginManager {
     const reporter: ProgressReporter | undefined = this.reportProgress
       ? { report: (note: string, percent?: number) => this.reportProgress!(note, percent) }
       : undefined;
+
+    // 作用域账本先行：ctx.registerTool 等动态通道也要登记回收闭包，
+    // 卸载只需 scope.dispose()——新增扩展面不再需要成对维护反向逻辑
+    const scope = new Scope();
+
     const ctx: PluginContext = {
       dir,
       dataDir: this.dataDir,
       llm: this.llm,
       sessions: this.sessions,
       reportProgress: reporter?.report,
+      log: (msg: string) => console.log(msg),
+      registerTool: (def, handler) => {
+        this.executor?.register(def, handler);
+        scope.add('tool', def.function.name, () => {
+          try {
+            this.executor?.unregister?.(def.function.name);
+          } catch (err) {
+            console.warn(`[plugins] unregister ${def.function.name}:`, err);
+          }
+        });
+      },
     };
 
     await plugin.activate?.(ctx);
-
-    // 作用域账本：以下每种资源的回收闭包都在收集点就地登记，
-    // unload 只需 scope.dispose()——新增扩展面不再需要成对维护反向逻辑
-    const scope = new Scope();
 
     if (this.executor) {
       const tools = plugin.tools ?? [];

@@ -311,7 +311,10 @@ async function main(): Promise<void> {
   await runInteractive(app);
 }
 
-main().catch((err) => {
-  console.error('[fatal]', err);
-  process.exit(1);
-});
+// 显式退出：MCP 子进程等保持句柄会让事件循环挂起，一次性命令完成后需主动结束
+main()
+  .then(() => process.exit(0))
+  .catch((err) => {
+    console.error('[fatal]', err);
+    process.exit(1);
+  });

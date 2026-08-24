@@ -9,6 +9,7 @@ import { OpenAICompatibleProvider } from '@openaide/llm';
 import { PluginManager, PluginPersonaProvider, builtinPersonasPlugin } from '@openaide/plugins';
 import { ToolRegistry, builtinToolsPlugin, fileToolsPlugin } from '@openaide/tools';
 import { FileMemory, FileSessionStore, SQLiteSessionStore, SqliteMemory } from '@openaide/memory';
+import { createMcpBridgePlugin, loadClaudeMcpConfig } from '@openaide/mcp';
 import type { Memory } from '@openaide/core';
 import { join } from 'node:path';
 import { builtinUiPlugins } from './builtin-uis.js';
@@ -135,6 +136,17 @@ export async function buildApp(config?: Config): Promise<App> {
     console.log(`[app] plugin disabled by state: ${builtinPersonasPlugin.name}`);
   } else {
     await plugins.add(builtinPersonasPlugin, process.cwd());
+  }
+
+  // MCP 桥（配置了 mcp_servers 或 mcp_config_file 时启用；Claude 配置可直接导入）
+  const mcpFile = process.env.OPENAIDE_MCP_CONFIG ?? (cfg as { mcp_config_file?: string }).mcp_config_file;
+  const mcpServers: Record<string, NonNullable<typeof cfg.mcpServers>[string]> = {
+    ...(cfg.mcpServers ?? {}),
+    ...(mcpFile ? loadClaudeMcpConfig(mcpFile) : {}),
+  };
+  if (Object.keys(mcpServers).length > 0) {
+    const bridge = await createMcpBridgePlugin({ servers: mcpServers });
+    await plugins.add(bridge, process.cwd());
   }
 
   // 内置界面（ink TUI / readline）——同样可被 plugin-state 禁用或被自定义 UI 插件取代
