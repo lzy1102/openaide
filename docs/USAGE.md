@@ -174,6 +174,21 @@ openaide repl
 支持 YAML frontmatter 的 name/description）同样会被识别为声明式人格插件——
 零配置投喂：把任何 SKILL.md 文件夹丢进 pluginsDir 即生效。SYSTEM.md 与之并存时优先。
 
+**MCP 桥接**：Claude 生态的 MCP server 直接变成原生工具。config.yaml 加：
+
+```yaml
+mcp:
+  servers:
+    filesystem:
+      command: npx
+      args: ["-y", "@modelcontextprotocol/server-filesystem", "/some/dir"]
+      env: { HOME: "/home/user" }   # 支持 ${ENV_VAR} 引用
+```
+
+- 工具注册为 `<server>__<tool>`，inputSchema 直通 MCP 的 JSON Schema
+- 配置格式与 Claude Desktop / Claude Code 的 `mcpServers` 一致——可直接复制过来
+- 官方 MCP SDK + stdio 传输；工具调用超时默认 60s（`timeoutMs` 可调）
+
 ### 1.4 一次性问答
 
 ```bash
