@@ -62,4 +62,15 @@ export class SqliteMemory implements Memory {
     }>;
     return rows.map((r) => ({ role: r.role as Message['role'], content: r.content }));
   }
+
+  /** 撤回:删除会话记忆流水的末尾 n 条(按 created_at 降序取后删) */
+  async truncateLast(sessionId: string, n: number): Promise<void> {
+    if (n <= 0) return;
+    this.db.prepare(
+      `DELETE FROM memory_messages WHERE id IN (
+         SELECT id FROM memory_messages WHERE session_id = ?
+         ORDER BY created_at DESC LIMIT ?
+       )`,
+    ).run(sessionId, n);
+  }
 }

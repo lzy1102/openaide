@@ -506,7 +506,21 @@ export function Tui({ app, initialSessionId }: { app: App; initialSessionId?: st
       return;
     }
     if (key.escape) {
-      setInput('');
+      // 两段语义:输入框有内容先清空;已空则撤回最后一轮对话
+      if (input) {
+        setInput('');
+        return;
+      }
+      const sid = sessionId;
+      if (sid) {
+        void app.kernel.undoLastRound(sid).then((undone) => {
+          if (undone) {
+            push({ kind: 'info', content: '↩ last round undone — ask again.' });
+          } else {
+            push({ kind: 'info', content: 'nothing to undo.' });
+          }
+        });
+      }
       return;
     }
     if (input.startsWith('/') && suggestionMatch.length > 0) {

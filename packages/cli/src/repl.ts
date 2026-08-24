@@ -125,6 +125,7 @@ Commands:
   /plugins enable|disable <name>
                          toggle a plugin (enable/disable persists across restarts)
   /persona               list available personas
+  /undo                  undo the last round (user+assistant)
   /exit, /quit           quit
   anything else          send to the agent
 `;
@@ -305,6 +306,15 @@ export async function runRepl(app: App, initialSessionId?: string): Promise<void
               console.log(`  reload failed: ${(err as Error).message}`);
             }
           }
+          continue;
+        }
+        case '/undo': {
+          if (!sessionId) {
+            console.log('  nothing to undo (no active session)');
+            continue;
+          }
+          const ok = await app.kernel.undoLastRound(sessionId);
+          console.log(ok ? '  ↩ last round undone — ask again.' : '  nothing to undo.');
           continue;
         }
         case '/persona': {

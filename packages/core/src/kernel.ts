@@ -113,6 +113,34 @@ export class AgentKernel {
     return session;
   }
 
+  /**
+   * 撤回最后一轮对话:删除末尾的 user+assistant(及其中间工具消息),
+   * 会话与记忆两侧同步裁剪。无可撤回内容时返回 false。
+   */
+  async undoLastRound(sessionId: string): Promise<boolean> {
+    const session = await this.sessions.get(sessionId);
+    if (!session || session.messages.length === 0) return false;
+
+    // 找最后一条 user 消息 —— 从它到末尾整轮撤回
+    let lastUserIdx = -1;
+    for (let i = session.messages.length - 1; i >= 0; i--) {
+      const m = session.messages[i];
+      if (m?.role === 'user') {
+        lastUserIdx = i;
+        break;
+      }
+    }
+    if (lastUserIdx < 0) return false;
+
+    const removed = session.messages.length - lastUserIdx;
+    if (this.memory?.truncateLast) {
+      await this.memory.truncateLast(sessionId, removed);
+    }
+    session.messages = session.messages.slice(0, lastUserIdx);
+    await this.sessions.update(session);
+    return true;
+  }
+
   // ── 主入口 ──────────────────────────────────────────────
   async process(query: Query, signal?: AbortSignal): Promise<Response> {
     this.setState(StateProcessing);

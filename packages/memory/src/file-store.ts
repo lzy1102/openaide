@@ -110,6 +110,15 @@ export class FileMemory {
     if (lines.length > 0) writeFileSync(this.fileOf(sessionId), lines.join('\n') + '\n', { flag: 'a', encoding: 'utf8' });
   }
 
+  /** 撤回:删除会话记忆流水的末尾 n 条 */
+  async truncateLast(sessionId: string, n: number): Promise<void> {
+    const file = this.fileOf(sessionId);
+    if (!existsSync(file) || n <= 0) return;
+    const lines = readFileSync(file, 'utf8').split('\n').filter((l) => l.trim());
+    const kept = lines.slice(0, Math.max(0, lines.length - n));
+    writeFileSync(file, kept.length > 0 ? kept.join('\n') + '\n' : '', 'utf8');
+  }
+
   async load(sessionId: string, limit: number): Promise<Message[]> {
     const file = this.fileOf(sessionId);
     if (!existsSync(file)) return [];

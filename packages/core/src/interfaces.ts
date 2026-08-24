@@ -54,6 +54,11 @@ export type ToolHandler = (args: string, sessionId: string, signal?: AbortSignal
 export interface Memory {
   save(sessionId: string, messages: Message[]): Promise<void>;
   load(sessionId: string, limit: number): Promise<Message[]>;
+  /**
+   * 可选:撤回支持 —— 删除指定会话末尾 n 条记忆流水。
+   * 与 SessionStore 的消息截断配合使用;未实现时内核跳过记忆侧裁剪。
+   */
+  truncateLast?(sessionId: string, n: number): Promise<void>;
 }
 
 /** 会话存储 */
