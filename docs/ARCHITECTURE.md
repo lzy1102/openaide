@@ -175,7 +175,7 @@ interface OpenAIDePlugin {
   name: string;
   version?: string;
   description?: string;
-  category?: string;                                 // 分类（轻量元数据，供展示/检索）
+  category: string;                                 // 分类（轻量元数据，供展示/检索）
   activate?(ctx: PluginContext): void | Promise<void>;   // 激活：注册工具/钩子/人格
   deactivate?(): void | Promise<void>;                   // 卸载
   tools?: PluginTool[];                                  // 工具集
@@ -183,6 +183,25 @@ interface OpenAIDePlugin {
   persona?: Persona | (() => Persona | undefined | Promise<Persona | undefined>);
 }
 ```
+
+**最小可用插件（纯 JS,零构建）**——`~/.openaide/plugins/<名字>/index.js`:
+
+```js
+// 注意 tools 必须是数组;handler 返回 { content } 对象而非原始值
+export default {
+  name: 'dice',
+  tools: [
+    {
+      name: 'roll',
+      description: 'Roll a die, returns 1-6.',
+      parameters: { type: 'object', properties: {} },
+      handler: async () => ({ content: String(Math.floor(Math.random() * 6) + 1) }),
+    },
+  ],
+};
+```
+
+> 常见错误:`tools` 写成对象而非数组、handler 返回裸值——两种都会导致加载失败 (`tools is not iterable`)。放对目录即被自动发现,重启生效。
 
 ### 5.2 插件分类
 
