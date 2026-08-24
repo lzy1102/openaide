@@ -4,11 +4,11 @@
  */
 import { AgentKernel, EventBus } from '@openaide/core';
 import type { LLMProvider, ModelSwitcher, SessionStore } from '@openaide/core';
-import { findProjectWorkspace, loadConfig, Config } from '@openaide/config';
+import { loadConfig, Config, resolveProjectWorkspace } from '@openaide/config';
 import { OpenAICompatibleProvider } from '@openaide/llm';
 import { PluginManager, PluginPersonaProvider, builtinPersonasPlugin } from '@openaide/plugins';
 import { ToolRegistry, builtinToolsPlugin, fileToolsPlugin } from '@openaide/tools';
-import { FileMemory, FileSessionStore, SQLiteSessionStore, SqliteMemory } from '@openaide/memory';
+import { FileMemory, FileSessionStore } from '@openaide/memory';
 import { createMcpBridgePlugin, loadClaudeMcpConfig } from '@openaide/mcp';
 import type { Memory } from '@openaide/core';
 import { join } from 'node:path';
@@ -43,19 +43,12 @@ export async function buildApp(config?: Config): Promise<App> {
   // 共享事件总线：内核发布 → 插件钩子订阅（同进程）
   const bus = new EventBus();
 
-  // ── 存储选路：项目工作区（.openaide/ 存在）→ 会话随项目走（git 同步即跨机器）；
-  //    否则回退全局 ~/.openaide SQLite。显式 data_dir/env 配置仍优先于探测。
-  const workspace = findProjectWorkspace();
-  let sessionStore: SessionStore;
-  let memoryStore: Memory;
-  if (workspace) {
-    sessionStore = new FileSessionStore(workspace);
-    memoryStore = new FileMemory(workspace);
-    console.log(`[app] project workspace: ${workspace} (sessions travel with the repo)`);
-  } else {
-    sessionStore = new SQLiteSessionStore(join(cfg.dataDir, 'sessions.db'));
-    memoryStore = new SqliteMemory(join(cfg.dataDir, 'memory.db'));
-  }
+  // ── 存储:会话一律随项目走(<项目>/.openaide/ 内,git 同步即跨机器续聊)。
+  //    子目录启动时向上复用项目根的 .openaide/;首次使用在启动目录创建。
+  const workspace = resolveProjectWorkspace();
+  const sessionStore: SessionStore = new FileSessionStore(workspace);
+  const memoryStore: Memory = new FileMemory(workspace);
+  console.log(`[app] project workspace: ${workspace} (sessions travel with the repo)`);
   const sessions = sessionStore;
   const memory = memoryStore;
 

@@ -68,6 +68,26 @@ export function findProjectWorkspace(startDir?: string): string | null {
   }
 }
 
+/**
+ * 解析项目工作区（会话一律随项目走）:
+ *  - cwd 及其祖先已有 .openaide/ → 复用它（子目录启动也能找回项目根的会话）
+ *  - 没有 → 在 cwd 下创建 .openaide/（启动目录即项目根）
+ * @returns 工作区绝对路径（…/<project>/.openaide）
+ */
+export function resolveProjectWorkspace(startDir?: string): string {
+  let dir = startDir ? resolve(startDir) : process.cwd();
+  const home = homedir();
+  for (;;) {
+    const candidate = join(dir, WORKSPACE_DIRNAME);
+    if (existsSync(candidate) && statSync(candidate).isDirectory()) return candidate;
+    if (dir === home || dirname(dir) === dir) break; // 到家目录/根为止
+    dir = dirname(dir);
+  }
+  const created = join(process.cwd(), WORKSPACE_DIRNAME);
+  mkdirSync(created, { recursive: true });
+  return created;
+}
+
 /** 默认配置路径 */
 export function defaultConfigPath(): string {
   return join(defaultDataDir(), 'config.yaml');
