@@ -10,6 +10,28 @@ const flush = (ms = 80) => new Promise((r) => setTimeout(r, ms));
 /** Ink 的 useInput 通过 useEffect 注册 readable 监听，需等待挂载完成 */
 const mount = (ms = 150) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * 轮询断言：Ink 渲染是异步批处理的（并行测试负载下尤其慢），
+ * 固定 sleep 会产生时序 flake——改为反复取样直到条件成立或超时。
+ */
+async function waitForFrame(
+  lastFrame: () => string | undefined,
+  pred: (frame: string) => boolean,
+  timeoutMs = 3000,
+): Promise<string> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const frame = lastFrame() ?? '';
+    if (pred(frame)) return frame;
+    if (Date.now() > deadline) {
+      assert.ok(pred(frame), `frame never matched; last:
+${frame.slice(0, 500)}`);
+      return frame;
+    }
+    await flush(40);
+  }
+}
+
 /** 分步输入：等待挂载 → 写入文本 → 间隔 → 回车提交 */
 async function typeAndSubmit(stdin: { write: (d: string) => void }, text: string) {
   await mount();
@@ -53,10 +75,9 @@ test('TUI：提交消息 → 渲染用户消息/工具调用/流式助手内容'
   const { lastFrame, stdin, unmount } = render(React.createElement(Tui, { app: makeFakeApp() }));
   await typeAndSubmit(stdin, 'hello agent');
 
-  const frame = lastFrame();
-  assert.ok(frame.includes('hello agent'), '应显示用户消息');
-  assert.ok(frame.includes('demo__upper'), '应显示工具调用');
-  assert.ok(frame.includes('hello world'), '应显示助手流式内容');
+  await waitForFrame(lastFrame, (f) => f.includes('hello agent'));
+  const frame = await waitForFrame(lastFrame, (f) => f.includes('demo__upper'));
+  await waitForFrame(lastFrame, (f) => f.includes('hello world'));
   assert.ok(frame.includes('tools: 1'), '标题栏应显示工具数');
   unmount();
 });
@@ -76,7 +97,6 @@ test('TUI：/sessions 空列表提示', async () => {
   const { lastFrame, stdin, unmount } = render(React.createElement(Tui, { app: makeFakeApp() }));
   await typeAndSubmit(stdin, '/sessions');
 
-  const frame = lastFrame();
-  assert.ok(frame.includes('no sessions yet'), '空会话应显示提示');
+  await waitForFrame(lastFrame, (f) => f.includes('no sessions yet'));
   unmount();
 });

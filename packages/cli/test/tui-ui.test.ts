@@ -13,6 +13,19 @@ import { Tui } from '../src/tui.js';
 const flush = (ms = 80) => new Promise((r) => setTimeout(r, ms));
 const mount = (ms = 150) => new Promise((r) => setTimeout(r, ms));
 
+const waitForFrame = async (
+  lastFrame: () => string | undefined,
+  pred: (f: string) => boolean,
+  timeoutMs = 3000,
+): Promise<void> => {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (pred(lastFrame() ?? '')) return;
+    if (Date.now() > deadline) return;
+    await flush(40);
+  }
+};
+
 function makeFakeApp(): App {
   const kernel = {
     async *processStream(): AsyncGenerator<StreamChunk> {
@@ -119,7 +132,7 @@ test('TUI：多行粘贴折叠为占位符，提交时还原全文', async () =>
   // 括号化粘贴：两行内容成块到达
   stdin.write('\x1b[200~第一行粘贴\n第二行粘贴\x1b[201~');
   await flush();
-  assert.ok(lastFrame()?.includes('[粘贴#1 +2行]'), '应折叠为占位符');
+  await waitForFrame(lastFrame, (f) => f.includes('[粘贴#1 +2行]'));
 
   // 补一句话并提交
   stdin.write(' 看看这个');
@@ -127,6 +140,7 @@ test('TUI：多行粘贴折叠为占位符，提交时还原全文', async () =>
   stdin.write('\r');
   await flush(200);
 
+  await waitForFrame(lastFrame, (f) => f.includes('看看这个'));
   // 用户消息应为还原后的完整内容（占位符位置展开）
   assert.ok(sent[0]?.includes('第一行粘贴'), '粘贴内容应随消息发出');
   assert.ok(sent[0]?.includes('看看这个'), '手打部分保留');
