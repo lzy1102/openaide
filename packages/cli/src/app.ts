@@ -11,6 +11,7 @@ import { ToolRegistry, builtinToolsPlugin, fileToolsPlugin } from '@openaide/too
 import { FileMemory, FileSessionStore, SQLiteSessionStore, SqliteMemory } from '@openaide/memory';
 import type { Memory } from '@openaide/core';
 import { join } from 'node:path';
+import { builtinUiPlugins } from './builtin-uis.js';
 import { createApprovalInterceptor } from './approval.js';
 import type { ApprovalHandler } from './approval.js';
 
@@ -134,6 +135,15 @@ export async function buildApp(config?: Config): Promise<App> {
     console.log(`[app] plugin disabled by state: ${builtinPersonasPlugin.name}`);
   } else {
     await plugins.add(builtinPersonasPlugin, process.cwd());
+  }
+
+  // 内置界面（ink TUI / readline）——同样可被 plugin-state 禁用或被自定义 UI 插件取代
+  for (const uiPlugin of builtinUiPlugins) {
+    if (plugins.isDisabled(uiPlugin.name)) {
+      console.log(`[app] plugin disabled by state: ${uiPlugin.name}`);
+    } else {
+      await plugins.add(uiPlugin, process.cwd());
+    }
   }
 
   // 用户插件：动态加载（同进程，无子进程）

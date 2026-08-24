@@ -33,6 +33,8 @@ export interface Config {
   pluginsDir: string;
   /** 插件市场索引 URL（未设时由调用方使用内置默认） */
   registryUrl?: string;
+  /** 交互界面名（插件 uis 注册；缺省 TTY→ink / 非 TTY→readline） */
+  ui?: string;
 }
 
 /** 默认配置目录（OPENAIDE_DATA_DIR 优先，保证数据与配置随目录整体迁移） */
@@ -82,6 +84,7 @@ interface RawConfig {
   data_dir?: string;
   plugins_dir?: string;
   registry_url?: string;
+  ui?: string;
 }
 
 /**
@@ -122,6 +125,7 @@ export function loadConfig(configPath?: string): Config {
       raw.plugins_dir ??
       join(dataDir, 'plugins'),
     registryUrl: process.env.OPENAIDE_REGISTRY_URL ?? raw.registry_url,
+    ui: process.env.OPENAIDE_UI ?? raw.ui,
   };
 
   mkdirSync(dataDir, { recursive: true });
@@ -150,6 +154,7 @@ export function saveConfig(config: Config, path?: string): void {
     data_dir: config.dataDir,
     plugins_dir: config.pluginsDir,
     registry_url: config.registryUrl,
+    ui: config.ui,
   };
   const dir = target.replace(/[\\/][^\\/]*$/, '');
   mkdirSync(dir, { recursive: true });

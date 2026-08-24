@@ -299,6 +299,7 @@ Bun 单文件二进制走内置 bun:sqlite（better-sqlite3 的 bindings 运行�
 | `EventBus` + 事件类型 | 插件响应任意生命周期：审批、通知、遥测、自动重试 |
 | `Interceptor`（拦截链） | **策略插件**：可否决/改写 LLM 请求与工具调用——审批门（`kernel.approval`）、PII 脱敏、预算熔断、结果过滤；链式按序执行，deny 短路，modify 载荷向后传递 |
 | `PluginProvider`（Provider 注册表） | 插件注册任意 LLM 后端（Anthropic 原生/Ollama/vLLM…），`config.llm.provider` 一行切换 |
+| `PluginUi`（界面注册表） | 自研 TUI/REPL——`plugin.uis` 注册，`config.ui`/`OPENAIDE_UI` 按名启用；内置 ink/readline 同走此路径 |
 | `PersonaProvider` | 人格 / 角色 / 工作流预设全部可插拔 |
 | `ContextCompressor` | 上下文压缩策略插件化 |
 | `PermissionChecker` | 布尔鉴权（简单场景）；需要改写能力时用 Interceptor |

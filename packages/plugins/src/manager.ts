@@ -14,7 +14,7 @@ import {
   ToolExecutor,
 } from '@openaide/core';
 import { basename } from 'node:path';
-import type { PluginLLM, PluginProvider, PluginSessions, ProgressReporter } from './types.js';
+import type { PluginLLM, PluginProvider, PluginSessions, PluginUi, ProgressReporter } from './types.js';
 import { discover, loadPlugin, loadManifest, readPersonaFile } from './loader.js';
 import { readPluginState, writePluginState } from './state.js';
 import { Scope } from './scope.js';
@@ -80,6 +80,8 @@ export class PluginManager {
   readonly interceptors: Interceptor[] = [];
   /** 已注册的 LLM Provider 工厂（按名取用） */
   private providersMap = new Map<string, PluginProvider>();
+  /** 已注册的界面（按名取用；config.ui / OPENAIDE_UI 选择） */
+  private uisMap = new Map<string, PluginUi>();
 
   private active = new Map<string, ActivePlugin>();
   private personas: Persona[] = [];
@@ -271,6 +273,12 @@ export class PluginManager {
       scope.add('provider', p.name, () => void this.providersMap.delete(p.name));
     }
 
+    // 可插拔界面注册（同名后者覆盖）
+    for (const ui of plugin.uis ?? []) {
+      this.uisMap.set(ui.name, ui);
+      scope.add('ui', ui.name, () => void this.uisMap.delete(ui.name));
+    }
+
     // 拦截器加入活数组（原地 push，内核持引用即时生效）
     for (const ix of plugin.interceptors ?? []) {
       this.interceptors.push(ix);
@@ -335,6 +343,16 @@ export class PluginManager {
   /** 已注册的 Provider 名列表 */
   providerNames(): string[] {
     return [...this.providersMap.keys()];
+  }
+
+  /** 取已注册的界面 */
+  getUi(name: string): PluginUi | undefined {
+    return this.uisMap.get(name);
+  }
+
+  /** 已注册的界面名列表 */
+  uiNames(): string[] {
+    return [...this.uisMap.keys()];
   }
 
   /**

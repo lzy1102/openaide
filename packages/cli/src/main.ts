@@ -16,8 +16,8 @@
  */
 import { buildApp, printToolInventory } from './app.js';
 import type { App } from './app.js';
-import { runQuery, runRepl } from './repl.js';
-import { runTui } from './tui.js';
+import { runQuery } from './repl.js';
+import { chooseUi } from './ui-select.js';
 import { runServe } from './serve.js';
 import { loadConfig, saveConfig } from '@openaide/config';
 import {
@@ -93,13 +93,20 @@ async function setup(): Promise<void> {
   }
 }
 
-/** 交互式入口：TTY 用 Ink TUI，非 TTY（管道/脚本）降级为 readline REPL */
+/**
+ * 交互式入口：界面即插件。
+ * 选择优先级：OPENAIDE_UI / config.ui 显式指定 > TTY 默认（ink）/ 非 TTY（readline）> 回退链。
+ * 内置 ui-ink / ui-readline 与用户自研界面插件走同一注册表（plugin.uis）。
+ */
 async function runInteractive(app: App, initialSessionId?: string): Promise<void> {
-  if (process.stdin.isTTY && process.stdout.isTTY) {
-    await runTui(app, initialSessionId);
-  } else {
-    await runRepl(app, initialSessionId);
-  }
+  const wanted = process.env.OPENAIDE_UI ?? app.config.ui;
+  const isTTY = Boolean(process.stdin.isTTY && process.stdout.isTTY);
+  const pick = chooseUi({ available: app.plugins.uiNames(), wanted, isTTY });
+  if (pick.warning) console.warn(`[ui] ${pick.warning}`);
+  if (!pick.name) throw new Error('no UI plugin registered (need ui-ink or a custom ui plugin)');
+  if (initialSessionId) (app as { initialSessionId?: string }).initialSessionId = initialSessionId;
+  const ui = app.plugins.getUi(pick.name)!;
+  await ui.start(app as never);
 }
 
 async function main(): Promise<void> {

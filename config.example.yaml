@@ -22,6 +22,10 @@ kernel:
   # system_prompt: "自定义系统提示词（可选，缺省用内置）"
   # persona: "coder"                    # 激活的人格名（插件提供，可选）
 
+# ── 界面（可选）──────────────────────────
+# ui: "ink"                             # 交互界面：插件 uis 注册名（ink/readline/自研…）
+                                        # 环境变量 OPENAIDE_UI 更高优先
+
 # ── 插件市场（可选）──────────────────────
 # registry_url: "https://raw.githubusercontent.com/lzy1102/openaide/master/registry/plugins.json"
                                         # 自建/离线索引可指向 file:// 路径

@@ -229,6 +229,31 @@ curl -X POST http://127.0.0.1:8080/v1/chat \
   -d '{"content":"你好","session_id":"s1"}'
 ```
 
+### 1.5.1 自定义界面（TUI 也是插件）
+
+内置 ink TUI / readline REPL 本身就是两个界面插件。你可以完全替换它们：
+
+\`\`\`ts
+// ~/.openaide/plugins/my-ui/index.ts
+import type { OpenAIDePlugin } from '@openaide/plugins';
+
+const plugin: OpenAIDePlugin = {
+  name: 'my-ui',
+  uis: [{
+    name: 'fancy',
+    start: async (host) => {
+      // host.kernel.processStream(...) —— 界面长什么样，完全由你决定
+      // host.registry / host.bus / host.setApprovalHandler?.(...) 同样可用
+    },
+  }],
+};
+export default plugin;
+\`\`\`
+
+启用：`OPENAIDE_UI=fancy openaide` 或 config.yaml `ui: fancy`。
+选择优先级：显式指定 > TTY 默认(ink)/非 TTY(readline) > 回退链；示例见
+`examples/plugins/example-mini-ui`（40 行极简问答界面）。
+
 ### 1.6 插件的使用
 
 默认从 `~/.openaide/plugins/` 自动发现加载，放一个含 `index.ts` 的目录即生效：

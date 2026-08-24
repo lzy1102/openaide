@@ -104,6 +104,30 @@ export interface PluginProvider {
   }): LLMProvider;
 }
 
+/**
+ * UI 运行时句柄 —— 装配层传给界面插件的宿主对象（cli 的 App 满足此结构）。
+ * 只约束界面的最小必需面，其余字段经结构化访问（宽松扩展位）。
+ */
+export interface UiRuntime {
+  kernel: import('@openaide/core').AgentKernel;
+  registry: import('@openaide/core').ToolExecutor;
+  bus: import('@openaide/core').EventBus;
+  /** 注册审批 UI；未注册时内核 fail-closed 默认拒绝危险工具 */
+  setApprovalHandler?(h: (req: unknown) => Promise<boolean>): void;
+  /** -c 续聊时由装配入口注入的初始会话 ID */
+  initialSessionId?: string;
+  [extra: string]: unknown;
+}
+
+/** 可插拔界面：TUI/REPL/任何交互形态。start resolve = 用户退出 */
+export interface PluginUi {
+  /** 界面名（config.ui / OPENAIDE_UI 引用此名，如 'ink'、'readline'） */
+  name: string;
+  description?: string;
+  /** 启动并阻塞至用户退出；host 为装配完成的运行时句柄 */
+  start(host: UiRuntime): Promise<void>;
+}
+
 /** 统一插件接口 —— 一切能力皆插件 */
 export interface OpenAIDePlugin {
   name: string;
@@ -123,6 +147,8 @@ export interface OpenAIDePlugin {
   interceptors?: Interceptor[];
   /** LLM Provider 注册（内核按 config.llm.provider 选择其一） */
   providers?: PluginProvider[];
+  /** 可插拔界面（TUI/REPL/…）；config.ui 或 OPENAIDE_UI 按名选择 */
+  uis?: PluginUi[];
   /** 人格：可静态提供，或异步返回 */
   persona?: Persona | (() => Persona | undefined | Promise<Persona | undefined>);
   /** 多人格包（人格包插件用；与 persona 字段并存时合并收集） */
