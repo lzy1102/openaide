@@ -180,6 +180,9 @@ export default plugin;
 **Is OpenAIDE a Claude Code alternative?**
 It's an open-source, self-hosted agent harness in the same category — ReAct coding agent, terminal TUI, tool approvals — but model-agnostic (bring DeepSeek/GLM/Kimi/Ollama/OpenAI), fully pluggable, and stores sessions in your own git repo.
 
+**Is it built for vibe coding?**
+Yes — that's the intended workflow: describe what you want in plain language, let the agent inspect files, run commands and ship changes, with approval gates on dangerous operations and every session synced to your repo so you can always roll back or continue elsewhere.
+
 **Does it support MCP (Model Context Protocol)?**
 Yes. Point it at any stdio MCP server with the same `mcpServers` schema Claude Desktop uses; tools show up automatically.
 
