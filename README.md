@@ -112,7 +112,7 @@ cli (TUI + REPL + commands)   api (HTTP/WS + SSE)
 
 - **Everything is a plugin**: kernel tools, personas and hooks all enter through the plugin system — builtin and user plugins share the same registration path
 - **Ecosystem = GitHub**: tag your repo with the `openaide-plugin` topic and it's discoverable — live search, star-ranked, installed straight from git. No server, no review
-- **Sessions travel with the repo**: run `openaide init` and conversations live in `.openaide/` as readable JSON — commit them, pull on another machine, `openaide -c` continues where you left off
+- **Sessions travel with the repo (auto-synced)**: run and conversations live in `.openaide/` as readable JSON — commit them, pull on another machine, `openaide -c` continues where you left off
 - **Policy as plugin**: interceptor chain can veto/rewrite LLM requests and tool calls — approval gates, PII redaction, budget guards are all just plugins
 - **MCP bridge**: Claude-compatible `mcpServers` config becomes native tools (`<server>__<tool>`) via the official MCP SDK — stdio transport, `${ENV}` expansion, drop-in from claude_desktop_config.json
 - **Pluggable brain**: plugins can register LLM providers (Anthropic, Ollama, …); `config.llm.provider` picks one at startup

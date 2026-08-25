@@ -22,6 +22,10 @@ kernel:
   # system_prompt: "自定义系统提示词（可选，缺省用内置）"
   # persona: "coder"                    # 激活的人格名（插件提供，可选）
 
+# ── 工作区与会话同步（可选）────────────
+# workspace: "on"                       # on(默认,会话随项目走) / off(脚本/CI 用全局存储)
+# session_sync: "commit"                # off / commit(默认,自动提交 .openaide/) / push
+
 # ── 界面（可选）──────────────────────────
 # ui: "ink"                             # 交互界面：插件 uis 注册名（ink/readline/自研…）
                                         # 环境变量 OPENAIDE_UI 更高优先

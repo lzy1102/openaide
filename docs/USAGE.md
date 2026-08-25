@@ -72,34 +72,48 @@ kernel:
 | `OPENAIDE_PLUGINS_DIR` | `plugins_dir`（默认 `<data_dir>/plugins`） |
 | `OPENAIDE_PORT` | `serve` 命令端口（默认 8080） |
 
-### 1.2.1 内核运行时行为
+### 1.2.0 内核运行时行为
 
 - **上下文预算**：`kernel.max_tokens` 是上下文 token 预算（默认 200000），用于历史裁剪与压缩阈值——不是单次回复的输出上限。历史按条数（20）与 token 预算双重裁剪，防止长会话上下文膨胀。
 - **前缀缓存友好**：system 层（L0 人格 + 项目规则）跨查询字节级稳定；技能提示作为独立消息注入；system 消息携带 `cache_control`。使用 DeepSeek 等 provider 时，多轮对话与跨查询都能命中前缀缓存，prompt 成本大幅降低。
 - **空回复即失败**：LLM 返回空内容（限流/静默失败）视为错误——不会显示"完成"却无回复，也不会把空消息写入会话。
 
-### 1.2.1 跨设备续聊：会话随仓库走
+### 1.2.2 会话存储与跨设备续聊（多人协作版）
 
-默认会话存在全局 `~/.openaide/`（SQLite）。想让对话跟着项目走、换电脑不丢：
-
-```bash
-cd your-project
-openaide init        # 创建 .openaide/ 工作区（含说明 README）
-git add .openaide && git commit -m "chore: openaide workspace"
-```
-
-之后该目录（含子目录）下运行 openaide，会话与跨轮记忆自动写入 `.openaide/`：
+会话**一律随项目走**：在任意目录运行 openaide，工作区自动解析/创建于 `<项目根>/.openaide/`，子目录启动自动归位。无需 init、无需配置。
 
 ```
 .openaide/
-├── README.md              # 说明 + 敏感性提示
-├── sessions/<id>.json     # 会话快照（人类可读、可 diff，按内容 updatedAt 排序）
-└── memory/<id>.jsonl      # 逐条消息流水（append-only）
+├── sessions/<开发者>/*.json   按人隔离的会话快照（可读、可 diff、按内容 updatedAt 排序）
+├── memory/<开发者>/*.jsonl    按人隔离的记忆流水
+└── knowledge/*.md             团队共享知识（进 git，自动注入 L1 上下文）
 ```
 
-换机器：`git pull` → `openaide -c` 即恢复最近会话继续聊。按会话分文件把合并冲突面缩到单个会话。**注意：对话内容会进版本历史，涉密项目请把 `.openaide/` 加入 .gitignore。**
+**身份**：取 `git config user.name`（降级链：OPENAIDE_USER → email 前缀 → 系统用户名 → 随机 id）。
+中途配好名字后目录自动跟随改名；多人各写各的子目录，git 路径不相交，结构上无合并冲突。
 
-> **为什么是文件（JSON/JSONL）而不是数据库？** 因为约束是 git 同步：文本可 diff 可审查（`git log -p` 直看对话增量）、可三方合并；updatedAt 写在内容里，克隆到新机器排序依然正确；零解析依赖。SQLite 的查询/索引能力在这个场景（列出+按时间排序）用不上——它仍是未启用工作区时的全局存储，两实现随时按需切换（`SessionStore` 接口）。
+**跨机续聊三步**：
+
+```bash
+# 电脑 A：正常聊天即可——默认 session_sync: commit 会自动提交 .openaide/
+git push
+# 电脑 B：
+git pull && openaide -c     # 接着聊
+```
+
+**同步策略**（config.yaml `session_sync`）：`commit`（默认）/ `push` / `off`。
+未配置 `user.name` 也能用——自动提交时注入兜底身份，不动你的全局 git 配置。
+
+**状态一览**：`openaide workspace` 显示工作区路径、身份来源、会话数、knowledge 数与
+tracked/private 同步状态（`init` 保留为别名）。
+
+- **隐私**：对话会进版本历史。涉密项目在 `.gitignore` 加 `.openaide/`，
+  或 `workspace: off` 退回全局 SQLite；脚本/CI 场景推荐后者。
+- **同一会话不要两台机器并行聊天**：per-session 文件已把冲突面缩到最小，但并发写仍属反模式。
+
+> **为什么是文件（JSON/JSONL）而不是数据库？** 约束是 git 同步：文本可 diff 可审查、
+> 可三方合并；updatedAt 写在内容里，克隆到新机器排序依然正确；零解析依赖。
+> SQLite 实现保留给 `workspace: off` 的全局场景（`SessionStore` 接口随时可换）。
 
 ### 1.3 交互式使用
 
@@ -137,6 +151,7 @@ TUI 布局（Claude Code / Gemini CLI 风格）：
 | `/plugins` | 列出全部插件（active / disabled / failed 三态）与工具 |
 | `/plugins enable\|disable <name>` | 启停插件（写入 `plugin-state.json`，重启仍生效；disable 立即卸载） |
 | `/plugins reload <name>` | 热重载插件（破坏模块缓存重新 import） |
+| `/undo` | 撤回最后一轮对话（TUI 中空输入双击 Esc 同效） |
 | `/persona` | 列出可用人格 + 当前激活 |
 | `/persona <name>` | **运行时切换人格**（下一条消息即以新身份响应；`default` 回到内置） |
 | `/exit` `/quit` | 退出 |
