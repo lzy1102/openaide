@@ -1,0 +1,55 @@
+TAP version 13
+# Subtest: D:\\project\\android\\openaide\\packages\\memory\\test\\workspace.test.ts
+ok 1 - D:\\project\\android\\openaide\\packages\\memory\\test\\workspace.test.ts
+  ---
+  duration_ms: 1031.6914
+  ...
+# [plugins] loaded travel@1.0.0 (tools: 0, hooks: 0, personas: 1)
+# [plugins] loaded travel@1.0.0 (tools: 0, hooks: 0, personas: 1)
+# [plugins] failed to load C:\\Users\\admin\\AppData\\Local\\Temp\\openaide-plugins-7ZDpxb\\plugins\\broken: Error: plugin entry not found in C:\\Users\\admin\\AppData\\Local\\Temp\\openaide-plugins-7ZDpxb\\plugins\\broken
+#     at loadPlugin (d:\\project\\android\\openaide\\packages\\plugins\\src\\loader.ts:166:13)
+#     at PluginManager.load (d:\\project\\android\\openaide\\packages\\plugins\\src\\manager.ts:143:26)
+#     at PluginManager.loadAll (d:\\project\\android\\openaide\\packages\\plugins\\src\\manager.ts:126:33)
+#     at TestContext.<anonymous> (d:\\project\\android\\openaide\\packages\\plugins\\test\\state.test.ts:101:28)
+#     at Test.runInAsyncScope (node:async_hooks:203:9)
+#     at Test.run (node:internal/test_runner/test:631:25)
+#     at Test.processPendingSubtests (node:internal/test_runner/test:374:18)
+#     at Test.postRun (node:internal/test_runner/test:715:19)
+#     at Test.run (node:internal/test_runner/test:673:12)
+#     at async Test.processPendingSubtests (node:internal/test_runner/test:374:7)
+# [plugins] loaded travel@1.0.0 (tools: 0, hooks: 0, personas: 1)
+# [plugins] loaded travel@1.0.0 (tools: 0, hooks: 0, personas: 1)
+# Subtest: state 读写往返；损坏文件回退为空状态
+ok 2 - state 读写往返；损坏文件回退为空状态
+  ---
+  duration_ms: 43.5899
+  ...
+# Subtest: disable：立即卸载 + 持久化；重启后 loadAll 跳过；enable 恢复加载
+ok 3 - disable：立即卸载 + 持久化；重启后 loadAll 跳过；enable 恢复加载
+  ---
+  duration_ms: 65.8221
+  ...
+# Subtest: enable 对目录已删除的残留记录返回 false 但仍清名单
+ok 4 - enable 对目录已删除的残留记录返回 false 但仍清名单
+  ---
+  duration_ms: 18.7994
+  ...
+# Subtest: loadAll 失败的插件进入 failed 态（含错误信息），不阻塞其余
+ok 5 - loadAll 失败的插件进入 failed 态（含错误信息），不阻塞其余
+  ---
+  duration_ms: 51.7545
+  ...
+# Subtest: 禁用名单按目录名也能命中（manifest 缺失时回退 basename）
+ok 6 - 禁用名单按目录名也能命中（manifest 缺失时回退 basename）
+  ---
+  duration_ms: 32.8861
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1310.5272
