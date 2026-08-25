@@ -85,7 +85,10 @@ export class OpenAICompatibleProvider implements LLMProvider {
     return {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${this.config.apiKey}`,
-      // 部分网关（如 Cloudflare 防护）会按 UA 封禁默认的 Node fetch 签名
+      // 防御性加固（非已观察故障）：部分网关的 Cloudflare 会按 UA 封禁
+      // 默认 fetch 签名——实测 Python-urllib 被 opencode.ai 网关以
+      // error 1010 拒绝；OpenAIDE 自身的 Node fetch 路径历史上未触发，
+      // 显式 UA 消除这一类潜在风险
       'User-Agent': 'openaide-cli',
     };
   }
