@@ -187,6 +187,8 @@ export function Tui({ app, initialSessionId }: { app: App; initialSessionId?: st
   // 输入历史（上/下键）
   const inputHistory = useRef<string[]>([]);
   const historyIndex = useRef(-1);
+  // Esc 双击检测:上次按 Esc 的时间戳(-1 = 非等待态)
+  const lastEscapeAt = useRef<number>(-1);
 
   // 自动补全：输入以 "/" 开头且无空格（还在敲命令名）时即时显示
   const suggestionMatch = input.startsWith('/') && !input.includes(' ') && !input.includes('\t')
@@ -506,20 +508,33 @@ export function Tui({ app, initialSessionId }: { app: App; initialSessionId?: st
       return;
     }
     if (key.escape) {
-      // 两段语义:输入框有内容先清空;已空则撤回最后一轮对话
+      // 输入框有内容 → 第一优先清空
       if (input) {
         setInput('');
         return;
       }
-      const sid = sessionId;
-      if (sid) {
-        void app.kernel.undoLastRound(sid).then((undone) => {
-          if (undone) {
-            push({ kind: 'info', content: '↩ last round undone — ask again.' });
-          } else {
-            push({ kind: 'info', content: 'nothing to undo.' });
-          }
+      // 空输入下连按两次 Esc 才撤回最后一轮(防误触):
+      // 第一击给出提示,双击窗口 900ms 内的第二击执行
+      if (!sessionId) {
+        setStatus('nothing to undo');
+        return;
+      }
+      const now = Date.now();
+      if (lastEscapeAt.current >= 0 && now - lastEscapeAt.current < 900) {
+        lastEscapeAt.current = -1;
+        setBusy(true);
+        setStatus('undoing…');
+        void app.kernel.undoLastRound(sessionId).then((undone) => {
+          setBusy(false);
+          setStatus('ready');
+          push({
+            kind: 'info',
+            content: undone ? '↩ last round undone — ask again.' : 'nothing to undo.',
+          });
         });
+      } else {
+        lastEscapeAt.current = now;
+        setStatus('press Esc again to undo the last round');
       }
       return;
     }
