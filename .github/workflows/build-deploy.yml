@@ -82,3 +82,67 @@ jobs:
         with:
           files: |
             dist-bun/openaide-*
+
+  # ── 桌面应用：Tauri 壳 + 内嵌 openaide 后端二进制 ──
+  desktop:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [test]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            backend: openaide-windows-x64.exe
+          - os: ubuntu-latest
+            backend: openaide-linux-x64
+          - os: macos-latest
+            backend: openaide-darwin-arm64
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - uses: oven-sh/setup-bun@v2
+      - name: Install (root workspaces)
+        run: npm ci
+      - name: Linux webkit deps
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+      - name: Build openaide backend binary
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          bun build packages/cli/src/main.ts --compile             --define "OPENAIDE_VERSION=\"$V\"" --define OPENAIDE_BINARY=true             --target=bun-${{ matrix.os == 'macos-latest' && 'darwin-arm64' || 'x64' }}             --outfile "dist-bun/openaide-backend"
+      - name: Place backend next to shell (sibling resolution)
+        shell: bash
+        run: |
+          mkdir -p desktop/src-tauri/target/release
+          EXT="${{ matrix.os == 'windows-latest' && '.exe' || '' }}"
+          cp "dist-bun/openaide-backend$EXT" "desktop/src-tauri/target/release/openaide$EXT"
+      - name: Generate icon set
+        working-directory: desktop
+        run: npx tauri icon src-tauri/icons/icon.png
+      - name: Tauri build (bundles)
+        working-directory: desktop
+        run: npx tauri build
+      - name: Upload bundles
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.os }}
+          path: |
+            desktop/src-tauri/target/release/bundle/**/*.exe
+            desktop/src-tauri/target/release/bundle/**/*.msi
+            desktop/src-tauri/target/release/bundle/**/*.dmg
+            desktop/src-tauri/target/release/bundle/**/*.app.tar.gz
+            desktop/src-tauri/target/release/bundle/**/*.AppImage
+            desktop/src-tauri/target/release/bundle/**/*.deb

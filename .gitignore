@@ -16,3 +16,4 @@ dist-bun/
 .openaide/
 browser-smoke.mts
 test-out.txt
+desktop/src-tauri/target/
