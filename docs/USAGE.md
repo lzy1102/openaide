@@ -186,6 +186,23 @@ openaide repl
 - `toolAllowlist` 联动:激活后内核只暴露白名单内的工具(不写则暴露全部)
 - `/persona default` 随时切回内置编码助手
 
+### 子代理编排（Agent-as-Tool）
+
+在 config.yaml 声明后，每个人格即成为一个可委派的工具（`subagent__<名字>`）：
+
+```yaml
+kernel:
+  subagents:
+    - name: travel
+      persona: voyager          # 任意插件提供的人格（含声明式 SKILL.md/SYSTEM.md）
+      description: 行程规划专家
+      max_rounds: 6             # 可选，默认继承 max_rounds
+```
+
+父 agent 调用 `subagent__travel({task})` 时，内核以 voyager 人格 + 其工具白名单
+跑一轮完全隔离的 ReAct 循环（独立临时会话、不污染父上下文），把最终答复作为
+工具结果回传。父级中断会级联中止子循环。
+
 **SKILL.md 生态兼容**：目录里放一个 `SKILL.md`（dsh / agent-skills 可移植技能格式，
 支持 YAML frontmatter 的 name/description）同样会被识别为声明式人格插件——
 零配置投喂：把任何 SKILL.md 文件夹丢进 pluginsDir 即生效。SYSTEM.md 与之并存时优先。

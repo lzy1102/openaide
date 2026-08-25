@@ -28,6 +28,7 @@ export interface Config {
     persona?: string;
     /** 工具审批模式：off=不审批（默认）；dangerous=危险工具需确认；always=所有工具需确认 */
     approval?: 'off' | 'dangerous' | 'always';
+    subagents?: Array<{ name: string; persona: string; description?: string; maxRounds?: number }>;
   };
   /** 数据目录（会话/记忆/插件） */
   dataDir: string;
@@ -200,6 +201,8 @@ interface RawConfig {
     system_prompt?: string;
     persona?: string;
     approval?: 'off' | 'dangerous' | 'always';
+    /** 子代理声明：每个条目打包 (persona, 可选 maxRounds) 为一个可委派工具 */
+    subagents?: Array<{ name: string; persona: string; description?: string; max_rounds?: number }>;
   };
   data_dir?: string;
   plugins_dir?: string;
@@ -241,6 +244,7 @@ export function loadConfig(configPath?: string): Config {
       systemPrompt: raw.kernel?.system_prompt,
       persona: raw.kernel?.persona,
       approval: raw.kernel?.approval ?? 'off',
+      subagents: raw.kernel?.subagents?.map((x) => ({ name: x.name, persona: x.persona, description: x.description, maxRounds: x.max_rounds })),
     },
     dataDir,
     pluginsDir:
@@ -283,6 +287,7 @@ export function saveConfig(config: Config, path?: string): void {
       system_prompt: config.kernel.systemPrompt,
       persona: config.kernel.persona,
       approval: config.kernel.approval ?? 'off',
+      subagents: config.kernel.subagents,
     },
     data_dir: config.dataDir,
     plugins_dir: config.pluginsDir,

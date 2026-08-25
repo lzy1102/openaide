@@ -21,6 +21,12 @@ kernel:
   approval: off                         # 工具审批：off(默认) / dangerous(危险工具需确认) / always(全部确认)
   # system_prompt: "自定义系统提示词（可选，缺省用内置）"
   # persona: "coder"                    # 激活的人格名（插件提供，可选）
+  subagents: []                          # 子代理编排：把 (persona) 打包成可委派工具
+  # subagents:
+  #   - name: travel
+  #     persona: voyager                 # 任意插件人格 → 工具 subagent__travel
+  #     description: 行程规划专家
+  #     max_rounds: 6
 
 # ── 工作区与会话同步（可选）────────────
 # workspace: "on"                       # on(默认,会话随项目走) / off(脚本/CI 用全局存储)

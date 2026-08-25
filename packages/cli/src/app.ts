@@ -14,6 +14,7 @@ import { createMcpBridgePlugin, loadClaudeMcpConfig } from '@openaide/mcp';
 import { join } from 'node:path';
 import { builtinUiPlugins } from './builtin-uis.js';
 import { createApprovalInterceptor } from './approval.js';
+import { createSubAgentsPlugin } from './subagents.js';
 import { createKnowledgeInterceptor, syncSessions } from './workspace.js';
 import type { ApprovalHandler } from './approval.js';
 
@@ -239,6 +240,19 @@ export async function buildApp(config?: Config): Promise<App> {
   // 团队知识注入（knowledge/*.md → L1），常驻拦截链
   if (appMeta.workspaceDir) {
     plugins.interceptors.push(createKnowledgeInterceptor(appMeta.workspaceDir));
+  }
+
+  // 子代理编排（config.kernel.subagents 声明；人格懒解析，用户插件人格同样可用）
+  const subSpecs = cfg.kernel.subagents ?? [];
+  if (subSpecs.length > 0) {
+    const plugin = createSubAgentsPlugin(subSpecs, {
+      llm: llmDelegate,
+      registry,
+      getPersona: (n) => plugins.getPersona(n),
+      eventBus: bus,
+      maxRounds: cfg.kernel.maxRounds,
+    });
+    if (plugin) await plugins.add(plugin, process.cwd());
   }
 
   // 会话自动同步（sessionSync 策略；workspace off 时不启用）
