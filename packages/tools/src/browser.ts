@@ -8,6 +8,7 @@
  * 返回带安装指引的错误（npm i -D playwright && npx playwright install chromium）。
  * 默认无头；OPENAIDE_BROWSER_HEADLESS=0 可显示窗口。
  */
+import { resolveProvider } from './web-search.js';
 import type { OpenAIDePlugin, PluginTool } from '@openaide/plugins';
 
 /* ── 最小结构类型（避免对 playwright 的编译期依赖）── */
@@ -55,24 +56,29 @@ export async function closeBrowser(): Promise<void> {
 async function takeSnapshot(p: AnyPage): Promise<string> {
   const items: Array<{ kind: string; label: string; selector: string }> = await p.evaluate(() => {
     /* eslint-disable @typescript-eslint/no-explicit-any */
+    // 此回调被序列化到浏览器执行：禁止具名 const 函数（esbuild keepNames 注入的
+    // __name helper 只存在于 Node 侧，浏览器里会抛 ReferenceError）
     const doc: any = (globalThis as unknown as { document: any }).document;
     const out: Array<{ kind: string; label: string; selector: string }> = [];
-    const push = (kind: string, el: any): void => {
-      if (out.length >= 80) return;
-      const rect = el.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) return;
+    const els: any[] = [
+      ...(doc.querySelectorAll('a[href]') as Iterable<any>),
+      ...(doc.querySelectorAll('button,[role=button]') as Iterable<any>),
+      ...(doc.querySelectorAll('input:not([type=hidden]),textarea,select') as Iterable<any>),
+    ];
+    for (let k = 0; k < els.length && out.length < 80; k++) {
+      const tag = String(els[k].tagName).toUpperCase();
+      const kind = tag === 'A' ? 'link' : tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' ? 'input' : 'button';
+      const rect = els[k].getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) continue;
       const label =
-        String(el.innerText ?? '').trim().slice(0, 80) ||
-        el.getAttribute('aria-label') ||
-        el.getAttribute('placeholder') ||
-        el.getAttribute('href') ||
+        String(els[k].innerText ?? '').trim().slice(0, 80) ||
+        els[k].getAttribute('aria-label') ||
+        els[k].getAttribute('placeholder') ||
+        els[k].getAttribute('href') ||
         '';
-      if (!label && kind !== 'input') return;
+      if (!label && kind !== 'input') continue;
       out.push({ kind, label: label.replace(/\s+/g, ' ').slice(0, 80), selector: '' });
-    };
-    doc.querySelectorAll('a[href]').forEach((el: any) => push('link', el));
-    doc.querySelectorAll('button,[role=button]').forEach((el: any) => push('button', el));
-    doc.querySelectorAll('input:not([type=hidden]),textarea,select').forEach((el: any) => push('input', el));
+    }
     return out;
   });
 
@@ -111,22 +117,67 @@ function refSelector(ref: string): string {
   return item.selector;
 }
 
-/** 从 Bing 结果页提取自然搜索结果 */
+/** 百度结果页解析（国内网络最稳的选择） */
+async function extractBaiduResults(p: AnyPage, max: number): Promise<Array<{ title: string; url: string; snippet: string }>> {
+  return p.evaluate((max: number) => {
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const doc: any = (globalThis as unknown as { document: any }).document;
+    const out: Array<{ title: string; url: string; snippet: string }> = [];
+    const nodes: any[] = [...(doc.querySelectorAll('#content_left .result, #content_left .result-op') as Iterable<any>)];
+    for (let i = 0; i < nodes.length && out.length < max; i++) {
+      const a = nodes[i].querySelector('h2 a');
+      if (!a) continue;
+      out.push({
+        title: String(a.textContent ?? '').trim(),
+        url: String(a.href ?? ''),
+        snippet: nodes[i].querySelector('.c-abstract, [class*="content-right"]')?.textContent?.trim() ?? '',
+      });
+    }
+    return out;
+  }, max);
+}
+
+/** DuckDuckGo HTML 版兜底解析（/l/?uddg=<encoded> 还原真实 URL） */
+async function extractDdgResults(p: AnyPage, max: number): Promise<Array<{ title: string; url: string; snippet: string }>> {
+  return p.evaluate((max: number) => {
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const doc: any = (globalThis as unknown as { document: any }).document;
+    const out: Array<{ title: string; url: string; snippet: string }> = [];
+    const nodes: any[] = [...(doc.querySelectorAll('#links .result') as Iterable<any>)];
+    for (let i = 0; i < nodes.length && out.length < max; i++) {
+      const a = nodes[i].querySelector('h2 a, .result__a');
+      if (!a) continue;
+      let href = String(a.href ?? '');
+      const m = /[?&]uddg=([^&]+)/.exec(href);
+      if (m && m[1]) href = decodeURIComponent(m[1]);
+      out.push({
+        title: String(a.textContent ?? '').trim(),
+        url: href,
+        snippet: nodes[i].querySelector('.result__snippet')?.textContent?.trim() ?? '',
+      });
+    }
+    return out;
+  }, max);
+}
+
+/** 从 Bing 结果页提取自然搜索结果（跳过 bing.com/ck/ 广告跟踪位） */
 async function extractBingResults(p: AnyPage, max: number): Promise<Array<{ title: string; url: string; snippet: string }>> {
   return p.evaluate((max: number) => {
     /* eslint-disable @typescript-eslint/no-explicit-any */
     const doc: any = (globalThis as unknown as { document: any }).document;
     const out: Array<{ title: string; url: string; snippet: string }> = [];
-    doc.querySelectorAll('#b_results > li.b_algo').forEach((li: any) => {
-      if (out.length >= max) return;
-      const a = li.querySelector('h2 a');
-      if (!a) return;
+    const nodes: any[] = [...(doc.querySelectorAll('#b_results > li.b_algo') as Iterable<any>)];
+    for (let i = 0; i < nodes.length && out.length < max * 3; i++) {
+      const a = nodes[i].querySelector('h2 a');
+      if (!a) continue;
+      // 广告特征：跟踪跳转链接；真实结果为直达 URL
+      if (String(a.href ?? '').includes('bing.com/ck/')) continue;
       out.push({
         title: String(a.textContent ?? '').trim(),
         url: String(a.href ?? ''),
-        snippet: li.querySelector('.b_caption p, .b_lineclamp2')?.textContent?.trim() ?? '',
+        snippet: nodes[i].querySelector('.b_caption p, .b_lineclamp2')?.textContent?.trim() ?? '',
       });
-    });
+    }
     return out;
   }, max);
 }
@@ -224,14 +275,42 @@ const TOOLS: PluginTool[] = [
       required: ['query'],
     },
     handler: safe(async (args) => {
-      const p = await ensurePage();
       const query = String(args.query ?? '').trim();
       const max = Math.min(Math.max(Number(args.max_results ?? 8), 1), 15);
+
+      // 第一优先：搜索 API（Tavily/Brave/SearXNG 已配置时）——结果最稳，
+      // 国内主流引擎对无头浏览器均有反爬（Bing 推荐流 / 百度验证码，实测）
+      const apiResolved = resolveProvider();
+      if (!('error' in apiResolved)) {
+        try {
+          const results = await apiResolved.provider.run(query, max);
+          if (results.length > 0) {
+            const body = results
+              .map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.snippet}`)
+              .join('\n');
+            return { content: `[browser_search · ${apiResolved.name}] "${query}"\n\n${body}` };
+          }
+        } catch {
+          /* API 失败则降级浏览器 */
+        }
+      }
+
+      const p = await ensurePage();
+      // 第二优先：百度（国内网络最稳）；兜底：必应 ensearch=1
       await p.goto(
-        `https://www.bing.com/search?q=${encodeURIComponent(query)}&setlang=zh-hans`,
+        `https://www.baidu.com/s?wd=${encodeURIComponent(query)}`,
         { waitUntil: 'domcontentloaded', timeout: 25_000 },
       );
-      const results = await extractBingResults(p, max);
+      await p.waitForSelector('#content_left', { timeout: 10_000 }).catch(() => {});
+      let results = await extractBaiduResults(p, max);
+      if (results.length === 0) {
+        await p.goto(
+          `https://www.bing.com/search?q=${encodeURIComponent(query)}&ensearch=1`,
+          { waitUntil: 'domcontentloaded', timeout: 25_000 },
+        );
+        await p.waitForSelector('#b_results > li.b_algo', { timeout: 8_000 }).catch(() => {});
+        results = await extractBingResults(p, max);
+      }
       if (results.length === 0) return { content: `(no results extracted for "${query}")` };
       const body = results
         .map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.snippet}`)

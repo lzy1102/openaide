@@ -23,12 +23,17 @@ test('工具清单完整且命名规范', () => {
 
 test('未安装 playwright → navigate 返回安装指引错误而非抛异常', async () => {
   const nav = browserPlugin.tools!.find((t) => t.name === 'browser_navigate')!;
-  const r = await nav.handler({ url: 'https://example.com' }, 's1');
+  const close = browserPlugin.tools!.find((t) => t.name === 'browser_close')!;
+  try {
+    const r = await nav.handler({ url: 'https://example.com' }, 's1');
   // 本机若装了 playwright 则会真实导航——两种结果都合法
-  if (typeof r.error === 'string') {
+    if (typeof r.error === 'string') {
     assert.match(r.error, /playwright is not installed/);
     assert.match(r.error, /npx playwright install chromium/);
-  } else {
-    assert.ok(String(r.content).length > 0, '已装 playwright 时应返回页面快照');
+    } else {
+      assert.ok(String(r.content).length > 0, '已装 playwright 时应返回页面快照');
+    }
+  } finally {
+    await close.handler({}, 's1');
   }
 });

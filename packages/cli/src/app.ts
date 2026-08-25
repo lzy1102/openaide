@@ -7,7 +7,7 @@ import type { LLMProvider, Memory, ModelSwitcher, SessionStore } from '@openaide
 import { loadConfig, Config, resolveIdentity, resolveProjectWorkspace } from '@openaide/config';
 import { OpenAICompatibleProvider } from '@openaide/llm';
 import { PluginManager, PluginPersonaProvider, builtinPersonasPlugin } from '@openaide/plugins';
-import { ToolRegistry, builtinToolsPlugin, fileToolsPlugin, webSearchPlugin, browserPlugin } from '@openaide/tools';
+import { closeBrowser, ToolRegistry, builtinToolsPlugin, fileToolsPlugin, webSearchPlugin, browserPlugin } from '@openaide/tools';
 import { resolveStores } from '@openaide/memory';
 import { SQLiteSessionStore, SqliteMemory } from '@openaide/memory';
 import { createMcpBridgePlugin, loadClaudeMcpConfig } from '@openaide/mcp';
@@ -333,6 +333,7 @@ export async function buildApp(config?: Config): Promise<App> {
     autoSyncSessions: () => appMeta.autoSync?.(),
     dispose: async () => {
       await appMeta.lastSync;
+      await closeBrowser();
     },
   };
 }
