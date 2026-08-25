@@ -69,13 +69,13 @@ jobs:
         run: |
           V="${GITHUB_REF_NAME#v}"
           bun build packages/cli/src/main.ts --compile \
-            --define "OPENAIDE_VERSION=\"$V\"" \ --define OPENAIDE_BINARY=true
+            --define "OPENAIDE_VERSION=\"$V\"" --define OPENAIDE_BINARY=true \
             --target=bun-windows-x64 --outfile "dist-bun/openaide-$V-windows-x64.exe"
           bun build packages/cli/src/main.ts --compile \
-            --define "OPENAIDE_VERSION=\"$V\"" \ --define OPENAIDE_BINARY=true
+            --define "OPENAIDE_VERSION=\"$V\"" --define OPENAIDE_BINARY=true \
             --target=bun-linux-x64 --outfile "dist-bun/openaide-$V-linux-x64"
           bun build packages/cli/src/main.ts --compile \
-            --define "OPENAIDE_VERSION=\"$V\"" \ --define OPENAIDE_BINARY=true
+            --define "OPENAIDE_VERSION=\"$V\"" --define OPENAIDE_BINARY=true \
             --target=bun-darwin-arm64 --outfile "dist-bun/openaide-$V-darwin-arm64"
       - name: Attach binaries to Release
         uses: softprops/action-gh-release@v2
