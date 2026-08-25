@@ -15,7 +15,7 @@ const newRoot = () => mkdtempSync(join(tmpdir(), 'openaide-filestore-'));
 test('create/get/update 往返；update 写在内容里的 updatedAt 递增', async () => {
   const root = newRoot();
   try {
-    const store = new FileSessionStore(root);
+    const store = new FileSessionStore(join(root, 'sessions'));
     const s = await store.create('proj-a', 'u1');
     assert.ok(existsSync(join(root, 'sessions', `${s.id}.json`)));
 
@@ -36,7 +36,7 @@ test('create/get/update 往返；update 写在内容里的 updatedAt 递增', as
 test('list 按 updatedAt 降序 + projectId 过滤（与 mtime 无关）', async () => {
   const root = newRoot();
   try {
-    const store = new FileSessionStore(root);
+    const store = new FileSessionStore(join(root, 'sessions'));
     const a = await store.create('p1', 'u');
     const b = await store.create('p2', 'u');
     // 人为把 b 的内容时间戳改得更早，同时让文件 mtime 更晚
@@ -59,7 +59,7 @@ test('list 按 updatedAt 降序 + projectId 过滤（与 mtime 无关）', async
 test('FileMemory append/load：跨多次 save 累积、limit 取最近 N 条', async () => {
   const root = newRoot();
   try {
-    const mem = new FileMemory(root);
+    const mem = new FileMemory(join(root, 'memory'));
     await mem.save('s1', [{ role: 'user', content: 'q1' }]);
     await mem.save('s1', [
       { role: 'assistant', content: 'a1' },
@@ -80,10 +80,11 @@ test('FileMemory append/load：跨多次 save 累积、limit 取最近 N 条', a
 test('delete 联动清理 memory 流水；损坏会话文件被容忍', async () => {
   const root = newRoot();
   try {
-    const store = new FileSessionStore(root);
-    const mem = new FileMemory(root);
+    const store = new FileSessionStore(join(root, 'sessions'));
+    const mem = new FileMemory(join(root, 'memory'));
     const s = await store.create('p', 'u');
     await mem.save(s.id, [{ role: 'user', content: 'x' }]);
+    store.onDelete = (id) => rmSync(join(root, 'memory', `${id}.jsonl`), { force: true });
     await store.delete(s.id);
     assert.ok(!existsSync(join(root, 'sessions', `${s.id}.json`)));
     assert.equal(await mem.load(s.id, -1).then((r) => r.length), 0, '流水应一并删除');
@@ -99,7 +100,7 @@ test('delete 联动清理 memory 流水；损坏会话文件被容忍', async ()
 test('路径注入防护：非法 id 拒绝落盘', async () => {
   const root = newRoot();
   try {
-    const store = new FileSessionStore(root);
+    const store = new FileSessionStore(join(root, 'sessions'));
     await assert.rejects(() => store.get('../evil'));
     await assert.rejects(() => store.delete('..\\evil'));
   } finally {

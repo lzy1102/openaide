@@ -23,8 +23,12 @@ function atomicWrite(file: string, data: string): void {
 export class FileSessionStore implements SessionStore {
   private readonly dir: string;
 
-  constructor(rootDir: string) {
-    this.dir = join(rootDir, 'sessions');
+  /**
+   * @param sessionsDir 会话 JSON 的实际存放目录
+   *   （项目工作区形态：<workspace>/sessions/<identity>/，按开发者隔离）
+   */
+  constructor(sessionsDir: string) {
+    this.dir = sessionsDir;
     mkdirSync(this.dir, { recursive: true });
   }
 
@@ -82,17 +86,20 @@ export class FileSessionStore implements SessionStore {
 
   async delete(sessionId: string): Promise<void> {
     rmSync(this.fileOf(sessionId), { force: true });
-    // 关联的记忆流水一并清理
-    rmSync(join(this.dir, '..', 'memory', `${sessionId}.jsonl`), { force: true });
+    this.onDelete?.(sessionId);
   }
+
+  /** 装配层注入：删除会话时联动清理记忆流水（目录布局由装配层决定） */
+  onDelete?: (sessionId: string) => void;
 }
 
 /** 文件型记忆 —— 与 SqliteMemory 等价的 append-only 实现（kernel.Memory 契约） */
 export class FileMemory {
   private readonly dir: string;
 
-  constructor(rootDir: string) {
-    this.dir = join(rootDir, 'memory');
+  /** @param memoryDir 记忆 JSONL 的实际存放目录（…/memory/<identity>/） */
+  constructor(memoryDir: string) {
+    this.dir = memoryDir;
     mkdirSync(this.dir, { recursive: true });
   }
 

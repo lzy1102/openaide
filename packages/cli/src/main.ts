@@ -19,7 +19,9 @@ import type { App } from './app.js';
 import { runQuery } from './repl.js';
 import { chooseUi } from './ui-select.js';
 import { runServe } from './serve.js';
-import { loadConfig, saveConfig } from '@openaide/config';
+import { execFileSync } from 'node:child_process';
+import { join } from 'node:path';
+import { loadConfig, resolveIdentity, resolveProjectWorkspace, saveConfig } from '@openaide/config';
 import {
   DEFAULT_REGISTRY_URL,
   fetchRegistry,
@@ -140,7 +142,7 @@ async function main(): Promise<void> {
         [
           '# OpenAIDE 项目工作区',
           '',
-          '本目录存放该项目的 agent 会话（sessions/）与跨轮记忆（memory/）。',
+          '本目录存放该项目的 agent 会话（sessions/<开发者>/）与团队知识（knowledge/）。',
           '**建议提交进 git**——换一台电脑 clone/pull 后，`openaide -c` 即可继续之前的对话。',
           '',
           '敏感提示：会话内容会进入版本历史；若对话涉密请将本目录加入 .gitignore。',
@@ -154,11 +156,47 @@ async function main(): Promise<void> {
     return;
   }
 
+  // workspace：工作区状态面板（身份/会话/知识/git 同步状态一目了然）
+  if (cmd === 'workspace') {
+    const { existsSync, readdirSync } = await import('node:fs');
+    const workspace = resolveProjectWorkspace();
+    const identity = resolveIdentity(workspace);
+    const sessionsDir = join(workspace, 'sessions', identity.name);
+    const countBy = (dir: string, ext: string): number => {
+      try {
+        return readdirSync(dir).filter((f) => f.endsWith(ext)).length;
+      } catch {
+        return 0;
+      }
+    };
+    console.log(`  workspace : ${workspace}`);
+    console.log(`  identity  : ${identity.name} (${identity.from})`);
+    console.log(`  sessions  : ${countBy(sessionsDir, '.json')} 个`);
+    console.log(`  knowledge : ${countBy(join(workspace, 'knowledge'), '.md')} 篇（团队共享）`);
+    if (existsSync(join(process.cwd(), '.git'))) {
+      let ignored = false;
+      try {
+        execFileSync('git', ['check-ignore', '-q', '.openaide'], { cwd: process.cwd(), stdio: 'ignore' });
+        ignored = true;
+      } catch {
+        /* 非 ignore → 视为被跟踪 */
+      }
+      console.log(
+        ignored
+          ? '  sync      : private ⛔（.openaide 被忽略；跨机续聊需移除 ignore 或改用同步配置）'
+          : '  sync      : tracked ✅（commit/push 后换电脑 pull 即可续聊）',
+      );
+    }
+    return;
+  }
+
+
   // --model 覆盖：加载配置并改模型
   const cfg = loadConfig();
   if (cli.model) cfg.llm.model = cli.model;
 
-  const app = await buildApp(cfg);
+  currentApp = await buildApp(cfg);
+  const app = currentApp;
 
   // -c / --continue：恢复最近一次会话并进入交互（续聊）
   if (cmd === '-c' || cmd === '--continue') {
@@ -312,8 +350,12 @@ async function main(): Promise<void> {
 }
 
 // 显式退出：MCP 子进程等保持句柄会让事件循环挂起，一次性命令完成后需主动结束
+let currentApp: App | undefined;
 main()
-  .then(() => process.exit(0))
+  .then(async () => {
+    await currentApp?.dispose?.(); // 等待进行中的会话同步落盘后再退出
+    process.exit(0);
+  })
   .catch((err) => {
     console.error('[fatal]', err);
     process.exit(1);

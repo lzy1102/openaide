@@ -475,6 +475,7 @@ export function Tui({ app, initialSessionId }: { app: App; initialSessionId?: st
         setPhase('idle');
         setCurrentTool('');
         setStatus('ready');
+        app.autoSyncSessions?.();
       }
     },
     [app, sessionId, pushUser, push, executeCommand],

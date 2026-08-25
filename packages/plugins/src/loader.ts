@@ -153,6 +153,7 @@ export async function loadPlugin(entry: string, fresh = false): Promise<LoadedPl
           version: manifest?.version ?? '1.0.0',
           description:
             manifest?.description ?? personaSource?.description ?? 'declarative persona plugin',
+          category: manifest?.category ?? 'persona',
           persona: {
             name: manifest?.persona ?? personaSource?.name ?? basename(entry),
             description: personaSource?.description ?? manifest?.description ?? '',

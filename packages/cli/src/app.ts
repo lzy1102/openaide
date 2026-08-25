@@ -3,21 +3,32 @@
  * 内核只依赖接口；工具、人格、钩子全部经插件体系注入。
  */
 import { AgentKernel, EventBus } from '@openaide/core';
-import type { LLMProvider, ModelSwitcher, SessionStore } from '@openaide/core';
-import { loadConfig, Config, resolveProjectWorkspace } from '@openaide/config';
+import type { LLMProvider, Memory, ModelSwitcher, SessionStore } from '@openaide/core';
+import { loadConfig, Config, resolveIdentity, resolveProjectWorkspace } from '@openaide/config';
 import { OpenAICompatibleProvider } from '@openaide/llm';
 import { PluginManager, PluginPersonaProvider, builtinPersonasPlugin } from '@openaide/plugins';
 import { ToolRegistry, builtinToolsPlugin, fileToolsPlugin } from '@openaide/tools';
-import { FileMemory, FileSessionStore } from '@openaide/memory';
+import { resolveStores } from '@openaide/memory';
+import { SQLiteSessionStore, SqliteMemory } from '@openaide/memory';
 import { createMcpBridgePlugin, loadClaudeMcpConfig } from '@openaide/mcp';
-import type { Memory } from '@openaide/core';
 import { join } from 'node:path';
 import { builtinUiPlugins } from './builtin-uis.js';
 import { createApprovalInterceptor } from './approval.js';
+import { createKnowledgeInterceptor, syncSessions } from './workspace.js';
 import type { ApprovalHandler } from './approval.js';
 
 export interface App {
   config: Config;
+  /** 项目工作区目录（workspace off 时为 undefined） */
+  workspaceDir?: string;
+  /** 当前开发者身份（会话子目录名） */
+  identity?: string;
+  /** 手动触发一次会话同步（sessionSync 策略）；返回描述文本 */
+  syncNow?(): Promise<string>;
+  /** 每轮对话结束后由 UI 调用（内部 30s 防抖） */
+  autoSyncSessions?(): void;
+  /** 退出前等待未完成的同步落盘 */
+  dispose?(): Promise<void>;
   kernel: AgentKernel;
   registry: ToolRegistry;
   /** 可热替换的 Provider 委托（config.llm.provider 指向插件注册的后端时整体切换） */
@@ -35,6 +46,15 @@ export interface App {
   setApprovalHandler(h: ApprovalHandler): void;
 }
 
+/** 装配期元数据（buildApp 返回前挂到 App） */
+const appMeta: {
+  workspaceDir?: string;
+  identity?: string;
+  sync?: () => Promise<string>;
+  autoSync?: () => void;
+  lastSync?: Promise<string>;
+} = {};
+
 /** 装配完整应用：内置插件 + 用户插件动态加载 + 内核 */
 export async function buildApp(config?: Config): Promise<App> {
   const cfg = config ?? loadConfig();
@@ -43,14 +63,27 @@ export async function buildApp(config?: Config): Promise<App> {
   // 共享事件总线：内核发布 → 插件钩子订阅（同进程）
   const bus = new EventBus();
 
-  // ── 存储:会话一律随项目走(<项目>/.openaide/ 内,git 同步即跨机器续聊)。
-  //    子目录启动时向上复用项目根的 .openaide/;首次使用在启动目录创建。
-  const workspace = resolveProjectWorkspace();
-  const sessionStore: SessionStore = new FileSessionStore(workspace);
-  const memoryStore: Memory = new FileMemory(workspace);
-  console.log(`[app] project workspace: ${workspace} (sessions travel with the repo)`);
-  const sessions = sessionStore;
-  const memory = memoryStore;
+  // ── 存储：会话按开发者身份隔离在 <项目>/.openaide/ 内（git 同步即跨机续聊）。
+  //    workspace: off 或家目录护栏命中 → 退回全局 SQLite（脚本/CI 场景）。
+  let sessions: SessionStore;
+  let memory: Memory;
+  const wsMode = process.env.OPENAIDE_WORKSPACE ?? cfg.workspace ?? 'on';
+  if (wsMode === 'off') {
+    sessions = new SQLiteSessionStore(join(cfg.dataDir, 'sessions.db'));
+    memory = new SqliteMemory(join(cfg.dataDir, 'memory.db'));
+    console.log('[app] workspace off — global sqlite storage');
+  } else {
+    const workspace = resolveProjectWorkspace();
+    const identityInfo = resolveIdentity(workspace);
+    const stores = resolveStores(workspace, identityInfo.name);
+    sessions = stores.sessions;
+    memory = stores.memory;
+    appMeta.workspaceDir = workspace;
+    appMeta.identity = identityInfo.name;
+    console.log(
+      `[app] workspace ${workspace} · identity ${identityInfo.name} (${identityInfo.from}) — sessions travel with the repo`,
+    );
+  }
 
   // ── Provider 委托：先造默认实现占位，插件加载后按 config.llm.provider 热替换 ──
   let currentProvider: LLMProvider & Partial<ModelSwitcher> = new OpenAICompatibleProvider({
@@ -203,6 +236,36 @@ export async function buildApp(config?: Config): Promise<App> {
     console.log(`[app] tool approval: ${approvalMode} mode`);
   }
 
+  // 团队知识注入（knowledge/*.md → L1），常驻拦截链
+  if (appMeta.workspaceDir) {
+    plugins.interceptors.push(createKnowledgeInterceptor(appMeta.workspaceDir));
+  }
+
+  // 会话自动同步（sessionSync 策略；workspace off 时不启用）
+  if (appMeta.workspaceDir) {
+    const mode = cfg.sessionSync ?? 'commit';
+    let lastAt = 0;
+    appMeta.sync = async () => {
+      const r = syncSessions(appMeta.workspaceDir!, { name: appMeta.identity! }, mode);
+      if (r.status === 'failed') return `sync failed: ${r.reason}`;
+      if (r.status === 'noop') return 'already up to date';
+      return `synced (commit: ${r.committed}, push: ${r.pushed})`;
+    };
+    let inFlight = false;
+    appMeta.autoSync = () => {
+      const now = Date.now();
+      if (now - lastAt < 30_000 || inFlight) return; // 防抖 + 重入保护
+      lastAt = now;
+      inFlight = true;
+      appMeta.lastSync = appMeta
+        .sync!()
+        .catch(() => 'sync failed')
+        .finally(() => {
+          inFlight = false;
+        });
+    };
+  }
+
   // 内核
   const kernel = new AgentKernel({
     llm: llmDelegate,
@@ -233,6 +296,16 @@ export async function buildApp(config?: Config): Promise<App> {
     getActivePersona: () => personaState.active,
     setApprovalHandler: (h) => {
       approvalHandler = h;
+    },
+    workspaceDir: appMeta.workspaceDir,
+    identity: appMeta.identity,
+    syncNow: async () => {
+      if (!appMeta.sync) return 'sync unavailable';
+      return appMeta.sync();
+    },
+    autoSyncSessions: () => appMeta.autoSync?.(),
+    dispose: async () => {
+      await appMeta.lastSync;
     },
   };
 }

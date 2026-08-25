@@ -93,9 +93,8 @@ export function resolveProjectWorkspace(startDir?: string): string {
 
   let dir = cwd;
   for (;;) {
-    // 家目录的 .openaide 是全局配置目录，绝不能被当作项目工作区命中
     const candidate = join(dir, WORKSPACE_DIRNAME);
-    if (dir !== home && existsSync(candidate) && statSync(candidate).isDirectory()) return candidate;
+    if (existsSync(candidate) && statSync(candidate).isDirectory()) return candidate;
     if (dir === home || dirname(dir) === dir) break; // 到家目录/根为止
     dir = dirname(dir);
   }

@@ -140,8 +140,8 @@ export interface OpenAIDePlugin {
   name: string;
   version?: string;
   description?: string;
-  /** 插件分类（轻量元数据，供展示/检索；也可由 openaide.yaml 的 category 声明，缺省 'uncategorized'） */
-  category?: string;
+  /** 插件分类（必填：capability / persona / ui / …；供展示/检索/分组） */
+  category: string;
   /** 激活：注册工具/钩子/人格（可选） */
   activate?(ctx: PluginContext): void | Promise<void>;
   /** 卸载钩子（可选） */

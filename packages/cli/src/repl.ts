@@ -87,6 +87,7 @@ export async function runQuery(app: App, content: string, ctx: QueryContext = {}
     }
   }
   process.stdout.write('\n\n');
+  app.autoSyncSessions?.();
   return { sessionId, content: full };
 }
 

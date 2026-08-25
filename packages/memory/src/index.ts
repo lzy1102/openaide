@@ -2,3 +2,4 @@
 export * from './store.js';
 export * from './memory.js';
 export * from './file-store.js';
+export * from './project-stores.js';
