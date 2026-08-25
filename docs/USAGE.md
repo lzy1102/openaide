@@ -123,7 +123,8 @@ TUI 布局（Claude Code / Gemini CLI 风格）：
 - 处理中显示动态 spinner 状态：Thinking → Reasoning → Running <tool> → Responding
 - 助手的思考流（reasoning）以暗色斜体实时展示，与正文分离
 
-- **键盘**：`↑/↓` 翻输入历史（弹层打开时切换补全项），`Tab` 补全命令，`Esc` 清空输入框，`Ctrl+C` 退出
+- **键盘**：`↑/↓` 翻输入历史（弹层打开时切换补全项），`Tab` 补全命令，`Ctrl+C` 退出
+- **Esc 两段语义**：输入框有内容时清空输入；输入框已空时进入撤回模式——再按一次 Esc 撤销最后一轮对话（删除该轮 user 提问、中间工具消息与 assistant 回复，会话与记忆两侧同步裁剪），900ms 内连按才生效以防误触
 - **斜杠命令**（TUI 与 REPL 通用）：
 
 | 命令 | 作用 |
