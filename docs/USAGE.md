@@ -71,6 +71,8 @@ kernel:
 | `OPENAIDE_DATA_DIR` | `data_dir`（默认 `~/.openaide`） |
 | `OPENAIDE_PLUGINS_DIR` | `plugins_dir`（默认 `<data_dir>/plugins`） |
 | `OPENAIDE_PORT` | `serve` 命令端口（默认 8080） |
+| `OPENAIDE_PROVIDER` | `llm.provider` |
+| `OPENAIDE_REASONING_EFFORT` | `llm.reasoning_effort` |
 
 ### 1.2.0 内核运行时行为
 

@@ -13,6 +13,7 @@ llm:
   base_url: "https://api.deepseek.com/v1"  # OpenAI 兼容端点
   timeout_ms: 60000                     # 可选：请求超时（毫秒）
   # provider: "acme"                    # 可选：插件注册的 LLM 后端名（缺省内置 openai-compatible）
+  # reasoning_effort: "max"             # 推理强度透传 reasoning_effort（low/medium/high/max，按模型支持）
 
 # ── 内核 ─────────────────────────────────
 kernel:

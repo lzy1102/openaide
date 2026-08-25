@@ -13,6 +13,8 @@ export interface LLMConfigOptions {
   model: string;
   baseUrl: string;
   timeoutMs?: number;
+  /** 推理强度，原样透传网关 reasoning_effort（low/medium/high/max…按模型支持） */
+  reasoningEffort?: string;
   /** Provider 名（插件注册的自定义后端；缺省内置 openai-compatible） */
   provider?: string;
 }
@@ -194,6 +196,7 @@ interface RawConfig {
     base_url?: string;
     timeout_ms?: number;
     provider?: string;
+    reasoning_effort?: string;
   };
   kernel?: {
     max_rounds?: number;
@@ -237,6 +240,7 @@ export function loadConfig(configPath?: string): Config {
       baseUrl: process.env.OPENAIDE_BASE_URL ?? raw.llm?.base_url ?? 'https://api.deepseek.com/v1',
       timeoutMs: raw.llm?.timeout_ms,
       provider: process.env.OPENAIDE_PROVIDER ?? raw.llm?.provider,
+      reasoningEffort: process.env.OPENAIDE_REASONING_EFFORT ?? raw.llm?.reasoning_effort,
     },
     kernel: {
       maxRounds: raw.kernel?.max_rounds ?? 10,
@@ -280,6 +284,7 @@ export function saveConfig(config: Config, path?: string): void {
       base_url: config.llm.baseUrl,
       timeout_ms: config.llm.timeoutMs,
       provider: config.llm.provider,
+      reasoning_effort: config.llm.reasoningEffort,
     },
     kernel: {
       max_rounds: config.kernel.maxRounds,

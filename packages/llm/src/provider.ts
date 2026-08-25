@@ -20,6 +20,11 @@ export interface LLMConfig {
   model: string;
   /** 请求超时（毫秒），默认 120s */
   timeoutMs?: number;
+  /**
+   * 推理强度，原样透传给网关（reasoning_effort 字段）。
+   * 常见取值：low / medium / high / max——不同模型档位名不同，不做枚举限制。
+   */
+  reasoningEffort?: string;
 }
 
 interface ChatMessage {
@@ -104,12 +109,13 @@ export class OpenAICompatibleProvider implements LLMProvider {
   async chat(
     messages: Message[],
     tools: ToolDefinition[],
-    options: Record<string, unknown>,
+    options: Record<string, unknown> = {},
   ): Promise<LLMResponse> {
     const body: Record<string, unknown> = {
       model: this.config.model,
       messages: this.toWireMessages(messages, tools),
     };
+    if (this.config.reasoningEffort) body['reasoning_effort'] = this.config.reasoningEffort;
     if (tools.length > 0) body['tools'] = tools;
     for (const key of ['temperature', 'max_tokens', 'response_format', 'thinking']) {
       if (options[key] !== undefined) body[key] = options[key];
@@ -146,13 +152,14 @@ export class OpenAICompatibleProvider implements LLMProvider {
   async *chatStream(
     messages: Message[],
     tools: ToolDefinition[],
-    options: Record<string, unknown>,
+    options: Record<string, unknown> = {},
   ): AsyncGenerator<StreamChunk> {
     const body: Record<string, unknown> = {
       model: this.config.model,
       messages: this.toWireMessages(messages, tools),
       stream: true,
     };
+    if (this.config.reasoningEffort) body['reasoning_effort'] = this.config.reasoningEffort;
     if (tools.length > 0) body['tools'] = tools;
     for (const key of ['temperature', 'max_tokens', 'response_format', 'thinking']) {
       if (options[key] !== undefined) body[key] = options[key];

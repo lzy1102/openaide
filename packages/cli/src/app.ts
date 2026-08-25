@@ -92,6 +92,7 @@ export async function buildApp(config?: Config): Promise<App> {
     apiKey: cfg.llm.apiKey,
     model: cfg.llm.model,
     timeoutMs: cfg.llm.timeoutMs,
+    reasoningEffort: cfg.llm.reasoningEffort,
   });
   const llmDelegate: LLMProvider & ModelSwitcher = {
     chat: (m, t, o) => currentProvider.chat(m, t, o),
