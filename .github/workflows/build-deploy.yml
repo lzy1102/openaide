@@ -54,7 +54,7 @@ jobs:
   # ── 二进制：tag v* 时交叉编译三平台单文件可执行，附加到同一 Release ──
   binaries:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [test, release]
+    needs: [test]
     runs-on: ubuntu-latest
     permissions:
       contents: write
