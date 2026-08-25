@@ -115,6 +115,16 @@ tracked/private 同步状态（`init` 保留为别名）。
 > 可三方合并；updatedAt 写在内容里，克隆到新机器排序依然正确；零解析依赖。
 > SQLite 实现保留给 `workspace: off` 的全局场景（`SessionStore` 接口随时可换）。
 
+### 1.2.2 桌面应用（Tauri）
+
+```bash
+cd desktop && npm install && npx tauri build   # 本地构建安装包
+```
+
+或直接从 GitHub Releases 下载对应平台安装包（tag 推送时 CI 自动产出 NSIS/AppImage/DMG）。
+桌面壳负责：定位并拉起 `openaide serve` 后端（OPENAIDE_BIN > 应用同目录 > PATH）、
+健康检查通过后打开原生窗口加载 WebUI、退出时回收后端进程。
+
 ### 1.3 交互式使用
 
 ```bash

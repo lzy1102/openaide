@@ -111,6 +111,11 @@ cli (TUI + REPL + 命令)      api (HTTP/WS + SSE)
 ## 核心概念
 
 - **一切皆插件**：内核的工具、人格、钩子全部经插件体系注入——内置与用户插件走同一套注册逻辑
+- 🖥️ **桌面应用**：Tauri 壳（NSIS/AppImage/DMG）托管本地服务与 WebUI——双击图标即用，后端进程自动管理
+- 🖥️ **浏览器控制**：原生 Playwright 工具——navigate/click/type 与一键 `browser_search`，默认无头
+- 🌐 **内置 web_search**：可插拔后端（Tavily / Brave / SearXNG），未配置时给出启用指引；也支持任意搜索类 MCP server
+- 🪆 **子代理编排**：`config.kernel.subagents` 把 (persona, 工具白名单) 打包成可委派工具——独立子循环、级联中止、会话零污染
+- 🛡️ **策略即拦截链**：审批门 / PII 脱敏 / 预算熔断统统只是插件
 - **生态即 GitHub**：仓库打上 `openaide-plugin` topic 即进入插件市场——实时搜索、星标排序、git 直装，无服务器无审核
 - **会话随仓库走：`openaide init` 后对话以可读 JSON 存进 `.openaide/`——提交进 git，换电脑 pull 下来 `openaide -c` 无缝续聊
 - **策略即插件**：拦截链可否决/改写 LLM 请求与工具调用——审批门、PII 脱敏、预算熔断统统只是插件

@@ -25,6 +25,7 @@
 - 🛡️ **Policy-as-plugin interceptor chain** — approve dangerous tools, redact PII, enforce budgets: veto or rewrite any LLM request or tool call
 - 🎨 **Pluggable UI** — built-in Ink TUI (Claude Code style) and readline REPL are themselves plugins; ship your own interface in ~40 lines
 - 🛒 **GitHub-powered plugin marketplace** — no server, no review: tag your repo `openaide-plugin` and it's searchable/installable (`openaide plugins search|install`)
+- 🖥️ **Desktop app** — Tauri shell (NSIS/AppImage/DMG) wrapping the local server + WebUI: double-click icon, real window, backend process auto-managed
 - 🖥️ **Browser control** — native Playwright tools: navigate, click, type, and a one-shot `browser_search`; headless by default
 - 🌐 **Built-in web_search** — pluggable backends (Tavily / Brave / SearXNG), zero-config error hints; or bring any search MCP server
 - ⚡ **Token-efficient by design** — stable system prefix + `cache_control` prompt caching, token-budgeted history trim, empty replies treated as failures
@@ -194,8 +195,8 @@ Anything OpenAI-compatible: DeepSeek, GLM, Kimi, Qwen, MiniMax, OpenRouter relay
 **Can I build my own UI?**
 Yes — the built-in Ink TUI and readline REPL are themselves UI plugins; implement `uis.start(host)` and select it with `OPENAIDE_UI`.
 
-**Single binary?**
-`make binary` produces a standalone executable via Bun compile (no Node required on target).
+**Single binary? Desktop app?**
+`make binary` produces a standalone executable via Bun compile (no Node required on target). There's also a **Tauri desktop app** (installer per platform) that manages the server process and opens the WebUI in a native window — see the `desktop` job in CI and [desktop/](desktop/).
 
 ## 🛠️ Development
 
