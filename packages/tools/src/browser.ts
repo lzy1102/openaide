@@ -34,7 +34,12 @@ async function ensurePage(): Promise<AnyPage> {
     );
   }
   const headless = process.env.OPENAIDE_BROWSER_HEADLESS !== '0';
-  browser = await pw.chromium.launch({ headless });
+  // 标准代理环境变量透传（Chromium 无头默认不读系统代理——DDG 等站点需要它）
+  const proxyUrl =
+    process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy || process.env.ALL_PROXY || process.env.all_proxy;
+  const launchOpts: Record<string, unknown> = { headless };
+  if (proxyUrl) launchOpts.proxy = { server: proxyUrl };
+  browser = await pw.chromium.launch(launchOpts);
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   page = await ctx.newPage();
   page.setDefaultTimeout(15_000);
@@ -296,13 +301,23 @@ const TOOLS: PluginTool[] = [
       }
 
       const p = await ensurePage();
-      // 第二优先：百度（国内网络最稳）；兜底：必应 ensearch=1
+
+      // 首选：DuckDuckGo HTML 版（结果最相关、无推荐流污染）。
+      // 配置 HTTPS_PROXY 时体验最佳；直连不通时 8s 内快速跳过。
+      await p.goto(
+        `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
+        { waitUntil: 'domcontentloaded', timeout: 8_000 },
+      ).catch(() => {});
+      await p.waitForSelector('#links .result', { timeout: 5_000 }).catch(() => {});
+      let results = await extractDdgResults(p, max);
+
+      // 百度（国内直连最稳）
       await p.goto(
         `https://www.baidu.com/s?wd=${encodeURIComponent(query)}`,
         { waitUntil: 'domcontentloaded', timeout: 25_000 },
       );
       await p.waitForSelector('#content_left', { timeout: 10_000 }).catch(() => {});
-      let results = await extractBaiduResults(p, max);
+      results = await extractBaiduResults(p, max);
       if (results.length === 0) {
         await p.goto(
           `https://www.bing.com/search?q=${encodeURIComponent(query)}&ensearch=1`,
