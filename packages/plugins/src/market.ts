@@ -253,6 +253,25 @@ export async function installEntry(entry: RegistryEntry, opts: InstallOptions): 
       recursive: true,
       filter: (s) => basename(s) !== '.git',
     });
+
+    // 自动安装插件自身依赖（package.json 存在时）：二进制形态下运行时的
+    // 模块解析起点是插件目录本身，node_modules 随目录分发即可用
+    const pkgFile = join(target, 'package.json');
+    if (existsSync(pkgFile)) {
+      const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+      const inst = spawnSync(npm, ['install', '--omit=dev', '--no-audit', '--no-fund'], {
+        cwd: target,
+        encoding: 'utf8',
+        timeout: 180_000,
+        shell: process.platform === 'win32',
+      });
+      if (inst.status !== 0) {
+        console.warn(`[plugins] dependency install failed for ${name} (plugin may still work):`, (inst.stderr || '').slice(0, 200));
+      } else {
+        console.log(`[plugins] dependencies installed for ${name}`);
+      }
+    }
+
     return { dir: target, name };
   } finally {
     rmSync(tmp, { recursive: true, force: true });
