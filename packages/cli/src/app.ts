@@ -7,7 +7,7 @@ import type { LLMProvider, Memory, ModelSwitcher, SessionStore } from '@openaide
 import { loadConfig, Config, resolveIdentity, resolveProjectWorkspace } from '@openaide/config';
 import { OpenAICompatibleProvider } from '@openaide/llm';
 import { PluginManager, PluginPersonaProvider, builtinPersonasPlugin } from '@openaide/plugins';
-import { ToolRegistry, builtinToolsPlugin, fileToolsPlugin } from '@openaide/tools';
+import { ToolRegistry, builtinToolsPlugin, fileToolsPlugin, webSearchPlugin } from '@openaide/tools';
 import { resolveStores } from '@openaide/memory';
 import { SQLiteSessionStore, SqliteMemory } from '@openaide/memory';
 import { createMcpBridgePlugin, loadClaudeMcpConfig } from '@openaide/mcp';
@@ -157,6 +157,12 @@ export async function buildApp(config?: Config): Promise<App> {
     console.log(`[app] plugin disabled by state: ${fileToolsPlugin.name}`);
   } else {
     await plugins.add(fileToolsPlugin, process.cwd());
+  }
+  // 联网搜索（Tavily/Brave/SearXNG 后端按环境变量自动选择）
+  if (plugins.isDisabled(webSearchPlugin.name)) {
+    console.log(`[app] plugin disabled by state: ${webSearchPlugin.name}`);
+  } else if (process.env.TAVILY_API_KEY || process.env.BRAVE_API_KEY || process.env.SEARXNG_URL) {
+    await plugins.add(webSearchPlugin, process.cwd());
   }
   // 内置人格包（coder/architect）——提示词内容住插件，不住内核
   if (plugins.isDisabled(builtinPersonasPlugin.name)) {

@@ -156,6 +156,14 @@ TUI 布局（Claude Code / Gemini CLI 风格）：
 | `/persona <name>` | **运行时切换人格**（下一条消息即以新身份响应；`default` 回到内置） |
 | `/exit` `/quit` | 退出 |
 
+**联网搜索**：配置任一后端即自动启用 `web_search` 工具（模型会按需自行调用）：
+
+```bash
+export TAVILY_API_KEY=tvly-xxx     # 推荐，tavily.com 免费注册
+export BRAVE_API_KEY=SBC-xxx       # 或 brave.com/search/api 免费 2000 次/月
+export SEARXNG_URL=http://localhost:8888   # 或自托管 SearXNG
+```
+
 > 不用手选工具——内核 ReAct 循环自动判断何时调用哪个工具（`builtin__*` 或插件注册的 `<插件>__<工具>`）。会话默认持久化到 `~/.openaide/sessions.db`，重启不丢。
 
 ### 任务变身：一个 SYSTEM.md 变成任意领域 agent
