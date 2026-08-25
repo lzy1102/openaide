@@ -265,7 +265,13 @@ export async function installEntry(entry: RegistryEntry, opts: InstallOptions): 
         timeout: 180_000,
         shell: process.platform === 'win32',
       });
-      if (inst.status !== 0) {
+      if (inst.error && String(inst.error).includes('ENOENT')) {
+        console.warn(
+          `[plugins] npm not found — plugin '${name}' may need its dependencies installed manually.
+` +
+          '  This capability requires the Node.js edition: install Node.js >= 18, then re-run inside the plugin directory.',
+        );
+      } else if (inst.status !== 0) {
         console.warn(`[plugins] dependency install failed for ${name} (plugin may still work):`, (inst.stderr || '').slice(0, 200));
       } else {
         console.log(`[plugins] dependencies installed for ${name}`);

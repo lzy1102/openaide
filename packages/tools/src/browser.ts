@@ -30,7 +30,9 @@ async function ensurePage(): Promise<AnyPage> {
     pw = await import(/* @vite-ignore */ specifier);
   } catch {
     throw new Error(
-      'playwright is not installed. Run: npm i -D playwright && npx playwright install chromium',
+      process.env.OPENAIDE_BINARY
+        ? 'browser tools need the Node.js edition of OpenAIDE — install it via npm (node scripts/install.mjs), then: npm i -D playwright && npx playwright install chromium'
+        : 'playwright is not installed. Run: npm i -D playwright && npx playwright install chromium',
     );
   }
   const headless = process.env.OPENAIDE_BROWSER_HEADLESS !== '0';

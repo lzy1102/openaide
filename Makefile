@@ -51,11 +51,11 @@ VERSION ?= $(shell node -p "require('./package.json').version")
 
 binary:
 	bun build packages/cli/src/main.ts --compile \
-	  --define "OPENAIDE_VERSION=\"$(VERSION)\"" \
+	  --define "OPENAIDE_VERSION=\"$(VERSION)\"" --define "OPENAIDE_BINARY=true" \
 	  --outfile dist-bun/openaide
 
 binary-all: binary
 	bun build packages/cli/src/main.ts --compile --target=bun-linux-x64 \
-	  --define "OPENAIDE_VERSION=\"$(VERSION)\"" --outfile dist-bun/openaide-linux
+	  --define "OPENAIDE_VERSION=\"$(VERSION)\"" --define "OPENAIDE_BINARY=true" --outfile dist-bun/openaide-linux
 	bun build packages/cli/src/main.ts --compile --target=bun-darwin-arm64 \
-	  --define "OPENAIDE_VERSION=\"$(VERSION)\"" --outfile dist-bun/openaide-darwin
+	  --define "OPENAIDE_VERSION=\"$(VERSION)\"" --define "OPENAIDE_BINARY=true" --outfile dist-bun/openaide-darwin
