@@ -24,16 +24,22 @@ let refs: Array<{ selector: string; label: string }> = [];
 async function ensurePage(): Promise<AnyPage> {
   if (page) return page;
   let pw: any;
+  const binaryHint = process.env.OPENAIDE_BINARY
+    ? 'browser tools need the Node.js edition of OpenAIDE — install it via npm (node scripts/install.mjs), then: npm i -D playwright && npx playwright install chromium'
+    : 'Run: npm i -D playwright && npx playwright install chromium';
   try {
     // 变量间接引用：避免 TS 在未安装 playwright 的环境下解析模块类型
     const specifier = 'play' + 'wright';
     pw = await import(/* @vite-ignore */ specifier);
-  } catch {
-    throw new Error(
-      process.env.OPENAIDE_BINARY
-        ? 'browser tools need the Node.js edition of OpenAIDE — install it via npm (node scripts/install.mjs), then: npm i -D playwright && npx playwright install chromium'
-        : 'playwright is not installed. Run: npm i -D playwright && npx playwright install chromium',
-    );
+  } catch (err) {
+    // 模块本身缺失
+    throw new Error(`playwright is not installed. ${binaryHint}`);
+  }
+  // 模块在但浏览器内核未下载（常见于 CI：npm 包随 devDeps 安装、未跑 install 命令）
+  try {
+    void pw.chromium;
+  } catch (err) {
+    throw new Error(`playwright browsers not downloaded. ${binaryHint}`);
   }
   const headless = process.env.OPENAIDE_BROWSER_HEADLESS !== '0';
   // 标准代理环境变量透传（Chromium 无头默认不读系统代理——DDG 等站点需要它）
@@ -41,7 +47,15 @@ async function ensurePage(): Promise<AnyPage> {
     process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy || process.env.ALL_PROXY || process.env.all_proxy;
   const launchOpts: Record<string, unknown> = { headless };
   if (proxyUrl) launchOpts.proxy = { server: proxyUrl };
-  browser = await pw.chromium.launch(launchOpts);
+  try {
+    browser = await pw.chromium.launch(launchOpts);
+  } catch (err) {
+    // npm 包在而浏览器内核未下载（CI 常见）：给出可操作的修复指引
+    if (/Executable doesn|playwright.*install/i.test(String((err as Error).message))) {
+      throw new Error(`playwright browsers not downloaded. ${binaryHint}`);
+    }
+    throw err;
+  }
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   page = await ctx.newPage();
   page.setDefaultTimeout(15_000);
