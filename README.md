@@ -25,6 +25,7 @@
 - 🛡️ **Policy-as-plugin interceptor chain** — approve dangerous tools, redact PII, enforce budgets: veto or rewrite any LLM request or tool call
 - 🎨 **Pluggable UI** — built-in Ink TUI (Claude Code style) and readline REPL are themselves plugins; ship your own interface in ~40 lines
 - 🛒 **GitHub-powered plugin marketplace** — no server, no review: tag your repo `openaide-plugin` and it's searchable/installable (`openaide plugins search|install`)
+- 🖥️ **Browser control** — native Playwright tools: navigate, click, type, and a one-shot `browser_search`; headless by default
 - 🌐 **Built-in web_search** — pluggable backends (Tavily / Brave / SearXNG), zero-config error hints; or bring any search MCP server
 - ⚡ **Token-efficient by design** — stable system prefix + `cache_control` prompt caching, token-budgeted history trim, empty replies treated as failures
 

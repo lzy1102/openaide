@@ -156,6 +156,13 @@ TUI 布局（Claude Code / Gemini CLI 风格）：
 | `/persona <name>` | **运行时切换人格**（下一条消息即以新身份响应；`default` 回到内置） |
 | `/exit` `/quit` | 退出 |
 
+**浏览器操作**：安装 Playwright 后自动启用 `browser_*` 工具集
+（`npm i -D playwright && npx playwright install chromium`）：
+`browser_navigate / snapshot / click / type / search / close`——
+快照把页面元素编号为 r1..rN，点击/输入按编号引用；
+`browser_search` 直连必应返回结构化结果。默认无头，
+`OPENAIDE_BROWSER_HEADLESS=0` 显示窗口。未安装 playwright 时工具会返回安装指引。
+
 **联网搜索**：配置任一后端即自动启用 `web_search` 工具（模型会按需自行调用）：
 
 ```bash

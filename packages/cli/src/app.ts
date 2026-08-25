@@ -7,7 +7,7 @@ import type { LLMProvider, Memory, ModelSwitcher, SessionStore } from '@openaide
 import { loadConfig, Config, resolveIdentity, resolveProjectWorkspace } from '@openaide/config';
 import { OpenAICompatibleProvider } from '@openaide/llm';
 import { PluginManager, PluginPersonaProvider, builtinPersonasPlugin } from '@openaide/plugins';
-import { ToolRegistry, builtinToolsPlugin, fileToolsPlugin, webSearchPlugin } from '@openaide/tools';
+import { ToolRegistry, builtinToolsPlugin, fileToolsPlugin, webSearchPlugin, browserPlugin } from '@openaide/tools';
 import { resolveStores } from '@openaide/memory';
 import { SQLiteSessionStore, SqliteMemory } from '@openaide/memory';
 import { createMcpBridgePlugin, loadClaudeMcpConfig } from '@openaide/mcp';
@@ -163,6 +163,13 @@ export async function buildApp(config?: Config): Promise<App> {
     console.log(`[app] plugin disabled by state: ${webSearchPlugin.name}`);
   } else if (process.env.TAVILY_API_KEY || process.env.BRAVE_API_KEY || process.env.SEARXNG_URL) {
     await plugins.add(webSearchPlugin, process.cwd());
+  }
+
+  // 浏览器操作（需 npm i -D playwright；未装时调用会返回安装指引）
+  if (plugins.isDisabled(browserPlugin.name)) {
+    console.log(`[app] plugin disabled by state: ${browserPlugin.name}`);
+  } else {
+    await plugins.add(browserPlugin, process.cwd());
   }
   // 内置人格包（coder/architect）——提示词内容住插件，不住内核
   if (plugins.isDisabled(builtinPersonasPlugin.name)) {
