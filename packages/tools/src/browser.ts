@@ -122,26 +122,6 @@ function refSelector(ref: string): string {
   return item.selector;
 }
 
-/** 百度结果页解析（国内网络最稳的选择） */
-async function extractBaiduResults(p: AnyPage, max: number): Promise<Array<{ title: string; url: string; snippet: string }>> {
-  return p.evaluate((max: number) => {
-    /* eslint-disable @typescript-eslint/no-explicit-any */
-    const doc: any = (globalThis as unknown as { document: any }).document;
-    const out: Array<{ title: string; url: string; snippet: string }> = [];
-    const nodes: any[] = [...(doc.querySelectorAll('#content_left .result, #content_left .result-op') as Iterable<any>)];
-    for (let i = 0; i < nodes.length && out.length < max; i++) {
-      const a = nodes[i].querySelector('h2 a');
-      if (!a) continue;
-      out.push({
-        title: String(a.textContent ?? '').trim(),
-        url: String(a.href ?? ''),
-        snippet: nodes[i].querySelector('.c-abstract, [class*="content-right"]')?.textContent?.trim() ?? '',
-      });
-    }
-    return out;
-  }, max);
-}
-
 /** DuckDuckGo HTML 版兜底解析（/l/?uddg=<encoded> 还原真实 URL） */
 async function extractDdgResults(p: AnyPage, max: number): Promise<Array<{ title: string; url: string; snippet: string }>> {
   return p.evaluate((max: number) => {
@@ -310,15 +290,8 @@ const TOOLS: PluginTool[] = [
       ).catch(() => {});
       await p.waitForSelector('#links .result', { timeout: 5_000 }).catch(() => {});
       let results = await extractDdgResults(p, max);
-
-      // 百度（国内直连最稳）
-      await p.goto(
-        `https://www.baidu.com/s?wd=${encodeURIComponent(query)}`,
-        { waitUntil: 'domcontentloaded', timeout: 25_000 },
-      );
-      await p.waitForSelector('#content_left', { timeout: 10_000 }).catch(() => {});
-      results = await extractBaiduResults(p, max);
       if (results.length === 0) {
+        // 兜底：必应 ensearch=1（强制国际结果）
         await p.goto(
           `https://www.bing.com/search?q=${encodeURIComponent(query)}&ensearch=1`,
           { waitUntil: 'domcontentloaded', timeout: 25_000 },
