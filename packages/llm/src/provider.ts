@@ -85,6 +85,8 @@ export class OpenAICompatibleProvider implements LLMProvider {
     return {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${this.config.apiKey}`,
+      // 部分网关（如 Cloudflare 防护）会按 UA 封禁默认的 Node fetch 签名
+      'User-Agent': 'openaide-cli',
     };
   }
 
