@@ -1,6 +1,6 @@
 {
   "name": "openaide",
-  "version": "0.3.0",
+  "version": "0.3.3",
   "private": true,
   "description": "AI Agent kernel platform — TypeScript, plugin-driven, everything is a plugin",
   "type": "module",
