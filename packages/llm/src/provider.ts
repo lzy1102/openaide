@@ -13,6 +13,20 @@ import {
   TokenUsage,
 } from '@openaide/core';
 
+// 推理型模型可能数分钟才返回响应头——undici 默认 300s headersTimeout 会先炸。
+// 全局 dispatcher 只在此模块首次使用时设置一次（CLI 单进程场景可接受）。
+import { Agent, setGlobalDispatcher } from 'undici';
+let longTimeoutDispatched = false;
+function ensureLongTimeouts(): void {
+  if (longTimeoutDispatched) return;
+  longTimeoutDispatched = true;
+  try {
+    setGlobalDispatcher(new Agent({ headersTimeout: 900_000, bodyTimeout: 0 }));
+  } catch {
+    /* 设置失败则沿用默认（短任务不受影响） */
+  }
+}
+
 export interface LLMConfig {
   /** 兼容 OpenAI 的 base URL，如 https://api.deepseek.com/v1 */
   baseUrl: string;
@@ -116,6 +130,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
     tools: ToolDefinition[],
     options: Record<string, unknown> = {},
   ): Promise<LLMResponse> {
+    ensureLongTimeouts();
     const body: Record<string, unknown> = {
       model: this.config.model,
       messages: this.toWireMessages(messages, tools),
@@ -127,7 +142,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
     }
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.config.timeoutMs ?? 120_000);
+    const timer = setTimeout(() => controller.abort(), this.config.timeoutMs ?? 300_000);
     try {
       const res = await fetch(this.url(), {
         method: 'POST',
@@ -159,6 +174,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
     tools: ToolDefinition[],
     options: Record<string, unknown> = {},
   ): AsyncGenerator<StreamChunk> {
+    ensureLongTimeouts();
     const body: Record<string, unknown> = {
       model: this.config.model,
       messages: this.toWireMessages(messages, tools),
@@ -171,7 +187,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
     }
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.config.timeoutMs ?? 120_000);
+    const timer = setTimeout(() => controller.abort(), this.config.timeoutMs ?? 300_000);
     // 工具调用增量累积:OpenAI 流式把参数拆进多个 delta(按 index 分片),
     // 必须跨 chunk 合并,否则拿到的是残缺的调用。
     const pendingToolCalls = new Map<number, { id: string; name: string; arguments: string }>();
