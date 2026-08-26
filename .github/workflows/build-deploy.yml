@@ -132,6 +132,9 @@ jobs:
         run: |
           mkdir -p desktop/src-tauri/target/release
           cp "dist-bun/openaide-backend${{ matrix.ext }}" "desktop/src-tauri/target/release/openaide${{ matrix.ext }}"
+      - name: Install (desktop tauri cli)
+        working-directory: desktop
+        run: npm ci
       - name: Generate icon set
         working-directory: desktop
         run: npx tauri icon src-tauri/icons/icon.png
