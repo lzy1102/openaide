@@ -92,11 +92,14 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            backend: openaide-windows-x64.exe
+            target: bun-windows-x64
+            ext: .exe
           - os: ubuntu-latest
-            backend: openaide-linux-x64
+            target: bun-linux-x64
+            ext: ''
           - os: macos-latest
-            backend: openaide-darwin-arm64
+            target: bun-darwin-arm64
+            ext: ''
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write
@@ -120,15 +123,15 @@ jobs:
         with:
           workspaces: desktop/src-tauri
       - name: Build openaide backend binary
+        shell: bash
         run: |
           V="${GITHUB_REF_NAME#v}"
-          bun build packages/cli/src/main.ts --compile             --define "OPENAIDE_VERSION=\"$V\"" --define OPENAIDE_BINARY=true             --target=bun-${{ matrix.os == 'macos-latest' && 'darwin-arm64' || 'x64' }}             --outfile "dist-bun/openaide-backend"
+          bun build packages/cli/src/main.ts --compile             --define "OPENAIDE_VERSION=\"$V\"" --define OPENAIDE_BINARY=true             --target=${{ matrix.target }}             --outfile "dist-bun/openaide-backend${{ matrix.ext }}"
       - name: Place backend next to shell (sibling resolution)
         shell: bash
         run: |
           mkdir -p desktop/src-tauri/target/release
-          EXT="${{ matrix.os == 'windows-latest' && '.exe' || '' }}"
-          cp "dist-bun/openaide-backend$EXT" "desktop/src-tauri/target/release/openaide$EXT"
+          cp "dist-bun/openaide-backend${{ matrix.ext }}" "desktop/src-tauri/target/release/openaide${{ matrix.ext }}"
       - name: Generate icon set
         working-directory: desktop
         run: npx tauri icon src-tauri/icons/icon.png
