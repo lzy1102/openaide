@@ -96,11 +96,13 @@ export function findProjectWorkspace(startDir?: string): string | null {
 }
 
 /**
- * 解析项目工作区（会话一律随项目走）:
- *  - cwd 及其祖先已有 .openaide/ → 复用它（子目录启动也能找回项目根的会话）
- *  - 没有 → 在 cwd 下创建 .openaide/（启动目录即项目根）
- *  - 家目录护栏：cwd 即家目录时不创建（避免"~/.openaide 即工作区"的语义混淆），
- *    此时回退全局数据目录作为工作区
+ * 解析项目工作区（会话一律随项目走）。
+ *
+ * 项目边界 = git 仓库边界（"随仓库走"的字面语义）：
+ *  - 从 cwd 向上走，命中已有 .openaide/ → 复用（子目录启动找回项目根会话）
+ *  - 先碰到 .git → 就地创建/使用该仓库根的 .openaide/，
+ *    绝不越界到外层仓库的工作区（嵌套仓库/子项目各自隔离）
+ *  - 非 git 目录 → 走到家目录护栏为止；cwd 即家目录时回退全局数据目录
  */
 export function resolveProjectWorkspace(startDir?: string): string {
   const cwd = startDir ? resolve(startDir) : process.cwd();
@@ -108,14 +110,19 @@ export function resolveProjectWorkspace(startDir?: string): string {
   if (cwd === home) return defaultDataDir(); // 家目录护栏
 
   let dir = cwd;
+  let gitRoot: string | null = null;
   for (;;) {
     // 家目录的 .openaide 是全局配置目录，绝不能被当作项目工作区命中
     const candidate = join(dir, WORKSPACE_DIRNAME);
     if (dir !== home && existsSync(candidate) && statSync(candidate).isDirectory()) return candidate;
-    if (dir === home || dirname(dir) === dir) break; // 到家目录/根为止
+    if (!gitRoot && existsSync(join(dir, '.git'))) gitRoot = dir; // 仓库边界
+    if (gitRoot && dir === gitRoot) break;                        // 已到仓库根：不再向上越界
+    if (dir === home || dirname(dir) === dir) break;              // 非 git 目录：走到家/根为止
     dir = dirname(dir);
   }
-  const created = join(cwd, WORKSPACE_DIRNAME);
+
+  const base = gitRoot ?? cwd;
+  const created = join(base, WORKSPACE_DIRNAME);
   mkdirSync(created, { recursive: true });
   return created;
 }
