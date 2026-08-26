@@ -3,4 +3,5 @@ export * from './registry.js';
 export * from './builtin.js';
 export * from './file-tools.js';
 export * from './web-search.js';
+export * from './web-fetch.js';
 export * from './browser.js';

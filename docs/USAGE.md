@@ -188,6 +188,11 @@ export BRAVE_API_KEY=SBC-xxx       # 或 brave.com/search/api 免费 2000 次/�
 export SEARXNG_URL=http://localhost:8888   # 或自托管 SearXNG
 ```
 
+配套 **`web_fetch(url)`**：抓取任意网页返回正文文本（自动剥离 HTML 噪音，
+支持 JSON 格式化与长度截断）。搜索→阅读一条龙：
+模型会先 web_search 检索、再 web_fetch 读取命中的页面。JS 渲染的动态页
+请改用 browser_navigate + browser_snapshot。
+
 > 不用手选工具——内核 ReAct 循环自动判断何时调用哪个工具（`builtin__*` 或插件注册的 `<插件>__<工具>`）。会话默认持久化到 `~/.openaide/sessions.db`，重启不丢。
 
 ### 任务变身：一个 SYSTEM.md 变成任意领域 agent

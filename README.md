@@ -27,7 +27,7 @@
 - 🛒 **GitHub-powered plugin marketplace** — no server, no review: tag your repo `openaide-plugin` and it's searchable/installable (`openaide plugins search|install`)
 - 🖥️ **Desktop app** — Tauri shell (NSIS/AppImage/DMG) wrapping the local server + WebUI: double-click icon, real window, backend process auto-managed
 - 🖥️ **Browser control** — native Playwright tools: navigate, click, type, and a one-shot `browser_search`; headless by default
-- 🌐 **Built-in web_search** — pluggable backends (Tavily / Brave / SearXNG), zero-config error hints; or bring any search MCP server
+- 🌐 **Built-in web tools** — `web_search` (Tavily / Brave / SearXNG backends) + `web_fetch` (URL → readable text), or bring any search MCP server
 - ⚡ **Token-efficient by design** — stable system prefix + `cache_control` prompt caching, token-budgeted history trim, empty replies treated as failures
 
 ## 🆚 How it compares
