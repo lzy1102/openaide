@@ -15,6 +15,13 @@ export interface LLMConfigOptions {
   timeoutMs?: number;
   /** 推理强度，原样透传网关 reasoning_effort（low/medium/high/max…按模型支持） */
   reasoningEffort?: string;
+  /**
+   * 瞬态失败自动重试次数：-1=无限直到成功或用户取消（默认）；0=不重试；正数=N 次。
+   * 仅针对网络/超时/429/5xx；鉴权与参数错误不重试。
+   */
+  retries?: number;
+  /** 重试基础延迟（毫秒），指数退避 ×2，默认 1500 */
+  retryDelayMs?: number;
   /** Provider 名（插件注册的自定义后端；缺省内置 openai-compatible） */
   provider?: string;
 }
@@ -56,6 +63,12 @@ export interface Config {
     env?: Record<string, string>;
     timeoutMs?: number;
   }>;
+}
+
+function _num(v: string | undefined): number | undefined {
+  if (!v) return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined;
 }
 
 /** 默认配置目录（OPENAIDE_DATA_DIR 优先，保证数据与配置随目录整体迁移） */
@@ -197,6 +210,8 @@ interface RawConfig {
     timeout_ms?: number;
     provider?: string;
     reasoning_effort?: string;
+    retries?: number;
+    retry_delay_ms?: number;
   };
   kernel?: {
     max_rounds?: number;
@@ -241,6 +256,8 @@ export function loadConfig(configPath?: string): Config {
       timeoutMs: raw.llm?.timeout_ms,
       provider: process.env.OPENAIDE_PROVIDER ?? raw.llm?.provider,
       reasoningEffort: process.env.OPENAIDE_REASONING_EFFORT ?? raw.llm?.reasoning_effort,
+      retries: raw.llm?.retries ?? _num(process.env.OPENAIDE_RETRIES),
+      retryDelayMs: raw.llm?.retry_delay_ms ?? _num(process.env.OPENAIDE_RETRY_DELAY_MS),
     },
     kernel: {
       maxRounds: raw.kernel?.max_rounds ?? 10,
@@ -285,6 +302,8 @@ export function saveConfig(config: Config, path?: string): void {
       timeout_ms: config.llm.timeoutMs,
       provider: config.llm.provider,
       reasoning_effort: config.llm.reasoningEffort,
+      retries: config.llm.retries,
+      retry_delay_ms: config.llm.retryDelayMs,
     },
     kernel: {
       max_rounds: config.kernel.maxRounds,

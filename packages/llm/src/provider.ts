@@ -27,6 +27,9 @@ function ensureLongTimeouts(): void {
   }
 }
 
+/** 可重试的瞬态 HTTP 状态码 */
+const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+
 export interface LLMConfig {
   /** 兼容 OpenAI 的 base URL，如 https://api.deepseek.com/v1 */
   baseUrl: string;
@@ -39,6 +42,14 @@ export interface LLMConfig {
    * 常见取值：low / medium / high / max——不同模型档位名不同，不做枚举限制。
    */
   reasoningEffort?: string;
+  /**
+   * 瞬态失败自动重试次数（网络错误/超时/429/5xx）。
+   * 默认 -1 = 无限重试直到成功或用户 Ctrl+C；0 = 不重试；正数 = N 次。
+   * 鉴权(401/403)与参数(400)错误永不重试。
+   */
+  retries?: number;
+  /** 重试基础延迟毫秒（指数退避 ×2），默认 1500 */
+  retryDelayMs?: number;
 }
 
 interface ChatMessage {
@@ -95,6 +106,43 @@ export class OpenAICompatibleProvider implements LLMProvider {
     return `${base}/chat/completions`;
   }
 
+  private async sleep(ms: number): Promise<void> {
+    await new Promise((r) => setTimeout(r, ms));
+  }
+
+  /**
+   * 带重试的 fetch：网络错误/超时/429/5xx 按指数退避重试（封顶 30s）；
+   * retries<0 表示无限重试直到成功或用户 Ctrl+C；4xx 立即失败不重试。
+   */
+  private async fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
+    const maxRetries = this.config.retries ?? -1; // 默认无限
+    const baseDelay = this.config.retryDelayMs ?? 1_500;
+    const MAX_DELAY = 30_000;
+    for (let attempt = 0; ; attempt++) {
+      const canRetry = maxRetries < 0 || attempt < maxRetries;
+      let res: Response;
+      try {
+        res = await fetch(url, init);
+      } catch (err) {
+        // 网络层错误（含超时 abort）→ 可重试
+        if (canRetry) {
+          const delay = Math.min(baseDelay * 2 ** attempt, MAX_DELAY);
+          console.warn(`[llm] attempt ${attempt + 1} network error, retry in ${delay}ms:`, (err as Error).message);
+          await this.sleep(delay);
+          continue;
+        }
+        throw err;
+      }
+      if (RETRYABLE_STATUS.has(res.status) && canRetry) {
+        const delay = Math.min(baseDelay * 2 ** attempt, MAX_DELAY);
+        console.warn(`[llm] attempt ${attempt + 1} got ${res.status}, retry in ${delay}ms`);
+        await this.sleep(delay);
+        continue;
+      }
+      return res;
+    }
+  }
+
   private headers(): Record<string, string> {
     return {
       'Content-Type': 'application/json',
@@ -144,7 +192,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.config.timeoutMs ?? 300_000);
     try {
-      const res = await fetch(this.url(), {
+      const res = await this.fetchWithRetry(this.url(), {
         method: 'POST',
         headers: this.headers(),
         body: JSON.stringify(body),
@@ -192,7 +240,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
     // 必须跨 chunk 合并,否则拿到的是残缺的调用。
     const pendingToolCalls = new Map<number, { id: string; name: string; arguments: string }>();
     try {
-      const res = await fetch(this.url(), {
+      const res = await this.fetchWithRetry(this.url(), {
         method: 'POST',
         headers: this.headers(),
         body: JSON.stringify(body),

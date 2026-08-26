@@ -14,6 +14,8 @@ llm:
   timeout_ms: 60000                     # 可选：请求超时（毫秒）
   # provider: "acme"                    # 可选：插件注册的 LLM 后端名（缺省内置 openai-compatible）
   # reasoning_effort: "max"             # 推理强度透传 reasoning_effort（low/medium/high/max，按模型支持）
+  retries: -1                            # 瞬态失败重试：-1=无限直到成功或 Ctrl+C / 0=不重试 / N=次数
+  retry_delay_ms: 1500                   # 重试基础延迟（指数退避 ×2，封顶 30s）
 
 # ── 内核 ─────────────────────────────────
 kernel:

@@ -73,6 +73,8 @@ kernel:
 | `OPENAIDE_PORT` | `serve` 命令端口（默认 8080） |
 | `OPENAIDE_PROVIDER` | `llm.provider` |
 | `OPENAIDE_REASONING_EFFORT` | `llm.reasoning_effort` |
+| `OPENAIDE_RETRIES` | `llm.retries` |
+| `OPENAIDE_RETRY_DELAY_MS` | `llm.retry_delay_ms` |
 
 ### 1.2.0 内核运行时行为
 

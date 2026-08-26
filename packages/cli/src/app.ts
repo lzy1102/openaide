@@ -93,6 +93,8 @@ export async function buildApp(config?: Config): Promise<App> {
     model: cfg.llm.model,
     timeoutMs: cfg.llm.timeoutMs,
     reasoningEffort: cfg.llm.reasoningEffort,
+    retries: cfg.llm.retries,
+    retryDelayMs: cfg.llm.retryDelayMs,
   });
   const llmDelegate: LLMProvider & ModelSwitcher = {
     chat: (m, t, o) => currentProvider.chat(m, t, o),
