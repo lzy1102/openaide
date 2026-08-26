@@ -127,7 +127,8 @@ export class OpenAICompatibleProvider implements LLMProvider {
         // 网络层错误（含超时 abort）→ 可重试
         if (canRetry) {
           const delay = Math.min(baseDelay * 2 ** attempt, MAX_DELAY);
-          console.warn(`[llm] attempt ${attempt + 1} network error, retry in ${delay}ms:`, (err as Error).message);
+          process.stderr.write(`[llm] attempt ${attempt + 1} network error, retry in ${delay}ms: ${(err as Error).message}
+`);
           await this.sleep(delay);
           continue;
         }
@@ -135,7 +136,8 @@ export class OpenAICompatibleProvider implements LLMProvider {
       }
       if (RETRYABLE_STATUS.has(res.status) && canRetry) {
         const delay = Math.min(baseDelay * 2 ** attempt, MAX_DELAY);
-        console.warn(`[llm] attempt ${attempt + 1} got ${res.status}, retry in ${delay}ms`);
+        process.stderr.write(`[llm] attempt ${attempt + 1} got ${res.status}, retry in ${delay}ms
+`);
         await this.sleep(delay);
         continue;
       }
