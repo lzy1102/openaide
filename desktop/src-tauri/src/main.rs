@@ -86,7 +86,7 @@ fn main() {
             eprintln!(
                 "[openaide-desktop] failed to launch backend '{bin:?}': {e}\n\
                  Place the openaide binary next to the desktop app, set OPENAIDE_BIN, \
-                 or install the Node edition (npm i -g @openaide/cli)."
+                 or install the Node edition from source: clone the repo and run node scripts/install.mjs."
             );
             // 无后端也要有窗口：打开一个内置说明页，避免闪退
             tauri::Builder::default()
