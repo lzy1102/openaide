@@ -28,8 +28,11 @@ jobs:
         run: npm test
 
   # ── 发布：tag v* 时按依赖顺序发布全部 workspace 包 + 创建 Release ──
+  # ── 暂停：npm 账号 2FA 政策与 CI token 冲突（新 scope 首发被拒）。
+  #    待生成支持新包首发的 Classic Automation token 或手动首发 @openaide/core 后，
+  #    将 if 改回 startsWith(github.ref, 'refs/tags/v') 即可恢复。
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: false
     needs: test
     runs-on: ubuntu-latest
     permissions:
