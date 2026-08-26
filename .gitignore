@@ -18,3 +18,4 @@ browser-smoke.mts
 test-out.txt
 desktop/src-tauri/target/
 desktop/src-tauri/gen/
+*.mts
