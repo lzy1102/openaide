@@ -8,6 +8,7 @@ import { loadConfig, Config, resolveIdentity, resolveProjectWorkspace } from '@o
 import { OpenAICompatibleProvider } from '@openaide/llm';
 import { PluginManager, PluginPersonaProvider, builtinPersonasPlugin } from '@openaide/plugins';
 import { closeBrowser, createTodoPlugin, ToolRegistry, builtinToolsPlugin, fileToolsPlugin, webSearchPlugin, browserPlugin, webFetchPlugin } from '@openaide/tools';
+import { notifyPlugin } from '@openaide/tools';
 import { resolveStores } from '@openaide/memory';
 import { SQLiteSessionStore, SqliteMemory } from '@openaide/memory';
 import { createMcpBridgePlugin, loadClaudeMcpConfig } from '@openaide/mcp';
