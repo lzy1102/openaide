@@ -28,8 +28,10 @@
 - ✅ **Self-managed todo plans** — the agent writes and tracks its own step-by-step checklist on long tasks (proven to reduce drift)
 - 🖥️ **Desktop app** — Tauri shell (NSIS/AppImage/DMG) wrapping the local server + WebUI: double-click icon, real window, backend process auto-managed
 - 📋 **Self-managed todos** — agent's `todo_write` task plans (pending→in_progress→completed), broadcast live to TUI/REPL
+- 🖥️ **Desktop automation** — screenshot + click/type/key + window listing (Windows, PowerShell-based, must be used as a suite)
 - 🖥️ **Browser control** — native Playwright tools: navigate, click, type, and a one-shot `browser_search`; headless by default
 - 🌐 **Built-in web tools** — `web_search` (Tavily / Brave / SearXNG backends) + `web_fetch` (URL → readable text), or bring any search MCP server
+- 🔧 **Structured Git** — `git_status` / `git_diff` / `git_log` return JSON instead of raw text
 - ⚡ **Token-efficient by design** — stable system prefix + `cache_control` prompt caching, token-budgeted history trim, empty replies treated as failures
 
 ## 🆚 How it compares
