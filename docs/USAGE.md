@@ -13,6 +13,7 @@
   - [1.4 一次性问答](#14-一次性问答)
   - [1.5 API 服务](#15-api-服务)
   - [1.6 插件的使用](#16-插件的使用)
+  - [1.7 桌面自动化](#17-桌面自动化)
 - [二、开发者（Developer）](#二开发者developer)
   - [2.1 在仓库内开发](#21-在仓库内开发)
   - [2.2 写一个插件](#22-写一个插件)
@@ -392,6 +393,22 @@ openaide plugins uninstall <name>  # 卸载并删除目录（含清理禁用名�
 - **发布零门槛**：GitHub 建仓库 → 打 topic `openaide-plugin` → 根目录放 `openaide.yaml`（推荐，含 name/version；纯人格插件放 SYSTEM.md 即可）→ 即可被全生态搜到。设置 `GITHUB_TOKEN` 环境变量可提升搜索配额（匿名 10 次/分钟）
 - 静态种子索引：本仓库 `registry/plugins.json`（`registry_url` / `OPENAIDE_REGISTRY_URL` 覆盖，支持 `file://` 离线索引），作为 GitHub 的离线兜底与精选位
 - REPL/TUI 内等价命令：`/plugins search <kw>`、`/plugins install|uninstall <name>`
+
+
+### 1.7 桌面自动化（截图+键鼠+窗口）
+
+`desktop_*` 是一套配套使用的 Windows 桌面工具，适合让模型操作真实桌面应用：
+
+```bash
+# agent 会自动组合调用
+desktop_screenshot         # 全屏或指定区域截图，返回图片路径
+desktop_click    x:100 y:200            # 点击坐标（支持 left/right/middle + 双击）
+desktop_type     text:"hello"           # 向焦点窗口输入文本
+desktop_key      key:"Enter"            # 按键 / 组合键（Ctrl+C 等）
+desktop_windows                # 列出所有可见窗口（标题/句柄/进程）
+```
+
+单独截图无意义——必须与点击、输入、按键配合才能完成自动化。工具仅在 Windows 上生效。
 
 ---
 

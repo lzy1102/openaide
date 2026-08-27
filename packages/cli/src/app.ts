@@ -7,7 +7,7 @@ import type { LLMProvider, Memory, ModelSwitcher, SessionStore } from '@openaide
 import { loadConfig, Config, resolveIdentity, resolveProjectWorkspace } from '@openaide/config';
 import { OpenAICompatibleProvider } from '@openaide/llm';
 import { PluginManager, PluginPersonaProvider, builtinPersonasPlugin } from '@openaide/plugins';
-import { closeBrowser, createTodoPlugin, notifyPlugin, ToolRegistry, builtinToolsPlugin, fileToolsPlugin, gitPlugin, webSearchPlugin, browserPlugin, webFetchPlugin } from '@openaide/tools';
+import { closeBrowser, createTodoPlugin, desktopPlugin, notifyPlugin, ToolRegistry, builtinToolsPlugin, fileToolsPlugin, gitPlugin, webSearchPlugin, browserPlugin, webFetchPlugin } from '@openaide/tools';
 import { resolveStores } from '@openaide/memory';
 import { SQLiteSessionStore, SqliteMemory } from '@openaide/memory';
 import { createMcpBridgePlugin, loadClaudeMcpConfig } from '@openaide/mcp';
@@ -181,6 +181,13 @@ export async function buildApp(config?: Config): Promise<App> {
     console.log(`[app] plugin disabled by state: ${webFetchPlugin.name}`);
   } else {
     await plugins.add(webFetchPlugin, process.cwd());
+  }
+
+  // 桌面自动化（截图+键鼠+窗口）
+  if (plugins.isDisabled(desktopPlugin.name)) {
+    console.log(`[app] plugin disabled by state: ${desktopPlugin.name}`);
+  } else {
+    await plugins.add(desktopPlugin, process.cwd());
   }
 
   // 浏览器操作（需 npm i -D playwright；未装时调用会返回安装指引）
