@@ -10,7 +10,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Box, Text, Static, useApp, useInput } from 'ink';
 import Spinner from 'ink-spinner';
-import { StreamChunkType, newId } from '@openaide/core';
+import { KernelEvent, StreamChunkType, newId } from '@openaide/core';
 import { DEFAULT_REGISTRY_URL, fetchRegistry, GITHUB_PLUGIN_TOPIC, installEntry, readPluginState, searchEverywhere, writePluginState } from '@openaide/plugins';
 import { existsSync, rmSync } from 'node:fs';
 import type { App } from './app.js';
@@ -162,6 +162,16 @@ export function Tui({ app, initialSessionId }: { app: App; initialSessionId?: st
   const [streamingContent, setStreamingContent] = useState('');
   const [streamingReasoning, setStreamingReasoning] = useState('');
   const [phase, setPhase] = useState<Phase>('idle');
+  // 任务清单（agent 的 todo_write 广播）
+  const [todos, setTodos] = useState<Array<{ content: string; status: string }>>([]);
+  useEffect(() => {
+    const id = app.bus?.subscribe?.((event: KernelEvent) => {
+      if (event.type === 'todo.updated') {
+        setTodos((event.data as { todos?: Array<{ content: string; status: string }> })?.todos ?? []);
+      }
+    });
+    return () => app.bus?.unsubscribe?.(id);
+  }, [app]);
   const [currentTool, setCurrentTool] = useState('');
   const [status, setStatus] = useState<string>('ready');
   const [input, setInput] = useState('');
@@ -663,6 +673,17 @@ export function Tui({ app, initialSessionId }: { app: App; initialSessionId?: st
           <Text dimColor>{(pendingApproval.args || '').slice(0, 300)}</Text>
         </Box>
       ) : null}
+
+      {/* 任务清单（agent 自管理，进程内按会话隔离） */}
+      {todos.length > 0 && (
+        <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
+          {todos.map((t, i) => (
+            <Text key={`${t.content}-${i}`} color={t.status === 'completed' ? 'green' : t.status === 'in_progress' ? 'cyan' : 'white'}>
+              {t.status === 'completed' ? '☑ ' : t.status === 'in_progress' ? '→ ' : '☐ '} {t.content}
+            </Text>
+          ))}
+        </Box>
+      )}
 
       {/* 输入框 */}
       <Box marginTop={1}>

@@ -19,3 +19,4 @@ test-out.txt
 desktop/src-tauri/target/
 desktop/src-tauri/gen/
 *.mts
+ft.txt

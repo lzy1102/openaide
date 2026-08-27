@@ -111,7 +111,9 @@ cli (TUI + REPL + 命令)      api (HTTP/WS + SSE)
 ## 核心概念
 
 - **一切皆插件**：内核的工具、人格、钩子全部经插件体系注入——内置与用户插件走同一套注册逻辑
+- ✅ **任务清单自管理**：长任务自动写计划、逐项更新状态（显著减少跑偏）
 - 🖥️ **桌面应用**：Tauri 壳（NSIS/AppImage/DMG）托管本地服务与 WebUI——双击图标即用，后端进程自动管理
+- 📋 **自管理清单**——agent 的 `todo_write` 任务计划，TUI/REPL 实时渲染
 - 🖥️ **浏览器控制**：原生 Playwright 工具——navigate/click/type 与一键 `browser_search`，默认无头
 - 🌐 **内置 web_search**：可插拔后端（Tavily / Brave / SearXNG），未配置时给出启用指引；也支持任意搜索类 MCP server
 - 🪆 **子代理编排**：`config.kernel.subagents` 把 (persona, 工具白名单) 打包成可委派工具——独立子循环、级联中止、会话零污染

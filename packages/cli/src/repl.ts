@@ -10,7 +10,7 @@ import { createInterface } from 'node:readline';
 import { stdin as input, stdout as output } from 'node:process';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { StreamChunkType, newId } from '@openaide/core';
+import { KernelEvent, StreamChunkType, newId } from '@openaide/core';
 import { DEFAULT_REGISTRY_URL, fetchRegistry, GITHUB_PLUGIN_TOPIC, installEntry, readPluginState, searchEverywhere, writePluginState } from '@openaide/plugins';
 import type { App } from './app.js';
 
@@ -145,6 +145,20 @@ export async function runRepl(app: App, initialSessionId?: string): Promise<void
 
   // readline 回调版封装为 Promise
   const question = (prompt: string) => new Promise<string>((resolve) => rl.question(prompt, resolve));
+
+  app.bus?.subscribe?.((event: KernelEvent) => {
+    if (event.type === 'todo.updated') {
+      const todos = (event.data as { todos?: Array<{ content: string; status: string }> })?.todos ?? [];
+      if (todos.length > 0) {
+        const lines = todos.map((t) =>
+          t.status === 'completed' ? `  ☑ ${t.content}`
+          : t.status === 'in_progress' ? `  → ${t.content}`
+          : `  ☐ ${t.content}`,
+        );
+        process.stdout.write('\n' + lines.join('\n') + '\n');
+      }
+    }
+  });
 
   // 当前会话：undefined 时每条消息新建；-c 续聊时用传入的 initialSessionId
   let sessionId: string | undefined = initialSessionId;

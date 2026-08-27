@@ -7,7 +7,7 @@ import type { LLMProvider, Memory, ModelSwitcher, SessionStore } from '@openaide
 import { loadConfig, Config, resolveIdentity, resolveProjectWorkspace } from '@openaide/config';
 import { OpenAICompatibleProvider } from '@openaide/llm';
 import { PluginManager, PluginPersonaProvider, builtinPersonasPlugin } from '@openaide/plugins';
-import { closeBrowser, ToolRegistry, builtinToolsPlugin, fileToolsPlugin, webSearchPlugin, browserPlugin, webFetchPlugin } from '@openaide/tools';
+import { closeBrowser, createTodoPlugin, ToolRegistry, builtinToolsPlugin, fileToolsPlugin, webSearchPlugin, browserPlugin, webFetchPlugin } from '@openaide/tools';
 import { resolveStores } from '@openaide/memory';
 import { SQLiteSessionStore, SqliteMemory } from '@openaide/memory';
 import { createMcpBridgePlugin, loadClaudeMcpConfig } from '@openaide/mcp';
@@ -166,6 +166,14 @@ export async function buildApp(config?: Config): Promise<App> {
     console.log(`[app] plugin disabled by state: ${webSearchPlugin.name}`);
   } else if (process.env.TAVILY_API_KEY || process.env.BRAVE_API_KEY || process.env.SEARXNG_URL) {
     await plugins.add(webSearchPlugin, process.cwd());
+  }
+
+  // 任务计划（todo 自管理）——进程内按会话隔离，可经 plugin-state 禁用但默认启用
+  // 需传入 eventBus 以广播到 TUI/REPL 实时渲染
+  if (plugins.isDisabled(createTodoPlugin().name)) {
+    console.log(`[app] plugin disabled by state: todo`);
+  } else {
+    await plugins.add(createTodoPlugin(bus), process.cwd());
   }
 
   // URL 抓取（web_search 的配套阅读器）
