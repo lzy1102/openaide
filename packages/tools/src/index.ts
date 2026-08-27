@@ -7,3 +7,4 @@ export * from './web-fetch.js';
 export * from './browser.js';
 export * from './todo.js';
 export * from './notify.js';
+export * from './git.js';

@@ -7,8 +7,7 @@ import type { LLMProvider, Memory, ModelSwitcher, SessionStore } from '@openaide
 import { loadConfig, Config, resolveIdentity, resolveProjectWorkspace } from '@openaide/config';
 import { OpenAICompatibleProvider } from '@openaide/llm';
 import { PluginManager, PluginPersonaProvider, builtinPersonasPlugin } from '@openaide/plugins';
-import { closeBrowser, createTodoPlugin, ToolRegistry, builtinToolsPlugin, fileToolsPlugin, webSearchPlugin, browserPlugin, webFetchPlugin } from '@openaide/tools';
-import { notifyPlugin } from '@openaide/tools';
+import { closeBrowser, createTodoPlugin, notifyPlugin, ToolRegistry, builtinToolsPlugin, fileToolsPlugin, gitPlugin, webSearchPlugin, browserPlugin, webFetchPlugin } from '@openaide/tools';
 import { resolveStores } from '@openaide/memory';
 import { SQLiteSessionStore, SqliteMemory } from '@openaide/memory';
 import { createMcpBridgePlugin, loadClaudeMcpConfig } from '@openaide/mcp';
@@ -189,6 +188,12 @@ export async function buildApp(config?: Config): Promise<App> {
     console.log(`[app] plugin disabled by state: ${browserPlugin.name}`);
   } else {
     await plugins.add(browserPlugin, process.cwd());
+  }
+  // 结构化 Git 工具（git_status / git_diff / git_log）
+  if (plugins.isDisabled(gitPlugin.name)) {
+    console.log(`[app] plugin disabled by state: ${gitPlugin.name}`);
+  } else {
+    await plugins.add(gitPlugin, process.cwd());
   }
   // 内置人格包（coder/architect）——提示词内容住插件，不住内核
   if (plugins.isDisabled(builtinPersonasPlugin.name)) {
