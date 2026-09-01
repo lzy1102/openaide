@@ -30,6 +30,10 @@ kernel:
   #     persona: voyager                 # 任意插件人格 → 工具 subagent__travel
   #     description: 行程规划专家
   #     max_rounds: 6
+  compress:                              # 上下文压缩（适配 1M 上下文，默认 keep_recent: 12）
+    keep_recent: 12                      # 压缩后保留的最近消息数（4=省token, 12=1M推荐, 20=极长任务）
+    max_chars: 1200                      # 单条进摘要前的截断长度
+    summary_tokens: 600                  # 摘要最大 token
 
 # ── 工作区与会话同步（可选）────────────
 # workspace: "on"                       # on(默认,会话随项目走) / off(脚本/CI 用全局存储)

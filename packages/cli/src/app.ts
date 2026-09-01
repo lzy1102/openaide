@@ -324,6 +324,14 @@ export async function buildApp(config?: Config): Promise<App> {
     };
   }
 
+  // 上下文压缩器（LLM 生成摘要，参数可配）
+  const { LLMCompressor } = await import('@openaide/core');
+  const compressor = new LLMCompressor(llmDelegate, {
+    keepRecent: cfg.kernel.compress?.keepRecent,
+    maxCharsForSummary: cfg.kernel.compress?.maxChars,
+    summaryMaxTokens: cfg.kernel.compress?.summaryTokens,
+  });
+
   // 内核
   const kernel = new AgentKernel({
     llm: llmDelegate,
@@ -333,6 +341,7 @@ export async function buildApp(config?: Config): Promise<App> {
     persona,
     eventBus: bus,
     interceptors: plugins.interceptors, // 活数组引用：插件启停即时生效
+    compressor,
     config: {
       maxRounds: cfg.kernel.maxRounds,
       maxTokens: cfg.kernel.maxTokens,

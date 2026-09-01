@@ -38,6 +38,11 @@ export interface Config {
     /** 工具审批模式：off=不审批（默认）；dangerous=危险工具需确认；always=所有工具需确认 */
     approval?: 'off' | 'dangerous' | 'always';
     subagents?: Array<{ name: string; persona: string; description?: string; maxRounds?: number }>;
+    compress?: {
+      keepRecent?: number;
+      maxChars?: number;
+      summaryTokens?: number;
+    };
   };
   /** 数据目录（会话/记忆/插件） */
   dataDir: string;
@@ -221,14 +226,19 @@ interface RawConfig {
     retry_delay_ms?: number;
   };
   kernel?: {
-    max_rounds?: number;
-    max_tokens?: number;
-    system_prompt?: string;
-    persona?: string;
-    approval?: 'off' | 'dangerous' | 'always';
-    /** 子代理声明：每个条目打包 (persona, 可选 maxRounds) 为一个可委派工具 */
-    subagents?: Array<{ name: string; persona: string; description?: string; max_rounds?: number }>;
-  };
+     max_rounds?: number;
+     max_tokens?: number;
+     system_prompt?: string;
+     persona?: string;
+     approval?: 'off' | 'dangerous' | 'always';
+     /** 子代理声明：每个条目打包 (persona, 可选 maxRounds) 为一个可委派工具 */
+     subagents?: Array<{ name: string; persona: string; description?: string; max_rounds?: number }>;
+     compress?: {
+       keep_recent?: number;
+       max_chars?: number;
+       summary_tokens?: number;
+     };
+   };
   data_dir?: string;
   plugins_dir?: string;
   registry_url?: string;
@@ -273,6 +283,13 @@ export function loadConfig(configPath?: string): Config {
       persona: raw.kernel?.persona,
       approval: raw.kernel?.approval ?? 'off',
       subagents: raw.kernel?.subagents?.map((x) => ({ name: x.name, persona: x.persona, description: x.description, maxRounds: x.max_rounds })),
+      compress: raw.kernel?.compress
+        ? {
+            keepRecent: raw.kernel.compress.keep_recent,
+            maxChars: raw.kernel.compress.max_chars,
+            summaryTokens: raw.kernel.compress.summary_tokens,
+          }
+        : undefined,
     },
     dataDir,
     pluginsDir:
@@ -295,6 +312,17 @@ export function loadConfig(configPath?: string): Config {
 
   mkdirSync(dataDir, { recursive: true });
   mkdirSync(config.pluginsDir, { recursive: true });
+
+  // 首次运行自动落盘：默认路径无配置文件时生成一份带默认值的模版，方便用户直接编辑
+  // 自定义 path（如测试传参）不自动创建，避免副作用
+  if (path === defaultConfigPath() && !existsSync(path)) {
+    try {
+      saveConfig(config, path);
+    } catch {
+      // 只读文件系统等情况静默忽略，不阻塞启动
+    }
+  }
+
   return config;
 }
 
@@ -319,6 +347,13 @@ export function saveConfig(config: Config, path?: string): void {
       persona: config.kernel.persona,
       approval: config.kernel.approval ?? 'off',
       subagents: config.kernel.subagents,
+      compress: config.kernel.compress
+        ? {
+            keep_recent: config.kernel.compress.keepRecent,
+            max_chars: config.kernel.compress.maxChars,
+            summary_tokens: config.kernel.compress.summaryTokens,
+          }
+        : undefined,
     },
     data_dir: config.dataDir,
     plugins_dir: config.pluginsDir,

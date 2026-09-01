@@ -17,7 +17,7 @@ async function ps(script: string): Promise<string> {
     maxBuffer: 10 * 1024 * 1024,
     windowsHide: true,
   } as any);
-  return stdout as string;
+  return String(stdout ?? '');
 }
 
 export const desktopPlugin: OpenAIDePlugin = {

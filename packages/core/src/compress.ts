@@ -12,12 +12,18 @@ import { Message } from './types.js';
 import type { ContextCompressor, LLMProvider } from './interfaces.js';
 import { estimateTextTokens } from './prompt.js';
 
-/** 压缩后保留的最近消息条数 */
-const KEEP_RECENT = 4;
+/** 压缩后保留的最近消息条数（默认 12，适配 1M 上下文） */
+const DEFAULT_KEEP_RECENT = 12;
 /** 单条消息进摘要前的截断长度(字符) */
-const MAX_MSG_CHARS_FOR_SUMMARY = 800;
+const DEFAULT_MAX_MSG_CHARS_FOR_SUMMARY = 1200;
 /** 摘要的最大生成 tokens */
-const SUMMARY_MAX_TOKENS = 400;
+const DEFAULT_SUMMARY_MAX_TOKENS = 600;
+
+export interface CompressorOptions {
+  keepRecent?: number;
+  maxCharsForSummary?: number;
+  summaryMaxTokens?: number;
+}
 
 const SUMMARIZE_PROMPT = `Compress the conversation below into a structured summary. The summary replaces the full history in the context window, so preserve everything needed to continue the task.
 
@@ -58,9 +64,15 @@ export function estimateMessagesTokens(messages: Message[]): number {
  */
 export class LLMCompressor implements ContextCompressor {
   private provider: LLMProvider;
+  private keepRecent: number;
+  private maxCharsForSummary: number;
+  private summaryMaxTokens: number;
 
-  constructor(provider: LLMProvider) {
+  constructor(provider: LLMProvider, opts: CompressorOptions = {}) {
     this.provider = provider;
+    this.keepRecent = opts.keepRecent ?? DEFAULT_KEEP_RECENT;
+    this.maxCharsForSummary = opts.maxCharsForSummary ?? DEFAULT_MAX_MSG_CHARS_FOR_SUMMARY;
+    this.summaryMaxTokens = opts.summaryMaxTokens ?? DEFAULT_SUMMARY_MAX_TOKENS;
   }
 
   estimateTokens(messages: Message[]): number {
@@ -72,7 +84,7 @@ export class LLMCompressor implements ContextCompressor {
     maxTokens: number,
   ): Promise<{ messages: Message[]; saved: number }> {
     const before = estimateMessagesTokens(messages);
-    if (messages.length <= KEEP_RECENT + 1 || before <= maxTokens) {
+    if (messages.length <= this.keepRecent + 1 || before <= maxTokens) {
       return { messages, saved: 0 };
     }
 
@@ -80,12 +92,12 @@ export class LLMCompressor implements ContextCompressor {
     const systemMsgs = messages.filter((m) => m.role === 'system');
     const conversation = messages.filter((m) => m.role !== 'system');
 
-    if (conversation.length <= KEEP_RECENT) {
+    if (conversation.length <= this.keepRecent) {
       return { messages, saved: 0 };
     }
 
-    const oldMsgs = conversation.slice(0, conversation.length - KEEP_RECENT);
-    const recentMsgs = conversation.slice(conversation.length - KEEP_RECENT);
+    const oldMsgs = conversation.slice(0, conversation.length - this.keepRecent);
+    const recentMsgs = conversation.slice(conversation.length - this.keepRecent);
 
     // LLM 生成摘要;失败则回退到确定性截断
     let summary = '';
@@ -112,8 +124,8 @@ export class LLMCompressor implements ContextCompressor {
   private async summarize(oldMsgs: Message[]): Promise<string> {
     const parts = oldMsgs.map((m) => {
       let content = m.content ?? '';
-      if (content.length > MAX_MSG_CHARS_FOR_SUMMARY) {
-        content = content.slice(0, MAX_MSG_CHARS_FOR_SUMMARY) + '...';
+      if (content.length > this.maxCharsForSummary) {
+        content = content.slice(0, this.maxCharsForSummary) + '...';
       }
       return `${m.role}: ${content}`;
     });
@@ -121,7 +133,7 @@ export class LLMCompressor implements ContextCompressor {
     const resp = await this.provider.chat(
       [{ role: 'user', content: SUMMARIZE_PROMPT.replace('%s', parts.join('\n')) }],
       [],
-      { max_tokens: SUMMARY_MAX_TOKENS, temperature: 0.2 },
+      { max_tokens: this.summaryMaxTokens, temperature: 0.2 },
     );
     return (resp.content ?? '').trim();
   }
