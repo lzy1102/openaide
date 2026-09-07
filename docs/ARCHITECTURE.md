@@ -21,6 +21,12 @@ resolveIdentity(): OPENAIDE_USER > git user.name > email 前缀 > OS 用户名 >
 CLI 退出前 flush（stdio 子进程会钉住事件循环）。`knowledge/*.md` 为团队共享区，
 经 knowledge 拦截器注入 L1（mtime 缓存）。
 
+**平台附注**（`cli/environment.ts`）：启动时并发探测脚本运行时
+（python/py/node/bun/deno，每进程一次、同源去重、Store 占位 stub 丢弃），
+经 environment 拦截器注入 `[Platform]` 系统消息——Windows 引导 agent 优先
+专用工具与脚本文件，规避 PowerShell 单行的转义/GBK 翻车与失败重试轮。
+附注字节级稳定，前缀缓存不受影响。
+
 SQLite 驱动经 `memory/sqlite-driver.ts` 适配双形态：Node 走 better-sqlite3，
 Bun 单文件二进制走内置 bun:sqlite（better-sqlite3 的 bindings 运行时探测在
 编译产物虚拟 FS 中必然失败）。该形态服务于 `workspace: off` 与 API server。

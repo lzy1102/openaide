@@ -16,6 +16,7 @@ import { builtinUiPlugins } from './builtin-uis.js';
 import { createApprovalInterceptor } from './approval.js';
 import { createSubAgentsPlugin } from './subagents.js';
 import { createKnowledgeInterceptor, syncSessions } from './workspace.js';
+import { createEnvironmentInterceptor, detectRuntimes } from './environment.js';
 import type { ApprovalHandler } from './approval.js';
 
 export interface App {
@@ -284,6 +285,15 @@ export async function buildApp(config?: Config): Promise<App> {
   // 团队知识注入（knowledge/*.md → L1），常驻拦截链
   if (appMeta.workspaceDir) {
     plugins.interceptors.push(createKnowledgeInterceptor(appMeta.workspaceDir));
+  }
+
+  // 平台附注（探测脚本运行时 → [Platform] 系统消息），常驻拦截链
+  {
+    plugins.interceptors.push(createEnvironmentInterceptor());
+    const runtimes = await detectRuntimes();
+    if (runtimes.length > 0) {
+      console.log(`[app] script runtimes: ${runtimes.map((r) => r.cmd).join(', ')}`);
+    }
   }
 
   // 子代理编排（config.kernel.subagents 声明；人格懒解析，用户插件人格同样可用）
