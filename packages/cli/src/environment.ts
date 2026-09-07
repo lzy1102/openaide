@@ -85,7 +85,7 @@ export async function buildPlatformNote(
     '[Platform]',
     '运行环境: Windows，shell 是 cmd.exe。没有 bash/grep/sed/awk/head/tail。',
     '- 文本搜索用 search_files，文件读写用 read_file/write_file，列目录用 list_directory——不要用 shell 做这些。',
-    '- 引号转义、$variable 展开、GBK 编码是 PowerShell/cmd 单行的常见翻车点。',
+    '- 不要用 powershell / powershell -Command 包装命令——转义规则繁琐、极易翻车；默认 cmd.exe 语法。',
     '- 复杂文本处理/批处理优先写脚本执行，不要拼 shell 单行：',
     '  1) 用 write_file 写脚本到临时目录（'
       + join(tmpdir(), 'openaide-script.py 或 .mjs') + '）',

@@ -21,6 +21,7 @@ describe('buildPlatformNote', () => {
     assert.ok(note.includes('search_files'), 'should steer text search to search_files');
     assert.ok(note.includes('write_file'), 'should steer file writes to write_file');
     assert.ok(note.includes('脚本'), 'should prefer scripts over shell one-liners');
+    assert.ok(note.includes('不要用 powershell'), 'must steer away from PowerShell');
     assert.ok(note.includes('python (Python 3.12.4)'));
     assert.ok(note.includes('node (v22.4.0)'));
   });

@@ -48,7 +48,7 @@ export function buildSystemLayer(ctx: PromptContext): string {
   // （否则模型在 Windows 上第一枪总打向 pwd/ls，浪费一轮试错）
   const isWin = process.platform === 'win32';
   const shellHint = isWin
-    ? 'shell=cmd.exe (Unix 命令 pwd/ls/grep 不可用,改用 cd/dir/git/powershell -Command)'
+    ? 'shell=cmd.exe (Unix 命令 pwd/ls/grep 不可用,改用 cd/dir/git;勿用 powershell,复杂处理写脚本文件执行)'
     : 'shell=bash';
   parts.push(`[Environment] os=${process.platform} · ${shellHint} · cwd=${process.cwd()}`);
 
