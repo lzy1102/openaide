@@ -1,7 +1,7 @@
 /**
  * 上下文压缩器测试:
  *  - LLM 摘要成功 → system 保留、旧消息折叠为摘要、最近消息保留
- *  - LLM 失败 → 确定性截断回退,不抛错
+ *  - LLM 失败/空摘要 → 直接上抛(不截断兜底),上下文原样保留,调用方下轮重试
  *  - compressToBudget 渐进收敛,未超预算时不压缩
  */
 import { test, describe } from 'node:test';
@@ -62,17 +62,28 @@ describe('LLMCompressor', () => {
     assert.ok(saved > 0, 'should report saved tokens');
   });
 
-  test('compress falls back to deterministic truncation when LLM fails', async () => {
+  test('compress rejects when LLM fails — no truncation fallback', async () => {
     const provider = new MockProvider();
     provider.fail = true;
     const compressor = new LLMCompressor(provider);
     const history = bigHistory(20);
 
-    const { messages } = await compressor.compress(history, estimateMessagesTokens(history) - 1);
+    // 失败语义：上抛错误，消息原样返回前不做任何降级污染
+    await assert.rejects(
+      () => compressor.compress(history, estimateMessagesTokens(history) - 1),
+    );
+  });
 
-    const summary = messages.find((m) => m.content.includes('[Conversation Summary]'));
-    assert.ok(summary, 'fallback summary should exist');
-    assert.ok(summary!.content.includes('[Truncated history]'), 'fallback marker present');
+  test('compress rejects on empty summary — empty must never replace history', async () => {
+    const provider = new MockProvider();
+    provider.empty = true;
+    const compressor = new LLMCompressor(provider);
+    const history = bigHistory(20);
+
+    await assert.rejects(
+      () => compressor.compress(history, estimateMessagesTokens(history) - 1),
+      /empty summary/,
+    );
   });
 
   test('compress skips when within budget or too few messages', async () => {
@@ -86,6 +97,29 @@ describe('LLMCompressor', () => {
     const r2 = await compressor.compress(small, 10); // 超预算但只有 3 条
     assert.equal(r2.saved, 0);
     assert.deepEqual(r2.messages, small);
+  });
+
+  test('invalid options are clamped to safe defaults', async () => {
+    // keep_recent: 0/负数/NaN 曾会把全部历史(含当前任务状态)压进摘要
+    const compressor = new LLMCompressor(new MockProvider(), {
+      keepRecent: 0,
+      maxCharsForSummary: -5,
+      summaryMaxTokens: Number.NaN,
+    });
+    const history = bigHistory(20);
+    const { messages } = await compressor.compress(
+      history,
+      estimateMessagesTokens(history) - 1,
+    );
+
+    const summary = messages.find((m) => m.content.includes('[Conversation Summary]'));
+    assert.ok(summary, 'summary should exist');
+    // 夹取后 keepRecent=1：至少保留最后一条原文
+    const last = history[history.length - 1];
+    assert.ok(
+      messages.some((m) => m.content === last.content),
+      'last message must survive even with clamped keepRecent',
+    );
   });
 
   test('compressToBudget does nothing when already within budget', async () => {

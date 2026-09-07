@@ -48,7 +48,10 @@ npm unlink -g openaide
 openaide setup          # 交互式配置向导
 ```
 
-或复制模板 [config.example.yaml](../config.example.yaml) 到 `~/.openaide/config.yaml` 后编辑：
+或复制模板 [config.example.yaml](../config.example.yaml) 到 `~/.openaide/config.yaml` 后编辑。
+
+首次运行若配置文件不存在，会自动在默认路径生成一份脱敏模板（`api_key` 留空、
+不含机器相关目录），编辑补上 key 即可；`OPENAIDE_API_KEY` 等环境变量不会写进文件。
 
 ```yaml
 llm:
@@ -60,6 +63,10 @@ kernel:
   max_rounds: 10
   max_tokens: 200000    # 上下文 token 预算(压缩/历史裁剪阈值),非单次输出上限
   approval: dangerous   # 工具审批：off(默认)/dangerous(危险工具需确认)/always(全部确认)
+  compress:             # 上下文压缩（LLM 摘要），默认值已按 1M 上下文调优
+    keep_recent: 12     # 压缩后保留的最近消息数（4=省token / 12=1M推荐 / 20=极长任务）
+    max_chars: 1200     # 单条进摘要前的截断长度
+    summary_tokens: 600 # 摘要最大生成 token
 ```
 
 环境变量覆盖（优先级高于配置文件）：
@@ -80,6 +87,7 @@ kernel:
 ### 1.2.0 内核运行时行为
 
 - **上下文预算**：`kernel.max_tokens` 是上下文 token 预算（默认 200000），用于历史裁剪与压缩阈值——不是单次回复的输出上限。历史按条数（20）与 token 预算双重裁剪，防止长会话上下文膨胀。
+- **上下文压缩**：超过预算 90% 时触发——system 全量保留（缓存前缀稳定），最近 `kernel.compress.keep_recent` 条（默认 12，适配 1M 上下文）原样保留，更早历史由 LLM 生成结构化摘要替换。LLM 失败或空摘要时**不做截断兜底**：本轮放弃压缩、上下文原样保留，下一轮自动重试（等网关恢复再压缩），绝不拿劣化摘要污染上下文。
 - **前缀缓存友好**：system 层（L0 人格 + 项目规则）跨查询字节级稳定；技能提示作为独立消息注入；system 消息携带 `cache_control`。使用 DeepSeek 等 provider 时，多轮对话与跨查询都能命中前缀缓存，prompt 成本大幅降低。
 - **空回复即失败**：LLM 返回空内容（限流/静默失败）视为错误——不会显示"完成"却无回复，也不会把空消息写入会话。
 - **无限重试**：网络错误/超时/429/5xx 默认无限重试（指数退避封顶 30s），直到成功或你 Ctrl+C；鉴权(401/403)与参数错误立即失败。`retries: 0` 关闭，正数限定次数。重试日志走 stderr，不干扰 TUI。

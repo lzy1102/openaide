@@ -25,4 +25,20 @@ SQLite 驱动经 `memory/sqlite-driver.ts` 适配双形态：Node 走 better-sql
 Bun 单文件二进制走内置 bun:sqlite（better-sqlite3 的 bindings 运行时探测在
 编译产物虚拟 FS 中必然失败）。该形态服务于 `workspace: off` 与 API server。
 
+### 6.2 上下文压缩：LLM 摘要、失败上抛
+
+```
+reactLoop 每轮检查: estimateTokens > 90% × max_tokens
+  └→ compressToBudget(): 渐进压缩 ≤3 次直到进入预算
+       ├── system 消息全量保留（字节级稳定 → 前缀缓存不失效）
+       ├── 最近 keep_recent 条（默认 12，kernel.compress 可配）原样保留
+       ├── 更早历史 → LLM 结构化摘要（[User Intent]/[Key Facts]/[Current State]/[Notes]）
+       └── LLM 失败/空摘要 → 上抛，本轮放弃压缩，下轮重试（无截断兜底）
+```
+
+**取舍**：摘要质量直接决定长任务可持续性，截断兜底会以"看似成功"的方式丢失
+任务状态，比超预算更危险——宁可本轮带着超预算上下文请求（多数网关按实际
+容量处理），等 LLM 可用再压缩。`retries: -1` 时瞬态故障在 provider 层已被
+无限重试吸收，上抛仅发生在不可重试错误或用户取消。
+
 ---

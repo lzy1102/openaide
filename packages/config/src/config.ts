@@ -249,6 +249,38 @@ interface RawConfig {
 }
 
 /**
+ * 首次运行落盘的模板：剥离敏感值与机器相关绝对路径。
+ *  - api_key 留空（env 覆盖运行时仍生效，绝不把密钥明文写进新文件）
+ *  - 不写 data_dir/plugins_dir（保持配置可迁移，运行时回退默认目录）
+ */
+function configTemplate(config: Config): RawConfig {
+  return {
+    llm: {
+      api_key: '',
+      model: config.llm.model,
+      base_url: config.llm.baseUrl,
+      timeout_ms: config.llm.timeoutMs,
+      provider: config.llm.provider,
+      reasoning_effort: config.llm.reasoningEffort,
+      retries: config.llm.retries,
+      retry_delay_ms: config.llm.retryDelayMs,
+    },
+    kernel: {
+      max_rounds: config.kernel.maxRounds,
+      max_tokens: config.kernel.maxTokens,
+      approval: config.kernel.approval ?? 'off',
+      compress: {
+        keep_recent: config.kernel.compress?.keepRecent ?? 12,
+        max_chars: config.kernel.compress?.maxChars ?? 1200,
+        summary_tokens: config.kernel.compress?.summaryTokens ?? 600,
+      },
+    },
+    workspace: config.workspace ?? 'on',
+    session_sync: config.sessionSync ?? 'commit',
+  };
+}
+
+/**
  * 加载配置：读取 yaml，环境变量覆盖（OPENAIDE_API_KEY / OPENAIDE_MODEL / OPENAIDE_BASE_URL）。
  * 缺失文件时返回默认值（仅环境变量）。
  */
@@ -313,11 +345,11 @@ export function loadConfig(configPath?: string): Config {
   mkdirSync(dataDir, { recursive: true });
   mkdirSync(config.pluginsDir, { recursive: true });
 
-  // 首次运行自动落盘：默认路径无配置文件时生成一份带默认值的模版，方便用户直接编辑
+  // 首次运行自动落盘：默认路径无配置文件时生成一份脱敏模板，方便用户直接编辑
   // 自定义 path（如测试传参）不自动创建，避免副作用
   if (path === defaultConfigPath() && !existsSync(path)) {
     try {
-      saveConfig(config, path);
+      writeFileSync(path, YAML.stringify(configTemplate(config)));
     } catch {
       // 只读文件系统等情况静默忽略，不阻塞启动
     }

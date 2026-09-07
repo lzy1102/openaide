@@ -5,7 +5,8 @@
  *  - system 消息全量保留(缓存前缀稳定)
  *  - 最近 keepRecent 条消息原样保留(当前任务状态)
  *  - 更旧的消息交给 LLM 生成结构化摘要,替换为单条 system 消息
- *  - LLM 失败时回退到确定性截断(fallback),永不阻塞主流程
+ *  - LLM 失败/空摘要直接上抛:本轮放弃压缩(上下文原样保留),由调用方下轮重试——
+ *    宁可暂时超预算也不用截断摘要污染上下文
  *  - compressToBudget 渐进式重压缩,最多 3 次,直到进入预算
  */
 import { Message } from './types.js';
@@ -23,6 +24,12 @@ export interface CompressorOptions {
   keepRecent?: number;
   maxCharsForSummary?: number;
   summaryMaxTokens?: number;
+}
+
+/** 非法值(undefined/NaN/<=0)回退默认值，正数向下取整 */
+function clampPositive(v: number | undefined, dflt: number): number {
+  if (v === undefined || !Number.isFinite(v)) return dflt;
+  return Math.max(1, Math.floor(v));
 }
 
 const SUMMARIZE_PROMPT = `Compress the conversation below into a structured summary. The summary replaces the full history in the context window, so preserve everything needed to continue the task.
@@ -70,9 +77,10 @@ export class LLMCompressor implements ContextCompressor {
 
   constructor(provider: LLMProvider, opts: CompressorOptions = {}) {
     this.provider = provider;
-    this.keepRecent = opts.keepRecent ?? DEFAULT_KEEP_RECENT;
-    this.maxCharsForSummary = opts.maxCharsForSummary ?? DEFAULT_MAX_MSG_CHARS_FOR_SUMMARY;
-    this.summaryMaxTokens = opts.summaryMaxTokens ?? DEFAULT_SUMMARY_MAX_TOKENS;
+    // 防御性夹取：配置了 0/负数/非数值时回退默认值，避免把当前任务状态全压进摘要
+    this.keepRecent = clampPositive(opts.keepRecent, DEFAULT_KEEP_RECENT);
+    this.maxCharsForSummary = clampPositive(opts.maxCharsForSummary, DEFAULT_MAX_MSG_CHARS_FOR_SUMMARY);
+    this.summaryMaxTokens = clampPositive(opts.summaryMaxTokens, DEFAULT_SUMMARY_MAX_TOKENS);
   }
 
   estimateTokens(messages: Message[]): number {
@@ -99,15 +107,10 @@ export class LLMCompressor implements ContextCompressor {
     const oldMsgs = conversation.slice(0, conversation.length - this.keepRecent);
     const recentMsgs = conversation.slice(conversation.length - this.keepRecent);
 
-    // LLM 生成摘要;失败则回退到确定性截断
-    let summary = '';
-    try {
-      summary = await this.summarize(oldMsgs);
-    } catch {
-      summary = '';
-    }
+    // LLM 生成摘要;失败/空摘要直接上抛,不做截断兜底(调用方下轮重试)
+    const summary = (await this.summarize(oldMsgs)).trim();
     if (!summary) {
-      summary = truncateFallback(oldMsgs);
+      throw new Error('compress: LLM returned empty summary');
     }
 
     const compressed: Message[] = [
@@ -137,16 +140,6 @@ export class LLMCompressor implements ContextCompressor {
     );
     return (resp.content ?? '').trim();
   }
-}
-
-/** 确定性回退:保留每条头尾,中间省略(LLM 不可用时仍能进入预算) */
-function truncateFallback(oldMsgs: Message[]): string {
-  const lines = oldMsgs.map((m) => {
-    let c = m.content ?? '';
-    if (c.length > 200) c = c.slice(0, 120) + '...' + c.slice(c.length - 60);
-    return `${m.role}: ${c}`;
-  });
-  return `[Truncated history]\n${lines.join('\n')}`;
 }
 
 /**

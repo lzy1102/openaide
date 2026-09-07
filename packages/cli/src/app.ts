@@ -2,7 +2,7 @@
  * 应用装配 —— 一切皆插件。
  * 内核只依赖接口；工具、人格、钩子全部经插件体系注入。
  */
-import { AgentKernel, EventBus } from '@openaide/core';
+import { AgentKernel, EventBus, LLMCompressor } from '@openaide/core';
 import type { LLMProvider, Memory, ModelSwitcher, SessionStore } from '@openaide/core';
 import { loadConfig, Config, resolveIdentity, resolveProjectWorkspace } from '@openaide/config';
 import { OpenAICompatibleProvider } from '@openaide/llm';
@@ -325,7 +325,6 @@ export async function buildApp(config?: Config): Promise<App> {
   }
 
   // 上下文压缩器（LLM 生成摘要，参数可配）
-  const { LLMCompressor } = await import('@openaide/core');
   const compressor = new LLMCompressor(llmDelegate, {
     keepRecent: cfg.kernel.compress?.keepRecent,
     maxCharsForSummary: cfg.kernel.compress?.maxChars,
