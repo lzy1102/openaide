@@ -35,6 +35,7 @@ describe('loadConfig auto-generate', () => {
       // 运行时 env 覆盖仍然生效
       const cfg = loadConfig();
       assert.equal(cfg.llm.apiKey, 'sk-secret-do-not-persist');
+      assert.equal(cfg.kernel.maxTokens, 200_000, 'default budget aligned with docs/kernel');
     } finally {
       if (prevDataDir === undefined) delete process.env.OPENAIDE_DATA_DIR;
       else process.env.OPENAIDE_DATA_DIR = prevDataDir;
@@ -58,15 +59,26 @@ describe('loadConfig auto-generate', () => {
 });
 
 describe('config roundtrip', () => {
-  test('saveConfig → loadConfig preserves compress options', () => {
+  test('saveConfig → loadConfig preserves compress and history options', () => {
     const dir = mkdtempSync(join(tmpdir(), 'openaide-cfg-'));
     try {
       const path = join(dir, 'config.yaml');
       const cfg = loadConfig(path);
-      saveConfig({ ...cfg, kernel: { ...cfg.kernel, compress: { keepRecent: 4, maxChars: 800, summaryTokens: 300 } } }, path);
+      saveConfig(
+        {
+          ...cfg,
+          kernel: {
+            ...cfg.kernel,
+            compress: { keepRecent: 4, maxChars: 800, summaryTokens: 300 },
+            history: { maxMessages: 30, tokenBudget: 12000 },
+          },
+        },
+        path,
+      );
 
       const loaded = loadConfig(path);
       assert.deepEqual(loaded.kernel.compress, { keepRecent: 4, maxChars: 800, summaryTokens: 300 });
+      assert.deepEqual(loaded.kernel.history, { maxMessages: 30, tokenBudget: 12000 });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

@@ -38,8 +38,12 @@ reactLoop 每轮检查: estimateTokens > 90% × max_tokens
   └→ compressToBudget(): 渐进压缩 ≤3 次直到进入预算
        ├── system 消息全量保留（字节级稳定 → 前缀缓存不失效）
        ├── 最近 keep_recent 条（默认 12，kernel.compress 可配）原样保留
+       │     └── 切点按 tool 组边界校正：绝不把 assistant(tool_calls) 与其结果拆开
        ├── 更早历史 → LLM 结构化摘要（[User Intent]/[Key Facts]/[Current State]/[Notes]）
        └── LLM 失败/空摘要 → 上抛，本轮放弃压缩，下轮重试（无截断兜底）
+跨查询装载: kernel.history.max_messages（默认 20）/ token_budget（默认 6000）
+  └── 压缩只作用于单次查询的 workingMessages；会话文件保留原始消息
+估算口径: CJK ≈ 1 字符/token（保守），其余 4 字符/token
 ```
 
 **取舍**：摘要质量直接决定长任务可持续性，截断兜底会以"看似成功"的方式丢失

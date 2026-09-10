@@ -100,9 +100,11 @@ export function buildMessages(
   return messages;
 }
 
-/** 粗估文本 token 数(中英混合 ~4 字符/token) */
+/** 粗估文本 token 数：CJK 按 1 字符/token 保守估（宁可早压缩不溢出），其余按 4 字符/token */
 export function estimateTextTokens(text: string): number {
-  return Math.ceil(text.length / 4);
+  if (!text) return 0;
+  const cjk = (text.match(/[\u3000-\u303f\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff00-\uffef]/g) ?? []).length;
+  return Math.ceil(cjk + (text.length - cjk) / 4);
 }
 
 /** 按 token 预算截断历史:从旧到新累积,超预算丢弃更旧的消息,至少保留最近 2 条 */

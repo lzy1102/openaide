@@ -34,6 +34,9 @@ kernel:
     keep_recent: 12                      # 压缩后保留的最近消息数（4=省token, 12=1M推荐, 20=极长任务）
     max_chars: 1200                      # 单条进摘要前的截断长度
     summary_tokens: 600                  # 摘要最大 token
+  history:                               # 跨查询装载的历史上下文（默认 20 条 / 6000 token）
+    max_messages: 20                     # 每次查询从会话装载的最近消息条数
+    token_budget: 6000                   # 历史 token 预算（超出从旧丢弃，至少保留最近 2 条）
 
 # ── 工作区与会话同步（可选）────────────
 # workspace: "on"                       # on(默认,会话随项目走) / off(脚本/CI 用全局存储)

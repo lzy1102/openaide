@@ -36,6 +36,11 @@ export interface KernelConfig {
   maxRounds?: number;
   maxTokens?: number;
   systemPrompt?: string;
+  /** 跨查询装载的历史上下文上限（默认 20 条 / 6000 token） */
+  history?: {
+    maxMessages?: number;
+    tokenBudget?: number;
+  };
 }
 
 export interface KernelDeps {
@@ -68,6 +73,8 @@ export class AgentKernel {
   private systemPrompt: string;
   private maxRounds: number;
   private maxTokens: number;
+  private historyMaxMessages: number;
+  private historyTokenBudget: number;
 
   constructor(deps: KernelDeps) {
     this.llm = deps.llm;
@@ -83,6 +90,8 @@ export class AgentKernel {
     this.maxRounds = deps.config?.maxRounds ?? 10;
     // 上下文 token 预算(用于压缩阈值/历史裁剪),非单次输出上限;默认对齐主流 200K 窗口
     this.maxTokens = deps.config?.maxTokens ?? 200_000;
+    this.historyMaxMessages = positiveInt(deps.config?.history?.maxMessages, 20);
+    this.historyTokenBudget = positiveInt(deps.config?.history?.tokenBudget, 6000);
   }
 
   // ── 状态 / 事件 ──────────────────────────────────────────
@@ -155,15 +164,21 @@ export class AgentKernel {
     });
 
     const history = this.memory
-      ? await this.memory.load(session.id, this.maxRounds > 20 ? 200 : 20)
-      : session.messages.slice(-20);
+      ? await this.memory.load(session.id, this.historyMaxMessages)
+      : session.messages.slice(-this.historyMaxMessages);
 
-    const messages = buildMessages(systemLayer, history, query, {
-      persona,
-      customSystemPrompt: this.systemPrompt,
-      projectContext: query.options.projectContext,
-      taskType: detectTaskType(query.content),
-    });
+    const messages = buildMessages(
+      systemLayer,
+      history,
+      query,
+      {
+        persona,
+        customSystemPrompt: this.systemPrompt,
+        projectContext: query.options.projectContext,
+        taskType: detectTaskType(query.content),
+      },
+      { maxHistory: this.historyMaxMessages, historyTokenBudget: this.historyTokenBudget },
+    );
 
     // 持久化用户消息
     appendMessages(session, [{ role: 'user', content: query.content }]);
@@ -219,14 +234,20 @@ export class AgentKernel {
       projectContext: query.options.projectContext,
     });
     const history = this.memory
-      ? await this.memory.load(session.id, this.maxRounds > 20 ? 200 : 20)
-      : session.messages.slice(-20);
-    const messages = buildMessages(systemLayer, history, query, {
-      persona,
-      customSystemPrompt: this.systemPrompt,
-      projectContext: query.options.projectContext,
-      taskType: detectTaskType(query.content),
-    });
+      ? await this.memory.load(session.id, this.historyMaxMessages)
+      : session.messages.slice(-this.historyMaxMessages);
+    const messages = buildMessages(
+      systemLayer,
+      history,
+      query,
+      {
+        persona,
+        customSystemPrompt: this.systemPrompt,
+        projectContext: query.options.projectContext,
+        taskType: detectTaskType(query.content),
+      },
+      { maxHistory: this.historyMaxMessages, historyTokenBudget: this.historyTokenBudget },
+    );
 
     appendMessages(session, [{ role: 'user', content: query.content }]);
     await this.sessions.update(session);
@@ -283,4 +304,9 @@ function buildOptions(opts: Query['options']): Record<string, unknown> {
   if (opts.maxTokens && opts.maxTokens > 0) options['max_tokens'] = opts.maxTokens;
   if (opts.responseFormat) options['response_format'] = opts.responseFormat;
   return options;
+}
+
+/** 正整数字段防御性夹取：非法值（0/负数/NaN/undefined）回退默认 */
+function positiveInt(v: number | undefined, dflt: number): number {
+  return v !== undefined && Number.isFinite(v) && v > 0 ? Math.floor(v) : dflt;
 }

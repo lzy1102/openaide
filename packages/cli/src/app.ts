@@ -355,6 +355,7 @@ export async function buildApp(config?: Config): Promise<App> {
       maxRounds: cfg.kernel.maxRounds,
       maxTokens: cfg.kernel.maxTokens,
       systemPrompt: cfg.kernel.systemPrompt,
+      history: cfg.kernel.history,
     },
   });
 

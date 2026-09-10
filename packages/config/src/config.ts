@@ -43,6 +43,11 @@ export interface Config {
       maxChars?: number;
       summaryTokens?: number;
     };
+    /** 跨查询装载的历史上下文上限（默认 20 条 / 6000 token） */
+    history?: {
+      maxMessages?: number;
+      tokenBudget?: number;
+    };
   };
   /** 数据目录（会话/记忆/插件） */
   dataDir: string;
@@ -238,6 +243,10 @@ interface RawConfig {
        max_chars?: number;
        summary_tokens?: number;
      };
+     history?: {
+       max_messages?: number;
+       token_budget?: number;
+     };
    };
   data_dir?: string;
   plugins_dir?: string;
@@ -273,6 +282,10 @@ function configTemplate(config: Config): RawConfig {
         keep_recent: config.kernel.compress?.keepRecent ?? 12,
         max_chars: config.kernel.compress?.maxChars ?? 1200,
         summary_tokens: config.kernel.compress?.summaryTokens ?? 600,
+      },
+      history: {
+        max_messages: config.kernel.history?.maxMessages ?? 20,
+        token_budget: config.kernel.history?.tokenBudget ?? 6000,
       },
     },
     workspace: config.workspace ?? 'on',
@@ -310,7 +323,7 @@ export function loadConfig(configPath?: string): Config {
     },
     kernel: {
       maxRounds: raw.kernel?.max_rounds ?? 10,
-      maxTokens: raw.kernel?.max_tokens ?? 4000,
+      maxTokens: raw.kernel?.max_tokens ?? 200_000,
       systemPrompt: raw.kernel?.system_prompt,
       persona: raw.kernel?.persona,
       approval: raw.kernel?.approval ?? 'off',
@@ -320,6 +333,12 @@ export function loadConfig(configPath?: string): Config {
             keepRecent: raw.kernel.compress.keep_recent,
             maxChars: raw.kernel.compress.max_chars,
             summaryTokens: raw.kernel.compress.summary_tokens,
+          }
+        : undefined,
+      history: raw.kernel?.history
+        ? {
+            maxMessages: raw.kernel.history.max_messages,
+            tokenBudget: raw.kernel.history.token_budget,
           }
         : undefined,
     },
@@ -384,6 +403,12 @@ export function saveConfig(config: Config, path?: string): void {
             keep_recent: config.kernel.compress.keepRecent,
             max_chars: config.kernel.compress.maxChars,
             summary_tokens: config.kernel.compress.summaryTokens,
+          }
+        : undefined,
+      history: config.kernel.history
+        ? {
+            max_messages: config.kernel.history.maxMessages,
+            token_budget: config.kernel.history.tokenBudget,
           }
         : undefined,
     },

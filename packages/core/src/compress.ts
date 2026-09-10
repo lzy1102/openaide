@@ -3,7 +3,7 @@
  *
  * 策略(对齐 Go 版 LLMCompressor):
  *  - system 消息全量保留(缓存前缀稳定)
- *  - 最近 keepRecent 条消息原样保留(当前任务状态)
+ *  - 最近 keepRecent 条消息原样保留(当前任务状态;切点按 tool 组边界校正)
  *  - 更旧的消息交给 LLM 生成结构化摘要,替换为单条 system 消息
  *  - LLM 失败/空摘要直接上抛:本轮放弃压缩(上下文原样保留),由调用方下轮重试——
  *    宁可暂时超预算也不用截断摘要污染上下文
@@ -104,8 +104,15 @@ export class LLMCompressor implements ContextCompressor {
       return { messages, saved: 0 };
     }
 
-    const oldMsgs = conversation.slice(0, conversation.length - this.keepRecent);
-    const recentMsgs = conversation.slice(conversation.length - this.keepRecent);
+    // 条数切点，再按 tool 组边界校正：绝不切开 assistant(tool_calls) 与其 tool 结果。
+    // OpenAI 兼容协议要求 tool 消息必须紧随声明它的 assistant 消息；孤儿 tool 消息
+    // 会被 API 直接拒绝，而压缩恰恰只在长工具链中途触发——必须保组。
+    let cut = Math.max(0, conversation.length - this.keepRecent);
+    while (cut > 0 && conversation[cut]?.role === 'tool') cut--;
+    if (cut <= 0) return { messages, saved: 0 };
+
+    const oldMsgs = conversation.slice(0, cut);
+    const recentMsgs = conversation.slice(cut);
 
     // LLM 生成摘要;失败/空摘要直接上抛,不做截断兜底(调用方下轮重试)
     const summary = (await this.summarize(oldMsgs)).trim();

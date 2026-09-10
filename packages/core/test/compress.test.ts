@@ -122,6 +122,33 @@ describe('LLMCompressor', () => {
     );
   });
 
+  test('never splits an assistant/tool group (no orphan tool messages)', async () => {
+    const compressor = new LLMCompressor(new MockProvider(), { keepRecent: 2 });
+    const msgs: Message[] = [
+      msg('system', 'rules'),
+      msg('user', 'do it'),
+      {
+        role: 'assistant',
+        content: '',
+        toolCalls: [{ id: 't1', type: 'function', function: { name: 'x', arguments: '{}' } }],
+      },
+      { role: 'tool', toolCallId: 't1', content: 'r1' },
+      { role: 'tool', toolCallId: 't1', content: 'r2' },
+    ];
+
+    const { messages } = await compressor.compress(msgs, 1);
+
+    // 摘要之后的首条对话消息必须是 assistant 声明（tool 结果紧随其后）——
+    // 孤儿 tool 消息会被 OpenAI 兼容 API 直接 400
+    const conv = messages.filter((m) => m.role !== 'system');
+    assert.equal(conv[0]?.role, 'assistant', 'recent tail must start at the assistant tool-call');
+    assert.ok(conv[0]?.toolCalls?.length, 'assistant tool_calls declaration preserved');
+    assert.deepEqual(
+      conv.slice(1).map((m) => m.role),
+      ['tool', 'tool'],
+    );
+  });
+
   test('compressToBudget does nothing when already within budget', async () => {
     const msgs = [msg('user', 'tiny')];
     const { compressed } = await compressToBudget(new LLMCompressor(new MockProvider()), msgs, 9999);
