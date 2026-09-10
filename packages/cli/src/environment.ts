@@ -23,13 +23,13 @@ export interface RuntimeInfo {
   version: string;
 }
 
-const PROBES: Array<{ label: string; cmd: string; args?: string[] }> = [
-  { label: 'python', cmd: 'python' },
-  { label: 'python3', cmd: 'python3' },
-  { label: 'py', cmd: 'py', args: ['-3'] },
-  { label: 'node', cmd: 'node' },
-  { label: 'bun', cmd: 'bun' },
-  { label: 'deno', cmd: 'deno' },
+const PROBES: Array<{ cmd: string; args?: string[] }> = [
+  { cmd: 'python' },
+  { cmd: 'python3' },
+  { cmd: 'py', args: ['-3', '--version'] },
+  { cmd: 'node' },
+  { cmd: 'bun' },
+  { cmd: 'deno' },
 ];
 
 async function probe(entry: { cmd: string; args?: string[] }): Promise<RuntimeInfo | null> {
@@ -39,7 +39,7 @@ async function probe(entry: { cmd: string; args?: string[] }): Promise<RuntimeIn
       windowsHide: true,
     });
     // Windows Store 的 python 占位 stub 把提示写到 stderr 且退出码非 0 —— 走 catch 丢弃
-    const line = (String(stdout) || String(stderr)).split('\n')[0].trim();
+    const line = (String(stdout) || String(stderr)).split('\n')[0]?.trim() ?? '';
     return line ? { cmd: entry.cmd, version: line } : null;
   } catch {
     return null;
@@ -56,7 +56,7 @@ export function detectRuntimes(): Promise<RuntimeInfo[]> {
     const seen = new Set<string>();
     return results.filter((r): r is RuntimeInfo => {
       if (!r) return false;
-      const key = r.version.split(' ')[0].toLowerCase();
+      const key = (r.version.split(' ')[0] ?? '').toLowerCase();
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -87,8 +87,7 @@ export async function buildPlatformNote(
     '- 文本搜索用 search_files，文件读写用 read_file/write_file，列目录用 list_directory——不要用 shell 做这些。',
     '- 不要用 powershell / powershell -Command 包装命令——转义规则繁琐、极易翻车；默认 cmd.exe 语法。',
     '- 复杂文本处理/批处理优先写脚本执行，不要拼 shell 单行：',
-    '  1) 用 write_file 写脚本到临时目录（'
-      + join(tmpdir(), 'openaide-script.py 或 .mjs') + '）',
+    `  1) 用 write_file 写脚本到临时目录（如 ${join(tmpdir(), 'openaide-script.py')}，.mjs 同理）`,
     '  2) execute_command 运行它（如 python <脚本路径>）',
     '  3) 用完删除脚本',
   ];
