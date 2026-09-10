@@ -36,7 +36,7 @@ export interface ReactContext {
   options?: Record<string, unknown>;
   /** 可选上下文压缩器:消息总量超过 maxTokens 90% 时渐进式压缩 */
   compressor?: ContextCompressor;
-  /** 上下文 token 预算(压缩阈值 = maxTokens * 0.9),默认 200000 */
+  /** 上下文 token 预算(压缩阈值 = maxTokens * 0.9),默认 1000000 */
   maxTokens?: number;
   /** 可选权限检查器:工具执行前鉴权,拒绝时把原因作为错误结果回给模型 */
   permission?: PermissionChecker;
@@ -69,7 +69,7 @@ export async function* reactLoop(ctx: ReactContext, config: ReactConfig): AsyncG
   const maxToolChars = config.maxToolResultChars ?? 20_000;
   const maxRounds = config.maxRounds > 0 ? config.maxRounds : 10;
   // 上下文预算:压缩阈值 = 预算 * 0.9(对齐 Claude Code 的 92% 附近)
-  const tokenBudget = ctx.maxTokens && ctx.maxTokens > 0 ? ctx.maxTokens : 200_000;
+  const tokenBudget = ctx.maxTokens && ctx.maxTokens > 0 ? ctx.maxTokens : 1_000_000;
   const compressThreshold = (tokenBudget * 9) / 10;
 
   let finalContent = '';

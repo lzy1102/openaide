@@ -20,7 +20,7 @@ llm:
 # ── 内核 ─────────────────────────────────
 kernel:
   max_rounds: 10                        # ReAct 最大轮数
-  max_tokens: 200000                    # 上下文 token 预算(压缩/历史裁剪阈值),非单次输出上限
+  max_tokens: 1000000                   # 上下文 token 预算(压缩/历史裁剪阈值),非单次输出上限
   approval: off                         # 工具审批：off(默认) / dangerous(危险工具需确认) / always(全部确认)
   # system_prompt: "自定义系统提示词（可选，缺省用内置）"
   # persona: "coder"                    # 激活的人格名（插件提供，可选）

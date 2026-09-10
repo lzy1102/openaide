@@ -99,7 +99,7 @@ llm:
   base_url: https://api.deepseek.com/v1
 kernel:
   max_rounds: 10
-  max_tokens: 200000   # context budget (compression / history trim), not per-reply cap
+  max_tokens: 1000000  # context budget (compression / history trim), not per-reply cap
   approval: dangerous  # ask before dangerous tool calls (off | dangerous | always)
   subagents:
     - name: travel

@@ -323,7 +323,7 @@ export function loadConfig(configPath?: string): Config {
     },
     kernel: {
       maxRounds: raw.kernel?.max_rounds ?? 10,
-      maxTokens: raw.kernel?.max_tokens ?? 200_000,
+      maxTokens: raw.kernel?.max_tokens ?? 1_000_000,
       systemPrompt: raw.kernel?.system_prompt,
       persona: raw.kernel?.persona,
       approval: raw.kernel?.approval ?? 'off',

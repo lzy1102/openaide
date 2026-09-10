@@ -61,7 +61,7 @@ llm:
   # provider: acme               # 插件注册的 LLM 后端（缺省内置 openai-compatible）
 kernel:
   max_rounds: 10
-  max_tokens: 200000    # 上下文 token 预算(压缩/历史裁剪阈值),非单次输出上限
+  max_tokens: 1000000   # 上下文 token 预算(压缩/历史裁剪阈值),非单次输出上限
   approval: dangerous   # 工具审批：off(默认)/dangerous(危险工具需确认)/always(全部确认)
   compress:             # 上下文压缩（LLM 摘要），默认值已按 1M 上下文调优
     keep_recent: 12     # 压缩后保留的最近消息数（4=省token / 12=1M推荐 / 20=极长任务）
@@ -89,7 +89,7 @@ kernel:
 
 ### 1.2.0 内核运行时行为
 
-- **上下文预算**：`kernel.max_tokens` 是上下文 token 预算（默认 200000），用于历史裁剪与压缩阈值——不是单次回复的输出上限。跨查询装载的历史按 `kernel.history.max_messages`（默认 20 条）与 `kernel.history.token_budget`（默认 6000 token）双重裁剪，防止长会话上下文膨胀；长任务可调大这两个值让模型看到更多前文。
+- **上下文预算**：`kernel.max_tokens` 是上下文 token 预算（默认 1000000，对齐主流 1M 窗口），用于历史裁剪与压缩阈值——不是单次回复的输出上限。跨查询装载的历史按 `kernel.history.max_messages`（默认 20 条）与 `kernel.history.token_budget`（默认 6000 token）双重裁剪，防止长会话上下文膨胀；长任务可调大这两个值让模型看到更多前文。
 - **上下文压缩**：超过预算 90% 时触发——system 全量保留（缓存前缀稳定），最近 `kernel.compress.keep_recent` 条（默认 12，适配 1M 上下文）原样保留，更早历史由 LLM 生成结构化摘要替换。切点按 tool 组边界校正，绝不拆散 `assistant(tool_calls)` 与其结果（孤儿 tool 消息会被 API 拒绝）。LLM 失败或空摘要时**不做截断兜底**：本轮放弃压缩、上下文原样保留，下一轮自动重试（等网关恢复再压缩），绝不拿劣化摘要污染上下文。token 估算对中文按 1 字符/token 保守计（宁可早压缩不溢出）。
 - **平台附注**：启动时探测可用脚本运行时（python/py/node/bun/deno，并发探测、每进程一次），以 `[Platform]` 系统消息注入——Windows 上引导 agent 优先用专用工具与脚本文件，而不是拼 PowerShell/cmd 单行（引号转义/GBK 是高频翻车点，每次失败都是一轮 token）。附注字节级稳定，不影响前缀缓存。装配日志会打印检测到的运行时（`[app] script runtimes: ...`）。
 - **前缀缓存友好**：system 层（L0 人格 + 项目规则）跨查询字节级稳定；技能提示作为独立消息注入；system 消息携带 `cache_control`。使用 DeepSeek 等 provider 时，多轮对话与跨查询都能命中前缀缓存，prompt 成本大幅降低。

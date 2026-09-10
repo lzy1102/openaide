@@ -76,7 +76,7 @@ llm:
   base_url: https://api.deepseek.com/v1
 kernel:
   max_rounds: 10
-  max_tokens: 200000   # 上下文 token 预算（压缩/历史裁剪阈值），非单次输出上限
+  max_tokens: 1000000  # 上下文 token 预算（压缩/历史裁剪阈值），非单次输出上限
 ```
 
 环境变量覆盖：

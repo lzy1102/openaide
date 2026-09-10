@@ -35,7 +35,7 @@ describe('loadConfig auto-generate', () => {
       // 运行时 env 覆盖仍然生效
       const cfg = loadConfig();
       assert.equal(cfg.llm.apiKey, 'sk-secret-do-not-persist');
-      assert.equal(cfg.kernel.maxTokens, 200_000, 'default budget aligned with docs/kernel');
+      assert.equal(cfg.kernel.maxTokens, 1_000_000, 'default budget aligned with docs/kernel');
     } finally {
       if (prevDataDir === undefined) delete process.env.OPENAIDE_DATA_DIR;
       else process.env.OPENAIDE_DATA_DIR = prevDataDir;
