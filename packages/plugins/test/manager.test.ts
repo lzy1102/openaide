@@ -1,8 +1,10 @@
 /**
- * PluginManager 验收测试 —— 同进程动态加载、工具注册、钩子接线、人格收集、卸载/热重载。
+ * PluginManager 验收测试 —— 同进程动态加载、工具注册、钩子接线、人格收集、卸载/热重载、uninstall 路径安全。
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -14,6 +16,7 @@ import {
   ToolResult,
 } from '@openaide/core';
 import { PluginManager } from '../src/manager.js';
+import { readPluginState, writePluginState } from '../src/state.js';
 import { state } from './fixtures/hello/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -122,4 +125,107 @@ test('热重载：破坏模块缓存重新加载', async () => {
   await manager.reload('hello');
   assert.equal(manager.names().length, 1);
   assert.ok(executor.has('hello__greet'), '重载后工具重新注册');
+});
+
+/** 构造 pluginsDir + dataDir + 一个已安装插件目录的隔离工作区 */
+function makeUninstallWorkspace(): {
+  root: string;
+  pluginsDir: string;
+  dataDir: string;
+  pluginDir: string;
+} {
+  const root = mkdtempSync(join(tmpdir(), 'openaide-uninstall-'));
+  const pluginsDir = join(root, 'plugins');
+  const dataDir = join(root, 'data');
+  const pluginDir = join(pluginsDir, 'demo');
+  mkdirSync(pluginDir, { recursive: true });
+  mkdirSync(dataDir, { recursive: true });
+  writeFileSync(
+    join(pluginDir, 'openaide.yaml'),
+    ['name: demo', 'version: 1.0.0', 'description: uninstall 验收'].join('\n'),
+  );
+  writeFileSync(join(pluginDir, 'SYSTEM.md'), 'You are Demo.');
+  return { root, pluginsDir, dataDir, pluginDir };
+}
+
+test('uninstall：pluginsDir 内的插件删盘 + 卸载 + 清禁用名单', async () => {
+  const w = makeUninstallWorkspace();
+  try {
+    writePluginState(w.dataDir, { version: 1, disabled: ['demo'] });
+    const m = new PluginManager({
+      pluginsDir: w.pluginsDir,
+      dataDir: w.dataDir,
+      autoActivate: false,
+    });
+    // 禁用名单内不会被 loadAll 加载，但 knownDirs 仍登记
+    await m.loadAll();
+    assert.ok(!m.names().includes('demo'));
+
+    // 直接 load 绕过禁用（模拟运行中状态），再 uninstall
+    await m.load(w.pluginDir);
+    assert.ok(m.names().includes('demo'));
+
+    const removed = await m.uninstall('demo');
+    assert.equal(removed, w.pluginDir, '应返回被删除的目录');
+    assert.ok(!existsSync(w.pluginDir), '目录应已删除');
+    assert.ok(!m.names().includes('demo'), '应已卸载');
+    assert.deepEqual(readPluginState(w.dataDir).disabled, [], '禁用名单应清空');
+    assert.equal(m.dirOf('demo'), undefined, 'knownDirs 应清除');
+  } finally {
+    rmSync(w.root, { recursive: true, force: true });
+  }
+});
+
+test('uninstall：pluginsDir 外部目录只卸载不删盘（防误删 cwd）', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'openaide-uninstall-ext-'));
+  try {
+    const pluginsDir = join(root, 'plugins');
+    const dataDir = join(root, 'data');
+    // 外部插件目录（模拟内置插件注册到项目 cwd）
+    const externalDir = join(root, 'project');
+    mkdirSync(pluginsDir, { recursive: true });
+    mkdirSync(dataDir, { recursive: true });
+    mkdirSync(externalDir, { recursive: true });
+    writeFileSync(
+      join(externalDir, 'openaide.yaml'),
+      ['name: external', 'version: 1.0.0'].join('\n'),
+    );
+    writeFileSync(join(externalDir, 'SYSTEM.md'), 'You are External.');
+
+    const m = new PluginManager({ pluginsDir, dataDir, autoActivate: false });
+    await m.load(externalDir);
+    assert.ok(m.names().includes('external'));
+
+    const removed = await m.uninstall('external');
+    assert.equal(removed, null, '外部路径不返回删除结果');
+    assert.ok(existsSync(externalDir), '外部目录必须保留');
+    assert.ok(!m.names().includes('external'), '仍应卸载（内存态清理）');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('uninstall：目标为 pluginsDir 自身或未知插件 → 不删盘', async () => {
+  const w = makeUninstallWorkspace();
+  try {
+    const m = new PluginManager({
+      pluginsDir: w.pluginsDir,
+      dataDir: w.dataDir,
+      autoActivate: false,
+    });
+    // knownDirs 手工塞入 pluginsDir 自身（防御 rel === '' 分支）
+    await m.load(w.pluginDir);
+    // 模拟恶意/异常：把 pluginsDir 自己当插件目录
+    (m as unknown as { knownDirs: Map<string, string> }).knownDirs.set('evil', w.pluginsDir);
+
+    const removedSelf = await m.uninstall('evil');
+    assert.equal(removedSelf, null, 'pluginsDir 自身不可删除');
+    assert.ok(existsSync(w.pluginsDir), 'pluginsDir 应保留');
+
+    // 未知插件：无目录记录 → null，不抛
+    const removedUnknown = await m.uninstall('no-such-plugin');
+    assert.equal(removedUnknown, null);
+  } finally {
+    rmSync(w.root, { recursive: true, force: true });
+  }
 });
