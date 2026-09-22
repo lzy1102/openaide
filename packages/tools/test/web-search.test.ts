@@ -31,9 +31,13 @@ test('resolveProvider：按优先级选择后端；全空返回配置指引', ()
 });
 
 test('tavily：POST 载荷正确，结果格式化为编号列表', async () => {
-  let captured: { url: string; body: string } | null = null;
+  let captured: { url: string; body: string; headers: Headers } | null = null;
   stubFetch((url, init) => {
-    captured = { url: String(url), body: String(init?.body) };
+    captured = {
+      url: String(url),
+      body: String(init?.body),
+      headers: new Headers(init?.headers),
+    };
     return TAVILY_BODY;
   });
   process.env.TAVILY_API_KEY = 'tvly-test';
@@ -42,7 +46,12 @@ test('tavily：POST 载荷正确，结果格式化为编号列表', async () => 
     assert.match(r.content ?? '', /1\. T1\n   https:\/\/a\.example\/1\n   first snippet/);
     assert.match(r.content ?? '', /\[web_search · tavily\]/);
     assert.equal(captured!.url, 'https://api.tavily.com/search');
-    assert.deepEqual(JSON.parse(captured!.body), { query: 'openaide release notes', max_results: 2 });
+    assert.deepEqual(JSON.parse(captured!.body), {
+      api_key: 'tvly-test',
+      query: 'openaide release notes',
+      max_results: 2,
+    });
+    assert.equal(captured!.headers.get('authorization'), 'Bearer tvly-test');
   } finally {
     delete process.env.TAVILY_API_KEY;
   }

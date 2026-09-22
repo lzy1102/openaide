@@ -49,11 +49,13 @@ const PROVIDERS: Record<string, (key?: string) => { name: string; run: RunFn }> 
     run: async (query: string, maxResults: number, signal?: AbortSignal) => {
       const data = (await postJson(
         'https://api.tavily.com/search',
-        { query, max_results: maxResults },
-        { 'content-type': 'application/json' },
+        { api_key: key, query, max_results: maxResults },
+        {
+          'content-type': 'application/json',
+          ...(key ? { authorization: `Bearer ${key}` } : {}),
+        },
         signal,
       )) as { results?: Array<{ title?: string; url?: string; content?: string }> };
-      void key;
       return (data.results ?? []).map((r) => ({
         title: r.title ?? '(untitled)',
         url: r.url ?? '',
