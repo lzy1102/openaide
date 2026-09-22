@@ -11,8 +11,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Box, Text, Static, useApp, useInput } from 'ink';
 import Spinner from 'ink-spinner';
 import { KernelEvent, StreamChunkType, newId } from '@openaide/core';
-import { DEFAULT_REGISTRY_URL, fetchRegistry, GITHUB_PLUGIN_TOPIC, installEntry, readPluginState, searchEverywhere, writePluginState } from '@openaide/plugins';
-import { existsSync, rmSync } from 'node:fs';
+import { DEFAULT_REGISTRY_URL, fetchRegistry, GITHUB_PLUGIN_TOPIC, installEntry, searchEverywhere } from '@openaide/plugins';
 import type { App } from './app.js';
 import type { ApprovalRequest } from './approval.js';
 import { PasteInput } from './components/PasteInput.js';
@@ -338,19 +337,17 @@ export function Tui({ app, initialSessionId }: { app: App; initialSessionId?: st
               push({ kind: 'error', content: 'usage: /plugins uninstall <name>' });
               return;
             }
-            const dir = app.plugins.dirOf(name);
-            if (!dir || !existsSync(dir)) {
+            if (!app.plugins.dirOf(name)) {
               push({ kind: 'error', content: `not installed: ${name}` });
               return;
             }
-            await app.plugins.unload(name);
-            rmSync(dir, { recursive: true, force: true });
-            const st = readPluginState(app.config.dataDir);
-            if (st.disabled.includes(name)) {
-              st.disabled = st.disabled.filter((n) => n !== name);
-              writePluginState(app.config.dataDir, st);
-            }
-            push({ kind: 'info', content: `uninstalled ${name}` });
+            const removed = await app.plugins.uninstall(name);
+            push({
+              kind: 'info',
+              content: removed
+                ? `uninstalled ${name}`
+                : `unloaded ${name} (builtin or external dir — nothing removed on disk)`,
+            });
             return;
           }
           if (!name || !['enable', 'disable', 'reload'].includes(sub)) {

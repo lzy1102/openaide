@@ -13,7 +13,8 @@ import {
   ToolDefinition,
   ToolExecutor,
 } from '@openaide/core';
-import { basename } from 'node:path';
+import { existsSync, rmSync } from 'node:fs';
+import { basename, relative, resolve, sep } from 'node:path';
 import type { PluginLLM, PluginProvider, PluginSessions, PluginUi, ProgressReporter } from './types.js';
 import { discover, loadManifest, loadPlugin, readDeclarativePersona } from './loader.js';
 import { readPluginState, writePluginState } from './state.js';
@@ -161,6 +162,38 @@ export class PluginManager {
     const loaded: LoadedPlugin = { plugin, dir, loadedAt: Date.now() };
     await this.activate(loaded);
     return plugin.name;
+  }
+
+  /**
+   * 卸载插件并删除其安装目录。
+   * 仅删除严格位于 pluginsDir 之下的目录——内置插件等以 cwd/外部路径
+   * 注册的插件只卸载不删盘，防止 rmSync 误删当前项目。
+   * 返回被删除的目录；未删盘（内置/未知/不在 pluginsDir 内）返回 null。
+   */
+  async uninstall(name: string): Promise<string | null> {
+    const dir = this.dirOf(name);
+    await this.unload(name);
+    this.knownDirs.delete(name);
+
+    // 从禁用名单移除（目录已处理，记录无意义）
+    const state = readPluginState(this.dataDir);
+    if (state.disabled.includes(name)) {
+      state.disabled = state.disabled.filter((n) => n !== name);
+      writePluginState(this.dataDir, state);
+      this.disabledNames.delete(name);
+    }
+
+    if (!dir) return null;
+    // 目录必须严格位于 pluginsDir 内部（非自身、非父级、非外部路径）
+    const root = resolve(this.pluginsDir);
+    const target = resolve(dir);
+    const rel = relative(root, target);
+    if (rel === '' || rel.startsWith('..') || rel.startsWith(`..${sep}`) || resolve(root, rel) !== target) {
+      return null;
+    }
+    if (!existsSync(target)) return null;
+    rmSync(target, { recursive: true, force: true });
+    return target;
   }
 
   /** 热重载单个插件（破坏缓存重新 import） */

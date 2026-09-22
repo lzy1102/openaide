@@ -27,11 +27,9 @@ import {
   fetchRegistry,
   GITHUB_PLUGIN_TOPIC,
   installEntry,
-  readPluginState,
   searchEverywhere,
-  writePluginState,
 } from '@openaide/plugins';
-import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { parseArgs, buildPrompt } from './args.js';
 
 // 版本号：优先从 package.json 读取（源码/npm 形态）；二进制形态下虚拟路径不存在，
@@ -278,20 +276,16 @@ async function main(): Promise<void> {
         console.log('usage: openaide plugins uninstall <name>');
         return;
       }
-      const dir = app.plugins.dirOf(name);
-      if (!dir || !existsSync(dir)) {
+      if (!app.plugins.dirOf(name)) {
         console.log(`[plugins] not installed: ${name}`);
         return;
       }
-      await app.plugins.unload(name);
-      rmSync(dir, { recursive: true, force: true });
-      // 若在禁用名单里，一并清除（目录已删，记录已无意义）
-      const st = readPluginState(cfg.dataDir);
-      if (st.disabled.includes(name)) {
-        st.disabled = st.disabled.filter((n) => n !== name);
-        writePluginState(cfg.dataDir, st);
-      }
-      console.log(`[plugins] uninstalled ${name} (removed ${dir})`);
+      const removed = await app.plugins.uninstall(name);
+      console.log(
+        removed
+          ? `[plugins] uninstalled ${name} (removed ${removed})`
+          : `[plugins] unloaded ${name} (builtin or external dir — nothing removed on disk)`,
+      );
       return;
     }
     if (sub === 'reload') {

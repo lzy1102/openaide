@@ -8,10 +8,10 @@
  */
 import { createInterface } from 'node:readline';
 import { stdin as input, stdout as output } from 'node:process';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { KernelEvent, StreamChunkType, newId } from '@openaide/core';
-import { DEFAULT_REGISTRY_URL, fetchRegistry, GITHUB_PLUGIN_TOPIC, installEntry, readPluginState, searchEverywhere, writePluginState } from '@openaide/plugins';
+import { DEFAULT_REGISTRY_URL, fetchRegistry, GITHUB_PLUGIN_TOPIC, installEntry, searchEverywhere } from '@openaide/plugins';
 import type { App } from './app.js';
 
 /** 一次性行内读取（审批 y/N 用；与 readline 共存，读到换行为止） */
@@ -288,19 +288,16 @@ export async function runRepl(app: App, initialSessionId?: string): Promise<void
               console.log('  usage: /plugins uninstall <name>');
               continue;
             }
-            const dir = app.plugins.dirOf(name);
-            if (!dir || !existsSync(dir)) {
+            if (!app.plugins.dirOf(name)) {
               console.log(`  not installed: ${name}`);
               continue;
             }
-            await app.plugins.unload(name);
-            rmSync(dir, { recursive: true, force: true });
-            const st = readPluginState(app.config.dataDir);
-            if (st.disabled.includes(name)) {
-              st.disabled = st.disabled.filter((n) => n !== name);
-              writePluginState(app.config.dataDir, st);
-            }
-            console.log(`  uninstalled ${name}`);
+            const removed = await app.plugins.uninstall(name);
+            console.log(
+              removed
+                ? `  uninstalled ${name}`
+                : `  unloaded ${name} (builtin or external dir — nothing removed on disk)`,
+            );
             continue;
           }
           if (!name || !['enable', 'disable', 'reload'].includes(sub)) {
