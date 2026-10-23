@@ -28,15 +28,99 @@ function decodeConsoleOutput(buf: unknown): string {
   }
 }
 
-/** 危险命令黑名单 —— 阻止 Agent 执行破坏性/危险操作 */
-const BLOCKED_CMDS = new Set([
+/**
+ * 危险命令黑名单 —— 阻止 Agent 执行破坏性/不可逆操作。
+ *
+ * 两条铁律:
+ *  1. 匹配单位是 token，不是子串。子串匹配会把 "firmware"(含 rm)、
+ *     "confirm"(含 rm)、"transform"(含 rm)、"add"(含 dd) 全部误杀。
+ *  2. 语义型黑名单用正则，不用字面量。字面量 "curl ... | sh" 里的省略号
+ *     永远匹配不到真实命令 `curl https://x.sh | sh`。
+ */
+
+/** 出现在命令位置即危险（token 全等匹配，误伤面极小） */
+const DESTRUCTIVE_COMMANDS = new Set([
   'rm', 'rmdir', 'del', 'erase', // 删除
   'shutdown', 'reboot', 'poweroff', 'halt', // 关机
-  'mkfs', 'fdisk', 'format', // 格式化
+  'fdisk', // 磁盘分区
   'dd', // 磁盘
-  'git reset --hard', 'git clean', // 破坏性 git
-  'curl ... | sh', 'wget ... | sh', // 管道安装
 ]);
+
+/** 前缀匹配即危险（mkfs.ext4 / mke2fs / mkswap 之类变体） */
+const DESTRUCTIVE_PREFIXES = ['mkfs', 'mke2fs', 'mkswap'];
+
+/** 只在「整条命令的首个 token」时危险（format 常作为 npm script 名，不做全量匹配） */
+const DESTRUCTIVE_FIRST_TOKEN = new Set(['format']);
+
+/** 多词命令（token 序列匹配，允许出现在 && / ; 之后） */
+const DESTRUCTIVE_PHRASES: string[][] = [
+  ['git', 'reset', '--hard'],
+  ['git', 'clean'],
+  ['git', 'push', '--force'],
+  ['git', 'push', '-f'],
+];
+
+/** 语义模式：远程脚本管道执行（字面量匹配不到，必须正则） */
+const DESTRUCTIVE_PATTERNS: RegExp[] = [
+  // curl/wget 下载后直接喂给解释器：| sh / | bash / && sh ...
+  /(curl|wget)[^|;&]*(?:\|\||&&|[|;])\s*(?:sudo\s+)?(?:ba|z|k|da)?sh\b/i,
+  // 同族：喂给 python/node/perl/ruby 执行远程内容
+  /(curl|wget)[^|;&]*(?:\|\||&&|[|;])\s*(?:sudo\s+)?(?:python3?|node|perl|ruby)\b/i,
+];
+
+/** shell 分隔符：把复合命令拆成若干"命令段"，逐段判定命令位置 */
+const SEGMENT_SPLIT = /\r\n|\n|;|\|\||&&|\||&/;
+
+/** 命令词提取：去引号、转小写 */
+function normalizeToken(token: string): string {
+  return token.replace(/^["']|["']$/g, '').toLowerCase();
+}
+
+/**
+ * 危险命令判定。
+ *
+ * - DESTRUCTIVE_COMMANDS:任意 token 全等命中即拦截（覆盖 `sudo rm -rf /`、
+ *   `cd /tmp && rm -rf x` 这类前缀包装与链式调用）
+ * - DESTRUCTIVE_FIRST_TOKEN:仅首个 token 命中（避免 `npm run format` 误杀）
+ * - DESTRUCTIVE_PHRASES:token 序列命中
+ * - DESTRUCTIVE_PATTERNS:管道执行远程脚本等语义场景
+ */
+export function isBlockedCommand(command: string): boolean {
+  const cmd = command.trim();
+  if (!cmd) return false;
+
+  // 语义模式优先（管道执行远程脚本）
+  for (const re of DESTRUCTIVE_PATTERNS) {
+    if (re.test(cmd)) return true;
+  }
+
+  const tokens = cmd.split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return false;
+
+  // token 全等命中危险命令
+  const normalized = tokens.map(normalizeToken);
+  for (const token of normalized) {
+    if (DESTRUCTIVE_COMMANDS.has(token)) return true;
+    if (DESTRUCTIVE_PREFIXES.some((p) => token.startsWith(p))) return true;
+  }
+
+  // 首 token 命中（format 等）
+  const first = normalized[0];
+  if (first && DESTRUCTIVE_FIRST_TOKEN.has(first)) return true;
+
+  // 多词命令：按命令段切分后逐段找序列（支持 `cd x && git reset --hard`）
+  for (const segment of cmd.split(SEGMENT_SPLIT)) {
+    const segTokens = segment.trim().split(/\s+/).filter(Boolean).map(normalizeToken);
+    if (segTokens.length === 0) continue;
+    for (const phrase of DESTRUCTIVE_PHRASES) {
+      for (let i = 0; i + phrase.length <= segTokens.length; i++) {
+        if (phrase.every((p, j) => segTokens[i + j] === p)) return true;
+      }
+    }
+  }
+
+  return false;
+}
 
 export const builtinToolsPlugin: OpenAIDePlugin = {
   name: 'builtin',
@@ -129,7 +213,8 @@ export const builtinToolsPlugin: OpenAIDePlugin = {
     },
     {
       name: 'execute_command',
-      description: '执行 shell 命令并返回 stdout/stderr。危险命令会被黑名单拦截。注意:写文件请用 write_file 工具,不要用 echo/重定向(转义易错)。',
+      description:
+        '执行 shell 命令并返回 stdout/stderr。危险命令会被黑名单拦截。注意:写文件请用专用的文件写入工具,不要用 echo/重定向(转义易错)。',
       parameters: {
         type: 'object',
         properties: {
@@ -141,7 +226,7 @@ export const builtinToolsPlugin: OpenAIDePlugin = {
       async handler(args) {
         const command = (args.command as string) ?? '';
         if (!command.trim()) return { content: '', error: 'command required', errorCode: 'INVALID_ARGS' };
-        if (isBlocked(command)) {
+        if (isBlockedCommand(command)) {
           return { content: '', error: `command blocked by safety blacklist: ${command}`, errorCode: 'PERMISSION_DENIED' };
         }
         const isWin = process.platform === 'win32';
@@ -172,15 +257,5 @@ export const builtinToolsPlugin: OpenAIDePlugin = {
     },
   ],
 };
-
-function isBlocked(command: string): boolean {
-  const first = command.trim().split(/[\s|&;]+/)[0]?.toLowerCase() ?? '';
-  if (BLOCKED_CMDS.has(first)) return true;
-  // 宽松匹配：命令片段含危险前缀
-  for (const b of BLOCKED_CMDS) {
-    if (command.toLowerCase().includes(b.toLowerCase())) return true;
-  }
-  return false;
-}
 
 export default builtinToolsPlugin;
