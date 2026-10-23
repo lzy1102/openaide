@@ -43,6 +43,36 @@ function sanitizeName(raw: string): string {
   return n;
 }
 
+/** 子代理一律看不到任何子代理工具（含它自己与兄弟） */
+const SUBAGENT_PREFIX = 'subagents__';
+
+/**
+ * 子代理的工具视图：隐藏全部 subagents__* 。
+ *
+ * 旧实现直接把父注册表交给子内核——人格没写 toolAllowlist 时子代理能看到
+ * 全部工具，包括 subagents__<自己>。模型只要"再委派一次"就能无限自我递归，
+ * 每一层都在烧 token，且没有深度限制可以兜底。
+ */
+function childExecutor(parent: ToolExecutor): ToolExecutor {
+  const visible = (name: string): boolean => !name.startsWith(SUBAGENT_PREFIX);
+  return {
+    register: (def, handler, options) => parent.register(def, handler, options),
+    unregister: (name) => parent.unregister?.(name),
+    definitions: () => parent.definitions().filter((d) => visible(d.function.name)),
+    isDangerous: (name) => parent.isDangerous?.(name) ?? false,
+    execute: async (call, sessionId, signal) => {
+      if (!visible(call.function.name)) {
+        return {
+          content: '',
+          error: `tool '${call.function.name}' is not available inside a subagent — nested delegation is blocked`,
+          errorCode: 'PERMISSION_DENIED',
+        };
+      }
+      return parent.execute(call, sessionId, signal);
+    },
+  };
+}
+
 /** 由声明生成一组工具（每个子代理一个）。人格缺失等错误延迟到调用期返回。 */
 export function createSubAgentTools(specs: SubAgentSpec[], deps: SubAgentDeps): PluginTool[] {
   return specs.map((spec) => {
@@ -70,7 +100,7 @@ export function createSubAgentTools(specs: SubAgentSpec[], deps: SubAgentDeps): 
         const sessions: SessionStore = new MemorySessionStore();
         const kernel = new AgentKernel({
           llm: deps.llm,
-          tools: deps.registry,
+          tools: childExecutor(deps.registry),
           sessions,
           persona: { active: () => Promise.resolve(persona) },
           eventBus: deps.eventBus,

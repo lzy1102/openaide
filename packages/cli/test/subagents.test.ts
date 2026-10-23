@@ -101,3 +101,62 @@ test('signal 透传：abort 后子循环中止', async () => {
   const r = await pending;
   assert.match(String(r.error ?? ''), /aborted/);
 });
+
+test('子代理看不到任何子代理工具（阻断无限递归）', async () => {
+  let seenTools: string[] = [];
+  const provider: LLMProvider = {
+    async chat(_m: Message[], tools: ToolDefinition[]) {
+      seenTools = tools.map((t) => t.function.name);
+      return { content: 'ok' } as never;
+    },
+    async *chatStream() {},
+    getModelId: () => 'fake',
+  };
+  const deps = makeDeps(provider);
+  const tool = (name: string) => ({ type: 'function' as const, function: { name, description: '', parameters: {} } });
+  deps.registry.register(tool('subagents__research'), () => ({ content: 'nested' }));
+  deps.registry.register(tool('subagents__other'), () => ({ content: 'nested' }));
+  deps.registry.register(tool('git__git_status'), () => ({ content: 'clean' }));
+
+  const tools = createSubAgentTools([{ name: 'research', persona: 'researcher' }], deps);
+  const r = await tools[0]!.handler({ task: 'x' }, 's1');
+
+  assert.equal(r.content, 'ok');
+  assert.ok(seenTools.includes('git__git_status'), '普通工具仍然可见');
+  assert.ok(!seenTools.includes('subagents__research'), '自己不可见');
+  assert.ok(!seenTools.includes('subagents__other'), '兄弟子代理不可见');
+});
+
+test('模型硬编造子代理工具名时返回 PERMISSION_DENIED，不落到父注册表', async () => {
+  let n = 0;
+  let toolMsg = '';
+  const provider: LLMProvider = {
+    async chat(messages: Message[]) {
+      n++;
+      if (n === 1) {
+        return {
+          content: '',
+          toolCalls: [
+            { id: 'x1', type: 'function', function: { name: 'subagents__research', arguments: '{}' } },
+          ],
+        } as never;
+      }
+      toolMsg = messages.find((m) => m.role === 'tool')?.content ?? '';
+      return { content: 'done' } as never;
+    },
+    async *chatStream() {},
+    getModelId: () => 'fake',
+  };
+  const deps = makeDeps(provider);
+  deps.registry.register(
+    { type: 'function', function: { name: 'subagents__research', description: '', parameters: {} } },
+    () => ({ content: 'nested' }),
+  );
+
+  const tools = createSubAgentTools([{ name: 'research', persona: 'researcher' }], deps);
+  const r = await tools[0]!.handler({ task: 'x' }, 's1');
+
+  assert.equal(r.content, 'done');
+  assert.match(toolMsg, /not available inside a subagent/);
+  assert.deepEqual(deps.registry.calls, [], '父注册表不应被调用');
+});

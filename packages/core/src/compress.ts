@@ -17,6 +17,8 @@ import { estimateTextTokens } from './prompt.js';
 const DEFAULT_KEEP_RECENT = 12;
 /** 单条消息进摘要前的截断长度(字符) */
 const DEFAULT_MAX_MSG_CHARS_FOR_SUMMARY = 1200;
+/** 单条工具调用的参数进摘要前的截断长度(字符) */
+const TOOL_ARGS_SUMMARY_CHARS = 200;
 /** 摘要的最大生成 tokens */
 const DEFAULT_SUMMARY_MAX_TOKENS = 600;
 
@@ -130,15 +132,40 @@ export class LLMCompressor implements ContextCompressor {
     return { messages: compressed, saved: Math.max(0, before - after) };
   }
 
-  /** 调用 LLM 生成结构化摘要;空摘要视为失败交由回退处理 */
+  /**
+   * 调用 LLM 生成结构化摘要;空摘要视为失败交由回退处理。
+   *
+   * 工具链必须保留语义：旧实现只拼 `role: content`，于是
+   *  - 带 tool_calls 的 assistant（content 常为空）→ "assistant: "，调用动作全丢
+   *  - tool 结果 → "tool: <输出>"，不知道该输出属于哪个工具
+   * 压缩恰好只在长工具链中途触发，丢语义等于让模型失忆后继续跑。
+   */
   private async summarize(oldMsgs: Message[]): Promise<string> {
-    const parts = oldMsgs.map((m) => {
-      let content = m.content ?? '';
-      if (content.length > this.maxCharsForSummary) {
-        content = content.slice(0, this.maxCharsForSummary) + '...';
+    // tool 消息自身只有 toolCallId——先把 id → 工具名 建表
+    const toolNames = new Map<string, string>();
+    for (const m of oldMsgs) {
+      for (const tc of m.toolCalls ?? []) toolNames.set(tc.id, tc.function.name);
+    }
+
+    const clip = (s: string, max: number): string =>
+      s.length > max ? `${s.slice(0, max)}...` : s;
+    const render = (m: Message): string => {
+      const content = clip(m.content ?? '', this.maxCharsForSummary);
+      if (m.role === 'assistant' && m.toolCalls && m.toolCalls.length > 0) {
+        const calls = m.toolCalls
+          .map((tc) => `${tc.function.name}(${clip(tc.function.arguments ?? '', TOOL_ARGS_SUMMARY_CHARS)})`)
+          .join(', ');
+        const said = content.trim();
+        return said ? `assistant: ${said}\n  [called: ${calls}]` : `assistant [called: ${calls}]`;
+      }
+      if (m.role === 'tool') {
+        const name = m.toolCallId ? toolNames.get(m.toolCallId) : undefined;
+        return `tool${name ? `(${name})` : ''} result: ${content}`;
       }
       return `${m.role}: ${content}`;
-    });
+    };
+
+    const parts = oldMsgs.map(render);
 
     const resp = await this.provider.chat(
       [{ role: 'user', content: SUMMARIZE_PROMPT.replace('%s', parts.join('\n')) }],

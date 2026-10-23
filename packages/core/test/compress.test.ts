@@ -173,3 +173,56 @@ describe('LLMCompressor', () => {
     assert.ok(provider.calls > 0, 'summary LLM should have been called');
   });
 });
+
+describe('摘要保留工具链语义', () => {
+  /** 捕获送给摘要 LLM 的用户提示 */
+  class CapturingProvider extends MockProvider {
+    prompt = '';
+    override async chat(
+      messages: Message[],
+      _tools: ToolDefinition[],
+      _options: Record<string, unknown>,
+    ): Promise<{ content: string }> {
+      this.calls++;
+      this.prompt = messages[0]?.content ?? '';
+      return { content: '[Current State] mid-task' };
+    }
+  }
+
+  test('assistant 的工具调用与 tool 结果都带工具名进摘要', async () => {
+    const provider = new CapturingProvider();
+    const msgs: Message[] = [
+      msg('system', 'rules'),
+      msg('user', 'read the config'),
+      {
+        role: 'assistant',
+        content: '',
+        toolCalls: [
+          { id: 't1', type: 'function', function: { name: 'builtin__read_file', arguments: '{"file_path":"a.json"}' } },
+        ],
+      },
+      { role: 'tool', toolCallId: 't1', content: '{"port":8080}' },
+      msg('user', 'now change the port'),
+      {
+        role: 'assistant',
+        content: '',
+        toolCalls: [
+          { id: 't2', type: 'function', function: { name: 'file-tools__diff_edit', arguments: '{"file_path":"a.json"}' } },
+        ],
+      },
+      { role: 'tool', toolCallId: 't2', content: '✓ edited a.json' },
+      msg('user', 'thanks'),
+    ];
+
+    await new LLMCompressor(provider, { keepRecent: 1 }).compress(msgs, 1);
+
+    assert.match(provider.prompt, /builtin__read_file\(\{"file_path":"a\.json"\}\)/);
+    assert.match(provider.prompt, /tool\(builtin__read_file\) result: \{"port":8080\}/);
+    assert.match(provider.prompt, /file-tools__diff_edit/);
+    assert.match(provider.prompt, /tool\(file-tools__diff_edit\) result: ✓ edited a\.json/);
+    assert.ok(
+      !/assistant: \s*$/m.test(provider.prompt),
+      '带 tool_calls 的空 assistant 不应再输出成孤零零的 "assistant:"',
+    );
+  });
+});
