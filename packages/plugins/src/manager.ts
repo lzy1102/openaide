@@ -273,18 +273,22 @@ export class PluginManager {
         };
         const runHandler = (args: string, sessionId: string, signal?: AbortSignal) =>
           tool.handler(JSON.parse(args) as Record<string, unknown>, sessionId, signal);
-        this.executor.register(def, (args, sessionId, signal) => {
-          // dangerous 工具执行前发提示事件(可观测;装配层可据此接审批)
-          if (tool.dangerous) {
-            this.eventBus?.publishSync({
-              type: 'tool.permission',
-              source: 'plugin',
-              data: { plugin: plugin.name, tool: tool.name, sessionId },
-              timestamp: Date.now(),
-            });
-          }
-          return runHandler(args, sessionId, signal);
-        });
+        this.executor.register(
+          def,
+          (args, sessionId, signal) => {
+            // dangerous 工具执行前发提示事件(可观测;装配层可据此接审批)
+            if (tool.dangerous) {
+              this.eventBus?.publishSync({
+                type: 'tool.permission',
+                source: 'plugin',
+                data: { plugin: plugin.name, tool: tool.name, sessionId },
+                timestamp: Date.now(),
+              });
+            }
+            return runHandler(args, sessionId, signal);
+          },
+          { dangerous: tool.dangerous },
+        );
         scope.add('tool', fullName, () => {
           try {
             this.executor?.unregister?.(fullName);

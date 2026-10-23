@@ -35,16 +35,24 @@ export interface ModelSwitcher {
   setModelId(modelId: string): void;
 }
 
+/** 工具注册选项（与 ToolDefinition 分离，避免危险标记泄漏到发给 LLM 的 tools 载荷） */
+export interface ToolRegisterOptions {
+  /** 有副作用/不可逆：装配层据此接审批，内核不自动拦截 */
+  dangerous?: boolean;
+}
+
 /** 工具执行器 —— 注册表 + 分发 */
 export interface ToolExecutor {
   /** 注册一个工具（name 已含命名空间前缀，如 plugin__tool） */
-  register(def: ToolDefinition, handler: ToolHandler): void;
+  register(def: ToolDefinition, handler: ToolHandler, options?: ToolRegisterOptions): void;
   /** 执行一个工具调用 */
   execute(toolCall: ToolCall, sessionId: string, signal?: AbortSignal): Promise<ToolResult>;
   /** 列出所有已注册工具 */
   definitions(): ToolDefinition[];
   /** 移除一个工具（动态卸载插件用） */
   unregister?(name: string): void;
+  /** 该工具是否被标记为危险（未实现时装配层应回退到保守策略） */
+  isDangerous?(name: string): boolean;
 }
 
 /** 工具处理器：入参为 JSON 字符串，返回 ToolResult */

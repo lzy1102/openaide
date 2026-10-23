@@ -1,7 +1,7 @@
 /**
  * 审批拦截器 —— 把「危险操作需人工确认」策略挂进内核拦截链。
  * 模式：
- *   dangerous — 仅描述带 [dangerous 标记的工具需确认
+ *   dangerous — 仅注册时标记为 dangerous 的工具需确认（见 ToolRegisterOptions）
  *   always    — 所有工具调用都需确认
  * UI 无关：由装配方注入 ask 回调（TUI 卡片 / REPL 行内输入 / API 默认拒绝）。
  */

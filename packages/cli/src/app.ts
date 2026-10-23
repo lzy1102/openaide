@@ -269,10 +269,8 @@ export async function buildApp(config?: Config): Promise<App> {
   const approvalMode = cfg.kernel.approval ?? 'off';
   let approvalHandler: ApprovalHandler = async () => false; // fail-closed：未接 UI 时默认拒绝
   if (approvalMode !== 'off') {
-    const isDangerous = (tool: string): boolean =>
-      registry
-        .definitions()
-        .some((d) => d.function.name === tool && d.function.description.startsWith('[dangerous'));
+    // 危险标记来自注册元数据（plugins 注册时透传），不再靠描述前缀嗅探
+    const isDangerous = (tool: string): boolean => registry.isDangerous(tool);
     plugins.interceptors.unshift(
       createApprovalInterceptor(approvalMode, {
         ask: (q) => approvalHandler(q),
