@@ -65,6 +65,15 @@ function getPath(req: IncomingMessage): string {
   return url.split('?')[0]!;
 }
 
+/** 请求体解析/业务失败 → HTTP 状态码（避免所有错误都报 400） */
+function errorStatus(err: unknown): number {
+  const msg = (err as Error)?.message ?? String(err);
+  if (/payload too large/i.test(msg)) return 413;
+  if (/invalid JSON/i.test(msg)) return 400;
+  if (/aborted/i.test(msg)) return 499;
+  return 500;
+}
+
 /* ── 静态托管 frontend/dist（openaide serve 内置 WebUI；目录不存在时自动跳过） ── */
 const DIST_DIR =
   process.env.OPENAIDE_FRONTEND_DIR ??
@@ -172,7 +181,13 @@ export function createApiServer(ctx: ApiContext): Server {
     try {
       await route(req, res);
     } catch (err) {
-      sendJson(res, 400, { error: (err as Error).message });
+      // 响应头已发出（SSE 中途失败）时不能再写 JSON，直接收尾
+      if (res.headersSent) {
+        res.end();
+        return;
+      }
+      // 旧实现把一切异常都当 400：内核/工具的内部故障被伪装成"客户端参数错误"
+      sendJson(res, errorStatus(err), { error: (err as Error).message });
     }
   });
 

@@ -126,3 +126,43 @@ test('WebSocket /ws 流式对话', async () => {
   assert.ok(events.some((e) => e.type === 'chunk'));
   assert.ok(events.some((e) => e.type === 'done' && typeof e.sessionId === 'string'));
 });
+
+test('错误分类：内部故障 500、非法 JSON 400（不再一律 400）', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'openaide-api-err-'));
+  const db = join(dir, 'err.db');
+  const failing = {
+    async process(): Promise<never> {
+      throw new Error('kernel exploded');
+    },
+    async *processStream(): AsyncGenerator<StreamChunk> {
+      throw new Error('kernel exploded');
+    },
+    getState() {
+      return 'idle';
+    },
+  };
+  const sessions = new SQLiteSessionStore(db);
+  const s = createApiServer({
+    kernel: failing,
+    sessions,
+    service: { name: 'x', version: '0', model: 'm' },
+  });
+  await new Promise<void>((resolve) => s.listen(0, '127.0.0.1', resolve));
+  const p = (s.address() as AddressInfo).port;
+  try {
+    const internal = await req(p, '/v1/chat', { method: 'POST', body: { content: 'hi' } });
+    assert.equal(internal.status, 500, '内核异常不应伪装成客户端错误');
+    assert.match(String(internal.json.error), /kernel exploded/);
+
+    const raw = await fetch(`http://127.0.0.1:${p}/v1/chat`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{not json',
+    });
+    assert.equal(raw.status, 400);
+  } finally {
+    await new Promise<void>((resolve) => s.close(() => resolve()));
+    sessions.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
