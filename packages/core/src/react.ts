@@ -16,13 +16,19 @@ import {
 import type { ContextCompressor, Interceptor, LLMProvider, PermissionChecker, ToolExecutor } from './interfaces.js';
 import { runAfterToolCall, runBeforeLLM, runBeforeToolCall } from './intercept.js';
 import { EventTypes } from './types.js';
-import { truncateToolResult } from './prompt.js';
+import { filterToolsByAllowlist, truncateToolResult } from './prompt.js';
 import { compressToBudget, estimateMessagesTokens } from './compress.js';
 
 export interface ReactConfig {
   maxRounds: number;
   /** 工具结果单条字符上限（入 LLM 上下文前截断） */
   maxToolResultChars?: number;
+  /**
+   * 同一轮内的多个工具调用是否并行执行（默认 true）。
+   * 策略判定（权限/审批拦截器）仍串行——避免并发弹出多个确认框；
+   * 只是工具本体并发，等待时间从「N 次往返之和」降为「最慢的一次」。
+   */
+  parallelTools?: boolean;
 }
 
 export interface ReactContext {
@@ -50,6 +56,15 @@ export interface ReactContext {
 interface ToolOutcome {
   call: ToolCall;
   result: ToolResult;
+  /** 写入 tool 消息的内容（拒绝时用可读的引导语而非空串） */
+  message: string;
+}
+
+/** 策略判定后的待执行调用（denied 非空则不执行本体） */
+interface PreparedCall {
+  call: ToolCall;
+  denied: string | null;
+  argsJson: string;
 }
 
 /** ReAct 聚合结果 */
@@ -58,6 +73,8 @@ export interface ReactResult {
   reasoningContent?: string;
   rounds: number;
   usage?: unknown;
+  /** 非致命错误（如轮数耗尽）；content 可能仍有部分内容 */
+  error?: Error;
 }
 
 /**
@@ -68,12 +85,15 @@ export async function* reactLoop(ctx: ReactContext, config: ReactConfig): AsyncG
   const { provider, executor, messages, sessionId, publish, signal, permission, toolAllowlist } = ctx;
   const maxToolChars = config.maxToolResultChars ?? 20_000;
   const maxRounds = config.maxRounds > 0 ? config.maxRounds : 10;
+  const parallelTools = config.parallelTools !== false;
   // 上下文预算:压缩阈值 = 预算 * 0.9(对齐 Claude Code 的 92% 附近)
   const tokenBudget = ctx.maxTokens && ctx.maxTokens > 0 ? ctx.maxTokens : 1_000_000;
   const compressThreshold = (tokenBudget * 9) / 10;
 
   let finalContent = '';
   let finalReasoning = '';
+  /** 最后一轮模型附带在工具调用旁的文本（轮数耗尽时作为部分结果返回） */
+  let lastAssistantText = '';
   let rounds = 0;
   let usage: TokenUsage | undefined;
 
@@ -109,13 +129,7 @@ export async function* reactLoop(ctx: ReactContext, config: ReactConfig): AsyncG
     publish({ type: EventTypes.RoundStart, source: 'react', data: { round }, timestamp: Date.now() });
 
     // 当前轮工具定义(persona 白名单过滤:变身后的 agent 只见自己该用的工具)
-    const allTools = executor.definitions();
-    const tools = toolAllowlist && toolAllowlist.length > 0
-      ? allTools.filter((t) => {
-          const name = t.function.name;
-          return toolAllowlist.some((allowed) => name === allowed || name.endsWith(`__${allowed}`) || name.startsWith(`${allowed}__`));
-        })
-      : allTools;
+    const tools = filterToolsByAllowlist(executor.definitions(), toolAllowlist);
 
     // 1. 思考(流式优先:token 到达即产出;失败降级非流式)
     let resp;
@@ -137,6 +151,9 @@ export async function* reactLoop(ctx: ReactContext, config: ReactConfig): AsyncG
       throw err;
     }
 
+    if (resp.content) {
+      lastAssistantText = resp.content;
+    }
     if (resp.reasoningContent) {
       finalReasoning = resp.reasoningContent;
       yield { type: StreamChunkType.Thinking, reasoningContent: resp.reasoningContent, round };
@@ -186,15 +203,17 @@ export async function* reactLoop(ctx: ReactContext, config: ReactConfig): AsyncG
       });
     }
 
-    // 4. 执行工具（串行；PermissionChecker → 拦截链 → executor）
-    const outcomes: ToolOutcome[] = [];
+    // 4. 执行工具
+    //    两阶段：策略判定（权限 + 拦截链）串行 —— 避免并发弹出多个审批框；
+    //    工具本体并行 —— 模型一轮发 N 个调用时只等最慢的一个，而非 N 次往返。
+    const prepared: PreparedCall[] = [];
     for (const tc of resp.toolCalls) {
       throwIfAborted(signal);
       let argsJson = tc.function.arguments;
       let denied: string | null = null;
 
       // 权限检查:拒绝时不执行工具,把原因作为结果返回给模型自行调整
-      if (permission && !denied) {
+      if (permission) {
         const verdict = permission.check(sessionId, tc.function.name, tc.function.name, {
           args: argsJson,
           round,
@@ -211,23 +230,16 @@ export async function* reactLoop(ctx: ReactContext, config: ReactConfig): AsyncG
         if (!gate.ok) denied = gate.reason;
         else argsJson = gate.payload;
       }
+      prepared.push({ call: tc, denied, argsJson });
+    }
 
-      let result: ToolResult;
+    const runOne = async ({ call: tc, denied, argsJson }: PreparedCall): Promise<ToolOutcome> => {
       if (denied !== null) {
-        result = { content: '', error: `permission denied: ${denied}`, errorCode: 'PERMISSION_DENIED' };
-        yield {
-          type: StreamChunkType.ToolDone,
-          toolCallId: tc.id,
-          toolName: tc.function.name,
-          round,
+        return {
+          call: tc,
+          result: { content: '', error: `permission denied: ${denied}`, errorCode: 'PERMISSION_DENIED' },
+          message: `Permission denied: ${denied}. Choose a different approach.`,
         };
-        workingMessages.push({
-          role: 'tool',
-          toolCallId: tc.id,
-          content: `Permission denied: ${denied}. Choose a different approach.`,
-        });
-        outcomes.push({ call: tc, result });
-        continue;
       }
 
       // 参数被拦截器改写时以新参数构造调用
@@ -235,6 +247,7 @@ export async function* reactLoop(ctx: ReactContext, config: ReactConfig): AsyncG
         argsJson === tc.function.arguments
           ? tc
           : { id: tc.id, type: tc.type, function: { name: tc.function.name, arguments: argsJson } };
+      let result: ToolResult;
       try {
         result = await executor.execute(call, sessionId, signal);
       } catch (err) {
@@ -252,8 +265,28 @@ export async function* reactLoop(ctx: ReactContext, config: ReactConfig): AsyncG
       if (typeof result.content === 'string' && result.content.length > maxToolChars) {
         result = { ...result, content: truncateToolResult(result.content) };
       }
-      outcomes.push({ call: tc, result });
+      // 错误必须进 tool 消息：旧实现只回传 result.content，而失败的调用
+      // 通常 content 为空 —— 模型看到一条空观察，既不知道失败原因也无法纠正，
+      // 只能盲重试或编造后续步骤。
+      const body =
+        typeof result.content === 'string' ? result.content : JSON.stringify(result.content ?? '');
+      const message = result.error
+        ? body
+          ? `${result.error}\n${body}`
+          : result.error
+        : body;
+      return { call, result, message };
+    };
 
+    const outcomes: ToolOutcome[] = [];
+    if (parallelTools) {
+      outcomes.push(...(await Promise.all(prepared.map(runOne))));
+    } else {
+      for (const p of prepared) outcomes.push(await runOne(p));
+    }
+
+    // 事件与 tool 消息按调用顺序产出（并行执行也不打乱顺序，保住 tool_call_id 对应关系）
+    for (const { call: tc, result, message } of outcomes) {
       yield {
         type: StreamChunkType.ToolDone,
         toolCallId: tc.id,
@@ -269,16 +302,22 @@ export async function* reactLoop(ctx: ReactContext, config: ReactConfig): AsyncG
       });
 
       // 追加 tool 消息（观察）
-      const content =
-        typeof result.content === 'string' ? result.content : JSON.stringify(result.content);
-      workingMessages.push({ role: 'tool', toolCallId: tc.id, content });
+      workingMessages.push({ role: 'tool', toolCallId: tc.id, content: message });
     }
 
     publish({ type: EventTypes.RoundEnd, source: 'react', data: { round, done: false }, timestamp: Date.now() });
     yield { type: StreamChunkType.Progress, round, totalRounds: maxRounds };
   }
 
-  // 达到最大轮数：返回最后已知内容
+  // 达到最大轮数：不再"静默完成"——把最后一轮文本交出来，并明确报错。
+  // 旧实现直接 yield Done：UI 显示完成、内容为空，用户不知道发生了什么。
+  const exhausted = new Error(
+    `reached max rounds (${maxRounds}) without a final answer — raise kernel.maxRounds or split the task`,
+  );
+  if (lastAssistantText) {
+    yield { type: StreamChunkType.Content, content: lastAssistantText, round: rounds };
+  }
+  yield { type: StreamChunkType.Error, error: exhausted };
   yield { type: StreamChunkType.Done, done: true, round: rounds, totalRounds: rounds, usage };
   return;
 }
@@ -299,11 +338,13 @@ export async function collectReact(ctx: ReactContext, config: ReactConfig): Prom
   reasoningContent?: string;
   rounds: number;
   usage?: TokenUsage;
+  error?: Error;
 }> {
   let content = '';
   let reasoning = '';
   let rounds = 0;
   let usage: TokenUsage | undefined;
+  let error: Error | undefined;
   for await (const chunk of reactLoop(ctx, config)) {
     if (chunk.type === StreamChunkType.Content && chunk.content) {
       content += chunk.content;
@@ -311,10 +352,14 @@ export async function collectReact(ctx: ReactContext, config: ReactConfig): Prom
     if (chunk.type === StreamChunkType.Thinking && chunk.reasoningContent) {
       reasoning = chunk.reasoningContent;
     }
+    // 非致命错误（轮数耗尽）记下来交给上层决定如何呈现
+    if (chunk.type === StreamChunkType.Error && chunk.error) {
+      error = chunk.error;
+    }
     if (chunk.round) rounds = chunk.round;
     if (chunk.usage) usage = chunk.usage;
   }
-  return { content, reasoningContent: reasoning, rounds, usage };
+  return { content, reasoningContent: reasoning, rounds, usage, error };
 }
 
 /**

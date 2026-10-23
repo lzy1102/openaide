@@ -11,6 +11,7 @@ import {
   Message,
   Query,
   Response,
+  Session,
   StateIdle,
   StateProcessing,
   StreamChunk,
@@ -29,7 +30,7 @@ import type {
 } from './interfaces.js';
 import { EventBus } from './events.js';
 import { appendMessages, MemorySessionStore, newId } from './session.js';
-import { buildMessages, buildSystemLayer, detectTaskType } from './prompt.js';
+import { buildMessages, buildSystemLayer, detectTaskType, filterToolsByAllowlist } from './prompt.js';
 import { collectReact, reactLoop, ReactContext, ReactConfig } from './react.js';
 
 export interface KernelConfig {
@@ -41,6 +42,8 @@ export interface KernelConfig {
     maxMessages?: number;
     tokenBudget?: number;
   };
+  /** 同一轮多个工具调用并行执行（默认 true；策略判定仍串行） */
+  parallelTools?: boolean;
 }
 
 export interface KernelDeps {
@@ -75,6 +78,7 @@ export class AgentKernel {
   private maxTokens: number;
   private historyMaxMessages: number;
   private historyTokenBudget: number;
+  private parallelTools: boolean;
 
   constructor(deps: KernelDeps) {
     this.llm = deps.llm;
@@ -92,6 +96,7 @@ export class AgentKernel {
     this.maxTokens = deps.config?.maxTokens ?? 1_000_000;
     this.historyMaxMessages = positiveInt(deps.config?.history?.maxMessages, 20);
     this.historyTokenBudget = positiveInt(deps.config?.history?.tokenBudget, 6000);
+    this.parallelTools = deps.config?.parallelTools !== false;
   }
 
   // ── 状态 / 事件 ──────────────────────────────────────────
@@ -155,12 +160,80 @@ export class AgentKernel {
     this.setState(StateProcessing);
     this.publish({ type: EventTypes.QueryStart, source: 'kernel', data: { sessionId: query.sessionId }, timestamp: Date.now() });
 
+    let sessionId: string | undefined;
+    let rounds = 0;
+    try {
+      const { session, ctx } = await this.prepare(query, signal);
+      sessionId = session.id;
+
+      const result = await collectReact(ctx, this.reactConfig());
+      rounds = result.rounds;
+
+      // 轮数耗尽且一句话都没产出 → 视为失败，不要返回"成功但空内容"
+      if (result.error && !result.content) throw result.error;
+
+      await this.persistAssistant(session, result.content, result.reasoningContent);
+      return {
+        content: result.content,
+        reasoningContent: result.reasoningContent,
+        sessionId: session.id,
+        round: result.rounds,
+        totalRounds: result.rounds,
+        usage: result.usage,
+      };
+    } finally {
+      this.setState(StateIdle);
+      this.publish({ type: EventTypes.QueryEnd, source: 'kernel', data: { sessionId, rounds }, timestamp: Date.now() });
+    }
+  }
+
+  /** 流式入口：透传 ReAct 生成器 */
+  async *processStream(query: Query, signal?: AbortSignal): AsyncGenerator<StreamChunk> {
+    this.setState(StateProcessing);
+    this.publish({ type: EventTypes.QueryStart, source: 'kernel', data: { sessionId: query.sessionId }, timestamp: Date.now() });
+
+    let session: Session | undefined;
+    let finalContent = '';
+    let finalReasoning = '';
+    try {
+      const prepared = await this.prepare(query, signal);
+      session = prepared.session;
+
+      for await (const chunk of reactLoop(prepared.ctx, this.reactConfig())) {
+        if (chunk.type === StreamChunkType.Content && chunk.content) finalContent += chunk.content;
+        if (chunk.type === StreamChunkType.Thinking && chunk.reasoningContent) finalReasoning = chunk.reasoningContent;
+        yield chunk;
+      }
+    } finally {
+      if (session && (finalContent || finalReasoning)) {
+        await this.persistAssistant(session, finalContent, finalReasoning);
+      }
+      this.setState(StateIdle);
+      this.publish({ type: EventTypes.QueryEnd, source: 'kernel', data: { sessionId: session?.id }, timestamp: Date.now() });
+    }
+  }
+
+  // ── 内部 ────────────────────────────────────────────────
+  private reactConfig(): ReactConfig {
+    return { maxRounds: this.maxRounds, parallelTools: this.parallelTools };
+  }
+
+  /**
+   * 组装一轮查询的共同前置：会话、系统层、历史、messages、ReAct 上下文。
+   * process / processStream 共用——否则改一处漏一处（历史上 systemLayer 的改动
+   * 就要在两个入口各改一遍）。
+   */
+  private async prepare(
+    query: Query,
+    signal?: AbortSignal,
+  ): Promise<{ session: Session; ctx: ReactContext }> {
     const session = await this.getOrCreateSession(query);
     const persona = await this.persona?.active();
     const systemLayer = buildSystemLayer({
       persona,
       customSystemPrompt: this.systemPrompt,
-      projectContext: query.options.projectContext,
+      // 工具清单由运行时工具表生成（与 ReAct 循环同一白名单口径）
+      tools: filterToolsByAllowlist(this.tools.definitions(), persona?.toolAllowlist),
     });
 
     const history = this.memory
@@ -199,92 +272,18 @@ export class AgentKernel {
       interceptors: this.interceptors,
       toolAllowlist: persona?.toolAllowlist,
     };
-    const reactConfig: ReactConfig = { maxRounds: this.maxRounds };
-
-    const result = await collectReact(ctx, reactConfig);
-
-    // 持久化 assistant 消息
-    appendMessages(session, [{ role: 'assistant', content: result.content, reasoningContent: result.reasoningContent }]);
-    await this.sessions.update(session);
-    await this.memory?.save(session.id, [{ role: 'assistant', content: result.content, reasoningContent: result.reasoningContent }]);
-
-    this.setState(StateIdle);
-    this.publish({ type: EventTypes.QueryEnd, source: 'kernel', data: { sessionId: session.id, rounds: result.rounds }, timestamp: Date.now() });
-
-    return {
-      content: result.content,
-      reasoningContent: result.reasoningContent,
-      sessionId: session.id,
-      round: result.rounds,
-      totalRounds: result.rounds,
-      usage: result.usage,
-    };
+    return { session, ctx };
   }
 
-  /** 流式入口：透传 ReAct 生成器 */
-  async *processStream(query: Query, signal?: AbortSignal): AsyncGenerator<StreamChunk> {
-    this.setState(StateProcessing);
-    this.publish({ type: EventTypes.QueryStart, source: 'kernel', data: { sessionId: query.sessionId }, timestamp: Date.now() });
-
-    const session = await this.getOrCreateSession(query);
-    const persona = await this.persona?.active();
-    const systemLayer = buildSystemLayer({
-      persona,
-      customSystemPrompt: this.systemPrompt,
-      projectContext: query.options.projectContext,
-    });
-    const history = this.memory
-      ? await this.memory.load(session.id, this.historyMaxMessages)
-      : session.messages.slice(-this.historyMaxMessages);
-    const messages = buildMessages(
-      systemLayer,
-      history,
-      query,
-      {
-        persona,
-        customSystemPrompt: this.systemPrompt,
-        projectContext: query.options.projectContext,
-        taskType: detectTaskType(query.content),
-      },
-      { maxHistory: this.historyMaxMessages, historyTokenBudget: this.historyTokenBudget },
-    );
-
-    appendMessages(session, [{ role: 'user', content: query.content }]);
+  /** 持久化 assistant 消息（会话 + 记忆双写） */
+  private async persistAssistant(
+    session: Session,
+    content: string,
+    reasoningContent?: string,
+  ): Promise<void> {
+    appendMessages(session, [{ role: 'assistant', content, reasoningContent }]);
     await this.sessions.update(session);
-    await this.memory?.save(session.id, [{ role: 'user', content: query.content }]);
-
-    const ctx: ReactContext = {
-      provider: this.llm,
-      executor: this.tools,
-      messages,
-      sessionId: session.id,
-      publish: (e) => this.publish(e),
-      signal,
-      options: buildOptions(query.options),
-      compressor: this.compressor,
-      maxTokens: this.maxTokens,
-      permission: this.permission,
-      interceptors: this.interceptors,
-      toolAllowlist: persona?.toolAllowlist,
-    };
-
-    let finalContent = '';
-    let finalReasoning = '';
-    try {
-      for await (const chunk of reactLoop(ctx, { maxRounds: this.maxRounds })) {
-        if (chunk.type === StreamChunkType.Content && chunk.content) finalContent += chunk.content;
-        if (chunk.type === StreamChunkType.Thinking && chunk.reasoningContent) finalReasoning = chunk.reasoningContent;
-        yield chunk;
-      }
-    } finally {
-      if (finalContent || finalReasoning) {
-        appendMessages(session, [{ role: 'assistant', content: finalContent, reasoningContent: finalReasoning }]);
-        await this.sessions.update(session);
-        await this.memory?.save(session.id, [{ role: 'assistant', content: finalContent, reasoningContent: finalReasoning }]);
-      }
-      this.setState(StateIdle);
-      this.publish({ type: EventTypes.QueryEnd, source: 'kernel', data: { sessionId: session.id }, timestamp: Date.now() });
-    }
+    await this.memory?.save(session.id, [{ role: 'assistant', content, reasoningContent }]);
   }
 
   // ── 内部 ────────────────────────────────────────────────

@@ -157,14 +157,21 @@ export class OpenAICompatibleProvider implements LLMProvider {
     };
   }
 
-  private toWireMessages(messages: Message[], tools: ToolDefinition[]): ChatMessage[] {
-    return messages.map((m) => {
+  private toWireMessages(messages: Message[]): ChatMessage[] {
+    // 前缀缓存断点只打一个：最后一条 system 消息之后即为稳定前缀的末尾。
+    // 旧实现给每条 system 都打 cache_control——多轮里 system 不止一条
+    // （L0+L2+工具清单+环境、[Platform]、[ProjectKnowledge]、[Task]），
+    // 一次请求塞进多个断点，多数网关只认最后一个，多余的反而可能被判非法。
+    let lastSystemIdx = -1;
+    for (let i = 0; i < messages.length; i++) {
+      if (messages[i]?.role === 'system') lastSystemIdx = i;
+    }
+    return messages.map((m, idx) => {
       const wire: ChatMessage = {
         role: m.role,
         content: m.content ?? '',
       };
-      // system 消息标记前缀缓存(DeepSeek/OpenAI 兼容):多轮共享 system 前缀时大幅降价
-      if (m.role === 'system') {
+      if (idx === lastSystemIdx) {
         (wire as unknown as Record<string, unknown>)['cache_control'] = { type: 'ephemeral' };
       }
       if (m.reasoningContent) wire.reasoning_content = m.reasoningContent;
@@ -183,7 +190,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
     ensureLongTimeouts();
     const body: Record<string, unknown> = {
       model: this.config.model,
-      messages: this.toWireMessages(messages, tools),
+      messages: this.toWireMessages(messages),
     };
     if (this.config.reasoningEffort) body['reasoning_effort'] = this.config.reasoningEffort;
     if (tools.length > 0) body['tools'] = tools;
@@ -227,7 +234,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
     ensureLongTimeouts();
     const body: Record<string, unknown> = {
       model: this.config.model,
-      messages: this.toWireMessages(messages, tools),
+      messages: this.toWireMessages(messages),
       stream: true,
     };
     if (this.config.reasoningEffort) body['reasoning_effort'] = this.config.reasoningEffort;

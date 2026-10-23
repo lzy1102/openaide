@@ -3,8 +3,11 @@
  *
  * 背景：Windows 上 agent 用 PowerShell/cmd 单行做复杂文本处理极易失败
  * （引号转义、$variable 展开、GBK 编码），每次失败都是完整一轮 token。
- * 附注引导模型：优先用专用工具（search_files/write_file），复杂处理写
- * Python/Node 脚本执行，而不是拼 PowerShell。
+ * 附注引导模型：优先用专用工具（确切名称见系统提示的 [Available Tools] 段），
+ * 复杂处理写 Python/Node 脚本执行，而不是拼 PowerShell。
+ *
+ * 注意:附注不硬编码任何工具名——插件工具按 `<插件>__<工具>` 注册，
+ * 裸名必然漂移（历史上写死的 search_files 根本不存在，见 #2）。
  *
  * 探测每个进程只做一次，附注字节级稳定——不破坏前缀缓存。
  */
@@ -84,11 +87,11 @@ export async function buildPlatformNote(
   const lines = [
     '[Platform]',
     '运行环境: Windows，shell 是 cmd.exe。没有 bash/grep/sed/awk/head/tail。',
-    '- 文本搜索用 search_files，文件读写用 read_file/write_file，列目录用 list_directory——不要用 shell 做这些。',
+    '- 文本搜索、文件读写、列目录请用专用工具（确切名称见系统提示里的 [Available Tools] 段），不要用 shell 做这些。',
     '- 不要用 powershell / powershell -Command 包装命令——转义规则繁琐、极易翻车；默认 cmd.exe 语法。',
     '- 复杂文本处理/批处理优先写脚本执行，不要拼 shell 单行：',
-    `  1) 用 write_file 写脚本到临时目录（如 ${join(tmpdir(), 'openaide-script.py')}，.mjs 同理）`,
-    '  2) execute_command 运行它（如 python <脚本路径>）',
+    `  1) 用文件写入工具把脚本写到临时目录（如 ${join(tmpdir(), 'openaide-script.py')}，.mjs 同理）`,
+    '  2) 用命令执行工具运行它（如 python <脚本路径>）',
     '  3) 用完删除脚本',
   ];
   if (found.length > 0) {

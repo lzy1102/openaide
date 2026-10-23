@@ -18,8 +18,11 @@ describe('buildPlatformNote', () => {
   test('windows note steers to scripts and dedicated tools', async () => {
     const note = await buildPlatformNote('win32', runtimes);
     assert.ok(note.startsWith('[Platform]'));
-    assert.ok(note.includes('search_files'), 'should steer text search to search_files');
-    assert.ok(note.includes('write_file'), 'should steer file writes to write_file');
+    assert.ok(note.includes('[Available Tools]'), 'should point to the generated tool inventory');
+    assert.ok(
+      !note.includes('search_files'),
+      'must not hardcode tool names (plugin tools are namespaced, drift risk)',
+    );
     assert.ok(note.includes('脚本'), 'should prefer scripts over shell one-liners');
     assert.ok(note.includes('不要用 powershell'), 'must steer away from PowerShell');
     assert.ok(note.includes('python (Python 3.12.4)'));
